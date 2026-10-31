@@ -1,5 +1,5 @@
 import type { Store } from "../core/store.js";
-import { driverLabel, isDriverName, type RunUsage, type Task } from "../core/types.js";
+import { driverLabel, isDriverName, type EventType, type Overview, type RunUsage, type Task } from "../core/types.js";
 import { AgentRunError, type AgentDriver, type RunContext, type RunResult } from "../agents/driver.js";
 import { join } from "node:path";
 import { createWorktree, finalizeWorktree, removeWorktree } from "./git.js";
@@ -9,10 +9,12 @@ import { runChecks } from "./checks.js";
 import { DashboardBuilder } from "./dashboard.js";
 import { DEFAULT_DRIVER_KEY, driverSettings, isAvailable } from "./drivers.js";
 import { worktreesDir } from "../core/paths.js";
+import { servedDashboard } from "../core/webbuild.js";
 
 const CREW = ["Jib", "Boom", "Hoist", "Trolley", "Rigger", "Winch", "Gantry", "Mast"];
 const HEARTBEAT_KEY = "factory_heartbeat";
-const DRIVER_KEY = DEFAULT_DRIVER_KEY;
+
+type CrewMember = { id: string; name: string };
 
 export interface FactoryOptions {
   crewSize?: number;
@@ -81,7 +83,20 @@ export function factoryIsRunning(store: Store): boolean {
 }
 
 export function factoryDriverName(store: Store): string {
-  return store.getSetting(DRIVER_KEY) ?? "unknown";
+  return store.getSetting(DEFAULT_DRIVER_KEY) ?? "unknown";
+}
+
+/** The factory's state as the overview reports it: running, paused, its default agent, and the dashboard served. */
+export function factoryState(store: Store): Overview["factory"] {
+  const ui = servedDashboard();
+  return {
+    running: factoryIsRunning(store),
+    paused: store.isPaused(),
+    driver: factoryDriverName(store),
+    uiOutdated: ui?.outdated ?? false,
+    uiBuild: ui?.id ?? null,
+    uiCommit: ui?.commit ?? null,
+  };
 }
 
 /**
@@ -96,7 +111,7 @@ export class Factory {
   private stopping = false;
   private busy = new Set<string>(); // agentIds
   private mergingRepos = new Set<string>(); // repoIds with a merge in progress
-  private crew: { id: string; name: string }[];
+  private crew: CrewMember[];
   private tickMs: number;
   private log: (line: string) => void;
   private dashboard: DashboardBuilder | null = null;
@@ -156,7 +171,7 @@ export class Factory {
 
   /** The operator's default agent, when this factory can run it; otherwise its first driver. */
   private defaultDriver(): AgentDriver {
-    return this.drivers.get(this.store.getSetting(DRIVER_KEY) ?? "") ?? this.drivers.values().next().value!;
+    return this.drivers.get(this.store.getSetting(DEFAULT_DRIVER_KEY) ?? "") ?? this.drivers.values().next().value!;
   }
 
   /**
@@ -183,8 +198,8 @@ export class Factory {
 
   start() {
     // Keep the operator's saved default if this factory can run it.
-    const saved = this.store.getSetting(DRIVER_KEY);
-    if (!saved || !this.drivers.has(saved)) this.store.setSetting(DRIVER_KEY, this.defaultDriver().name);
+    const saved = this.store.getSetting(DEFAULT_DRIVER_KEY);
+    if (!saved || !this.drivers.has(saved)) this.store.setSetting(DEFAULT_DRIVER_KEY, this.defaultDriver().name);
     for (const a of this.crew) {
       this.store.upsertAgent({ ...a, driver: this.defaultDriver().name });
       this.store.setAgentState(a.id, "idle", null);
@@ -335,15 +350,20 @@ export class Factory {
   }
 
   /** Land an approved task on its repo's default branch, with an agent on hand for conflicts. */
-  private async merge(agent: { id: string; name: string }, task: Task) {
+  /** Record events on one task's feed. */
+  private emitter(taskId: string) {
+    return (type: EventType, message: string, data?: Record<string, unknown>) =>
+      this.store.addEvent(taskId, type, message, data ?? null);
+  }
+
+  private async merge(agent: CrewMember, task: Task) {
     const ac = new AbortController();
     const limit = timeLimit(ac, this.timeLimitMin);
     const repo = task.repoId ? this.store.getRepo(task.repoId) : null;
     if (repo) this.mergingRepos.add(repo.id);
     this.store.setAgentState(agent.id, "working", task.id);
     this.log(`${agent.name} is merging ${task.id} · ${task.title}`);
-    const emit = (type: Parameters<Store["addEvent"]>[1], message: string, data?: Record<string, unknown>) =>
-      this.store.addEvent(task.id, type, message, data ?? null);
+    const emit = this.emitter(task.id);
     // Stopping the factory aborts every running controller; merges are tracked under their own key.
     this.running.set(`merge:${task.id}`, ac);
 
@@ -423,7 +443,7 @@ export class Factory {
     }
   }
 
-  private async work(agent: { id: string; name: string }, task: Task) {
+  private async work(agent: CrewMember, task: Task) {
     const ac = new AbortController();
     const limit = timeLimit(ac, this.timeLimitMin);
     this.running.set(task.id, ac);
@@ -431,8 +451,7 @@ export class Factory {
     // A task that already has a session was interrupted by a restart. Its agent carries on.
     const resuming = !!task.sessionId;
     this.log(`${agent.name} ${resuming ? "is resuming" : "picked up"} ${task.id} · ${task.title}`);
-    const emit = (type: Parameters<Store["addEvent"]>[1], message: string, data?: Record<string, unknown>) =>
-      this.store.addEvent(task.id, type, message, data ?? null);
+    const emit = this.emitter(task.id);
 
     try {
       const repo = task.repoId ? this.store.getRepo(task.repoId) : null;

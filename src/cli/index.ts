@@ -23,10 +23,15 @@ import {
 import { OperatorActions, toRule } from "../factory/actions.js";
 import { ruleLabel } from "../core/permissions.js";
 import { draftTask } from "../factory/instruct.js";
-import { DEFAULT_MAX_TURNS, DEFAULT_TIME_LIMIT_MIN, factoryDriverName, factoryIsRunning } from "../factory/orchestrator.js";
+import {
+  DEFAULT_MAX_TURNS,
+  DEFAULT_TIME_LIMIT_MIN,
+  factoryDriverName,
+  factoryIsRunning,
+  factoryState,
+} from "../factory/orchestrator.js";
 import { diffForTask } from "../factory/git.js";
 import { DEFAULT_PORT } from "../core/paths.js";
-import { servedDashboard } from "../core/webbuild.js";
 import * as ui from "./ui.js";
 
 const store = new Store();
@@ -51,15 +56,7 @@ const program = new Command()
 
 // ── crane (no args): the one screen you need ────────────────
 program.action(() => {
-  const dashboard = servedDashboard();
-  const o = store.overview({
-    running: factoryIsRunning(store),
-    paused: store.isPaused(),
-    driver: factoryDriverName(store),
-    uiOutdated: dashboard?.outdated ?? false,
-    uiBuild: dashboard?.id ?? null,
-    uiCommit: dashboard?.commit ?? null,
-  });
+  const o = store.overview(factoryState(store));
   const delta = o.shippedThisWeek - o.shippedLastWeek;
   const last24 = o.activity.slice(-24).map((b) => b.events + b.done * 5);
 
