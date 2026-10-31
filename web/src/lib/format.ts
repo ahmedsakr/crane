@@ -31,6 +31,13 @@ export function usd(n: number): string {
   return n < 0.01 && n > 0 ? "<$0.01" : `$${n.toFixed(2)}`;
 }
 
+/** 1,284 / 12.9K / 4.2M */
+export function compact(n: number): string {
+  if (n < 10_000) return n.toLocaleString();
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 100_000 ? 1 : 0)}K`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
 export function plural(n: number, one: string, many = one + "s") {
   return `${n} ${n === 1 ? one : many}`;
 }

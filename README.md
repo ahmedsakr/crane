@@ -81,6 +81,7 @@ Agents run through [Claude Code](https://code.claude.com) in headless mode, usin
 | `crane cancel <id>` / `crane retry <id>` | Stop work, or run it again |
 | `crane repos` / `crane repos add <path>` | The codebases the factory works on |
 | `crane agents` | Who's on the crew and what they're doing |
+| `crane analytics` | What the factory spent, by day, repo, type, and task (`--days 7`). `crane show <id> --events` lists a task's runs and their costs. |
 | `crane pause` / `crane resume` | Stop or restart picking up new tasks |
 | `crane serve` | Run the factory: agents, API, and dashboard |
 

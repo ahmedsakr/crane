@@ -138,6 +138,76 @@ export interface NewTask {
   autonomy: Autonomy;
 }
 
+/** Why an agent ran: to work the task itself, or to resolve a merge's conflicts. */
+export type RunKind = "work" | "resolve_conflicts";
+export type RunOutcome = "running" | "succeeded" | "failed" | "cancelled";
+
+/** What one agent run used, as its driver reported it. */
+export interface RunUsage {
+  /** Claude Code's figure, at API prices. On a subscription it's an estimate, not a bill. */
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  turns: number;
+  /** The model that did most of the work, when the driver knows. */
+  model: string | null;
+}
+
+/**
+ * One agent run against a task. A task can have several: a run per attempt
+ * (a factory restart re-runs it) plus any conflict resolution while merging.
+ * The task's `costUsd` is the sum of its runs.
+ */
+export interface AgentRun extends RunUsage {
+  id: number;
+  taskId: string;
+  kind: RunKind;
+  agentId: string | null;
+  driver: string;
+  outcome: RunOutcome;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export const RUN_KIND_LABEL: Record<RunKind, string> = {
+  work: "Work",
+  resolve_conflicts: "Resolve conflicts",
+};
+
+/** Statuses where the work was thrown away, so what it cost bought nothing that shipped. */
+export const UNSHIPPED_STATUSES: TaskStatus[] = ["failed", "cancelled", "rejected"];
+
+export interface SpendSlice {
+  usd: number;
+  tasks: number;
+}
+
+/** Spend over a window of days, attributed to when each run finished. */
+export interface Analytics {
+  days: number;
+  from: string;
+  to: string;
+  spendUsd: number;
+  /** The same number of days just before `from`. */
+  prevSpendUsd: number;
+  runs: number;
+  /** Tasks with at least one run in the window. */
+  tasks: number;
+  /** Tasks that were done, approved, or merged. */
+  shipped: SpendSlice;
+  /** Tasks that failed, were cancelled, or were declined. */
+  unshipped: SpendSlice;
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number };
+  /** One bucket per local day, oldest first. `day` is the local midnight it starts at. */
+  daily: { day: string; usd: number; runs: number }[];
+  byRepo: (SpendSlice & { repoId: string | null; name: string })[];
+  byKind: (SpendSlice & { kind: TaskKind })[];
+  /** The most expensive tasks in the window, by what they cost in it. */
+  topTasks: (Pick<Task, "id" | "title" | "status" | "kind" | "repoId"> & { usd: number; runs: number })[];
+}
+
 export interface Overview {
   factory: {
     running: boolean;

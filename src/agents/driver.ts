@@ -1,4 +1,4 @@
-import type { EventType, Task, Report, Repo } from "../core/types.js";
+import type { EventType, Task, Report, Repo, RunUsage } from "../core/types.js";
 
 export interface RunContext {
   task: Task;
@@ -9,6 +9,11 @@ export interface RunContext {
   emit: (type: EventType, message: string, data?: Record<string, unknown>) => void;
   /** Set when the run is a narrower job than working the task itself. */
   job?: AgentJob;
+  /**
+   * Call with what the run used as soon as it's known, before resolving or
+   * rejecting. A run that fails still costs money, so report it then too.
+   */
+  onUsage?: (usage: RunUsage) => void;
 }
 
 /**
@@ -27,7 +32,6 @@ export type AgentJob = ResolveConflictsJob;
 
 export interface RunResult {
   report: Report;
-  costUsd: number;
 }
 
 /** Anything that can work a task. Swap drivers without touching the factory. */

@@ -65,6 +65,17 @@ export function hint(...cmds: [string, string][]): string {
   return cmds.map(([cmd, what]) => `  ${accent("›")} ${cmd.padEnd(col)}${dim(what)}`).join("\n");
 }
 
+export function usd(n: number): string {
+  return n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`;
+}
+
+/** 1,284 / 12.9K / 4.2M */
+export function compact(n: number): string {
+  if (n < 10_000) return n.toLocaleString("en-US");
+  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 100_000 ? 1 : 0)}K`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
 const BARS = "▁▂▃▄▅▆▇█";
 export function sparkline(values: number[]): string {
   const max = Math.max(1, ...values);

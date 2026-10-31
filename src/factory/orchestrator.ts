@@ -1,6 +1,6 @@
 import type { Store } from "../core/store.js";
-import type { Task } from "../core/types.js";
-import type { AgentDriver } from "../agents/driver.js";
+import type { RunUsage, Task } from "../core/types.js";
+import type { AgentDriver, RunContext, RunResult } from "../agents/driver.js";
 import { join } from "node:path";
 import { createWorktree, finalizeWorktree, installDependencies, removeWorktree } from "./git.js";
 import { deleteMergedBranch, landTask, MergeError } from "./merge.js";
@@ -64,6 +64,8 @@ export class Factory {
       this.store.updateTask(m.id, { status: "queued", agentId: null });
       this.store.addEvent(m.id, "status", "Re-queued after the factory restarted", { status: "queued" });
     }
+    // Runs it was in the middle of never reported their usage. Close them so they don't read as live.
+    this.store.closeStaleRuns();
     // Merges are safe to run again from the top, so just release them.
     for (const m of this.store.listTasks({ status: ["merging"] })) {
       if (m.agentId) this.store.updateTask(m.id, { agentId: null });
@@ -107,6 +109,29 @@ export class Factory {
     }
   }
 
+  /**
+   * Run the driver with a row in the runs ledger around it, so every run's
+   * cost lands on its task: succeeded, failed, or cancelled.
+   */
+  private async runAgent(agentId: string, ctx: Omit<RunContext, "onUsage">): Promise<RunResult> {
+    const runId = this.store.startRun({
+      taskId: ctx.task.id,
+      kind: ctx.job?.kind ?? "work",
+      agentId,
+      driver: this.driver.name,
+    });
+    let usage: RunUsage | null = null;
+    try {
+      const result = await this.driver.run({ ...ctx, onUsage: (u) => (usage = u) });
+      this.store.finishRun(runId, "succeeded", usage);
+      return result;
+    } catch (err) {
+      const cancelled = ctx.signal.aborted || this.store.getTask(ctx.task.id)?.status === "cancelled";
+      this.store.finishRun(runId, cancelled ? "cancelled" : "failed", usage);
+      throw err;
+    }
+  }
+
   /** Land an approved task on its repo's default branch, with an agent on hand for conflicts. */
   private async merge(agent: { id: string; name: string }, task: Task) {
     const ac = new AbortController();
@@ -116,7 +141,6 @@ export class Factory {
     this.log(`${agent.name} is merging ${task.id} · ${task.title}`);
     const emit = (type: Parameters<Store["addEvent"]>[1], message: string, data?: Record<string, unknown>) =>
       this.store.addEvent(task.id, type, message, data ?? null);
-    let spent = 0;
     // Stopping the factory aborts every running controller; merges are tracked under their own key.
     this.running.set(`merge:${task.id}`, ac);
 
@@ -139,7 +163,7 @@ export class Factory {
           } catch {
             // Not fatal: resolving conflicts rarely needs a build.
           }
-          const r = await this.driver.run({
+          const r = await this.runAgent(agent.id, {
             task: this.store.getTask(task.id)!,
             repo,
             cwd,
@@ -147,7 +171,6 @@ export class Factory {
             emit,
             job: { kind: "resolve_conflicts", base, files },
           });
-          spent += r.costUsd;
           for (const f of r.report.findings) emit("finding", f.title, { impact: f.impact, effort: f.effort });
         },
       });
@@ -157,8 +180,7 @@ export class Factory {
       const message = result.checkoutBehind
         ? `Merged into ${main}${where}. Your checkout at ${result.checkoutBehind} has local changes, so it wasn't updated`
         : `Merged into ${main}${where}`;
-      this.store.updateTask(task.id, { worktree: null, costUsd: (this.store.getTask(task.id)?.costUsd ?? 0) + spent });
-      spent = 0;
+      this.store.updateTask(task.id, { worktree: null });
       // Record the outcome before cleaning up: if the merge just updated Crane's own
       // checkout, a dev server may restart any moment.
       this.store.setStatus(task.id, "merged", message, {
@@ -168,7 +190,6 @@ export class Factory {
       await removeWorktree(repo, workdir);
       if (!result.checkoutBehind) await deleteMergedBranch(repo, task.branch);
     } catch (err) {
-      if (spent) this.store.updateTask(task.id, { costUsd: (this.store.getTask(task.id)?.costUsd ?? 0) + spent });
       if (ac.signal.aborted) {
         // The factory is stopping. Leave it waiting; the next factory picks it up again.
         this.store.updateTask(task.id, { agentId: null });
@@ -213,7 +234,7 @@ export class Factory {
         }
       }
 
-      const result = await this.driver.run({
+      const result = await this.runAgent(agent.id, {
         task: this.store.getTask(task.id)!,
         repo,
         cwd,
@@ -230,7 +251,7 @@ export class Factory {
         if (!logged.has(f.title)) emit("finding", f.title, { impact: f.impact, effort: f.effort });
       }
 
-      this.store.updateTask(task.id, { report: result.report, costUsd: result.costUsd });
+      this.store.updateTask(task.id, { report: result.report });
 
       // Hold for the operator whenever there's something for them to decide.
       const needsOperator =

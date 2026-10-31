@@ -1,5 +1,5 @@
 /**
- * Fill a Crane home with a week of sample history so the dashboard has something
+ * Fill a Crane home with three weeks of sample history so the dashboard has something
  * to show. Creates two throwaway git repos inside CRANE_HOME. Never run this
  * against your real Crane home:
  *
@@ -59,7 +59,7 @@ const history: [TaskKind, string, string, Autonomy][] = [
 const hour = 3600_000;
 const now = Date.now();
 let n = 0;
-for (let day = 6; day >= 0; day--) {
+for (let day = 20; day >= 0; day--) {
   const perDay = 2 + ((day * 7) % 4);
   for (let i = 0; i < perDay; i++) {
     const [kind, title, repoId, autonomy] = history[n++ % history.length]!;
@@ -68,13 +68,32 @@ for (let day = 6; day >= 0; day--) {
     const end = start + (8 + Math.random() * 40) * 60_000;
     if (end > now) continue;
     const iso = (t: number) => new Date(t).toISOString();
+    // A little waste, so the analytics have something to say about it.
+    const status = n % 11 === 0 ? "failed" : n % 7 === 0 ? "rejected" : autonomy === "propose" ? "approved" : "done";
     store.updateTask(m.id, {
-      status: autonomy === "propose" ? "approved" : "done",
+      status,
       startedAt: iso(start),
       finishedAt: iso(end),
-      costUsd: 0,
       report: { summary: "Sample history for the demo.", findings: [], changedFiles: [] },
     });
+    // Sample costs, roughly what Claude Code reports for runs this size.
+    const runs: ["work" | "resolve_conflicts", number][] = [["work", (end - start) / 60_000]];
+    if (n % 5 === 0) runs.push(["resolve_conflicts", 3]);
+    for (const [kind, minutes] of runs) {
+      const run = store.startRun({ taskId: m.id, kind, agentId: null, driver: "sample" });
+      const turns = Math.round(minutes * (1 + Math.random()));
+      const tokensIn = turns * 18_000;
+      store.finishRun(run, status === "failed" ? "failed" : "succeeded", {
+        costUsd: +(minutes * (0.03 + Math.random() * 0.05)).toFixed(4),
+        inputTokens: Math.round(tokensIn * 0.04),
+        cacheReadTokens: Math.round(tokensIn * 0.86),
+        cacheWriteTokens: Math.round(tokensIn * 0.1),
+        outputTokens: turns * 700,
+        turns,
+        model: "claude-sonnet-5-5",
+      });
+      store.db.prepare("UPDATE runs SET started_at = ?, finished_at = ? WHERE id = ?").run(iso(start), iso(end), run);
+    }
     store.db.prepare("UPDATE tasks SET created_at = ? WHERE id = ?").run(iso(start - 60_000), m.id);
     store.db.prepare("DELETE FROM events WHERE task_id = ?").run(m.id);
     const steps = 12 + Math.floor(Math.random() * 30);

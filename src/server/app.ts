@@ -40,8 +40,10 @@ export function createApp(store: Store) {
     if (!m) return c.json({ error: "Not found" }, 404);
     const repo = m.repoId ? store.getRepo(m.repoId) : null;
     const agent = m.agentId ? store.listAgents().find((a) => a.id === m.agentId) ?? null : null;
-    return c.json({ task: m, repo, agent, events: store.listEvents(m.id) });
+    return c.json({ task: m, repo, agent, events: store.listEvents(m.id), runs: store.listRuns(m.id) });
   });
+
+  api.get("/analytics", (c) => c.json(store.analytics(Number(c.req.query("days") ?? 30))));
 
   api.get("/tasks/:id/diff", async (c) => {
     const m = store.getTask(c.req.param("id"));

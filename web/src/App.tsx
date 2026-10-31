@@ -9,6 +9,7 @@ import { Tasks } from "./pages/Tasks";
 import { TaskPage } from "./pages/TaskPage";
 import { Repos } from "./pages/Repos";
 import { Crew } from "./pages/Crew";
+import { Analytics } from "./pages/Analytics";
 
 interface AppCtx {
   overview: Overview | null;
@@ -98,6 +99,7 @@ function Shell() {
             </NavLink>
             <NavLink to="/repos">Repos</NavLink>
             <NavLink to="/crew">Crew</NavLink>
+            <NavLink to="/analytics">Analytics</NavLink>
           </nav>
           <div className="topbar-right">
             <FactoryPill o={overview} refresh={refresh} />
@@ -125,6 +127,7 @@ function Shell() {
           <Route path="/missions/:id" element={<LegacyTaskRedirect />} />
           <Route path="/repos" element={<Repos />} />
           <Route path="/crew" element={<Crew />} />
+          <Route path="/analytics" element={<Analytics />} />
         </Routes>
       </main>
       {sheet && overview && (

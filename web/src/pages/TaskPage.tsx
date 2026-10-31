@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, AUTONOMY_LABEL, KIND_LABEL, lastMergeOutcome, type TaskDetail, type TaskEvent } from "../lib/api";
+import {
+  api,
+  AUTONOMY_LABEL,
+  KIND_LABEL,
+  RUN_KIND_LABEL,
+  lastMergeOutcome,
+  type AgentRun,
+  type TaskDetail,
+  type TaskEvent,
+} from "../lib/api";
 import { useEventStream, usePoll, useTick } from "../lib/hooks";
-import { ago, clock, duration, plural, usd } from "../lib/format";
+import { ago, clock, compact, duration, plural, usd } from "../lib/format";
 import { StatusChip, useToast } from "../components/bits";
 import { useApp } from "../App";
 
@@ -49,6 +58,39 @@ function Timeline({ events }: { events: TaskEvent[] }) {
         ),
       )}
     </ol>
+  );
+}
+
+/** What each agent run cost: one per attempt, plus any conflict resolution while merging. */
+function Runs({ runs }: { runs: AgentRun[] }) {
+  return (
+    <details className="runs">
+      <summary>{plural(runs.length, "agent run")}</summary>
+      <ul>
+        {runs.map((r) => {
+          const tokens = r.inputTokens + r.cacheReadTokens + r.cacheWriteTokens + r.outputTokens;
+          return (
+            <li key={r.id}>
+              <span className="runs-head">
+                <span>{RUN_KIND_LABEL[r.kind]}</span>
+                <span className="tabular">{r.outcome === "running" ? "Running" : usd(r.costUsd)}</span>
+              </span>
+              <span className="runs-meta">
+                {[
+                  r.outcome === "failed" ? "Failed" : r.outcome === "cancelled" ? "Cancelled" : null,
+                  r.model,
+                  r.turns ? plural(r.turns, "turn") : null,
+                  tokens ? `${compact(tokens)} tokens` : null,
+                  ago(r.startedAt),
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </details>
   );
 }
 
@@ -288,6 +330,7 @@ export function TaskPage() {
                 </>
               )}
             </dl>
+            {data.runs.length > 1 || (data.runs[0] && data.runs[0].costUsd > 0) ? <Runs runs={data.runs} /> : null}
           </div>
 
           <div className="card card-pad">
