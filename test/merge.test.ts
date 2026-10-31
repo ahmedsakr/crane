@@ -288,7 +288,8 @@ test("factory: a task goes from work to review to merged and pushed, through a c
     assert.ok(events.some((e) => /conflict with origin\/main/.test(e.message)), "the conflict went to an agent");
     assert.equal(done.worktree, null, "Crane's worktree is cleaned up");
     // The outcome is recorded before cleanup, so wait for the agent to finish tidying.
-    await until(() => store.listAgents()[0]?.state === "idle", "cleanup");
+    // Every member: the list is sorted by name, so the one merging isn't necessarily first.
+    await until(() => store.listAgents().every((a) => a.state === "idle"), "cleanup");
 
     const landed = sh(origin, "show", `main:.crane-simulated/${t.id}.md`);
     assert.match(landed, /someone else's take/);
