@@ -46,6 +46,8 @@ Crane never merges into your default branch or pushes on its own. When you **app
 
 Choose **Approve only** (`crane approve <id> --no-merge`) to keep the branch and merge it yourself.
 
+After a successful merge, Crane queues a read-only **Post-mortem** task in the same repository. It reviews the original brief, final report, and recorded activity, prioritizing blocked commands and errors, and recommends ways to reduce friction for future tasks. Large histories are bounded and omissions are marked; this is recorded activity rather than the agent's full private conversation. Findings appear through the usual task report and review flow in both the CLI and dashboard. The review uses a fresh session, consumes a normal crew slot and agent usage, and can be cancelled like any other task. It never changes code or permissions automatically, and it does not run for failed merges or **Approve only**.
+
 Reports come back as a summary plus **findings**. Turn any finding into its own task with one click (or `crane follow-up <id> <n>`).
 
 ## Quick start

@@ -12,6 +12,7 @@ import {
   type MaintenanceRole,
 } from "./types.js";
 import { ruleLabel } from "./permissions.js";
+import { postmortemBrief } from "../factory/postmortem.js";
 import type {
   Agent,
   AgentRun,
@@ -499,6 +500,29 @@ export class Store {
     if (status === "needs_review" || FINISHED_STATUSES.includes(status)) patch.finishedAt = now();
     this.updateTask(id, patch);
     this.addEvent(id, "status", message ?? status, { ...data, status });
+  }
+
+  /** Persist the successful merge and its follow-up together, including across restarts. */
+  completeMerge(id: string, message: string, data: Record<string, unknown>): Task | null {
+    return this.db.transaction(() => {
+      const task = this.getTask(id);
+      if (!task) throw new Error(`Unknown task ${id}`);
+      if (task.status === "merged") return null;
+      if (task.status !== "merging") throw new Error(`Task ${id} isn't merging`);
+      this.updateTask(id, { worktree: null });
+      this.setStatus(id, "merged", message, data);
+      const review = this.createTask({
+        kind: "maintenance",
+        title: `Post-mortem: ${task.title}`,
+        brief: postmortemBrief(this.getTask(id)!, this.listEvents(id)),
+        repoId: task.repoId,
+        autonomy: "observe",
+        driver: task.driver,
+      });
+      this.addEvent(id, "note", "Queued a post-mortem to look for task friction", { postmortemTaskId: review.id });
+      this.addEvent(review.id, "note", `Reviewing merged task ${id}`, { sourceTaskId: id });
+      return review;
+    })();
   }
 
   /**
