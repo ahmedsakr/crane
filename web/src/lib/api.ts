@@ -14,7 +14,9 @@ import type {
   NewTask,
   Overview,
   Repo,
-} from "../../../src/core/types";
+  TaskDetail,
+  TaskDraft,
+} from "../../../src/core/contracts";
 
 export type {
   Agent,
@@ -31,6 +33,8 @@ export type {
   TaskStatus,
   Overview,
   Repo,
+  TaskDetail,
+  TaskDraft,
 };
 export {
   ACTIVE_STATUSES,
@@ -43,23 +47,9 @@ export {
   choosableDrivers,
   driverLabel,
   lastMergeOutcome,
+  ruleLabel,
   settingsLabel,
-} from "../../../src/core/types";
-export { ruleLabel } from "../../../src/core/permissions";
-
-export interface TaskDraft extends NewTask {
-  why: { kind: string; repo: string; autonomy: string };
-}
-
-export interface TaskDetail {
-  task: Task;
-  repo: Repo | null;
-  agent: Agent | null;
-  events: TaskEvent[];
-  runs: AgentRun[];
-  /** Commands this task was blocked from that still wait on a decision, counted across the repo. */
-  blocked: BlockedTool[];
-}
+} from "../../../src/core/contracts";
 
 async function req<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
   const res = await fetch(`/api${path}`, {

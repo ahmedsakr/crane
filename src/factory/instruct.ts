@@ -1,14 +1,4 @@
-import type { Autonomy, TaskKind, Repo } from "../core/types.js";
-
-export interface TaskDraft {
-  kind: TaskKind;
-  title: string;
-  brief: string;
-  repoId: string | null;
-  autonomy: Autonomy;
-  /** Short reasons for each guess, shown to the operator so they can correct them. */
-  why: { kind: string; repo: string; autonomy: string };
-}
+import type { Autonomy, TaskKind, Repo, TaskDraft } from "../core/types.js";
 
 const MAINTENANCE = [
   "fix",

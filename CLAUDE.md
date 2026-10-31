@@ -18,7 +18,7 @@ Crane is an autonomous software factory steered by a human operator. Agents run 
 - `src/factory/actions.ts` holds every operator action. The API and CLI both call it, so add new actions there first.
 - `src/agents/` holds drivers behind `AgentDriver`: Claude Code, Codex, simulated. `src/factory/drivers.ts` is the registry. A task's `driver` is the operator's pick (null follows the default setting); an interrupted task resumes on the driver of its last work run, which owns its session. Adding an agent means a driver, an entry in `DRIVER_NAMES` (`src/core/types.ts`), and one in `createDriver`. Agents end their final message with a fenced `crane-report` JSON block (`src/agents/prompts.ts`), parsed by `src/agents/report.ts`.
 - Tasks with autonomy `propose`/`act` run in a git worktree under `$CRANE_HOME/worktrees/<taskId>` on branch `crane/<slug>-<id>`. Crane never pushes or merges on its own. Only an operator's Approve (or Merge) does, and then Crane's own code in `src/factory/merge.ts` lands the branch (merge commit, fast-forward push, local default branch moved only when its checkout is clean). Agents only ever resolve conflicts inside Crane's worktree; they never push or merge.
-- `web/` is React + Vite with no UI library. Its types come straight from `src/core/types.ts`.
+- `web/` is React + Vite with no UI library. It imports backend source only through `src/core/contracts.ts` (domain types, API response shapes like `TaskDetail`, labels), which must stay browser-safe: no Store, `node:` modules, or packages. The server types its responses with the same contracts.
 
 ## Rules
 

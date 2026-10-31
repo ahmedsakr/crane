@@ -4,7 +4,7 @@ import { getMimeType } from "hono/utils/mime";
 import { readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import type { Store } from "../core/store.js";
-import { lastMergeOutcome, type TaskStatus, type NewTask } from "../core/types.js";
+import { lastMergeOutcome, type TaskStatus, type NewTask, type TaskDetail, type TaskDraft } from "../core/types.js";
 import { OperatorActions } from "../factory/actions.js";
 import { draftTask } from "../factory/instruct.js";
 import { diffForTask } from "../factory/git.js";
@@ -37,7 +37,8 @@ export function createApp(store: Store) {
     const agent = agentId ? store.listAgents().find((a) => a.id === agentId) ?? null : null;
     // Commands this task was refused that are still waiting on a decision, counted across the repo's tasks.
     const blocked = store.blockedTools({ taskId: m.id, ...(m.repoId ? { repoId: m.repoId } : {}) });
-    return c.json({ task: m, repo, agent, events: store.listEvents(m.id), runs: store.listRuns(m.id), blocked });
+    const detail: TaskDetail = { task: m, repo, agent, events: store.listEvents(m.id), runs: store.listRuns(m.id), blocked };
+    return c.json(detail);
   });
 
   api.get("/analytics", (c) => c.json(store.analytics(Number(c.req.query("days") ?? 30))));
@@ -72,7 +73,8 @@ export function createApp(store: Store) {
 
   api.post("/instruct/draft", async (c) => {
     const { text } = await c.req.json<{ text: string }>();
-    return c.json(draftTask(text ?? "", store.listRepos(), { lastRepoId: store.getSetting("last_repo") }));
+    const draft: TaskDraft = draftTask(text ?? "", store.listRepos(), { lastRepoId: store.getSetting("last_repo") });
+    return c.json(draft);
   });
 
   api.post("/tasks", async (c) => {

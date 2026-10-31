@@ -37,6 +37,19 @@ test("a source file changed after the build makes it outdated, however deep", ()
   c.done();
 });
 
+test("a shared contracts file changed after the build makes it outdated", () => {
+  const c = checkout();
+  c.at("src/components/Sheet.tsx", 100);
+  c.at("dist/index.html", 50);
+  mkdirSync(join(c.root, "src", "core"), { recursive: true });
+  const p = join(c.root, "src", "core", "permissions.ts");
+  writeFileSync(p, "x");
+  const t = new Date(Date.now() - 10_000);
+  utimesSync(p, t, t);
+  assert.equal(webBuildOutdated(c.root), true);
+  c.done();
+});
+
 test("no build, or no source to compare against, is never outdated", () => {
   const noBuild = checkout();
   noBuild.at("src/components/Sheet.tsx", 10);

@@ -398,6 +398,29 @@ export interface Overview {
   blocked: BlockedTool[];
 }
 
+/** One task with everything its page shows: `GET /api/tasks/:id`. */
+export interface TaskDetail {
+  task: Task;
+  repo: Repo | null;
+  /** Who's working it, or, before it's picked up, the crew member it was started for. */
+  agent: Agent | null;
+  events: TaskEvent[];
+  runs: AgentRun[];
+  /** Commands this task was blocked from that still wait on a decision, counted across the repo. */
+  blocked: BlockedTool[];
+}
+
+/** Crane's reading of a plain-language instruction: `POST /api/instruct/draft`. */
+export interface TaskDraft {
+  kind: TaskKind;
+  title: string;
+  brief: string;
+  repoId: string | null;
+  autonomy: Autonomy;
+  /** Short reasons for each guess, shown to the operator so they can correct them. */
+  why: { kind: string; repo: string; autonomy: string };
+}
+
 /** The agents Crane can run tasks on. Each one is a driver in `src/agents/`. */
 export const DRIVER_NAMES = ["claude-code", "codex", "simulated"] as const;
 export type DriverName = (typeof DRIVER_NAMES)[number];
