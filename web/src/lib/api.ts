@@ -92,6 +92,7 @@ export const api = {
   keepBlocked: (repoId: string, rule: string, taskId?: string) =>
     post<RepoTools>(`/repos/${repoId}/tools/keep-blocked`, { rule, taskId }),
   disallowTool: (repoId: string, rule: string) => post<RepoTools>(`/repos/${repoId}/tools/disallow`, { rule }),
+  configureCrew: (id: string, input: { active?: boolean; defaultDriver?: string | null }) => post<Agent>(`/agents/${id}`, input),
   agents: () => req<Agent[]>("/agents"),
   drivers: () => req<DriverInfo[]>("/drivers"),
   setDefaultDriver: (driver: string) => post<DriverInfo[]>("/factory/driver", { driver }),

@@ -173,6 +173,8 @@ export interface RepoTools {
 export type AgentState = "idle" | "working" | "paused";
 
 export interface Agent {
+  active: boolean;
+  defaultDriver: string | null;
   id: string;
   name: string;
   state: AgentState;
