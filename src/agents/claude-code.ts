@@ -199,7 +199,9 @@ export class ClaudeCodeDriver implements AgentDriver {
     ];
     if (ctx.maxTurns) args.push("--max-turns", String(ctx.maxTurns));
     if (resume) args.push("--resume", resume);
-    if (process.env.CRANE_MODEL) args.push("--model", process.env.CRANE_MODEL);
+    const model = ctx.model || process.env.CRANE_MODEL;
+    if (model) args.push("--model", model);
+    if (ctx.effort) args.push("--effort", ctx.effort);
 
     // Don't let a parent Claude Code session's environment leak into the agent.
     const env = { ...process.env };
@@ -255,7 +257,8 @@ export class ClaudeCodeDriver implements AgentDriver {
             ctx.onSession?.(msg.session_id);
           }
           const verb = resume ? "resumed" : "started";
-          emit("note", `Agent session ${verb}${msg.model ? ` on ${msg.model}` : ""}`, { sessionId: msg.session_id });
+          const effort = ctx.effort ? `, ${ctx.effort} effort` : "";
+          emit("note", `Agent session ${verb}${msg.model ? ` on ${msg.model}` : ""}${effort}`, { sessionId: msg.session_id });
         } else if (msg.type === "assistant") {
           for (const block of msg.message?.content ?? []) {
             if (block.type === "text" && block.text?.trim()) {

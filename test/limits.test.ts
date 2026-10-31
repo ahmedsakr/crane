@@ -158,6 +158,8 @@ test("driver: reports each blocked call once, with the rules that would allow it
     onUsage: (u) => void costs.push(u.costUsd),
     allowedTools: ["Bash(docker compose:*)"],
     maxTurns: 7,
+    model: "opus",
+    effort: "high",
   });
   assert.deepEqual(costs, [0.25]);
   const blocked = events.filter((e) => e.type === "blocked");
@@ -168,6 +170,8 @@ test("driver: reports each blocked call once, with the rules that would allow it
 
   const args = fake.args();
   assert.equal(args[args.indexOf("--max-turns") + 1], "7");
+  assert.equal(args[args.indexOf("--model") + 1], "opus");
+  assert.equal(args[args.indexOf("--effort") + 1], "high");
   assert.ok(args[args.indexOf("--allowedTools") + 1]!.split(",").includes("Bash(docker compose:*)"));
   assert.ok(args[args.indexOf("--disallowedTools") + 1]!.split(",").includes("Bash(git push:*)"));
 });

@@ -176,6 +176,20 @@ test("codex: work that changes code gets a workspace sandbox with no network, an
   assert.ok(call!.stdin.includes("Your sandbox has no network"), "it knows which checks will be refused");
 });
 
+test("codex: the operator's model and effort win over its env model, and leave the sandbox alone", async () => {
+  const { bin, log } = fakeCodex("ok");
+  const { ctx, notes } = ctxFor({ autonomy: "propose" }, { model: "gpt-chosen", effort: "high" });
+  await new CodexDriver(bin, "gpt-env").run(ctx);
+  const [call] = calls(log);
+  assert.equal(call!.args[call!.args.indexOf("--model") + 1], "gpt-chosen");
+  assert.ok(call!.args.includes('model_reasoning_effort="high"'), call!.args.join(" "));
+  assert.equal(call!.args[call!.args.indexOf("--sandbox") + 1], "workspace-write");
+  assert.ok(call!.args.includes("sandbox_workspace_write.network_access=false"));
+  assert.ok(notes.includes("Agent session started on Codex (gpt-chosen, high effort)"), notes.join("\n"));
+  // Nothing but a bare word reaches the TOML override.
+  assert.ok(!codexArgs({ cwd: "/w", readOnly: true, effort: 'high"\nsandbox_mode="danger-full-access' }).some((a) => a.includes("reasoning")));
+});
+
 test("codex: resolving conflicts can edit files even on an investigate-only task", () => {
   const args = codexArgs({ cwd: "/w", readOnly: false, resume: "s-1" });
   assert.equal(args[args.indexOf("--sandbox") + 1], "workspace-write");
@@ -224,13 +238,16 @@ test("codex: helpers unwrap shells and count cached tokens apart", () => {
 function named(name: string, available = true) {
   const sim = new SimulatedDriver(5);
   const ran: { task: string; resume?: string }[] = [];
-  const d: AgentDriver & { ran: typeof ran } = {
+  const tuned: { model?: string; effort?: string }[] = [];
+  const d: AgentDriver & { ran: typeof ran; tuned: typeof tuned } = {
     name,
     label: name,
     ran,
+    tuned,
     available: async () => available,
     run: (ctx: RunContext): Promise<RunResult> => {
       ran.push({ task: ctx.task.id, resume: ctx.resumeSession });
+      tuned.push({ model: ctx.model, effort: ctx.effort });
       return sim.run(ctx);
     },
   };
@@ -307,6 +324,55 @@ test("factory: each task runs on the agent it asked for, else the operator's def
   const later = actions.createTask({ ...base, title: "Later" });
   await until(() => finished(store, later.id), "the later task to finish");
   assert.deepEqual(codex.ran.map((r) => r.task), [onCodex.id, later.id]);
+});
+
+test("factory: each run uses the model and effort saved for its agent, read fresh every run", async (t) => {
+  const { store, actions, repo } = await setup();
+  const claude = named("claude-code");
+  const codex = named("codex");
+  const base = { kind: "maintenance" as const, brief: "", repoId: repo.id, autonomy: "observe" as const };
+  await actions.configureDriver("codex", { model: "gpt-chosen", effort: "xhigh" });
+  startFactory(t, store, [claude, codex], 2);
+
+  const first = [actions.createTask({ ...base, title: "Claude" }), actions.createTask({ ...base, title: "Codex", driver: "codex" })];
+  await until(() => first.every((x) => finished(store, x.id)), "both tasks to finish");
+  assert.deepEqual(codex.tuned, [{ model: "gpt-chosen", effort: "xhigh" }]);
+  assert.deepEqual(claude.tuned, [{ model: undefined, effort: undefined }], "one agent's settings don't leak into another's");
+
+  // Changed while the factory runs: the next run picks it up without a restart.
+  await actions.configureDriver("claude-code", { model: "opus", effort: "max" });
+  const later = actions.createTask({ ...base, title: "Later" });
+  await until(() => finished(store, later.id), "the later task to finish");
+  assert.deepEqual(claude.tuned.at(-1), { model: "opus", effort: "max" });
+});
+
+test("driver settings: validated per agent, cleared with default, and shown in the catalog", async () => {
+  const store = new Store(":memory:");
+  const actions = new OperatorActions(store);
+  let catalog = await actions.configureDriver("claude-code", { model: " claude-opus-5-5[1m] ", effort: "HIGH" });
+  let claude = catalog.find((d) => d.name === "claude-code")!;
+  assert.equal(claude.model, "claude-opus-5-5[1m]");
+  assert.equal(claude.effort, "high");
+  assert.deepEqual(claude.efforts, ["low", "medium", "high", "xhigh", "max"]);
+  assert.ok(claude.models.includes("opus"));
+  assert.equal(catalog.find((d) => d.name === "codex")!.model, null, "settings belong to one agent");
+
+  // Leaving a field out keeps it; "default" or null clears it.
+  catalog = await actions.configureDriver("claude-code", { effort: "default" });
+  claude = catalog.find((d) => d.name === "claude-code")!;
+  assert.equal(claude.model, "claude-opus-5-5[1m]");
+  assert.equal(claude.effort, null);
+  catalog = await actions.configureDriver("claude-code", { model: null });
+  assert.equal(catalog.find((d) => d.name === "claude-code")!.model, null);
+
+  await assert.rejects(actions.configureDriver("claude-code", { effort: "minimal" }), /Claude Code takes effort low, medium, high, xhigh, max/);
+  await assert.rejects(actions.configureDriver("codex", { effort: "max" }), /Codex takes effort minimal/);
+  await assert.rejects(actions.configureDriver("codex", { model: "--dangerously-bypass-approvals-and-sandbox" }), /doesn't look like a model name/);
+  await assert.rejects(actions.configureDriver("codex", { model: "gpt 5" }), /doesn't look like a model name/);
+  await assert.rejects(actions.configureDriver("simulated", { model: "x" }), /doesn't call a model/);
+  await assert.rejects(actions.configureDriver("nope", { model: "x" }), /Unknown agent/);
+  assert.equal((await actions.drivers()).find((d) => d.name === "codex")!.effort, null, "a refused change saves nothing");
+  store.close();
 });
 
 test("factory: a task asking for an agent that isn't installed fails with a way forward", async (t) => {

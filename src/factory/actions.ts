@@ -2,16 +2,19 @@ import { resolve } from "node:path";
 import type { Store } from "../core/store.js";
 import {
   DRIVER_NAMES,
+  EFFORT_LEVELS,
   driverLabel,
   isDriverName,
+  isTunable,
   type Task,
   type NewTask,
   type Repo,
   type RepoTools,
   type DriverInfo,
+  type DriverName,
 } from "../core/types.js";
 import { currentBranch, isGitRepo, removeWorktree, repoRoot } from "./git.js";
-import { DEFAULT_DRIVER_KEY, driverCatalog, isAvailable, sharedDrivers } from "./drivers.js";
+import { DEFAULT_DRIVER_KEY, driverCatalog, driverEffortKey, driverModelKey, isAvailable, sharedDrivers } from "./drivers.js";
 import { factoryRoot } from "../core/paths.js";
 import { overlapsDenied, parseRule, ruleLabel } from "../core/permissions.js";
 import { ALWAYS_DENIED } from "../agents/claude-code.js";
@@ -25,6 +28,9 @@ export function toRule(input: string): string {
   if (/^(mcp__[\w-]+|[A-Z][\w-]*)(\(.+\))?$/.test(s)) return s;
   return `Bash(${s.replace(/:\*$/, "")}:*)`;
 }
+
+/** What model names look like: `opus`, `claude-opus-5-5[1m]`, `gpt-5-codex`, `us.anthropic.claude-…:0`. */
+const MODEL_NAME = /^[A-Za-z0-9][\w.:/@[\]-]{0,119}$/;
 
 /** An agent name the operator typed or sent, checked. Null and "default" mean the factory's default. */
 function checkDriver(name: string | null | undefined): Task["driver"] {
@@ -140,7 +146,36 @@ export class OperatorActions {
 
   /** Every agent Crane can run, whether it's installed, and which is the default. */
   drivers(): Promise<DriverInfo[]> {
-    return driverCatalog(this.store.getSetting(DEFAULT_DRIVER_KEY));
+    return driverCatalog(this.store.getSetting(DEFAULT_DRIVER_KEY), sharedDrivers(), (k) => this.store.getSetting(k));
+  }
+
+  /**
+   * Choose the model and effort one agent runs with. Leave a field out to keep
+   * it; null, "" or "default" goes back to the agent's own default. It applies
+   * from the next run, including a resumed one.
+   */
+  async configureDriver(name: string, input: { model?: string | null; effort?: string | null }): Promise<DriverInfo[]> {
+    const driver = checkDriver(name) as DriverName | null;
+    if (!driver) throw new Error("Choose which agent to set up");
+    if (!isTunable(driver)) throw new Error(`${driverLabel(driver)} doesn't call a model, so there's no model or effort to set`);
+    const cleared = (v: string | null) => v === null || v.trim() === "" || v.trim() === "default";
+    if (input.model !== undefined) {
+      if (input.model !== null && typeof input.model !== "string") throw new Error("Model must be text");
+      const model = cleared(input.model) ? "" : input.model!.trim();
+      // Passed to the agent's CLI as one argument. Keep it to what model names look like, and never a flag.
+      if (model && !MODEL_NAME.test(model)) throw new Error(`“${model}” doesn't look like a model name`);
+      this.store.setSetting(driverModelKey(driver), model);
+    }
+    if (input.effort !== undefined) {
+      if (input.effort !== null && typeof input.effort !== "string") throw new Error("Effort must be text");
+      const effort = cleared(input.effort) ? "" : input.effort!.trim().toLowerCase();
+      const levels = EFFORT_LEVELS[driver];
+      if (effort && !levels.includes(effort)) {
+        throw new Error(`${driverLabel(driver)} takes effort ${levels.join(", ")}, or default`);
+      }
+      this.store.setSetting(driverEffortKey(driver), effort);
+    }
+    return this.drivers();
   }
 
   /** Choose the agent new tasks run on, unless the operator picks another for a task. */

@@ -38,6 +38,7 @@ export {
   choosableDrivers,
   driverLabel,
   lastMergeOutcome,
+  settingsLabel,
 } from "../../../src/core/types";
 export { ruleLabel } from "../../../src/core/permissions";
 
@@ -96,6 +97,8 @@ export const api = {
   agents: () => req<Agent[]>("/agents"),
   drivers: () => req<DriverInfo[]>("/drivers"),
   setDefaultDriver: (driver: string) => post<DriverInfo[]>("/factory/driver", { driver }),
+  configureDriver: (driver: string, input: { model?: string | null; effort?: string | null }) =>
+    post<DriverInfo[]>(`/drivers/${driver}`, input),
   pause: () => post("/factory/pause"),
   resume: () => post("/factory/resume"),
 };

@@ -325,8 +325,35 @@ export const isDriverName = (name: unknown): name is DriverName =>
 export const driverLabel = (name: string | null | undefined): string =>
   isDriverName(name) ? DRIVER_LABEL[name] : (name ?? "—");
 
+/**
+ * The effort levels each agent's CLI accepts, lowest first: `claude --effort`
+ * and Codex's `model_reasoning_effort`. Empty means the agent has no model to
+ * tune (simulated).
+ */
+export const EFFORT_LEVELS: Record<DriverName, readonly string[]> = {
+  "claude-code": ["low", "medium", "high", "xhigh", "max"],
+  codex: ["minimal", "low", "medium", "high", "xhigh"],
+  simulated: [],
+};
+
+/** Model names worth suggesting. Any model the agent's CLI accepts works. */
+export const MODEL_SUGGESTIONS: Record<DriverName, readonly string[]> = {
+  "claude-code": ["fable", "opus", "sonnet", "haiku"],
+  codex: [],
+  simulated: [],
+};
+
+/** Whether an agent calls a model, so its model and effort can be set. */
+export const isTunable = (name: DriverName): boolean => EFFORT_LEVELS[name].length > 0;
+
+/** The model and effort the operator chose for one agent. Null follows the agent's own default. */
+export interface DriverSettings {
+  model: string | null;
+  effort: string | null;
+}
+
 /** One agent the operator can choose, and whether this machine can run it. */
-export interface DriverInfo {
+export interface DriverInfo extends DriverSettings {
   name: DriverName;
   label: string;
   /** Its CLI is installed and answers, or it needs nothing installed (simulated). */
@@ -335,6 +362,16 @@ export interface DriverInfo {
   hint: string;
   /** New tasks run on it unless the operator picks another. */
   isDefault: boolean;
+  /** Effort levels it accepts, lowest first. Empty when there's no model to tune. */
+  efforts: readonly string[];
+  /** Model names to suggest. */
+  models: readonly string[];
+}
+
+/** "opus · high effort", or null when both follow the agent's default. */
+export function settingsLabel(s: DriverSettings): string | null {
+  const parts = [s.model, s.effort ? `${s.effort} effort` : null].filter(Boolean);
+  return parts.length ? parts.join(" · ") : null;
 }
 
 /**
