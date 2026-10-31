@@ -410,10 +410,9 @@ export class Factory {
       const message = result.checkoutBehind
         ? `Merged into ${main}${where}. Your checkout at ${result.checkoutBehind} has local changes, so it wasn't updated`
         : `Merged into ${main}${where}`;
-      this.store.updateTask(task.id, { worktree: null });
       // Record the outcome before cleaning up: if the merge just updated Crane's own
       // checkout, a dev server may restart any moment.
-      this.store.setStatus(task.id, "merged", message, {
+      this.store.completeMerge(task.id, message, {
         merge: { commit: result.commit, pushedTo: result.pushedTo, checkoutBehind: result.checkoutBehind },
       });
       this.log(`${agent.name} merged ${task.id}`);

@@ -296,6 +296,14 @@ test("factory: a task goes from work to review to merged and pushed, through a c
     assert.match(landed, /Add a greeting/);
     assert.equal(sh(checkout, "rev-parse", "HEAD"), sh(origin, "rev-parse", "main"), "operator's clean checkout caught up");
     assert.equal(sh(checkout, "branch", "--list", done.branch!), "", "merged branch deleted");
+    const reviewId = events.find((e) => e.data?.postmortemTaskId)?.data?.postmortemTaskId as string;
+    assert.ok(reviewId, "successful merge queues a post-mortem");
+    await until(() => ["done", "needs_review"].includes(store.getTask(reviewId)!.status), "post-mortem report");
+    const review = store.getTask(reviewId)!;
+    assert.equal(review.autonomy, "observe");
+    assert.equal(review.branch, null);
+    assert.equal(review.worktree, null);
+    assert.ok(review.report, "post-mortem uses the normal task report flow");
   } finally {
     await factory.stop();
     store.close();
