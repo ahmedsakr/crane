@@ -136,6 +136,7 @@ export function createApp(store: Store) {
     return c.json(actions.disallowTool(c.req.param("id"), rule));
   });
 
+  api.post("/agents/:id", async (c) => c.json(await actions.configureCrew(c.req.param("id"), await c.req.json())));
   api.get("/agents", (c) => c.json(store.listAgents()));
 
   /** The agents tasks can run on (Claude Code, Codex, …) and which one is the default. */

@@ -114,7 +114,12 @@ export class Factory {
     if (!list.length) throw new Error("The factory needs at least one agent driver");
     this.drivers = new Map(list.map((d) => [d.name, d]));
     const size = Math.max(1, Math.min(CREW.length, opts.crewSize ?? Number(process.env.CRANE_AGENTS ?? 2)));
-    this.crew = CREW.slice(0, size).map((name) => ({ id: `a-${name.toLowerCase()}`, name }));
+    this.crew = CREW.map((name) => ({ id: `a-${name.toLowerCase()}`, name }));
+    for (const [i, a] of this.crew.entries()) {
+      if (this.store.getSetting(`crew_active_${a.id}`) === null) {
+        this.store.setSetting(`crew_active_${a.id}`, String(i < size));
+      }
+    }
     this.tickMs = opts.tickMs ?? 1000;
     this.log = opts.log ?? (() => {});
     this.maxTurns = Math.max(0, opts.maxTurns ?? envNumber("CRANE_MAX_TURNS") ?? DEFAULT_MAX_TURNS);
@@ -156,15 +161,23 @@ export class Factory {
   /**
    * Who works a task: the agent the operator chose for it, else the one that
    * worked it last (it owns the task's session and knows the work so far),
-   * else the factory's default.
+   * else the crew member's preference, then the factory's default.
    */
-  private driverFor(task: Task): AgentDriver {
+  private driverFor(task: Task, agentId: string): AgentDriver {
     if (task.driver) {
       const chosen = this.drivers.get(task.driver);
       if (!chosen) throw new Error(`This task asks for ${driverLabel(task.driver)}, which this factory can't run`);
       return chosen;
     }
-    return this.drivers.get(this.store.lastWorkDriver(task.id) ?? "") ?? this.defaultDriver();
+    const previous = this.drivers.get(this.store.lastWorkDriver(task.id) ?? "");
+    if (previous) return previous;
+    const preferred = this.store.getSetting(`crew_driver_${agentId}`);
+    if (preferred) {
+      const driver = this.drivers.get(preferred);
+      if (!driver) throw new Error(`This crew member asks for ${driverLabel(preferred)}, which this factory can't run`);
+      return driver;
+    }
+    return this.defaultDriver();
   }
 
   start() {
@@ -248,7 +261,7 @@ export class Factory {
     for (const agent of this.crew) {
       if (this.busy.has(agent.id)) continue;
       this.store.setAgentState(agent.id, paused ? "paused" : "idle", null);
-      if (paused) continue;
+      if (paused || this.store.getSetting(`crew_active_${agent.id}`) === "false") continue;
       // Approved merges first: the operator has already said yes and is waiting on them.
       const merge = this.store.claimNextMerge(agent.id, [...this.mergingRepos]);
       if (merge) {
@@ -348,7 +361,7 @@ export class Factory {
             // Not fatal: resolving conflicts rarely needs a build.
           }
           const current = this.store.getTask(task.id)!;
-          const r = await this.runAgent(agent.id, this.driverFor(current), {
+          const r = await this.runAgent(agent.id, this.driverFor(current, agent.id), {
             task: current,
             repo,
             cwd,
@@ -430,7 +443,7 @@ export class Factory {
         }
       }
 
-      const driver = this.driverFor(task);
+      const driver = this.driverFor(task, agent.id);
       // A session belongs to the agent that started it. Older runs didn't record theirs, so trust those.
       const owner = this.store.lastWorkDriver(task.id);
       const resumable = !!task.sessionId && (!isDriverName(owner) || owner === driver.name);

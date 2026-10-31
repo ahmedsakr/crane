@@ -349,3 +349,80 @@ test("actions: agents are checked, kept on retry and follow-up, and can be chang
   );
   store.close();
 });
+
+test("crew: preferences persist, on-call members take no work until activated", async (t) => {
+  const store = new Store(":memory:");
+  const actions = new OperatorActions(store);
+  const repo = store.addRepo({ path: process.cwd(), name: "crew-test" });
+  const claude = named("claude-code");
+  const codex = named("codex");
+  const factory = startFactory(t, store, [claude, codex]);
+  assert.equal(store.listAgents().length, 8);
+  assert.equal(store.listAgents().filter((a) => a.active).length, 1);
+  await actions.configureCrew("a-jib", { active: false });
+  // Use the store to select a test driver without depending on installed CLIs.
+  store.setSetting("crew_driver_a-hoist", "codex");
+  const task = actions.createTask({ kind: "maintenance", title: "On call", brief: "", repoId: repo.id, autonomy: "observe" });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(store.getTask(task.id)!.status, "queued");
+  await actions.configureCrew("a-hoist", { active: true });
+  await until(() => finished(store, task.id), "activated member to take work");
+  assert.equal(store.getTask(task.id)!.agentId, "a-hoist");
+  assert.deepEqual(codex.ran.map((r) => r.task), [task.id]);
+  assert.equal(claude.ran.length, 0);
+  const explicit = actions.createTask({ kind: "maintenance", title: "Explicit", brief: "", repoId: repo.id, autonomy: "observe", driver: "claude-code" });
+  await until(() => finished(store, explicit.id), "explicit choice to override member default");
+  assert.deepEqual(claude.ran.map((r) => r.task), [explicit.id]);
+  const resumed = actions.createTask({ kind: "maintenance", title: "Resumed", brief: "", repoId: repo.id, autonomy: "observe" });
+  store.finishRun(store.startRun({ taskId: resumed.id, kind: "work", agentId: null, driver: "claude-code" }), "cancelled", null);
+  store.updateTask(resumed.id, { sessionId: "previous-session" });
+  await until(() => finished(store, resumed.id), "session owner to override member default");
+  assert.deepEqual(claude.ran.at(-1), { task: resumed.id, resume: "previous-session" });
+  await factory.stop();
+  const restarted = new Factory(store, [claude, codex], { crewSize: 4 });
+  restarted.start();
+  try {
+    assert.deepEqual(store.listAgents().filter((a) => a.active).map((a) => a.id), ["a-hoist"]);
+    assert.equal(store.listAgents().find((a) => a.id === "a-hoist")!.defaultDriver, "codex");
+  } finally { await restarted.stop(); }
+});
+
+test("crew actions validate preferences and allow following the factory default", async () => {
+  const store = new Store(":memory:");
+  const actions = new OperatorActions(store);
+  store.upsertAgent({ id: "a-jib", name: "Jib", driver: "simulated" });
+  await assert.rejects(actions.configureCrew("missing", { active: true }), /No crew member/);
+  await assert.rejects(actions.configureCrew("a-jib", { defaultDriver: "unknown" }), /Unknown agent/);
+  await actions.configureCrew("a-jib", { active: false, defaultDriver: "simulated" });
+  assert.equal(store.listAgents()[0]!.active, false);
+  assert.equal(store.listAgents()[0]!.defaultDriver, "simulated");
+  await actions.configureCrew("a-jib", { defaultDriver: null });
+  assert.equal(store.listAgents()[0]!.defaultDriver, null);
+  assert.equal(store.listAgents()[0]!.active, false);
+  store.close();
+});
+
+test("crew: putting a working member on-call lets it finish without taking another task", async (t) => {
+  const store = new Store(":memory:");
+  const actions = new OperatorActions(store);
+  const repo = store.addRepo({ path: process.cwd() });
+  let finish!: () => void;
+  const done = new Promise<void>((resolve) => { finish = resolve; });
+  const driver: AgentDriver = {
+    name: "simulated", label: "Simulated", available: async () => true,
+    run: async () => { await done; return { report: { summary: "Done", findings: [], changedFiles: [] } }; },
+  };
+  startFactory(t, store, driver);
+  const first = actions.createTask({ kind: "maintenance", title: "First", brief: "", repoId: repo.id, autonomy: "observe" });
+  await until(() => store.listRuns(first.id).length > 0, "first task to start");
+  await actions.configureCrew("a-jib", { active: false });
+  assert.equal(store.getTask(first.id)!.status, "running");
+  const second = actions.createTask({ kind: "maintenance", title: "Second", brief: "", repoId: repo.id, autonomy: "observe" });
+  finish();
+  await until(() => finished(store, first.id), "current task to finish");
+  await new Promise((r) => setTimeout(r, 50));
+  assert.equal(store.getTask(second.id)!.status, "queued");
+  await actions.configureCrew("a-boom", { active: true });
+  await until(() => finished(store, second.id), "another member to take the queued task");
+  assert.equal(store.getTask(second.id)!.agentId, "a-boom");
+});

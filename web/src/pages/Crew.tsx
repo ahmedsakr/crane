@@ -15,7 +15,7 @@ function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: Dr
     setBusy(d.name);
     try {
       onChange(await api.setDefaultDriver(d.name));
-      toast({ text: `New tasks run on ${d.label}` });
+      toast({ text: `Factory default set to ${d.label}` });
       refresh();
     } catch (e) {
       toast({ text: (e as Error).message });
@@ -30,7 +30,7 @@ function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: Dr
         <h2 className="section-title">Runs on</h2>
       </div>
       <p className="muted" style={{ maxWidth: "60ch", margin: "0 0 12px", fontSize: 14 }}>
-        New tasks use the default agent. You can pick another for any task when you start it.
+        Crew members follow the factory default unless you choose an agent for them. A task’s agent choice and resumed sessions take priority.
       </p>
       <ul className="rows card" style={{ padding: "0 18px" }}>
         {drivers.map((d) => (
@@ -65,7 +65,15 @@ function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: Dr
 }
 
 export function Crew() {
-  const { overview: o } = useApp();
+  const { overview: o, refresh } = useApp();
+  const toast = useToast();
+  const [saving, setSaving] = useState<string | null>(null);
+  const configure = async (id: string, input: { active?: boolean; defaultDriver?: string | null }) => {
+    setSaving(id);
+    try { await api.configureCrew(id, input); refresh(); }
+    catch (e) { toast({ text: (e as Error).message }); }
+    finally { setSaving(null); }
+  };
   const { drivers, set } = useDrivers();
   useTick();
   if (!o) return null;
@@ -78,8 +86,9 @@ export function Crew() {
       </div>
       <p className="muted" style={{ maxWidth: "60ch" }}>
         {o.factory.running
-          ? `${plural(o.agents.length, "agent")}, on ${driver} unless a task asks for another. Each picks up the oldest queued task when it's free.`
+          ? `${plural(o.agents.filter((a) => a.active).length, "active crew member")}, with ${driver} as the factory default. Each picks up the oldest queued task when it's free.`
           : "The factory is off. Run crane serve to bring the crew in."}
+        {" On-call members take no new work until you activate them."}
         {o.factory.driver === "simulated" && " Simulated agents don't call a model; they're for trying Crane out."}
       </p>
 
@@ -113,7 +122,9 @@ export function Crew() {
                     <span className="muted" style={{ fontSize: 13 }}>
                       {a.state === "working"
                         ? `Working on ${driverLabel(a.driver)}`
-                        : a.state === "paused"
+                        : !a.active
+                          ? "On-call"
+                          : a.state === "paused"
                           ? "Paused"
                           : "Waiting for work"}
                     </span>
@@ -128,6 +139,21 @@ export function Crew() {
                   ) : (
                     <span className="muted">Nothing assigned</span>
                   )}
+                </div>
+                <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                  <label style={{ display: "grid", gap: 6, fontSize: 13 }}>
+                    Default agent
+                    <select style={{ minWidth: 0, width: "100%" }} aria-label={`Default agent for ${a.name}`} value={a.defaultDriver ?? ""} disabled={!!saving || !drivers}
+                      onChange={(e) => configure(a.id, { defaultDriver: e.target.value || null })}>
+                      <option value="">Factory default ({driver})</option>
+                      {drivers?.map((d) => <option key={d.name} value={d.name} disabled={!d.available}>{d.label}{!d.available ? " (not installed)" : ""}</option>)}
+                    </select>
+                  </label>
+                  <button className="btn btn-quiet btn-sm" disabled={!!saving}
+                    onClick={() => configure(a.id, { active: !a.active })}>
+                    {a.active ? "Put on-call" : "Activate"}
+                  </button>
+                  {!a.active && a.state === "working" && <span className="muted" style={{ fontSize: 13 }}>Finishing current work, then on-call</span>}
                 </div>
                 <dl className="facts" style={{ marginTop: 12, borderTop: "1px solid var(--hairline)", paddingTop: 12 }}>
                   <dt>Finished</dt>

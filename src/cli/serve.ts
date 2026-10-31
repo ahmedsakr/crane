@@ -37,7 +37,7 @@ export async function serve(
 
   console.log(`\n${ui.brand()}  ${pc.green("◉")} Factory is running\n`);
   console.log(`  ${ui.dim("Dashboard")}  ${pc.bold(`http://localhost:${opts.port}`)}`);
-  console.log(`  ${ui.dim("Agents   ")}  ${opts.agents} on ${driver.label} by default`);
+  console.log(`  ${ui.dim("Agents   ")}  ${store.listAgents().filter((a) => a.active).length} active · factory default ${driver.label}`);
   const installed = (
     await Promise.all(others.filter((d) => d.name !== "simulated").map(async (d) => ((await isAvailable(d)) ? d.label : null)))
   ).filter(Boolean);

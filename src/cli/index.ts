@@ -657,6 +657,7 @@ const agents = program
     if (!list.length) console.log(`  ${ui.dim("No agents yet. They clock in when you run")} crane serve`);
     for (const a of list) {
       const title = a.taskId ? store.getTask(a.taskId)?.title : undefined;
+      console.log(`  ${a.active ? "Active" : "On-call"} · default: ${a.defaultDriver ? driverLabel(a.defaultDriver) : "factory default"}`);
       console.log(ui.agentLine(a, title ? `${title}  ${ui.dim(`on ${driverLabel(a.driver)}`)}` : undefined));
     }
     const catalog = await actions.drivers();
@@ -675,6 +676,22 @@ const agents = program
   });
 
 agents
+  .command("configure <member>")
+  .description("Set a crew member's default agent or active/on-call status")
+  .option("--agent <agent>", "default agent, or default to follow the factory")
+  .option("--active", "activate this member")
+  .option("--on-call", "finish current work, then stop taking tasks")
+  .action(async (member: string, opts: { agent?: string; active?: boolean; onCall?: boolean }) => {
+    try {
+      if (opts.active && opts.onCall) throw new Error("Choose --active or --on-call");
+      const a = store.listAgents().find((a) => a.id === member || a.name.toLowerCase() === member.toLowerCase());
+      if (!a) throw new Error(`No crew member ${member}`);
+      await actions.configureCrew(a.id, { defaultDriver: opts.agent, active: opts.active ? true : opts.onCall ? false : undefined });
+      ui.ok(`Updated ${a.name}`);
+    } catch (err) { ui.fail((err as Error).message); }
+  });
+
+agents
   .command("use")
   .description("Choose the agent new tasks run on")
   .argument("<agent>", DRIVER_NAMES.join(" | "))
@@ -682,7 +699,7 @@ agents
     try {
       const catalog = await actions.setDefaultDriver(name);
       const d = catalog.find((x) => x.isDefault)!;
-      ui.ok(`New tasks run on ${d.label}. Tasks already started keep their agent.`);
+      ui.ok(`Factory default set to ${d.label}. Crew preferences, task choices, and resumed sessions take priority.`);
     } catch (err) {
       ui.fail((err as Error).message);
     }
@@ -774,7 +791,7 @@ program
   .command("serve")
   .description("Start the factory: agents, API, and dashboard")
   .option("-p, --port <port>", "port for the dashboard", String(DEFAULT_PORT))
-  .option("--agents <n>", "crew size", process.env.CRANE_AGENTS ?? "2")
+  .option("--agents <n>", "initial active crew size (saved member settings take priority)", process.env.CRANE_AGENTS ?? "2")
   .option(
     "--driver <driver>",
     `default agent: auto | ${DRIVER_NAMES.join(" | ")}. auto keeps the one you chose with crane agents use`,

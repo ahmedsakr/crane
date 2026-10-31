@@ -167,7 +167,7 @@ export function Home() {
             </Link>
           </h3>
           {o.agents.length === 0 && <p className="muted" style={{ margin: 0, fontSize: 14 }}>Agents clock in when the factory starts.</p>}
-          {o.agents.map((a) => {
+          {o.agents.filter((a) => a.active || a.state === "working").map((a) => {
             const doing = a.taskId ? o.inFlight.find((m) => m.id === a.taskId) : null;
             return (
               <div className="agent" key={a.id}>

@@ -244,6 +244,8 @@ function localDayStart(ms: number, daysBack = 0): number {
 
 function toAgent(r: Row): Agent {
   return {
+    active: true,
+    defaultDriver: null,
     id: r.id as string,
     name: r.name as string,
     state: r.state as AgentState,
@@ -685,7 +687,11 @@ export class Store {
 
   // ── agents ────────────────────────────────────────────────
   listAgents(): Agent[] {
-    return (this.db.prepare("SELECT * FROM agents ORDER BY name").all() as Row[]).map(toAgent);
+    return (this.db.prepare("SELECT * FROM agents ORDER BY name").all() as Row[]).map((r) => ({
+      ...toAgent(r),
+      active: this.getSetting(`crew_active_${r.id}`) !== "false",
+      defaultDriver: this.getSetting(`crew_driver_${r.id}`) || null,
+    }));
   }
 
   upsertAgent(a: Pick<Agent, "id" | "name" | "driver">) {

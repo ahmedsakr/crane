@@ -155,6 +155,20 @@ export class OperatorActions {
     return this.drivers();
   }
 
+  /** Preferences apply to the next assignment; current work finishes normally. */
+  async configureCrew(id: string, input: { active?: boolean; defaultDriver?: string | null }) {
+    if (!this.store.listAgents().some((a) => a.id === id)) throw new Error(`No crew member ${id}`);
+    if (input.active !== undefined && typeof input.active !== "boolean") throw new Error("Active must be a boolean");
+    const driver = checkDriver(input.defaultDriver);
+    if (driver) {
+      const d = sharedDrivers().find((d) => d.name === driver)!;
+      if (!(await isAvailable(d))) throw new Error(`${driverLabel(driver)} isn't installed here`);
+    }
+    if (input.defaultDriver !== undefined) this.store.setSetting(`crew_driver_${id}`, driver ?? "");
+    if (input.active !== undefined) this.store.setSetting(`crew_active_${id}`, String(input.active));
+    return this.store.listAgents().find((a) => a.id === id)!;
+  }
+
   /** Turn one finding from a report into its own task that is allowed to make the change. */
   followUp(id: string, findingIndex: number): Task {
     const m = this.need(id);

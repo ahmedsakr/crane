@@ -66,6 +66,8 @@ Agents run through a coding agent CLI you already have, using its existing login
 - [Claude Code](https://code.claude.com), headless (`claude -p`).
 - [Codex](https://github.com/openai/codex), non-interactive (`codex exec`). Investigate-only tasks run in Codex's read-only sandbox. Everything else runs in its workspace sandbox with the network off, confined to the task's worktree, so Codex can't commit, push, or touch your checkout. Crane commits what it leaves. Codex reports tokens but not cost, so its runs count as $0 in analytics.
 
+The Crew page keeps eight members available. Use **Activate** to bring an on-call member into the pool, or **Put on-call** to let them finish current work and stop taking assignments. Each member can have a default agent; task choices and resumed sessions take priority. These preferences survive restarts. From the CLI, use `crane agents configure Hoist --active --agent codex`, `crane agents configure Hoist --on-call`, or `crane agents configure Hoist --agent default` to follow the factory default.
+
 Pick the default on the Crew page or with `crane agents use codex`. Pick another for one task from the instruct sheet's **Agent** chip (it shows once two agents are installed) or with `crane do --agent codex "…"`. A failed task can be run again on another agent. If no agent is installed, Crane falls back to **simulated** agents. They walk through believable steps without calling a model, which is handy for trying the UI. It's always labelled as simulated.
 
 ## The CLI
@@ -102,7 +104,7 @@ When a change to Crane itself is merged, Crane builds the dashboard from that co
 | --- | --- | --- |
 | `CRANE_HOME` | `~/.crane` | Where state (SQLite) and worktrees live |
 | `CRANE_DRIVER` | `auto` | Default agent at startup: `claude-code`, `codex`, `simulated`, or `auto` (keeps the one you chose with `crane agents use`, else the first installed) |
-| `CRANE_AGENTS` | `2` | Crew size |
+| `CRANE_AGENTS` | `2` | Initially active crew members (1–8); saved per-member activation takes priority on later starts |
 | `CRANE_MODEL` | Claude Code's default | Model passed to `claude --model` |
 | `CRANE_ALLOWED_TOOLS` | | Extra Claude Code tool rules for every repo, comma-separated. Prefer `crane allow`, which is per repo. |
 | `CRANE_MAX_TURNS` | `200` | Most turns one agent run may take (`crane serve --max-turns`). `0` for no limit. |
