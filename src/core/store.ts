@@ -2,7 +2,15 @@ import Database from "better-sqlite3";
 import { basename } from "node:path";
 import { dbPath } from "./paths.js";
 import { shortId } from "./ids.js";
-import { ALL_STATUSES, SHIPPED_STATUSES, UNSHIPPED_STATUSES, isMaintenanceRole, type MaintenanceRole } from "./types.js";
+import {
+  ACTIVE_STATUSES,
+  ALL_STATUSES,
+  FINISHED_STATUSES,
+  SHIPPED_STATUSES,
+  UNSHIPPED_STATUSES,
+  isMaintenanceRole,
+  type MaintenanceRole,
+} from "./types.js";
 import { ruleLabel } from "./permissions.js";
 import type {
   Agent,
@@ -482,9 +490,8 @@ export class Store {
   setStatus(id: string, status: TaskStatus, message?: string, data?: Record<string, unknown>) {
     const patch: Partial<Task> = { status };
     if (status === "running") patch.startedAt = now();
-    if (["needs_review", "done", "failed", "cancelled", "approved", "merged", "rejected"].includes(status)) {
-      patch.finishedAt = now();
-    }
+    // Waiting on the operator counts as finished: the agent's part is over.
+    if (status === "needs_review" || FINISHED_STATUSES.includes(status)) patch.finishedAt = now();
     this.updateTask(id, patch);
     this.addEvent(id, "status", message ?? status, { ...data, status });
   }
@@ -822,8 +829,8 @@ export class Store {
       spendThisWeekUsd: spend,
       activity: [...buckets.entries()].map(([t, v]) => ({ t: iso(t), ...v })),
       needsReview: this.listTasks({ status: ["needs_review"], limit: 20 }),
-      inFlight: this.listTasks({ status: ["merging", "running", "queued"], limit: 20 }),
-      recent: this.listTasks({ status: ["merged", "done", "approved", "rejected", "failed", "cancelled"], limit: 8 }),
+      inFlight: this.listTasks({ status: ACTIVE_STATUSES, limit: 20 }),
+      recent: this.listTasks({ status: FINISHED_STATUSES, limit: 8 }),
       agents: this.listAgents(),
       repos: this.listRepos().map((r) => ({ ...r, openTasks: openByRepo.get(r.id) ?? 0, tools: this.repoTools(r.id) })),
       // One refusal could be a fluke; the same one in a second task is a pattern worth a decision.

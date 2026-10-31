@@ -3,6 +3,7 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { Store } from "../core/store.js";
 import {
+  ACTIVE_STATUSES,
   AUTONOMY_LABEL,
   DRIVER_NAMES,
   EFFORT_LEVELS,
@@ -401,7 +402,7 @@ program
       }
       if (m) {
         const now = store.getTask(m.id)!;
-        if (!["queued", "running", "merging"].includes(now.status)) {
+        if (!ACTIVE_STATUSES.includes(now.status)) {
           console.log(`\n${ui.statusDot(now.status)} ${ui.statusText(now.status)}  ${ui.dim(`crane show ${m.id}`)}\n`);
           return;
         }

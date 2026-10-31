@@ -33,6 +33,7 @@ export type {
   Repo,
 };
 export {
+  ACTIVE_STATUSES,
   AUTONOMY_LABEL,
   KIND_LABEL,
   MAINTENANCE_ROLE,
