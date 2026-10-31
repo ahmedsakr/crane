@@ -94,6 +94,12 @@ export interface Task {
   agentId: string | null;
   branch: string | null;
   worktree: string | null;
+  /**
+   * The agent's own session for this task, recorded as soon as it starts. If
+   * the factory restarts mid-task, the next agent picks this session up again
+   * instead of starting over.
+   */
+  sessionId: string | null;
   report: Report | null;
   costUsd: number;
   createdAt: string;

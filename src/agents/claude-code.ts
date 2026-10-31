@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { AgentDriver, RunContext, RunResult } from "./driver.js";
-import { systemPrompt, userPrompt } from "./prompts.js";
+import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
 import { parseReport } from "./report.js";
 import type { Autonomy } from "../core/types.js";
 
@@ -97,6 +97,9 @@ function describeTool(name: string, input: Record<string, unknown>): string {
   }
 }
 
+/** Claude Code exited before it got going again on an earlier session. */
+class SessionNotResumed extends Error {}
+
 /**
  * Runs tasks through Claude Code in headless mode (`claude -p`), which uses
  * whatever auth the local `claude` CLI already has, a Claude subscription or an
@@ -115,7 +118,19 @@ export class ClaudeCodeDriver implements AgentDriver {
     });
   }
 
-  run(ctx: RunContext): Promise<RunResult> {
+  async run(ctx: RunContext): Promise<RunResult> {
+    if (!ctx.resumeSession) return this.runOnce(ctx);
+    try {
+      return await this.runOnce(ctx, ctx.resumeSession);
+    } catch (err) {
+      if (!(err instanceof SessionNotResumed) || ctx.signal.aborted) throw err;
+      // Its history is gone, or Claude Code won't load it. The worktree still has the work so far.
+      ctx.emit("note", "Couldn't pick up the agent's earlier session, so it's starting a new one on the work so far");
+      return this.runOnce(ctx);
+    }
+  }
+
+  private runOnce(ctx: RunContext, resume?: string): Promise<RunResult> {
     const { task, repo, cwd, emit, signal, job } = ctx;
     // Resolving conflicts means editing files, so it gets write tools. ALWAYS_DENIED
     // still applies: Crane, not the agent, commits the merge and pushes it.
@@ -135,6 +150,7 @@ export class ClaudeCodeDriver implements AgentDriver {
       "--disallowedTools",
       denied.join(","),
     ];
+    if (resume) args.push("--resume", resume);
     if (process.env.CRANE_MODEL) args.push("--model", process.env.CRANE_MODEL);
 
     // Don't let a parent Claude Code session's environment leak into the agent.
@@ -149,11 +165,16 @@ export class ClaudeCodeDriver implements AgentDriver {
       let costUsd = 0;
       let errored: string | null = null;
       let stderr = "";
+      let started = false;
 
-      const onAbort = () => child.kill("SIGTERM");
+      const onAbort = () => {
+        child.kill("SIGTERM");
+        // The factory waits a few seconds for agents to stop before it exits. Don't outlive that.
+        setTimeout(() => child.exitCode === null && child.signalCode === null && child.kill("SIGKILL"), 3000).unref();
+      };
       signal.addEventListener("abort", onAbort, { once: true });
 
-      child.stdin.end(userPrompt(task, job));
+      child.stdin.end(resume ? resumePrompt() : userPrompt(task, job));
       child.stderr.on("data", (d) => {
         stderr = (stderr + String(d)).slice(-4000);
       });
@@ -167,7 +188,10 @@ export class ClaudeCodeDriver implements AgentDriver {
           return;
         }
         if (msg.type === "system" && msg.subtype === "init") {
-          emit("note", `Agent session started${msg.model ? ` on ${msg.model}` : ""}`, { sessionId: msg.session_id });
+          started = true;
+          if (typeof msg.session_id === "string") ctx.onSession?.(msg.session_id);
+          const verb = resume ? "resumed" : "started";
+          emit("note", `Agent session ${verb}${msg.model ? ` on ${msg.model}` : ""}`, { sessionId: msg.session_id });
         } else if (msg.type === "assistant") {
           for (const block of msg.message?.content ?? []) {
             if (block.type === "text" && block.text?.trim()) {
@@ -194,6 +218,9 @@ export class ClaudeCodeDriver implements AgentDriver {
       child.on("close", (code) => {
         signal.removeEventListener("abort", onAbort);
         if (signal.aborted) return reject(new Error("Cancelled by operator"));
+        if (resume && !started) {
+          return reject(new SessionNotResumed(errored ?? (stderr.trim().slice(-500) || `exit code ${code}`)));
+        }
         if (errored) return reject(new Error(errored));
         if (code !== 0 && !finalText) {
           return reject(new Error(`Claude Code exited with code ${code}. ${stderr.trim().slice(-500)}`));

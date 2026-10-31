@@ -17,6 +17,13 @@ export interface FactoryOptions {
   log?: (line: string) => void;
 }
 
+/**
+ * How long `stop()` waits for agents to wind down and record where they got to.
+ * `tsx watch` (npm run dev) force-kills the factory 5s after asking it to stop.
+ */
+const STOP_GRACE_MS = 3500;
+const STOPPED_MESSAGE = "Stopped with the factory. Back in the queue to pick up where it left off";
+
 /** True if a factory process has checked in within the last few seconds. */
 export function factoryIsRunning(store: Store): boolean {
   const beat = store.getSetting(HEARTBEAT_KEY);
@@ -35,6 +42,8 @@ export function factoryDriverName(store: Store): string {
 export class Factory {
   private timer: NodeJS.Timeout | null = null;
   private running = new Map<string, AbortController>(); // taskId -> abort
+  private inflight = new Set<Promise<void>>(); // every work() and merge() under way
+  private stopping = false;
   private busy = new Set<string>(); // agentIds
   private mergingRepos = new Set<string>(); // repoIds with a merge in progress
   private crew: { id: string; name: string }[];
@@ -60,10 +69,10 @@ export class Factory {
     this.store.pruneAgents(this.crew.map((a) => a.id));
     this.store.setSetting(DRIVER_KEY, this.driver.name);
 
-    // A previous factory may have died mid-task. Put its work back in the queue.
+    // A previous factory stopped without getting to put its work back (it crashed,
+    // or was killed before it could). Requeue it; the agent picks up where it left off.
     for (const m of this.store.listTasks({ status: ["running"] })) {
-      this.store.updateTask(m.id, { status: "queued", agentId: null });
-      this.store.addEvent(m.id, "status", "Re-queued after the factory restarted", { status: "queued" });
+      this.requeue(m.id, "The factory stopped unexpectedly. Back in the queue to pick up where it left off");
     }
     // Merges are safe to run again from the top, so just release them.
     for (const m of this.store.listTasks({ status: ["merging"] })) {
@@ -74,11 +83,46 @@ export class Factory {
     this.tick();
   }
 
-  async stop() {
+  /**
+   * Stop taking work and wind down. Nothing in flight is cancelled: tasks go
+   * back in the queue with their worktree and agent session, and merges wait
+   * to run again, so the next factory carries on where this one stopped.
+   */
+  async stop(opts: { graceMs?: number } = {}) {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+    this.stopping = true;
     for (const ac of this.running.values()) ac.abort();
+
+    // Give agents a moment to exit, so their last events and the requeue are recorded in order.
+    let timeout: NodeJS.Timeout | undefined;
+    await Promise.race([
+      Promise.allSettled([...this.inflight]),
+      new Promise((r) => (timeout = setTimeout(r, opts.graceMs ?? STOP_GRACE_MS))),
+    ]);
+    clearTimeout(timeout);
+    // Anything still winding down is requeued now, before the process exits under it.
+    for (const id of this.running.keys()) {
+      if (!id.startsWith("merge:")) this.requeue(id, STOPPED_MESSAGE);
+    }
     this.store.setSetting(HEARTBEAT_KEY, "0");
+  }
+
+  /** Put a running task back in the queue, keeping its worktree and session for the next agent. */
+  private requeue(taskId: string, message: string) {
+    if (this.store.getTask(taskId)?.status !== "running") return;
+    this.store.updateTask(taskId, { status: "queued", agentId: null });
+    this.store.addEvent(taskId, "status", message, { status: "queued" });
+  }
+
+  /** Track a job so `stop()` can wait for it. */
+  private track(job: Promise<void>, agentId: string) {
+    this.busy.add(agentId);
+    const p = job.finally(() => {
+      this.busy.delete(agentId);
+      this.inflight.delete(p);
+    });
+    this.inflight.add(p);
   }
 
   private tick() {
@@ -97,14 +141,12 @@ export class Factory {
       // Approved merges first: the operator has already said yes and is waiting on them.
       const merge = this.store.claimNextMerge(agent.id, [...this.mergingRepos]);
       if (merge) {
-        this.busy.add(agent.id);
-        this.merge(agent, merge).finally(() => this.busy.delete(agent.id));
+        this.track(this.merge(agent, merge), agent.id);
         continue;
       }
       const task = this.store.claimNextTask(agent.id);
       if (!task) continue;
-      this.busy.add(agent.id);
-      this.work(agent, task).finally(() => this.busy.delete(agent.id));
+      this.track(this.work(agent, task), agent.id);
     }
   }
 
@@ -190,7 +232,9 @@ export class Factory {
     const ac = new AbortController();
     this.running.set(task.id, ac);
     this.store.setAgentState(agent.id, "working", task.id);
-    this.log(`${agent.name} picked up ${task.id} · ${task.title}`);
+    // A task that already has a session was interrupted by a restart. Its agent carries on.
+    const resuming = !!task.sessionId;
+    this.log(`${agent.name} ${resuming ? "is resuming" : "picked up"} ${task.id} · ${task.title}`);
     const emit = (type: Parameters<Store["addEvent"]>[1], message: string, data?: Record<string, unknown>) =>
       this.store.addEvent(task.id, type, message, data ?? null);
 
@@ -200,10 +244,11 @@ export class Factory {
 
       let cwd = repo.path;
       if (task.autonomy !== "observe") {
+        // Reuses the worktree if an earlier run left one, so nothing done so far is lost.
         const wt = await createWorktree(repo, task);
         cwd = wt.path;
         this.store.updateTask(task.id, { branch: wt.branch, worktree: wt.path });
-        emit("note", `Working on branch ${wt.branch}`, { branch: wt.branch });
+        emit("note", `${task.worktree ? "Back on" : "Working on"} branch ${wt.branch}`, { branch: wt.branch });
         try {
           const note = await installDependencies(wt.path, { from: repo.path, signal: ac.signal });
           if (note) emit("note", note);
@@ -220,6 +265,8 @@ export class Factory {
         cwd,
         signal: ac.signal,
         emit,
+        resumeSession: task.sessionId ?? undefined,
+        onSession: (sessionId) => this.store.updateTask(task.id, { sessionId }),
       });
 
       if (task.autonomy !== "observe") {
@@ -231,7 +278,9 @@ export class Factory {
         if (!logged.has(f.title)) emit("finding", f.title, { impact: f.impact, effort: f.effort });
       }
 
-      this.store.updateTask(task.id, { report: result.report, costUsd: result.costUsd });
+      // Add to, don't replace, what earlier interrupted runs of this task cost.
+      const costUsd = (this.store.getTask(task.id)?.costUsd ?? 0) + result.costUsd;
+      this.store.updateTask(task.id, { report: result.report, costUsd });
 
       // Hold for the operator whenever there's something for them to decide.
       const needsOperator =
@@ -242,8 +291,13 @@ export class Factory {
       this.log(`${agent.name} finished ${task.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (ac.signal.aborted || this.store.getTask(task.id)?.status === "cancelled") {
-        if (this.store.getTask(task.id)?.status !== "cancelled") this.store.setStatus(task.id, "cancelled", "Cancelled");
+      if (this.store.getTask(task.id)?.status === "cancelled") {
+        // The operator cancelled it; that's already recorded.
+      } else if (this.stopping) {
+        // The factory is stopping, not the operator. The next factory carries on with it.
+        this.requeue(task.id, STOPPED_MESSAGE);
+      } else if (ac.signal.aborted) {
+        this.store.setStatus(task.id, "cancelled", "Cancelled");
       } else {
         emit("error", message);
         this.store.setStatus(task.id, "failed", "Failed");

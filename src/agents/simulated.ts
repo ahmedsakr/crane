@@ -23,7 +23,14 @@ export class SimulatedDriver implements AgentDriver {
     if (ctx.job?.kind === "resolve_conflicts") return this.resolve(ctx, ctx.job.files);
     const { task, emit, signal } = ctx;
     const script = SCRIPTS[task.kind];
-    for (const [type, message] of script.steps) {
+    let steps = script.steps;
+    ctx.onSession?.(`sim-${task.id}`);
+    if (ctx.resumeSession) {
+      // A real agent keeps its history; this one just skips ahead to the second half.
+      emit("note", "Picking up where it left off before the restart.", { simulated: true });
+      steps = steps.slice(Math.floor(steps.length / 2));
+    }
+    for (const [type, message] of steps) {
       await sleep(this.stepMs * (0.6 + Math.random() * 0.8), signal);
       emit(type, message, { simulated: true });
     }
