@@ -43,3 +43,37 @@ test("history is bounded and blocked evidence survives noisy tool activity", () 
   assert.match(brief, /npm test refused/);
   assert.match(brief, /omitted/);
 });
+
+test("passing check logs are cut so they can't push out the agent's activity or later checks", () => {
+  const passingLog = (phase: string) =>
+    `${Array.from({ length: 700 }, (_, i) => `ok ${i + 1} - ${phase}: a test name long enough to fill`).join("\n")}\n# tests 700\n# pass 700\n# fail 0\n# duration_ms 1234\n`;
+  const run = (phase: "review" | "merge", status: "passed" | "failed", logs: string) =>
+    ({ phase, commit: `${phase}-commit`, command: "npm test", status, exitCode: status === "passed" ? 0 : 1, logs, durationMs: 4200 });
+  const review = run("review", "passed", passingLog("review"));
+  const merge = run("merge", "passed", passingLog("merge"));
+  assert.ok(review.logs.length > 30000 && merge.logs.length > 30000);
+  const failed = run("merge", "failed", `${"setup noise\n".repeat(1000)}not ok 7 - the real failure\n# fail 1\n`);
+  const task = {
+    id: "t-source", title: "Feature", brief: "Brief",
+    report: { summary: "Shipped", findings: [], changedFiles: [], validation: [review, failed, merge] },
+  } as unknown as Parameters<typeof postmortemBrief>[0];
+  const event = (id: number, message: string, data: Record<string, unknown> | null = null) =>
+    ({ id, taskId: task.id, ts: "now", type: "tool" as const, message, data });
+  const events = [
+    event(1, "earliest agent step"),
+    ...Array.from({ length: 20 }, (_, i) => event(i + 2, "x".repeat(1000))),
+    { ...event(30, "Review check passed: npm test", { validation: review }), type: "note" as const },
+    { ...event(31, "Merge check passed: npm test", { validation: merge }), type: "note" as const },
+  ];
+  const brief = postmortemBrief(task, events);
+  assert.match(brief, /earliest agent step/);
+  assert.doesNotMatch(brief, /Earlier or oversized events omitted/);
+  assert.doesNotMatch(brief, /a test name long enough/);
+  assert.match(brief, /# tests 700\\n# pass 700\\n# fail 0/);
+  const finalReport = brief.split("Final report:\n")[1]!.split("\n\nBlocked calls")[0]!;
+  assert.match(finalReport, /"phase":"merge","commit":"merge-commit","command":"npm test","status":"passed","exitCode":0/);
+  assert.match(finalReport, /"durationMs":4200\}\]/);
+  assert.match(finalReport, /not ok 7 - the real failure/);
+  assert.match(finalReport, /earlier characters omitted/);
+  assert.equal(task.report!.validation![0]!.logs, review.logs);
+});
