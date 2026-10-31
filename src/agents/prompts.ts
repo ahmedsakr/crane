@@ -65,6 +65,15 @@ export function userPrompt(task: Task, job?: AgentJob): string {
   return `# ${task.title}\n\n${task.brief}`;
 }
 
+/** What an agent is told when it picks its own session back up after the factory restarted. */
+export function resumePrompt(): string {
+  return [
+    "Crane restarted while you were working on this task, which stopped you mid-step. Your work so far is still in this directory.",
+    "Pick up where you left off. If you were in the middle of a command or an edit, check that it finished (`git status`, `git diff`, re-run the command) before moving on.",
+    `When you are finished, end your final message with the \`${REPORT_FENCE}\` block, as before.`,
+  ].join("\n\n");
+}
+
 function reportInstructions(): string {
   return [
     `When you are finished, end your final message with a fenced code block tagged \`${REPORT_FENCE}\` containing JSON with this shape:`,

@@ -48,6 +48,7 @@ function setup(opts: { remote?: boolean } = {}) {
     agentId: null,
     branch: "crane/add-line-t1",
     worktree: join(root, "wt"),
+    sessionId: null,
     report: null,
     costUsd: 0,
     createdAt: "",

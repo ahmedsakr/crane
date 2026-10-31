@@ -84,6 +84,8 @@ Agents run through [Claude Code](https://code.claude.com) in headless mode, usin
 | `crane pause` / `crane resume` | Stop or restart picking up new tasks |
 | `crane serve` | Run the factory: agents, API, and dashboard |
 
+You can stop or restart `crane serve` at any time, even while agents are working. Running tasks go back in the queue with their worktree and their agent's Claude Code session, and when the factory starts again each agent resumes its session where it stopped. Merges that were under way run again from the start, which is safe to repeat.
+
 ## Configuration
 
 | Variable | Default | |

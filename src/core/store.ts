@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   agent_id TEXT,
   branch TEXT,
   worktree TEXT,
+  session_id TEXT,
   report TEXT,
   cost_usd REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
@@ -96,6 +97,21 @@ function migrateMissionsToTasks(db: Database.Database) {
   }).immediate();
 }
 
+/** Columns added to `tasks` after its first release. */
+const ADDED_TASK_COLUMNS: [name: string, type: string][] = [["session_id", "TEXT"]];
+
+/** Add any missing columns to an older database. Safe if two processes open it at once. */
+function addMissingColumns(db: Database.Database) {
+  const missing = () => {
+    const have = new Set((db.prepare("PRAGMA table_info(tasks)").all() as Row[]).map((c) => c.name));
+    return ADDED_TASK_COLUMNS.filter(([name]) => !have.has(name));
+  };
+  if (!missing().length) return;
+  db.transaction(() => {
+    for (const [name, type] of missing()) db.exec(`ALTER TABLE tasks ADD COLUMN ${name} ${type}`);
+  }).immediate();
+}
+
 const now = () => new Date().toISOString();
 
 function toRepo(r: Row): Repo {
@@ -121,6 +137,7 @@ function toTask(r: Row): Task {
     agentId: (r.agent_id as string) ?? null,
     branch: (r.branch as string) ?? null,
     worktree: (r.worktree as string) ?? null,
+    sessionId: (r.session_id as string) ?? null,
     report: r.report ? (JSON.parse(r.report as string) as Report) : null,
     costUsd: (r.cost_usd as number) ?? 0,
     createdAt: r.created_at as string,
@@ -167,6 +184,7 @@ export class Store {
     this.db.pragma("foreign_keys = ON");
     migrateMissionsToTasks(this.db);
     this.db.exec(SCHEMA);
+    addMissingColumns(this.db);
   }
 
   close() {
@@ -271,6 +289,7 @@ export class Store {
       agentId: "agent_id",
       branch: "branch",
       worktree: "worktree",
+      sessionId: "session_id",
       report: "report",
       costUsd: "cost_usd",
       startedAt: "started_at",

@@ -32,8 +32,17 @@ export async function serve(store: Store, opts: { port: number; agents: number; 
   }
   console.log(`\n${ui.hint(['crane do "…"', "in another terminal, to give it work"])}\n`);
 
+  let stopping = false;
   const shutdown = async () => {
+    // A second Ctrl-C exits at once. The next factory still requeues whatever was running.
+    if (stopping) process.exit(130);
+    stopping = true;
+    const working = store.listTasks({ status: ["running"] }).length;
     console.log(ui.dim("\nStopping the factory…"));
+    if (working) {
+      const tasks = working === 1 ? "1 running task picks up where it" : `${working} running tasks pick up where they`;
+      console.log(ui.dim(`  ${tasks} left off when the factory starts again.`));
+    }
     await factory.stop();
     server.close();
     store.close();

@@ -9,6 +9,14 @@ export interface RunContext {
   emit: (type: EventType, message: string, data?: Record<string, unknown>) => void;
   /** Set when the run is a narrower job than working the task itself. */
   job?: AgentJob;
+  /**
+   * A session from an earlier run of this task that was interrupted, usually
+   * because the factory restarted. The driver continues it, with its history,
+   * instead of starting over. If it can't, it starts a fresh session.
+   */
+  resumeSession?: string;
+  /** Called with the driver's session id as soon as it has one, so an interrupted run can be resumed. */
+  onSession?: (sessionId: string) => void;
 }
 
 /**
