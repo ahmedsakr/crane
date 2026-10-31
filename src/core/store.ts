@@ -134,6 +134,17 @@ function migrateCostsToRuns(db: Database.Database) {
   }).immediate();
 }
 
+function migrateCostStatus(db: Database.Database) {
+  const has = () => (db.prepare("PRAGMA table_info(runs)").all() as Row[]).some((c) => c.name === "cost_status");
+  if (has()) return;
+  db.transaction(() => {
+    if (has()) return;
+    db.exec("ALTER TABLE runs ADD COLUMN cost_status TEXT NOT NULL DEFAULT 'unknown'");
+    // Historical Codex zeros were placeholders, never evidence of free usage.
+    db.exec("UPDATE runs SET cost_status = 'reported' WHERE cost_usd > 0 OR (driver != 'codex' AND turns > 0)");
+  }).immediate();
+}
+
 /**
  * Crane used to call tasks "missions". Rename the old tables and columns in
  * place so existing history, ids, and branches carry over. Runs inside an
@@ -236,6 +247,7 @@ function toRun(r: Row): AgentRun {
     model: (r.model as string) ?? null,
     outcome: r.outcome as RunOutcome,
     costUsd: r.cost_usd as number,
+    costStatus: r.cost_status as RunUsage["costStatus"],
     inputTokens: r.input_tokens as number,
     outputTokens: r.output_tokens as number,
     cacheReadTokens: r.cache_read_tokens as number,
@@ -291,6 +303,7 @@ export class Store {
     this.db.exec(SCHEMA);
     addMissingColumns(this.db);
     migrateCostsToRuns(this.db);
+    migrateCostStatus(this.db);
   }
 
   close() {
@@ -612,14 +625,15 @@ export class Store {
   finishRun(id: number, outcome: Exclude<RunOutcome, "running">, usage: RunUsage | null) {
     const u = usage ?? { costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turns: 0, model: null };
     const cost = Number.isFinite(u.costUsd) && u.costUsd > 0 ? u.costUsd : 0;
+    const costStatus = !usage || !Number.isFinite(u.costUsd) || u.costUsd < 0 ? "unknown" : u.costStatus ?? "reported";
     this.db.transaction(() => {
       const run = this.db
         .prepare(
           `UPDATE runs SET outcome = ?, finished_at = ?, cost_usd = ?, input_tokens = ?, output_tokens = ?,
-             cache_read_tokens = ?, cache_write_tokens = ?, turns = ?, model = COALESCE(?, model)
+             cache_read_tokens = ?, cache_write_tokens = ?, turns = ?, model = COALESCE(?, model), cost_status = ?
            WHERE id = ? AND outcome = 'running' RETURNING task_id`,
         )
-        .get(outcome, now(), cost, u.inputTokens, u.outputTokens, u.cacheReadTokens, u.cacheWriteTokens, u.turns, u.model, id) as
+        .get(outcome, now(), cost, u.inputTokens, u.outputTokens, u.cacheReadTokens, u.cacheWriteTokens, u.turns, u.model, costStatus, id) as
         | Row
         | undefined;
       // Already closed (say, by a restarted factory): don't count its cost twice.
@@ -627,7 +641,7 @@ export class Store {
     })();
   }
 
-  /** Runs a dead factory left open. Their cost is unknown, so they close at zero. */
+  /** Runs a dead factory left open retain their unknown cost status. */
   closeStaleRuns(): number {
     return this.db.prepare("UPDATE runs SET outcome = 'cancelled', finished_at = ? WHERE outcome = 'running'").run(now()).changes;
   }
@@ -652,7 +666,7 @@ export class Store {
     const prevFrom = localDayStart(nowMs, 2 * days - 1);
     const rows = this.db
       .prepare(
-        `SELECT r.task_id, r.driver, r.cost_usd, r.input_tokens, r.output_tokens, r.cache_read_tokens, r.cache_write_tokens,
+        `SELECT r.task_id, r.driver, r.cost_usd, r.cost_status, r.input_tokens, r.output_tokens, r.cache_read_tokens, r.cache_write_tokens,
                 r.finished_at, t.title, t.status, t.kind, t.repo_id
          FROM runs r JOIN tasks t ON t.id = r.task_id
          WHERE r.outcome != 'running' AND r.finished_at >= ?`,
@@ -668,6 +682,7 @@ export class Store {
     let spendUsd = 0;
     let prevSpendUsd = 0;
     let runs = 0;
+    let unknownCostRuns = 0;
 
     for (const r of rows) {
       const at = Date.parse(r.finished_at as string);
@@ -678,6 +693,7 @@ export class Store {
       }
       spendUsd += usd;
       runs++;
+      if (r.cost_status === "unknown") unknownCostRuns++;
       tokens.input += r.input_tokens as number;
       tokens.output += r.output_tokens as number;
       tokens.cacheRead += r.cache_read_tokens as number;
@@ -731,6 +747,7 @@ export class Store {
       from: iso(from),
       to: iso(nowMs),
       spendUsd,
+      unknownCostRuns,
       prevSpendUsd,
       runs,
       tasks: tasks.length,

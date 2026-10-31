@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/core/store.js";
 import { usageFromResult } from "../src/agents/claude-code.js";
+import { usageFromTurn } from "../src/agents/codex.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import type { AgentDriver, RunContext, RunResult } from "../src/agents/driver.js";
 import type { RunUsage } from "../src/core/types.js";
@@ -165,7 +166,7 @@ test("analytics: buckets spend by local day and compares with the span before", 
   store.close();
 });
 
-test("analytics: attributes spend to each run's agent, including zero-cost agents", () => {
+test("analytics: attributes spend to each run's agent, including Codex estimates", () => {
   const store = tmpStore();
   assert.deepEqual(store.analytics().byAgent, []);
   const t = store.createTask({ kind: "maintenance", title: "Switch agents", brief: "", autonomy: "observe", driver: "codex" });
@@ -176,7 +177,8 @@ test("analytics: attributes spend to each run's agent, including zero-cost agent
   };
   finish("claude-code", 2);
   finish("claude-code", 0.5, "resolve_conflicts");
-  finish("codex", 0);
+  const codexRun = store.startRun({ taskId: t.id, kind: "work", agentId: null, driver: "codex" });
+  store.finishRun(codexRun, "succeeded", usageFromTurn({ input_tokens: 1_000_000, cached_input_tokens: 0, output_tokens: 0 }, "gpt-5.3-codex"));
   finish("unknown", 0.25);
   const old = finish("claude-code", 8);
   store.db.prepare("UPDATE runs SET finished_at = ? WHERE id = ?").run(new Date(Date.now() - 40 * 86400000).toISOString(), old);
@@ -184,8 +186,8 @@ test("analytics: attributes spend to each run's agent, including zero-cost agent
   const a = store.analytics();
   assert.deepEqual(a.byAgent, [
     { driver: "claude-code", usd: 2.5, tasks: 1 },
+    { driver: "codex", usd: 1.75, tasks: 1 },
     { driver: "unknown", usd: 0.25, tasks: 1 },
-    { driver: "codex", usd: 0, tasks: 1 },
   ]);
   assert.equal(a.byAgent.reduce((sum, row) => sum + row.usd, 0), a.spendUsd);
   assert.equal(a.tasks, 1);

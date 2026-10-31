@@ -304,9 +304,11 @@ export type RunOutcome = "running" | "succeeded" | "failed" | "cancelled";
 export interface RunUsage {
   /**
    * The driver's own figure, at API prices. On a subscription it's an estimate,
-   * not a bill. Zero when the driver reports tokens only (Codex).
+   * not a bill. The known subtotal when costStatus is unknown.
    */
   costUsd: number;
+  /** Omitted by drivers that report their own cost. Unknown can include a known subtotal. */
+  costStatus?: "reported" | "estimated" | "unknown";
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -351,6 +353,8 @@ export interface Analytics {
   from: string;
   to: string;
   spendUsd: number;
+  /** Runs whose cost is missing in whole or in part; excluded amounts are not free. */
+  unknownCostRuns: number;
   /** The same number of days just before `from`. */
   prevSpendUsd: number;
   runs: number;
