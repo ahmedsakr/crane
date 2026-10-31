@@ -4,10 +4,10 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { Store } from "../core/store.js";
-import type { MissionStatus, NewMission } from "../core/types.js";
+import type { TaskStatus, NewTask } from "../core/types.js";
 import { OperatorActions } from "../factory/actions.js";
-import { draftMission } from "../factory/instruct.js";
-import { diffForMission } from "../factory/git.js";
+import { draftTask } from "../factory/instruct.js";
+import { diffForTask } from "../factory/git.js";
 import { factoryDriverName, factoryIsRunning } from "../factory/orchestrator.js";
 import { factoryRoot } from "../core/paths.js";
 
@@ -27,29 +27,29 @@ export function createApp(store: Store) {
 
   api.get("/overview", (c) => c.json(store.overview(factoryState())));
 
-  api.get("/missions", (c) => {
-    const status = c.req.query("status")?.split(",").filter(Boolean) as MissionStatus[] | undefined;
+  api.get("/tasks", (c) => {
+    const status = c.req.query("status")?.split(",").filter(Boolean) as TaskStatus[] | undefined;
     const repoId = c.req.query("repo") || undefined;
-    return c.json(store.listMissions({ status, repoId }));
+    return c.json(store.listTasks({ status, repoId }));
   });
 
-  api.get("/missions/:id", (c) => {
-    const m = store.getMission(c.req.param("id"));
+  api.get("/tasks/:id", (c) => {
+    const m = store.getTask(c.req.param("id"));
     if (!m) return c.json({ error: "Not found" }, 404);
     const repo = m.repoId ? store.getRepo(m.repoId) : null;
     const agent = m.agentId ? store.listAgents().find((a) => a.id === m.agentId) ?? null : null;
-    return c.json({ mission: m, repo, agent, events: store.listEvents(m.id) });
+    return c.json({ task: m, repo, agent, events: store.listEvents(m.id) });
   });
 
-  api.get("/missions/:id/diff", async (c) => {
-    const m = store.getMission(c.req.param("id"));
+  api.get("/tasks/:id/diff", async (c) => {
+    const m = store.getTask(c.req.param("id"));
     const repo = m?.repoId ? store.getRepo(m.repoId) : null;
     if (!m || !repo) return c.json({ diff: "" });
-    return c.json({ diff: await diffForMission(repo, m) });
+    return c.json({ diff: await diffForTask(repo, m) });
   });
 
-  /** Live events for one mission, or for the whole factory when id is "all". */
-  api.get("/missions/:id/stream", (c) => {
+  /** Live events for one task, or for the whole factory when id is "all". */
+  api.get("/tasks/:id/stream", (c) => {
     const id = c.req.param("id");
     let cursor = Number(c.req.query("after") ?? (id === "all" ? store.latestEventId() : 0));
     return streamSSE(c, async (stream) => {
@@ -70,25 +70,25 @@ export function createApp(store: Store) {
 
   api.post("/instruct/draft", async (c) => {
     const { text } = await c.req.json<{ text: string }>();
-    return c.json(draftMission(text ?? "", store.listRepos(), { lastRepoId: store.getSetting("last_repo") }));
+    return c.json(draftTask(text ?? "", store.listRepos(), { lastRepoId: store.getSetting("last_repo") }));
   });
 
-  api.post("/missions", async (c) => {
-    const body = await c.req.json<NewMission>();
-    return c.json(actions.createMission(body), 201);
+  api.post("/tasks", async (c) => {
+    const body = await c.req.json<NewTask>();
+    return c.json(actions.createTask(body), 201);
   });
 
-  api.post("/missions/:id/approve", async (c) => {
+  api.post("/tasks/:id/approve", async (c) => {
     const { note } = await c.req.json<{ note?: string }>().catch(() => ({ note: undefined }));
     return c.json(await actions.approve(c.req.param("id"), note));
   });
-  api.post("/missions/:id/reject", async (c) => {
+  api.post("/tasks/:id/reject", async (c) => {
     const { note } = await c.req.json<{ note?: string }>().catch(() => ({ note: undefined }));
     return c.json(await actions.reject(c.req.param("id"), note));
   });
-  api.post("/missions/:id/cancel", (c) => c.json(actions.cancel(c.req.param("id"))));
-  api.post("/missions/:id/retry", (c) => c.json(actions.retry(c.req.param("id")), 201));
-  api.post("/missions/:id/follow-up", async (c) => {
+  api.post("/tasks/:id/cancel", (c) => c.json(actions.cancel(c.req.param("id"))));
+  api.post("/tasks/:id/retry", (c) => c.json(actions.retry(c.req.param("id")), 201));
+  api.post("/tasks/:id/follow-up", async (c) => {
     const { finding } = await c.req.json<{ finding: number }>();
     return c.json(actions.followUp(c.req.param("id"), finding), 201);
   });

@@ -2,11 +2,11 @@ import { Command } from "commander";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { Store } from "../core/store.js";
-import { AUTONOMY_LABEL, KIND_LABEL, type Autonomy, type MissionKind, type MissionStatus } from "../core/types.js";
+import { AUTONOMY_LABEL, KIND_LABEL, type Autonomy, type TaskKind, type TaskStatus } from "../core/types.js";
 import { OperatorActions } from "../factory/actions.js";
-import { draftMission } from "../factory/instruct.js";
+import { draftTask } from "../factory/instruct.js";
 import { factoryDriverName, factoryIsRunning } from "../factory/orchestrator.js";
-import { diffForMission } from "../factory/git.js";
+import { diffForTask } from "../factory/git.js";
 import { DEFAULT_PORT } from "../core/paths.js";
 import * as ui from "./ui.js";
 
@@ -46,11 +46,11 @@ program.action(() => {
 
   if (o.needsReview.length) {
     console.log(ui.section(ui.accent("Needs you"), o.needsReview.length));
-    for (const m of o.needsReview.slice(0, 5)) console.log(ui.missionLine(m, repoName(m.repoId)));
+    for (const m of o.needsReview.slice(0, 5)) console.log(ui.taskLine(m, repoName(m.repoId)));
   }
   if (o.inFlight.length) {
     console.log(ui.section("In flight", o.inFlight.length));
-    for (const m of o.inFlight.slice(0, 5)) console.log(ui.missionLine(m, repoName(m.repoId)));
+    for (const m of o.inFlight.slice(0, 5)) console.log(ui.taskLine(m, repoName(m.repoId)));
   }
   if (!o.needsReview.length && !o.inFlight.length) {
     console.log(`\n  ${ui.dim("Nothing needs you and nothing is running.")}`);
@@ -77,8 +77,8 @@ program
   .option("-k, --kind <kind>", "maintenance | repo_feature | factory_feature")
   .option("-a, --autonomy <level>", "observe | propose | act")
   .option("-y, --yes", "skip the confirmation step")
-  .action(async (words: string[], opts: { repo?: string; kind?: MissionKind; autonomy?: Autonomy; yes?: boolean }) => {
-    p.intro(`${ui.accent("▟")} ${pc.bold("New mission")}`);
+  .action(async (words: string[], opts: { repo?: string; kind?: TaskKind; autonomy?: Autonomy; yes?: boolean }) => {
+    p.intro(`${ui.accent("▟")} ${pc.bold("New task")}`);
     let text = words.join(" ").trim();
     if (!text) {
       const answer = await p.text({
@@ -91,7 +91,7 @@ program
     }
 
     const repos = store.listRepos();
-    const draft = draftMission(text, repos, { lastRepoId: store.getSetting("last_repo") });
+    const draft = draftTask(text, repos, { lastRepoId: store.getSetting("last_repo") });
     if (opts.repo) {
       const r = store.getRepo(opts.repo);
       if (!r) ui.fail(`No repo called ${opts.repo}. See \`crane repos\`.`);
@@ -128,7 +128,7 @@ program
       const next = await p.select({
         message: "Start it?",
         options: [
-          { value: "go", label: "Start mission" },
+          { value: "go", label: "Start task" },
           { value: "autonomy", label: "Change how much freedom it has" },
           { value: "kind", label: "Change the type" },
           { value: "stop", label: "Don't start" },
@@ -152,17 +152,17 @@ program
         const k = await p.select({
           message: "What type of work?",
           initialValue: draft.kind,
-          options: (Object.keys(KIND_LABEL) as MissionKind[]).map((k) => ({ value: k, label: KIND_LABEL[k] })),
+          options: (Object.keys(KIND_LABEL) as TaskKind[]).map((k) => ({ value: k, label: KIND_LABEL[k] })),
         });
         if (p.isCancel(k)) return p.cancel("Nothing was created.");
-        draft.kind = k as MissionKind;
+        draft.kind = k as TaskKind;
       }
     }
 
     try {
-      const m = actions.createMission(draft);
+      const m = actions.createTask(draft);
       p.outro(
-        `${pc.green("✓")} Mission started  ${ui.dim(m.id)}\n   ${ui.dim("follow along:")} crane watch ${m.id}${
+        `${pc.green("✓")} Task started  ${ui.dim(m.id)}\n   ${ui.dim("follow along:")} crane watch ${m.id}${
           factoryIsRunning(store) ? "" : `\n   ${ui.accent("!")} The factory is off. Run ${pc.bold("crane serve")} to start the agents.`
         }`,
       );
@@ -171,34 +171,35 @@ program
     }
   });
 
-// ── crane missions ──────────────────────────────────────────
+// ── crane tasks ─────────────────────────────────────────────
 program
-  .command("missions")
-  .alias("ls")
-  .description("List missions (open ones by default)")
-  .option("-a, --all", "include finished missions")
+  .command("tasks")
+  // `missions` is the old name, kept so muscle memory still works.
+  .aliases(["ls", "missions"])
+  .description("List tasks (open ones by default)")
+  .option("-a, --all", "include finished tasks")
   .option("-s, --status <statuses>", "comma-separated, e.g. needs_review,failed")
   .option("-r, --repo <repo>", "only this repo")
   .action((opts: { all?: boolean; status?: string; repo?: string }) => {
     const status = opts.status
-      ? (opts.status.split(",") as MissionStatus[])
+      ? (opts.status.split(",") as TaskStatus[])
       : opts.all
         ? undefined
-        : (["needs_review", "running", "queued"] as MissionStatus[]);
+        : (["needs_review", "running", "queued"] as TaskStatus[]);
     const repoId = opts.repo ? store.getRepo(opts.repo)?.id : undefined;
-    const list = store.listMissions({ status, repoId, limit: 50 });
+    const list = store.listTasks({ status, repoId, limit: 50 });
     if (!list.length) {
-      console.log(`\n  ${ui.dim(opts.all ? "No missions yet." : "No open missions.")}  ${ui.dim("Start one with")} crane do "…"\n`);
+      console.log(`\n  ${ui.dim(opts.all ? "No tasks yet." : "No open tasks.")}  ${ui.dim("Start one with")} crane do "…"\n`);
       return;
     }
-    const groups = new Map<MissionStatus, typeof list>();
+    const groups = new Map<TaskStatus, typeof list>();
     for (const m of list) groups.set(m.status, [...(groups.get(m.status) ?? []), m]);
-    const order: MissionStatus[] = ["needs_review", "running", "queued", "failed", "done", "approved", "rejected", "cancelled"];
+    const order: TaskStatus[] = ["needs_review", "running", "queued", "failed", "done", "approved", "rejected", "cancelled"];
     for (const s of order) {
       const g = groups.get(s);
       if (!g) continue;
       console.log(ui.section(ui.statusText(s), g.length));
-      for (const m of g) console.log(ui.missionLine(m, repoName(m.repoId)));
+      for (const m of g) console.log(ui.taskLine(m, repoName(m.repoId)));
     }
     console.log("");
   });
@@ -206,11 +207,11 @@ program
 // ── crane show ──────────────────────────────────────────────
 program
   .command("show")
-  .description("Show a mission: what it found and what it needs from you")
+  .description("Show a task: what it found and what it needs from you")
   .argument("<id>")
   .option("-e, --events", "show the full activity log")
   .action((id: string, opts: { events?: boolean }) => {
-    const m = store.getMission(id) ?? ui.fail(`No mission ${id}`);
+    const m = store.getTask(id) ?? ui.fail(`No task ${id}`);
     console.log(`\n${ui.statusDot(m.status)} ${pc.bold(m.title)}`);
     console.log(
       ui.dim(
@@ -261,10 +262,10 @@ program
 // ── crane watch ─────────────────────────────────────────────
 program
   .command("watch")
-  .description("Follow a mission, or the whole factory, live")
-  .argument("[id]", "mission id; omit to watch everything")
+  .description("Follow a task, or the whole factory, live")
+  .argument("[id]", "task id; omit to watch everything")
   .action(async (id?: string) => {
-    const m = id ? store.getMission(id) ?? ui.fail(`No mission ${id}`) : null;
+    const m = id ? store.getTask(id) ?? ui.fail(`No task ${id}`) : null;
     console.log(`\n${ui.brand()}  ${m ? pc.bold(m.title) : "Watching the factory"}  ${ui.dim("ctrl-c to stop")}\n`);
     let cursor = 0;
     if (m) {
@@ -280,13 +281,13 @@ program
       const events = m ? store.listEvents(m.id, cursor) : store.eventsSince(cursor);
       for (const e of events) {
         if (!m) {
-          if (!titles.has(e.missionId)) titles.set(e.missionId, store.getMission(e.missionId)?.title ?? e.missionId);
-          console.log(`${ui.dim(ui.truncate(titles.get(e.missionId)!, 22).padEnd(22))} ${ui.eventLine(e)}`);
+          if (!titles.has(e.taskId)) titles.set(e.taskId, store.getTask(e.taskId)?.title ?? e.taskId);
+          console.log(`${ui.dim(ui.truncate(titles.get(e.taskId)!, 22).padEnd(22))} ${ui.eventLine(e)}`);
         } else console.log(ui.eventLine(e));
         cursor = e.id;
       }
       if (m) {
-        const now = store.getMission(m.id)!;
+        const now = store.getTask(m.id)!;
         if (!["queued", "running"].includes(now.status)) {
           console.log(`\n${ui.statusDot(now.status)} ${ui.statusText(now.status)}  ${ui.dim(`crane show ${m.id}`)}\n`);
           return;
@@ -302,7 +303,7 @@ const act = (name: string, desc: string, fn: (id: string, note?: string) => Prom
     .command(name)
     .description(desc)
     .argument("<id>")
-    .option("-m, --message <note>", "leave a note on the mission")
+    .option("-m, --message <note>", "leave a note on the task")
     .action(async (id: string, opts: { message?: string }) => {
       try {
         await fn(id, opts.message);
@@ -312,13 +313,13 @@ const act = (name: string, desc: string, fn: (id: string, note?: string) => Prom
       }
     });
 
-act("approve", "Approve a mission that's waiting for you", (id, n) => actions.approve(id, n), "Approved");
-act("decline", "Decline a mission and discard its branch", (id, n) => actions.reject(id, n), "Declined");
-act("cancel", "Stop a queued or running mission", (id) => actions.cancel(id), "Cancelled");
+act("approve", "Approve a task that's waiting for you", (id, n) => actions.approve(id, n), "Approved");
+act("decline", "Decline a task and discard its branch", (id, n) => actions.reject(id, n), "Declined");
+act("cancel", "Stop a queued or running task", (id) => actions.cancel(id), "Cancelled");
 
 program
   .command("retry")
-  .description("Run a mission again from scratch")
+  .description("Run a task again from scratch")
   .argument("<id>")
   .action((id: string) => {
     try {
@@ -331,7 +332,7 @@ program
 
 program
   .command("follow-up")
-  .description("Turn a finding into a mission that makes the change")
+  .description("Turn a finding into a task that makes the change")
   .argument("<id>")
   .argument("<finding>", "finding number, as shown in crane show")
   .action((id: string, n: string) => {
@@ -345,13 +346,13 @@ program
 
 program
   .command("diff")
-  .description("Show the changes a mission made on its branch")
+  .description("Show the changes a task made on its branch")
   .argument("<id>")
   .action(async (id: string) => {
-    const m = store.getMission(id) ?? ui.fail(`No mission ${id}`);
+    const m = store.getTask(id) ?? ui.fail(`No task ${id}`);
     const repo = m.repoId ? store.getRepo(m.repoId) : null;
-    if (!repo || !m.branch) ui.fail("This mission didn't change any code.");
-    const diff = await diffForMission(repo, m);
+    if (!repo || !m.branch) ui.fail("This task didn't change any code.");
+    const diff = await diffForTask(repo, m);
     if (!diff) return console.log(ui.dim("No changes."));
     for (const line of diff.split("\n")) {
       console.log(
@@ -374,7 +375,7 @@ repos.action(() => {
   const list = store.listRepos();
   console.log(ui.section("Repos", list.length));
   for (const r of list) {
-    const open = store.listMissions({ repoId: r.id, status: ["queued", "running", "needs_review"] }).length;
+    const open = store.listTasks({ repoId: r.id, status: ["queued", "running", "needs_review"] }).length;
     console.log(
       `  ${r.isFactory ? ui.accent("▟") : pc.dim("■")} ${pc.bold(r.name.padEnd(24))} ${ui.dim(r.path)}${
         open ? `  ${open} open` : ""
@@ -392,7 +393,7 @@ repos
     try {
       const r = await actions.connectRepo(path, opts.name);
       ui.ok(`Connected ${pc.bold(r.name)}  ${ui.dim(`${r.path} · ${r.defaultBranch}`)}`);
-      console.log(ui.hint([`crane do "investigate open maintenance work in ${r.name}"`, "a good first mission"]));
+      console.log(ui.hint([`crane do "investigate open maintenance work in ${r.name}"`, "a good first task"]));
     } catch (err) {
       ui.fail((err as Error).message);
     }
@@ -400,7 +401,7 @@ repos
 repos
   .command("remove")
   .alias("rm")
-  .description("Disconnect a repo (its missions are kept)")
+  .description("Disconnect a repo (its tasks are kept)")
   .argument("<repo>")
   .action((name: string) => {
     const r = store.getRepo(name) ?? ui.fail(`No repo ${name}`);
@@ -418,13 +419,13 @@ program
     const list = store.listAgents();
     console.log(ui.section("Crew", list.length));
     if (!list.length) console.log(`  ${ui.dim("No agents yet. They clock in when you run")} crane serve`);
-    for (const a of list) console.log(ui.agentLine(a, a.missionId ? store.getMission(a.missionId)?.title : undefined));
+    for (const a of list) console.log(ui.agentLine(a, a.taskId ? store.getTask(a.taskId)?.title : undefined));
     console.log("");
   });
 
 program
   .command("pause")
-  .description("Stop picking up new missions (current work finishes)")
+  .description("Stop picking up new tasks (current work finishes)")
   .action(() => {
     actions.pause();
     ui.ok("Factory paused. Agents will finish what they're doing, then wait.");
@@ -432,7 +433,7 @@ program
 
 program
   .command("resume")
-  .description("Start picking up missions again")
+  .description("Start picking up tasks again")
   .action(() => {
     actions.resume();
     ui.ok("Factory resumed.");

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useApp } from "../App";
 import { api } from "../lib/api";
 import { usePoll, useTick } from "../lib/hooks";
-import { Empty, MissionRow } from "../components/bits";
+import { Empty, TaskRow } from "../components/bits";
 
 const FILTERS = [
   { key: "open", label: "Open", status: "needs_review,running,queued" },
@@ -12,18 +12,18 @@ const FILTERS = [
   { key: "all", label: "All", status: "" },
 ] as const;
 
-export function Missions() {
+export function Tasks() {
   const { overview, instruct } = useApp();
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>("open");
   const status = FILTERS.find((f) => f.key === filter)!.status;
-  const { data } = usePoll(() => api.missions(status), 2500, [status]);
+  const { data } = usePoll(() => api.tasks(status), 2500, [status]);
   useTick();
   const repoName = (id: string | null) => overview?.repos.find((r) => r.id === id)?.name;
 
   return (
     <>
       <div className="page-head">
-        <h1 className="page-title">Missions</h1>
+        <h1 className="page-title">Tasks</h1>
         <div className="segmented" role="group" aria-label="Filter">
           {FILTERS.map((f) => (
             <button key={f.key} aria-pressed={filter === f.key} onClick={() => setFilter(f.key)}>
@@ -38,15 +38,15 @@ export function Missions() {
         ) : data.length ? (
           <ul className="rows card" style={{ padding: "0 16px" }}>
             {data.map((m) => (
-              <MissionRow key={m.id} m={m} repoName={repoName(m.repoId)} />
+              <TaskRow key={m.id} m={m} repoName={repoName(m.repoId)} />
             ))}
           </ul>
         ) : (
           <Empty
-            title={filter === "open" ? "Nothing open" : "No missions here"}
+            title={filter === "open" ? "Nothing open" : "No tasks here"}
             action={
               <button className="btn btn-primary" onClick={() => instruct()}>
-                Start a mission
+                Start a task
               </button>
             }
           >

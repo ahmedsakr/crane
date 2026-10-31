@@ -1,14 +1,14 @@
 /**
  * Crane's domain model.
  *
- * The operator (a human) issues Missions. Agents pick missions up and work them
+ * The operator (a human) issues Tasks. Agents pick tasks up and work them
  * inside a target Repo. What comes back is a stream of Events and, at the end,
  * a Report with Findings. Anything that would change code is held behind the
- * mission's autonomy level so the operator stays in control.
+ * task's autonomy level so the operator stays in control.
  */
 
-/** What kind of work a mission is. */
-export type MissionKind =
+/** What kind of work a task is. */
+export type TaskKind =
   /** Keep an existing codebase healthy: bugs, flaky tests, deps, security, cleanup. */
   | "maintenance"
   /** Research or build a new capability into a target repo. */
@@ -25,7 +25,7 @@ export type MissionKind =
  */
 export type Autonomy = "observe" | "propose" | "act";
 
-export type MissionStatus =
+export type TaskStatus =
   | "queued"
   | "running"
   | "needs_review"
@@ -35,15 +35,15 @@ export type MissionStatus =
   | "failed"
   | "cancelled";
 
-export const ACTIVE_STATUSES: MissionStatus[] = ["queued", "running"];
-export const TERMINAL_STATUSES: MissionStatus[] = ["approved", "rejected", "done", "failed", "cancelled"];
+export const ACTIVE_STATUSES: TaskStatus[] = ["queued", "running"];
+export const TERMINAL_STATUSES: TaskStatus[] = ["approved", "rejected", "done", "failed", "cancelled"];
 
 export interface Repo {
   id: string;
   name: string;
   path: string;
   defaultBranch: string;
-  /** True for the repo Crane itself lives in, used for factory_feature missions. */
+  /** True for the repo Crane itself lives in, used for factory_feature tasks. */
   isFactory: boolean;
   addedAt: string;
 }
@@ -64,14 +64,14 @@ export interface Report {
   changedFiles: string[];
 }
 
-export interface Mission {
+export interface Task {
   id: string;
-  kind: MissionKind;
+  kind: TaskKind;
   title: string;
   brief: string;
   repoId: string | null;
   autonomy: Autonomy;
-  status: MissionStatus;
+  status: TaskStatus;
   agentId: string | null;
   branch: string | null;
   worktree: string | null;
@@ -90,9 +90,9 @@ export type EventType =
   | "error"
   | "operator"; // something the operator did
 
-export interface MissionEvent {
+export interface TaskEvent {
   id: number;
-  missionId: string;
+  taskId: string;
   ts: string;
   type: EventType;
   message: string;
@@ -105,14 +105,14 @@ export interface Agent {
   id: string;
   name: string;
   state: AgentState;
-  missionId: string | null;
+  taskId: string | null;
   driver: string;
-  missionsCompleted: number;
+  tasksCompleted: number;
   lastActiveAt: string | null;
 }
 
-export interface NewMission {
-  kind: MissionKind;
+export interface NewTask {
+  kind: TaskKind;
   title: string;
   brief: string;
   repoId: string | null;
@@ -125,20 +125,20 @@ export interface Overview {
     paused: boolean;
     driver: string;
   };
-  counts: Record<MissionStatus, number>;
+  counts: Record<TaskStatus, number>;
   shippedThisWeek: number;
   shippedLastWeek: number;
   spendThisWeekUsd: number;
-  /** One bucket per hour for the last 7 days: completed missions and agent events. */
+  /** One bucket per hour for the last 7 days: completed tasks and agent events. */
   activity: { t: string; done: number; events: number }[];
-  needsReview: Mission[];
-  inFlight: Mission[];
-  recent: Mission[];
+  needsReview: Task[];
+  inFlight: Task[];
+  recent: Task[];
   agents: Agent[];
-  repos: (Repo & { openMissions: number })[];
+  repos: (Repo & { openTasks: number })[];
 }
 
-export const KIND_LABEL: Record<MissionKind, string> = {
+export const KIND_LABEL: Record<TaskKind, string> = {
   maintenance: "Maintenance",
   repo_feature: "Repo feature",
   factory_feature: "Factory feature",
@@ -150,7 +150,7 @@ export const AUTONOMY_LABEL: Record<Autonomy, string> = {
   act: "Change on a branch",
 };
 
-export const STATUS_LABEL: Record<MissionStatus, string> = {
+export const STATUS_LABEL: Record<TaskStatus, string> = {
   queued: "Queued",
   running: "Working",
   needs_review: "Needs you",

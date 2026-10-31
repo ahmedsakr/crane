@@ -538,7 +538,7 @@ button {
   color: var(--ink);
 }
 
-/* ── mission rows ───────────────────────────────────────── */
+/* ── task rows ──────────────────────────────────────────── */
 .rows {
   list-style: none;
   margin: 0;
@@ -765,7 +765,7 @@ a.row:hover .row-title {
   color: var(--concrete);
 }
 
-/* ── mission detail ─────────────────────────────────────── */
+/* ── task detail ────────────────────────────────────────── */
 .back {
   display: inline-flex;
   align-items: center;

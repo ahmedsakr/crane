@@ -1,5 +1,5 @@
 import type { Store } from "../core/store.js";
-import type { Mission } from "../core/types.js";
+import type { Task } from "../core/types.js";
 import type { AgentDriver } from "../agents/driver.js";
 import { createWorktree, finalizeWorktree, installDependencies } from "./git.js";
 
@@ -25,12 +25,12 @@ export function factoryDriverName(store: Store): string {
 
 /**
  * The factory floor. Keeps a crew of agents busy: each idle agent claims the
- * oldest queued mission, works it through the driver, and files the result.
+ * oldest queued task, works it through the driver, and files the result.
  * State lives in the store, so the CLI and UI can steer it from anywhere.
  */
 export class Factory {
   private timer: NodeJS.Timeout | null = null;
-  private running = new Map<string, AbortController>(); // missionId -> abort
+  private running = new Map<string, AbortController>(); // taskId -> abort
   private busy = new Set<string>(); // agentIds
   private crew: { id: string; name: string }[];
   private tickMs: number;
@@ -55,9 +55,9 @@ export class Factory {
     this.store.pruneAgents(this.crew.map((a) => a.id));
     this.store.setSetting(DRIVER_KEY, this.driver.name);
 
-    // A previous factory may have died mid-mission. Put its work back in the queue.
-    for (const m of this.store.listMissions({ status: ["running"] })) {
-      this.store.updateMission(m.id, { status: "queued", agentId: null });
+    // A previous factory may have died mid-task. Put its work back in the queue.
+    for (const m of this.store.listTasks({ status: ["running"] })) {
+      this.store.updateTask(m.id, { status: "queued", agentId: null });
       this.store.addEvent(m.id, "status", "Re-queued after the factory restarted", { status: "queued" });
     }
 
@@ -76,8 +76,8 @@ export class Factory {
     this.store.setSetting(HEARTBEAT_KEY, String(Date.now()));
 
     // Honour cancellations made from another process (e.g. the CLI).
-    for (const [missionId, ac] of this.running) {
-      if (this.store.getMission(missionId)?.status === "cancelled") ac.abort();
+    for (const [taskId, ac] of this.running) {
+      if (this.store.getTask(taskId)?.status === "cancelled") ac.abort();
     }
 
     const paused = this.store.isPaused();
@@ -85,30 +85,30 @@ export class Factory {
       if (this.busy.has(agent.id)) continue;
       this.store.setAgentState(agent.id, paused ? "paused" : "idle", null);
       if (paused) continue;
-      const mission = this.store.claimNextMission(agent.id);
-      if (!mission) continue;
+      const task = this.store.claimNextTask(agent.id);
+      if (!task) continue;
       this.busy.add(agent.id);
-      this.work(agent, mission).finally(() => this.busy.delete(agent.id));
+      this.work(agent, task).finally(() => this.busy.delete(agent.id));
     }
   }
 
-  private async work(agent: { id: string; name: string }, mission: Mission) {
+  private async work(agent: { id: string; name: string }, task: Task) {
     const ac = new AbortController();
-    this.running.set(mission.id, ac);
-    this.store.setAgentState(agent.id, "working", mission.id);
-    this.log(`${agent.name} picked up ${mission.id} · ${mission.title}`);
+    this.running.set(task.id, ac);
+    this.store.setAgentState(agent.id, "working", task.id);
+    this.log(`${agent.name} picked up ${task.id} · ${task.title}`);
     const emit = (type: Parameters<Store["addEvent"]>[1], message: string, data?: Record<string, unknown>) =>
-      this.store.addEvent(mission.id, type, message, data ?? null);
+      this.store.addEvent(task.id, type, message, data ?? null);
 
     try {
-      const repo = mission.repoId ? this.store.getRepo(mission.repoId) : null;
-      if (!repo) throw new Error("This mission has no repo to work in");
+      const repo = task.repoId ? this.store.getRepo(task.repoId) : null;
+      if (!repo) throw new Error("This task has no repo to work in");
 
       let cwd = repo.path;
-      if (mission.autonomy !== "observe") {
-        const wt = await createWorktree(repo, mission);
+      if (task.autonomy !== "observe") {
+        const wt = await createWorktree(repo, task);
         cwd = wt.path;
-        this.store.updateMission(mission.id, { branch: wt.branch, worktree: wt.path });
+        this.store.updateTask(task.id, { branch: wt.branch, worktree: wt.path });
         emit("note", `Working on branch ${wt.branch}`, { branch: wt.branch });
         try {
           const ran = await installDependencies(wt.path, ac.signal);
@@ -121,42 +121,42 @@ export class Factory {
       }
 
       const result = await this.driver.run({
-        mission: this.store.getMission(mission.id)!,
+        task: this.store.getTask(task.id)!,
         repo,
         cwd,
         signal: ac.signal,
         emit,
       });
 
-      if (mission.autonomy !== "observe") {
-        const changed = await finalizeWorktree(repo, mission, cwd);
+      if (task.autonomy !== "observe") {
+        const changed = await finalizeWorktree(repo, task, cwd);
         result.report.changedFiles = [...new Set([...changed, ...result.report.changedFiles])];
       }
-      const logged = new Set(this.store.listEvents(mission.id).filter((e) => e.type === "finding").map((e) => e.message));
+      const logged = new Set(this.store.listEvents(task.id).filter((e) => e.type === "finding").map((e) => e.message));
       for (const f of result.report.findings) {
         if (!logged.has(f.title)) emit("finding", f.title, { impact: f.impact, effort: f.effort });
       }
 
-      this.store.updateMission(mission.id, { report: result.report, costUsd: result.costUsd });
+      this.store.updateTask(task.id, { report: result.report, costUsd: result.costUsd });
 
       // Hold for the operator whenever there's something for them to decide.
       const needsOperator =
-        mission.autonomy === "propose" || (mission.autonomy === "observe" && result.report.findings.length > 0);
-      if (this.store.getMission(mission.id)?.status === "cancelled") return;
-      this.store.setStatus(mission.id, needsOperator ? "needs_review" : "done", needsOperator ? "Ready for your review" : "Done");
+        task.autonomy === "propose" || (task.autonomy === "observe" && result.report.findings.length > 0);
+      if (this.store.getTask(task.id)?.status === "cancelled") return;
+      this.store.setStatus(task.id, needsOperator ? "needs_review" : "done", needsOperator ? "Ready for your review" : "Done");
       this.store.bumpAgentCompleted(agent.id);
-      this.log(`${agent.name} finished ${mission.id}`);
+      this.log(`${agent.name} finished ${task.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (ac.signal.aborted || this.store.getMission(mission.id)?.status === "cancelled") {
-        if (this.store.getMission(mission.id)?.status !== "cancelled") this.store.setStatus(mission.id, "cancelled", "Cancelled");
+      if (ac.signal.aborted || this.store.getTask(task.id)?.status === "cancelled") {
+        if (this.store.getTask(task.id)?.status !== "cancelled") this.store.setStatus(task.id, "cancelled", "Cancelled");
       } else {
         emit("error", message);
-        this.store.setStatus(mission.id, "failed", "Failed");
-        this.log(`${agent.name} failed ${mission.id}: ${message}`);
+        this.store.setStatus(task.id, "failed", "Failed");
+        this.log(`${agent.name} failed ${task.id}: ${message}`);
       }
     } finally {
-      this.running.delete(mission.id);
+      this.running.delete(task.id);
       this.store.setAgentState(agent.id, this.store.isPaused() ? "paused" : "idle", null);
     }
   }

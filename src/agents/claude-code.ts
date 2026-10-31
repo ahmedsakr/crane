@@ -95,9 +95,9 @@ function describeTool(name: string, input: Record<string, unknown>): string {
 }
 
 /**
- * Runs missions through Claude Code in headless mode (`claude -p`), which uses
+ * Runs tasks through Claude Code in headless mode (`claude -p`), which uses
  * whatever auth the local `claude` CLI already has, a Claude subscription or an
- * API key. Each run streams JSON events that we translate into mission events.
+ * API key. Each run streams JSON events that we translate into task events.
  */
 export class ClaudeCodeDriver implements AgentDriver {
   readonly name = "claude-code";
@@ -113,17 +113,17 @@ export class ClaudeCodeDriver implements AgentDriver {
   }
 
   run(ctx: RunContext): Promise<RunResult> {
-    const { mission, repo, cwd, emit, signal } = ctx;
-    const { allowed, denied } = toolsFor(mission.autonomy);
+    const { task, repo, cwd, emit, signal } = ctx;
+    const { allowed, denied } = toolsFor(task.autonomy);
     const args = [
       "-p",
       "--output-format",
       "stream-json",
       "--verbose",
       "--append-system-prompt",
-      systemPrompt(mission, repo),
+      systemPrompt(task, repo),
       "--permission-mode",
-      mission.autonomy === "observe" ? "default" : "acceptEdits",
+      task.autonomy === "observe" ? "default" : "acceptEdits",
       "--allowedTools",
       allowed.join(","),
       "--disallowedTools",
@@ -147,7 +147,7 @@ export class ClaudeCodeDriver implements AgentDriver {
       const onAbort = () => child.kill("SIGTERM");
       signal.addEventListener("abort", onAbort, { once: true });
 
-      child.stdin.end(userPrompt(mission));
+      child.stdin.end(userPrompt(task));
       child.stderr.on("data", (d) => {
         stderr = (stderr + String(d)).slice(-4000);
       });

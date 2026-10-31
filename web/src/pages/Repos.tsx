@@ -75,7 +75,7 @@ export function Repos() {
                 </span>
                 <span className="row-meta mono" style={{ display: "block" }}>
                   {r.path} · {r.defaultBranch}
-                  {r.openMissions ? ` · ${r.openMissions} open` : ""}
+                  {r.openTasks ? ` · ${r.openTasks} open` : ""}
                 </span>
               </span>
               <span style={{ display: "flex", gap: 6 }}>
@@ -89,7 +89,7 @@ export function Repos() {
                     )
                   }
                 >
-                  New mission
+                  New task
                 </button>
                 {!r.isFactory && (
                   <button

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, AUTONOMY_LABEL, KIND_LABEL, type Autonomy, type MissionDraft, type MissionKind, type Repo } from "../lib/api";
+import { api, AUTONOMY_LABEL, KIND_LABEL, type Autonomy, type TaskDraft, type TaskKind, type Repo } from "../lib/api";
 import { useToast } from "./bits";
 
 const AUTONOMY_HINT: Record<Autonomy, string> = {
@@ -9,7 +9,7 @@ const AUTONOMY_HINT: Record<Autonomy, string> = {
   act: "Works on its own branch and finishes on its own.",
 };
 
-const KIND_HINT: Record<MissionKind, string> = {
+const KIND_HINT: Record<TaskKind, string> = {
   maintenance: "Fixes, upgrades, flaky tests, cleanup",
   repo_feature: "Something new for one of your repos",
   factory_feature: "Something new for Crane itself",
@@ -77,8 +77,8 @@ function Choice<T extends string | null>(props: {
 
 export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[]; onClose: () => void; initial?: string }) {
   const [text, setText] = useState(initial);
-  const [draft, setDraft] = useState<MissionDraft | null>(null);
-  const [overrides, setOverrides] = useState<Partial<Pick<MissionDraft, "kind" | "repoId" | "autonomy">>>({});
+  const [draft, setDraft] = useState<TaskDraft | null>(null);
+  const [overrides, setOverrides] = useState<Partial<Pick<TaskDraft, "kind" | "repoId" | "autonomy">>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const nav = useNavigate();
@@ -129,7 +129,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
     setBusy(true);
     setError(null);
     try {
-      const m = await api.createMission({
+      const m = await api.createTask({
         kind: final.kind,
         title: final.title,
         brief: final.brief,
@@ -137,8 +137,8 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
         autonomy: final.autonomy,
       });
       onClose();
-      nav(`/missions/${m.id}`);
-      toast({ text: "Mission started" });
+      nav(`/tasks/${m.id}`);
+      toast({ text: "Task started" });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -198,7 +198,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
                   value={final.kind}
                   label={KIND_LABEL[final.kind]}
                   why={final.why.kind}
-                  options={(Object.keys(KIND_LABEL) as MissionKind[]).map((k) => ({ value: k, label: KIND_LABEL[k], hint: KIND_HINT[k] }))}
+                  options={(Object.keys(KIND_LABEL) as TaskKind[]).map((k) => ({ value: k, label: KIND_LABEL[k], hint: KIND_HINT[k] }))}
                   onChange={(v) => setOverrides((o) => ({ ...o, kind: v }))}
                 />
                 <Choice
@@ -226,7 +226,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
                 Cancel
               </button>
               <button type="submit" className="btn btn-primary" disabled={!final || busy}>
-                Start mission <span className="kbd">⌘↵</span>
+                Start task <span className="kbd">⌘↵</span>
               </button>
             </span>
           </div>

@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, AUTONOMY_LABEL, KIND_LABEL, type MissionDetail, type MissionEvent } from "../lib/api";
+import { api, AUTONOMY_LABEL, KIND_LABEL, type TaskDetail, type TaskEvent } from "../lib/api";
 import { useEventStream, usePoll, useTick } from "../lib/hooks";
 import { ago, clock, duration, plural, usd } from "../lib/format";
 import { StatusChip, useToast } from "../components/bits";
 import { useApp } from "../App";
 
 /** Group consecutive tool calls so the timeline reads as a story, with the mechanics one click away. */
-function groupEvents(events: MissionEvent[]) {
-  const out: (MissionEvent | { tools: MissionEvent[] })[] = [];
+function groupEvents(events: TaskEvent[]) {
+  const out: (TaskEvent | { tools: TaskEvent[] })[] = [];
   for (const e of events) {
     const last = out[out.length - 1];
     if (e.type === "tool") {
@@ -19,7 +19,7 @@ function groupEvents(events: MissionEvent[]) {
   return out;
 }
 
-function Timeline({ events }: { events: MissionEvent[] }) {
+function Timeline({ events }: { events: TaskEvent[] }) {
   const [open, setOpen] = useState<Set<number>>(new Set());
   const groups = groupEvents(events);
   return (
@@ -83,20 +83,20 @@ function Diff({ id }: { id: string }) {
   );
 }
 
-export function MissionPage() {
+export function TaskPage() {
   const { id = "" } = useParams();
   const { refresh: refreshApp } = useApp();
   const toast = useToast();
   const nav = useNavigate();
-  const { data, error, refresh } = usePoll<MissionDetail>(() => api.mission(id), 3000, [id]);
-  const [live, setLive] = useState<MissionEvent[]>([]);
+  const { data, error, refresh } = usePoll<TaskDetail>(() => api.task(id), 3000, [id]);
+  const [live, setLive] = useState<TaskEvent[]>([]);
   const [showDiff, setShowDiff] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   useTick(5000);
 
   const lastId = data?.events.at(-1)?.id ?? 0;
   useEffect(() => setLive([]), [lastId]);
-  useEventStream(data && ["queued", "running"].includes(data.mission.status) ? id : null, (e) =>
+  useEventStream(data && ["queued", "running"].includes(data.task.status) ? id : null, (e) =>
     setLive((l) => (l.some((x) => x.id === e.id) ? l : [...l, e])),
     lastId,
   );
@@ -108,7 +108,7 @@ export function MissionPage() {
 
   if (error) return <p className="muted" style={{ paddingTop: 40 }}>{error}</p>;
   if (!data) return <p className="muted" style={{ paddingTop: 40 }}>Loading…</p>;
-  const { mission: m, repo, agent } = data;
+  const { task: m, repo, agent } = data;
   const report = m.report;
 
   const run = async (label: string, fn: () => Promise<unknown>, done: string, after?: (r: unknown) => void) => {
@@ -127,12 +127,12 @@ export function MissionPage() {
   };
 
   const followUp = (i: number) =>
-    run("f" + i, () => api.followUp(m.id, i), "Follow-up started", (r) => nav(`/missions/${(r as { id: string }).id}`));
+    run("f" + i, () => api.followUp(m.id, i), "Follow-up started", (r) => nav(`/tasks/${(r as { id: string }).id}`));
 
   return (
     <article>
-      <Link className="back" to="/missions">
-        ← Missions
+      <Link className="back" to="/tasks">
+        ← Tasks
       </Link>
       <div className="detail">
         <div style={{ minWidth: 0 }}>
@@ -240,7 +240,7 @@ export function MissionPage() {
         <aside className="rail">
           <div className="card card-pad">
             <dl className="facts">
-              <dt>Mission</dt>
+              <dt>Task</dt>
               <dd className="mono">{m.id}</dd>
               <dt>Freedom</dt>
               <dd>{AUTONOMY_LABEL[m.autonomy]}</dd>
@@ -273,14 +273,14 @@ export function MissionPage() {
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {["queued", "running"].includes(m.status) && (
               <button className="btn btn-quiet btn-sm" disabled={!!busy} onClick={() => run("cancel", () => api.cancel(m.id), "Cancelled")}>
-                Cancel mission
+                Cancel task
               </button>
             )}
             {["failed", "cancelled", "rejected", "done", "approved"].includes(m.status) && (
               <button
                 className="btn btn-quiet btn-sm"
                 disabled={!!busy}
-                onClick={() => run("retry", () => api.retry(m.id), "Queued again", (r) => nav(`/missions/${(r as { id: string }).id}`))}
+                onClick={() => run("retry", () => api.retry(m.id), "Queued again", (r) => nav(`/tasks/${(r as { id: string }).id}`))}
               >
                 Run again
               </button>

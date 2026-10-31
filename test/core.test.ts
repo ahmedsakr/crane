@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
+import Database from "better-sqlite3";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { draftMission } from "../src/factory/instruct.js";
+import { draftTask } from "../src/factory/instruct.js";
 import { parseReport } from "../src/agents/report.js";
 import { Store } from "../src/core/store.js";
 import type { Repo } from "../src/core/types.js";
@@ -19,21 +20,21 @@ const repo = (name: string, isFactory = false): Repo => ({
 const repos = [repo("crane", true), repo("payments-api"), repo("storefront")];
 
 test("draft: research wording stays read-only", () => {
-  const d = draftMission("Investigate why the checkout tests are flaky in payments-api", repos);
+  const d = draftTask("Investigate why the checkout tests are flaky in payments-api", repos);
   assert.equal(d.kind, "maintenance");
   assert.equal(d.repoId, "r-payments-api");
   assert.equal(d.autonomy, "observe");
 });
 
 test("draft: a requested change waits for review", () => {
-  const d = draftMission("Add saved carts to storefront", repos);
+  const d = draftTask("Add saved carts to storefront", repos);
   assert.equal(d.kind, "repo_feature");
   assert.equal(d.repoId, "r-storefront");
   assert.equal(d.autonomy, "propose");
 });
 
 test("draft: mentioning Crane targets the factory", () => {
-  const d = draftMission("Research what crane should build next", repos);
+  const d = draftTask("Research what crane should build next", repos);
   assert.equal(d.kind, "factory_feature");
   assert.equal(d.repoId, "r-crane");
 });
@@ -44,7 +45,7 @@ test("draft: Crane's own vocabulary targets Crane even with one other repo conne
     `I'd like to change the "missions" concept to be more "tasks" oriented`,
     `I'd like to rework the "Missions" concept to be more "Tasks" narrative`,
   ]) {
-    const d = draftMission(text, two);
+    const d = draftTask(text, two);
     assert.equal(d.repoId, "r-crane", text);
     assert.equal(d.kind, "factory_feature");
   }
@@ -52,21 +53,21 @@ test("draft: Crane's own vocabulary targets Crane even with one other repo conne
 
 test("draft: with no signal, Crane is still a candidate, so it asks", () => {
   const two = [repo("crane", true), repo("wedding-guest-service")];
-  assert.equal(draftMission("Clean up the logging", two).repoId, null);
+  assert.equal(draftTask("Clean up the logging", two).repoId, null);
 });
 
 test("draft: falls back to the repo used last", () => {
   const two = [repo("crane", true), repo("wedding-guest-service")];
-  assert.equal(draftMission("Clean up the logging", two, { lastRepoId: "r-crane" }).repoId, "r-crane");
+  assert.equal(draftTask("Clean up the logging", two, { lastRepoId: "r-crane" }).repoId, "r-crane");
   // An explicit mention still wins over memory.
   assert.equal(
-    draftMission("Clean up the logging in wedding-guest-service", two, { lastRepoId: "r-crane" }).repoId,
+    draftTask("Clean up the logging in wedding-guest-service", two, { lastRepoId: "r-crane" }).repoId,
     "r-wedding-guest-service",
   );
 });
 
 test("draft: ambiguous repo is left for the operator", () => {
-  const d = draftMission("Fix the flaky tests", repos);
+  const d = draftTask("Fix the flaky tests", repos);
   assert.equal(d.repoId, null);
 });
 
@@ -85,15 +86,15 @@ test("report: falls back to the first paragraph", () => {
   assert.equal(r.findings.length, 0);
 });
 
-test("store: missions are claimed once, oldest first", () => {
+test("store: tasks are claimed once, oldest first", () => {
   const store = new Store(join(mkdtempSync(join(tmpdir(), "crane-")), "t.db"));
   const r = store.addRepo({ path: "/code/x" });
-  const a = store.createMission({ kind: "maintenance", title: "first", brief: "", repoId: r.id, autonomy: "observe" });
-  store.createMission({ kind: "maintenance", title: "second", brief: "", repoId: r.id, autonomy: "observe" });
-  assert.equal(store.claimNextMission("a-1")?.id, a.id);
-  assert.equal(store.claimNextMission("a-2")?.title, "second");
-  assert.equal(store.claimNextMission("a-3"), null);
-  assert.equal(store.getMission(a.id)?.status, "running");
+  const a = store.createTask({ kind: "maintenance", title: "first", brief: "", repoId: r.id, autonomy: "observe" });
+  store.createTask({ kind: "maintenance", title: "second", brief: "", repoId: r.id, autonomy: "observe" });
+  assert.equal(store.claimNextTask("a-1")?.id, a.id);
+  assert.equal(store.claimNextTask("a-2")?.title, "second");
+  assert.equal(store.claimNextTask("a-3"), null);
+  assert.equal(store.getTask(a.id)?.status, "running");
   store.close();
 });
 
@@ -109,4 +110,59 @@ test("worktree: picks the install command from the lockfile", async () => {
   assert.deepEqual(installCommandFor(dir)?.args.slice(0, 1), ["ci"]);
   mkdirSync(join(dir, "node_modules"));
   assert.equal(installCommandFor(dir), null, "already installed");
+});
+
+test("store: new tasks get a t- id and can be found without the prefix", () => {
+  const store = new Store(join(mkdtempSync(join(tmpdir(), "crane-")), "t.db"));
+  const r = store.addRepo({ path: "/code/x" });
+  const t = store.createTask({ kind: "maintenance", title: "x", brief: "", repoId: r.id, autonomy: "observe" });
+  assert.match(t.id, /^t-/);
+  assert.equal(store.getTask(t.id.slice(2))?.id, t.id);
+  store.close();
+});
+
+test("store: a database from before the rename keeps its missions as tasks", () => {
+  const file = join(mkdtempSync(join(tmpdir(), "crane-")), "old.db");
+  const old = new Database(file);
+  old.exec(`
+    CREATE TABLE repos (id TEXT PRIMARY KEY, name TEXT NOT NULL, path TEXT NOT NULL UNIQUE,
+      default_branch TEXT NOT NULL DEFAULT 'main', is_factory INTEGER NOT NULL DEFAULT 0, added_at TEXT NOT NULL);
+    CREATE TABLE missions (id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, brief TEXT NOT NULL,
+      repo_id TEXT REFERENCES repos(id), autonomy TEXT NOT NULL, status TEXT NOT NULL, agent_id TEXT, branch TEXT,
+      worktree TEXT, report TEXT, cost_usd REAL NOT NULL DEFAULT 0, created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT);
+    CREATE INDEX missions_status ON missions(status);
+    CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, mission_id TEXT NOT NULL REFERENCES missions(id),
+      ts TEXT NOT NULL, type TEXT NOT NULL, message TEXT NOT NULL, data TEXT);
+    CREATE INDEX events_mission ON events(mission_id, id);
+    CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'idle', mission_id TEXT,
+      driver TEXT NOT NULL, missions_completed INTEGER NOT NULL DEFAULT 0, last_active_at TEXT);
+    CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+    INSERT INTO repos VALUES ('r-abcd', 'x', '/code/x', 'main', 0, '2026-01-01T00:00:00Z');
+    INSERT INTO missions(id, kind, title, brief, repo_id, autonomy, status, created_at)
+      VALUES ('m-old123', 'maintenance', 'Old work', '', 'r-abcd', 'observe', 'needs_review', '2026-01-01T00:00:00Z');
+    INSERT INTO events(mission_id, ts, type, message) VALUES ('m-old123', '2026-01-01T00:00:00Z', 'status', 'Queued');
+    INSERT INTO agents(id, name, mission_id, driver, missions_completed) VALUES ('a-jib', 'Jib', 'm-old123', 'simulated', 7);
+  `);
+  old.close();
+
+  const store = new Store(file);
+  const t = store.getTask("old123");
+  assert.equal(t?.id, "m-old123");
+  assert.equal(t?.title, "Old work");
+  assert.equal(store.listEvents("m-old123")[0]?.taskId, "m-old123");
+  assert.deepEqual(
+    store.listAgents().map((a) => [a.taskId, a.tasksCompleted]),
+    [["m-old123", 7]],
+  );
+  // New work lands in the same table, and events still point at their task.
+  const next = store.createTask({ kind: "maintenance", title: "New", brief: "", repoId: "r-abcd", autonomy: "observe" });
+  assert.equal(store.listTasks().length, 2);
+  assert.equal(store.listEvents(next.id).length, 1);
+  assert.equal(store.overview({ running: false, paused: false, driver: "simulated" }).counts.needs_review, 1);
+  store.close();
+
+  // Opening it again is a no-op.
+  const again = new Store(file);
+  assert.equal(again.listTasks().length, 2);
+  again.close();
 });

@@ -4,7 +4,7 @@ Crane should feel like a calm brokerage app for software work: you glance at it,
 
 ## Principles
 
-1. **Decision first.** Every screen leads with what the operator needs to decide or know. On Home that's the slab and "Needs you". On a mission it's the decision bar, then the summary.
+1. **Decision first.** Every screen leads with what the operator needs to decide or know. On Home that's the slab and "Needs you". On a task it's the decision bar, then the summary.
 2. **Progressive disclosure.** Summaries before findings, findings before files, files before diffs. Tool steps in the timeline fold into "12 steps: …" until opened. The CLI mirrors this: `crane` → `crane show` → `crane show --events` → `crane diff`.
 3. **Explain guesses.** When Crane infers something (repo, type, freedom), show the guess *and the reason*, and make it one tap to change.
 4. **Safe by default.** New instructions default to "Investigate only" unless the operator clearly asks for a change.
@@ -28,7 +28,7 @@ Crane should feel like a calm brokerage app for software work: you glance at it,
 
 ## Signature: the slab
 
-The Home hero is a solid crane-yellow slab with a big number (missions shipped in the range) and an ink line of cumulative output, with agent activity as faint "volume" bars beneath. Scrubbing the chart rewrites the number for that moment, like a stock chart. The slab turns graphite when the factory is paused or off, so its state reads at a glance.
+The Home hero is a solid crane-yellow slab with a big number (tasks shipped in the range) and an ink line of cumulative output, with agent activity as faint "volume" bars beneath. Scrubbing the chart rewrites the number for that moment, like a stock chart. The slab turns graphite when the factory is paused or off, so its state reads at a glance.
 
 ## CLI
 

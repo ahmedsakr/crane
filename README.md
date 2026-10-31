@@ -11,16 +11,16 @@ Crane runs a crew of AI agents that maintain and evolve your codebases. You give
   ▁▁▂▃▅▃▂▁▁▂▄▆█▆▄▂▁▁▁▂▃▂▁▁  activity, last 24h
 
 Needs you  2
-  ● m-7k3q9x  Flaky checkout tests: retries have no backoff     api · 4m ago
-  ● m-p2d8wn  Upgrade the payments SDK to v5                     api · 1h ago
+  ● t-7k3q9x  Flaky checkout tests: retries have no backoff     api · 4m ago
+  ● t-p2d8wn  Upgrade the payments SDK to v5                     api · 1h ago
 
-  › crane show m-7k3q9x         review the top item
+  › crane show t-7k3q9x         review the top item
   › crane do "…"                give the factory an instruction
 ```
 
 ## What it does
 
-You, the operator, issue **missions**. There are three kinds:
+You, the operator, issue **tasks**. There are three kinds:
 
 | Kind | For |
 | --- | --- |
@@ -28,7 +28,7 @@ You, the operator, issue **missions**. There are three kinds:
 | **Repo feature** | Researching or building a new capability into a repo the factory works on. |
 | **Factory feature** | Researching or building a new capability into Crane itself. The factory can evolve itself. |
 
-Each mission also has an **autonomy level**, which sets how far an agent may go on its own:
+Each task also has an **autonomy level**, which sets how far an agent may go on its own:
 
 | Level | The agent… |
 | --- | --- |
@@ -38,7 +38,7 @@ Each mission also has an **autonomy level**, which sets how far an agent may go 
 
 Crane never pushes, and it never merges into your default branch on its own.
 
-Reports come back as a summary plus **findings**. Turn any finding into its own mission with one click (or `crane follow-up <id> <n>`).
+Reports come back as a summary plus **findings**. Turn any finding into its own task with one click (or `crane follow-up <id> <n>`).
 
 ## Quick start
 
@@ -63,16 +63,16 @@ Agents run through [Claude Code](https://code.claude.com) in headless mode, usin
 | --- | --- |
 | `crane` | Status: what needs you, what's running, suggested next steps |
 | `crane do "…"` | Give the factory an instruction. It shows what it understood before starting. |
-| `crane missions` | Open missions (`--all` for everything) |
+| `crane tasks` | Open tasks (`--all` for everything) |
 | `crane show <id>` | Summary, findings, changed files, and recent activity |
-| `crane watch [id]` | Follow a mission, or the whole factory, live |
+| `crane watch [id]` | Follow a task, or the whole factory, live |
 | `crane approve <id>` / `crane decline <id>` | Decide on work that's waiting for you |
-| `crane diff <id>` | See what a mission changed on its branch |
-| `crane follow-up <id> <n>` | Turn finding *n* into a mission that makes the change |
+| `crane diff <id>` | See what a task changed on its branch |
+| `crane follow-up <id> <n>` | Turn finding *n* into a task that makes the change |
 | `crane cancel <id>` / `crane retry <id>` | Stop work, or run it again |
 | `crane repos` / `crane repos add <path>` | The codebases the factory works on |
 | `crane agents` | Who's on the crew and what they're doing |
-| `crane pause` / `crane resume` | Stop or restart picking up new missions |
+| `crane pause` / `crane resume` | Stop or restart picking up new tasks |
 | `crane serve` | Run the factory: agents, API, and dashboard |
 
 ## Configuration

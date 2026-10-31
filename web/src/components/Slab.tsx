@@ -104,7 +104,7 @@ export function Slab({ o }: { o: Overview }) {
           </>
         ) : (
           <>
-            {total === 1 ? "mission" : "missions"} shipped {range === "1D" ? "today" : "this week"}
+            {total === 1 ? "task" : "tasks"} shipped {range === "1D" ? "today" : "this week"}
             {"  "}
             <span className="slab-delta">
               {delta === 0 ? "· level with before" : delta > 0 ? `· +${delta} vs before` : `· ${delta} vs before`}
@@ -120,7 +120,7 @@ export function Slab({ o }: { o: Overview }) {
         onPointerDown={(e) => onMove(e.clientX)}
         onPointerLeave={() => setHover(null)}
         role="img"
-        aria-label={`Missions shipped over the last ${range === "1D" ? "day" : "week"}: ${total}`}
+        aria-label={`Tasks shipped over the last ${range === "1D" ? "day" : "week"}: ${total}`}
       >
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
           <line className="baseline" x1="0" x2={W} y1={H - PAD_BOTTOM} y2={H - PAD_BOTTOM} vectorEffect="non-scaling-stroke" />
