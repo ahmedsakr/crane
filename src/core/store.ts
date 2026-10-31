@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { basename } from "node:path";
 import { dbPath } from "./paths.js";
 import { shortId } from "./ids.js";
-import { ALL_STATUSES, SHIPPED_STATUSES, UNSHIPPED_STATUSES } from "./types.js";
+import { ALL_STATUSES, SHIPPED_STATUSES, UNSHIPPED_STATUSES, isMaintenanceRole, type MaintenanceRole } from "./types.js";
 import { ruleLabel } from "./permissions.js";
 import type {
   Agent,
@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   worktree TEXT,
   session_id TEXT,
   driver TEXT,
+  assignee TEXT,
   report TEXT,
   cost_usd REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
@@ -154,6 +155,7 @@ function migrateMissionsToTasks(db: Database.Database) {
 const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
   ["session_id", "TEXT"],
   ["driver", "TEXT"],
+  ["assignee", "TEXT"],
 ];
 
 /** Add any missing columns to an older database. Safe if two processes open it at once. */
@@ -195,6 +197,7 @@ function toTask(r: Row): Task {
     worktree: (r.worktree as string) ?? null,
     sessionId: (r.session_id as string) ?? null,
     driver: (r.driver as string) ?? null,
+    assignee: (r.assignee as string) ?? null,
     report: r.report ? (JSON.parse(r.report as string) as Report) : null,
     costUsd: (r.cost_usd as number) ?? 0,
     createdAt: r.created_at as string,
@@ -246,6 +249,7 @@ function toAgent(r: Row): Agent {
   return {
     active: true,
     defaultDriver: null,
+    role: null,
     id: r.id as string,
     name: r.name as string,
     state: r.state as AgentState,
@@ -416,10 +420,10 @@ export class Store {
     const ts = now();
     this.db
       .prepare(
-        `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, status, created_at)
-         VALUES(?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
+        `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, assignee, status, created_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
       )
-      .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null, ts);
+      .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null, input.assignee ?? null, ts);
     this.addEvent(id, "status", "Queued", { status: "queued" });
     return this.getTask(id)!;
   }
@@ -485,12 +489,16 @@ export class Store {
     this.addEvent(id, "status", message ?? status, { ...data, status });
   }
 
-  /** Atomically take the oldest queued task. Safe if two factories race. */
-  claimNextTask(agentId: string): Task | null {
+  /**
+   * Atomically take the oldest queued task this agent may work: one assigned
+   * to it, or one assigned to nobody unless `onlyAssigned`. Safe if two factories race.
+   */
+  claimNextTask(agentId: string, opts: { onlyAssigned?: boolean } = {}): Task | null {
+    const mine = opts.onlyAssigned ? "assignee = ?" : "(assignee IS NULL OR assignee = ?)";
     const tx = this.db.transaction(() => {
       const r = this.db
-        .prepare("SELECT id FROM tasks WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1")
-        .get() as Row | undefined;
+        .prepare(`SELECT id FROM tasks WHERE status = 'queued' AND ${mine} ORDER BY created_at ASC LIMIT 1`)
+        .get(agentId) as Row | undefined;
       if (!r) return null;
       const changed = this.db
         .prepare("UPDATE tasks SET status = 'running', agent_id = ?, started_at = ? WHERE id = ? AND status = 'queued'")
@@ -708,7 +716,14 @@ export class Store {
       ...toAgent(r),
       active: this.getSetting(`crew_active_${r.id}`) !== "false",
       defaultDriver: this.getSetting(`crew_driver_${r.id}`) || null,
+      role: this.crewRole(r.id as string),
     }));
+  }
+
+  /** The maintenance a crew member is dedicated to, or null for a general member. */
+  crewRole(agentId: string): MaintenanceRole | null {
+    const role = this.getSetting(`crew_role_${agentId}`);
+    return isMaintenanceRole(role) ? role : null;
   }
 
   upsertAgent(a: Pick<Agent, "id" | "name" | "driver">) {
