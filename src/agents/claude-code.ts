@@ -3,6 +3,7 @@ import { createInterface } from "node:readline";
 import { AgentRunError, isTransientFailure, type AgentDriver, type RunContext, type RunResult } from "./driver.js";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
 import { parseReport } from "./report.js";
+import { ALWAYS_DENIED } from "./policy.js";
 import { overlapsDenied, suggestRules } from "../core/permissions.js";
 import type { Autonomy, BlockedCall, RunUsage } from "../core/types.js";
 
@@ -53,12 +54,6 @@ const WRITE_TOOLS = [
   "Bash(cargo test:*)",
   "Bash(go test:*)",
 ];
-
-/**
- * Never allowed, regardless of autonomy. Agents never ship code: when the
- * operator approves a merge, Crane's own code (src/factory/merge.ts) does it.
- */
-export const ALWAYS_DENIED = ["Bash(git push:*)", "Bash(git checkout main:*)", "Bash(git merge:*)", "Bash(rm -rf:*)"];
 
 /**
  * What an agent may use. `repoAllowed` is what the operator allowed for the

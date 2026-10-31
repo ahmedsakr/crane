@@ -1,5 +1,7 @@
 import type { Finding, Report } from "../core/types.js";
-import { REPORT_FENCE } from "./prompts.js";
+
+/** The fence tag agents put on the JSON block that ends their final message. Prompts ask for it; parseReport reads it. */
+export const REPORT_FENCE = "crane-report";
 
 const IMPACTS = ["low", "medium", "high"] as const;
 const EFFORTS = ["small", "medium", "large"] as const;

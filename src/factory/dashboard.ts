@@ -7,7 +7,7 @@ import type { Repo } from "../core/types.js";
 import { buildsDir, factoryRoot } from "../core/paths.js";
 import { BUILD_MANIFEST, dashboardBuilds, webBuildOutdated } from "../core/webbuild.js";
 import { installDependencies } from "./deps.js";
-import { git } from "./git.js";
+import { git } from "../core/git.js";
 
 const run = promisify(execFile);
 
