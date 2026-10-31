@@ -349,13 +349,13 @@ export class Factory {
     }
   }
 
-  /** Land an approved task on its repo's default branch, with an agent on hand for conflicts. */
   /** Record events on one task's feed. */
   private emitter(taskId: string) {
     return (type: EventType, message: string, data?: Record<string, unknown>) =>
       this.store.addEvent(taskId, type, message, data ?? null);
   }
 
+  /** Land an approved task on its repo's default branch, with an agent on hand for conflicts. */
   private async merge(agent: CrewMember, task: Task) {
     const ac = new AbortController();
     const limit = timeLimit(ac, this.timeLimitMin);

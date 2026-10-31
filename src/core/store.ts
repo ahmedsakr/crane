@@ -693,19 +693,19 @@ export class Store {
       agent.usd += usd;
       agent.tasks.add(id);
       perAgent.set(driver, agent);
-      const t =
-        perTask.get(id) ??
-        perTask
-          .set(id, {
-            id,
-            title: r.title as string,
-            status: r.status as TaskStatus,
-            kind: r.kind as TaskKind,
-            repoId: (r.repo_id as string) ?? null,
-            usd: 0,
-            runs: 0,
-          })
-          .get(id)!;
+      let t = perTask.get(id);
+      if (!t) {
+        t = {
+          id,
+          title: r.title as string,
+          status: r.status as TaskStatus,
+          kind: r.kind as TaskKind,
+          repoId: (r.repo_id as string) ?? null,
+          usd: 0,
+          runs: 0,
+        };
+        perTask.set(id, t);
+      }
       t.usd += usd;
       t.runs++;
     }
@@ -714,7 +714,14 @@ export class Store {
     const slice = (list: TaskSpend[]) => ({ usd: list.reduce((s, t) => s + t.usd, 0), tasks: list.length });
     const groupBy = <K extends string | null>(key: (t: TaskSpend) => K) => {
       const groups = new Map<K, TaskSpend[]>();
-      for (const t of tasks) if (t.usd > 0) groups.set(key(t), [...(groups.get(key(t)) ?? []), t]);
+      for (const t of tasks) {
+        if (t.usd > 0) {
+          const k = key(t);
+          const group = groups.get(k);
+          if (group) group.push(t);
+          else groups.set(k, [t]);
+        }
+      }
       return [...groups.entries()].map(([k, list]) => ({ key: k, ...slice(list) })).sort((a, b) => b.usd - a.usd);
     };
     const repoNames = new Map(this.listRepos().map((r) => [r.id, r.name]));
