@@ -692,7 +692,7 @@ agents
 program
   .command("analytics")
   .alias("spend")
-  .description("What the factory spent, by day, repo, type, and task")
+  .description("What the factory spent, by day, agent, repo, type, and task")
   .option("-d, --days <n>", "how many days back, today included", "30")
   .action((opts: { days: string }) => {
     const a = store.analytics(Number(opts.days));
@@ -731,6 +731,10 @@ program
         console.log(`  ${ui.truncate(r.label, w).padEnd(w)}  ${ui.usd(r.usd).padStart(9)}  ${ui.dim(`${r.tasks} ${r.tasks === 1 ? "task" : "tasks"}`)}`);
       }
     };
+    if (a.byAgent.length) {
+      console.log(ui.section("By agent"));
+      table(a.byAgent.map((r) => ({ label: driverLabel(r.driver), usd: r.usd, tasks: r.tasks })));
+    }
     if (a.byRepo.length) {
       console.log(ui.section("By repo"));
       table(a.byRepo.map((r) => ({ label: r.name, usd: r.usd, tasks: r.tasks })));

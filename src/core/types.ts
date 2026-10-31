@@ -261,6 +261,8 @@ export interface Analytics {
   daily: { day: string; usd: number; runs: number }[];
   byRepo: (SpendSlice & { repoId: string | null; name: string })[];
   byKind: (SpendSlice & { kind: TaskKind })[];
+  /** Per-run driver attribution; a task can count under more than one agent. Includes zero-cost runs. */
+  byAgent: (SpendSlice & { driver: string })[];
   /** The most expensive tasks in the window, by what they cost in it. */
   topTasks: (Pick<Task, "id" | "title" | "status" | "kind" | "repoId"> & { usd: number; runs: number })[];
 }
