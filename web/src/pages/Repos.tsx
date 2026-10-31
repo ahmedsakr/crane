@@ -105,6 +105,20 @@ export function Repos() {
                 )}
               </span>
               <span style={{ display: "flex", gap: 6 }}>
+                <button className="btn btn-quiet btn-sm" onClick={async () => {
+                  try {
+                    const url = `/api/repos/${r.id}/checks`;
+                    const response = await fetch(url);
+                    if (!response.ok) throw new Error("Couldn't load checks");
+                    const commands = await response.json() as string[];
+                    const value = window.prompt("Repository checks (one shell command per line). Empty configuration blocks review and merge.", commands.join("\n"));
+                    if (value === null) return;
+                    const saved = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify(value.split("\n").map(x => x.trim()).filter(Boolean)) });
+                    if (!saved.ok) throw new Error("Couldn't save checks");
+                    toast({ text: "Repository checks saved" });
+                  } catch (e) { toast({ text: (e as Error).message }); }
+                }}>Checks</button>
                 <button
                   className="btn btn-quiet btn-sm"
                   onClick={() =>

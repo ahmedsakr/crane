@@ -4,6 +4,8 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { EventType, Repo, Task } from "../core/types.js";
+import { runChecks } from "./checks.js";
+import type { ValidationRun } from "../core/types.js";
 
 const run = promisify(execFile);
 
@@ -32,6 +34,8 @@ const run = promisify(execFile);
 export class MergeError extends Error {}
 
 export interface MergeRequest {
+  checks?: string[];
+  recordValidation?: (run: ValidationRun) => void;
   repo: Repo;
   task: Task;
   /** Crane's directory for building the merge. Never the operator's checkout. */
@@ -298,6 +302,8 @@ export async function landTask(req: MergeRequest): Promise<MergeResult> {
     }
     if (signal?.aborted) throw new Error("Stopped");
 
+    await runChecks(workdir, req.checks ?? [], "merge", req.recordValidation ?? (() => {}), signal);
+    if (signal?.aborted) throw new Error("Stopped");
     if (remote) {
       if ((await push(repo, remote, head)) === "moved") {
         emit("note", `${remote}/${repo.defaultBranch} moved while merging. Starting over from the new tip.`);

@@ -4,7 +4,8 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { landTask, MergeError } from "../src/factory/merge.js";
+import { landTask as land, MergeError, type MergeRequest } from "../src/factory/merge.js";
+const landTask = (req: MergeRequest) => land({ checks: ["true"], ...req });
 import { keepBothSides } from "../src/agents/simulated.js";
 import type { Repo, Task } from "../src/core/types.js";
 
@@ -72,6 +73,34 @@ const emit = (_t: string, m: string) => void events.push(m);
 const noResolve = async () => {
   throw new Error("should not be asked to resolve conflicts");
 };
+
+test("merge: failed and unconfigured checks never push", async () => {
+  for (const checks of [["echo broken; exit 1"], []]) {
+    const { root, repo, task, wt } = setup();
+    commitFile(wt, "feature.txt", "feature\n", "feature");
+    const before = sh(join(root, "origin.git"), "rev-parse", "main");
+    const evidence: import("../src/core/types.js").ValidationRun[] = [];
+    await assert.rejects(landTask({ repo, task, workdir: wt, emit, resolveConflicts: noResolve,
+      checks, recordValidation: r => evidence.push(r) }), /checks did not pass/);
+    assert.equal(sh(join(root, "origin.git"), "rev-parse", "main"), before);
+    assert.equal(evidence[0]!.status, checks.length ? "failed" : "unconfigured");
+    assert.equal(evidence[0]!.commit, sh(wt, "rev-parse", "HEAD"));
+    if (checks.length) assert.match(evidence[0]!.logs, /broken/);
+  }
+});
+
+test("merge: blocked execution and checks that edit the candidate never push", async () => {
+  for (const checks of [["exit 126"], ["echo changed >> notes.md"]]) {
+    const { root, repo, task, wt } = setup();
+    commitFile(wt, "feature.txt", "feature\n", "feature");
+    const before = sh(join(root, "origin.git"), "rev-parse", "main");
+    const evidence: import("../src/core/types.js").ValidationRun[] = [];
+    await assert.rejects(landTask({ repo, task, workdir: wt, emit, resolveConflicts: noResolve,
+      checks, recordValidation: r => evidence.push(r) }), /checks did not pass/);
+    assert.equal(evidence.at(-1)!.status, "blocked");
+    assert.equal(sh(join(root, "origin.git"), "rev-parse", "main"), before);
+  }
+});
 
 test("merge: lands the branch on origin and the clean checkout with one merge commit", async () => {
   const { root, checkout, repo, task, wt } = setup();
@@ -182,11 +211,13 @@ test("merge: if origin moves mid-merge, it starts over instead of forcing", asyn
   landElsewhere(root, "notes.md", "# Notes\n\nfirst\nfrom main\n");
 
   let calls = 0;
+  const checked: string[] = [];
   const r = await landTask({
     repo,
     task,
     workdir: wt,
     emit,
+    recordValidation: run => checked.push(run.commit),
     resolveConflicts: async ({ cwd, files }) => {
       calls++;
       // While the agent works, someone else pushes. The first push must be refused.
@@ -201,6 +232,9 @@ test("merge: if origin moves mid-merge, it starts over instead of forcing", asyn
   });
 
   assert.equal(calls, 2, "resolved again on top of the new tip");
+  assert.equal(checked.length, 2, "checks ran after each conflict resolution and remote-moved retry");
+  assert.notEqual(checked[0], checked[1]);
+  assert.equal(checked[1], r.head);
   const origin = join(root, "origin.git");
   assert.equal(sh(origin, "rev-parse", "main"), r.commit);
   assert.equal(sh(origin, "show", "main:late.txt"), "late", "the late push survived");
@@ -225,6 +259,7 @@ test("factory: a task goes from work to review to merged and pushed, through a c
   const store = new Store();
   const actions = new OperatorActions(store);
   const repo = await actions.connectRepo(checkout, "e2e");
+  store.setRepoChecks(repo.id, ["true"]);
   const factory = new Factory(store, new SimulatedDriver(2), { crewSize: 1, tickMs: 20 });
   const until = async (ok: () => boolean, what: string) => {
     for (let i = 0; i < 500 && !ok(); i++) await new Promise((r) => setTimeout(r, 20));
@@ -246,6 +281,8 @@ test("factory: a task goes from work to review to merged and pushed, through a c
     await actions.approve(t.id);
     await until(() => !["merging"].includes(store.getTask(t.id)!.status), "merge");
     const done = store.getTask(t.id)!;
+    assert.deepEqual(done.report?.validation?.map(r => [r.phase, r.status]), [["review", "passed"], ["merge", "passed"]]);
+    assert.equal(done.report?.validation?.at(-1)?.commit, sh(origin, "rev-parse", "main"));
     const events = store.listEvents(t.id);
     assert.equal(done.status, "merged", events.map((e) => e.message).join("\n"));
     assert.ok(events.some((e) => /conflict with origin\/main/.test(e.message)), "the conflict went to an agent");

@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createWorktree, finalizeWorktree, removeWorktree } from "./git.js";
 import { installDependencies } from "./deps.js";
 import { deleteMergedBranch, landTask, MergeError } from "./merge.js";
+import { runChecks } from "./checks.js";
 import { DashboardBuilder } from "./dashboard.js";
 import { DEFAULT_DRIVER_KEY, isAvailable } from "./drivers.js";
 import { worktreesDir } from "../core/paths.js";
@@ -353,6 +354,12 @@ export class Factory {
         workdir,
         emit,
         signal: ac.signal,
+        checks: this.store.repoChecks(repo.id),
+        recordValidation: (run) => {
+          const report = this.store.getTask(task.id)?.report ?? { summary: "", findings: [], changedFiles: [] };
+          this.store.updateTask(task.id, { report: { ...report, validation: [...(report.validation ?? []), run] } });
+          emit("note", `Merge check ${run.status}: ${run.command ?? "configuration"}`, { validation: run });
+        },
         resolveConflicts: async ({ cwd, base, files }) => {
           try {
             const note = await installDependencies(cwd, { from: repo.path, signal: ac.signal });
@@ -463,6 +470,13 @@ export class Factory {
       if (task.autonomy !== "observe") {
         const changed = await finalizeWorktree(repo, task, cwd);
         result.report.changedFiles = [...new Set([...changed, ...result.report.changedFiles])];
+        result.report.validation = this.store.getTask(task.id)?.report?.validation ?? [];
+        this.store.updateTask(task.id, { report: result.report });
+        await runChecks(cwd, this.store.repoChecks(repo.id), "review", (run) => {
+          result.report.validation!.push(run);
+          this.store.updateTask(task.id, { report: result.report });
+          emit("note", `Review check ${run.status}: ${run.command ?? "configuration"}`, { validation: run });
+        }, ac.signal);
       }
       const logged = new Set(this.store.listEvents(task.id).filter((e) => e.type === "finding").map((e) => e.message));
       for (const f of result.report.findings) {

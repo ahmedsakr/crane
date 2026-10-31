@@ -140,3 +140,26 @@ npm test
 ## License
 
 MIT
+# Repository validation
+
+Use **Repos → Checks** to configure shell commands, one per line, for each
+repository. These are trusted operator commands executed by the factory in its
+isolated worktree, not commands supplied by an agent. Crane defaults to
+`npm run typecheck` and `npm test` for its own repository. Other repositories
+start unconfigured and cannot pass review or merge gates until checks are set.
+The local API also supports `GET /api/repos/:id/checks` and
+`PUT /api/repos/:id/checks` (a JSON array of command strings).
+
+After committing agent changes, Crane runs checks before marking work ready.
+After explicit operator merge approval, it checks the actual merge commit
+before pushing or updating the local default branch. Conflict resolutions and
+remote-moved retries each receive fresh checks. No previous passing result is
+reused for a different commit.
+
+Task reports retain factory-owned evidence for every check: phase, command,
+commit SHA, exit code, logs, and duration. The task view exposes this evidence.
+Nonzero exits are **failed**; execution errors, cancellation, timeouts, and
+output limits are **blocked**; missing commands are **unconfigured**. All stop
+the gate. Each command has a ten-minute limit and a 16 MiB captured-output
+limit. Checks must leave the commit and tracked files unchanged.
+

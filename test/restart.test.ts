@@ -29,6 +29,7 @@ async function setup() {
   const store = new Store(join(root, "crane.db"));
   const actions = new OperatorActions(store);
   const repo = await actions.connectRepo(checkout, "restart");
+  store.setRepoChecks(repo.id, ["true"]);
   return { store, actions, repo };
 }
 
