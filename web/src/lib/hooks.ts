@@ -1,5 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { TaskEvent } from "./api";
+import { api, type DriverInfo, type TaskEvent } from "./api";
+
+/**
+ * The agents tasks can run on, and the default. Fetched once per mount:
+ * checking what's installed is slow, and it rarely changes. `set` takes the
+ * list a change returned.
+ */
+export function useDrivers() {
+  const [drivers, set] = useState<DriverInfo[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    api
+      .drivers()
+      .then((d) => live && set(d))
+      .catch(() => live && set([]));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return { drivers, set };
+}
 
 /** Fetch now, then keep it fresh. Pauses while the tab is hidden. */
 export function usePoll<T>(fetcher: () => Promise<T>, intervalMs = 2000, deps: unknown[] = []) {

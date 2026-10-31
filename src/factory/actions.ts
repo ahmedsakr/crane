@@ -1,7 +1,17 @@
 import { resolve } from "node:path";
 import type { Store } from "../core/store.js";
-import type { Task, NewTask, Repo, RepoTools } from "../core/types.js";
+import {
+  DRIVER_NAMES,
+  driverLabel,
+  isDriverName,
+  type Task,
+  type NewTask,
+  type Repo,
+  type RepoTools,
+  type DriverInfo,
+} from "../core/types.js";
 import { currentBranch, isGitRepo, removeWorktree, repoRoot } from "./git.js";
+import { DEFAULT_DRIVER_KEY, driverCatalog, isAvailable, sharedDrivers } from "./drivers.js";
 import { factoryRoot } from "../core/paths.js";
 import { overlapsDenied, parseRule, ruleLabel } from "../core/permissions.js";
 import { ALWAYS_DENIED } from "../agents/claude-code.js";
@@ -14,6 +24,13 @@ export function toRule(input: string): string {
   const s = input.trim().replace(/^`|`$/g, "");
   if (/^(mcp__[\w-]+|[A-Z][\w-]*)(\(.+\))?$/.test(s)) return s;
   return `Bash(${s.replace(/:\*$/, "")}:*)`;
+}
+
+/** An agent name the operator typed or sent, checked. Null and "default" mean the factory's default. */
+function checkDriver(name: string | null | undefined): Task["driver"] {
+  if (name === undefined || name === null || name === "" || name === "default") return null;
+  if (!isDriverName(name)) throw new Error(`Unknown agent “${name}”. Use one of: ${DRIVER_NAMES.join(", ")}`);
+  return name;
 }
 
 /**
@@ -45,7 +62,7 @@ export class OperatorActions {
       input.repoId = this.store.listRepos().find((r) => r.isFactory)?.id ?? null;
     }
     if (!input.title.trim()) throw new Error("Give the task a title");
-    const task = this.store.createTask(input);
+    const task = this.store.createTask({ ...input, driver: checkDriver(input.driver) });
     // Remembered so the next instruction that doesn't name a repo defaults to this one.
     if (task.repoId) this.store.setSetting("last_repo", task.repoId);
     return task;
@@ -108,11 +125,34 @@ export class OperatorActions {
     return this.need(id);
   }
 
-  retry(id: string): Task {
+  /**
+   * Run a task again as a new one. It keeps the agent the operator chose for
+   * it, unless `driver` names another (null or "default" for the factory's default).
+   */
+  retry(id: string, opts: { driver?: string | null } = {}): Task {
     const m = this.need(id);
-    const next = this.store.createTask({ kind: m.kind, title: m.title, brief: m.brief, repoId: m.repoId, autonomy: m.autonomy });
-    this.store.addEvent(m.id, "operator", `Retried as ${next.id}`, { taskId: next.id });
+    const driver = opts.driver === undefined ? m.driver : checkDriver(opts.driver);
+    const next = this.store.createTask({ kind: m.kind, title: m.title, brief: m.brief, repoId: m.repoId, autonomy: m.autonomy, driver });
+    const on = opts.driver !== undefined ? ` on ${driver ? driverLabel(driver) : "the default agent"}` : "";
+    this.store.addEvent(m.id, "operator", `Retried as ${next.id}${on}`, { taskId: next.id });
     return next;
+  }
+
+  /** Every agent Crane can run, whether it's installed, and which is the default. */
+  drivers(): Promise<DriverInfo[]> {
+    return driverCatalog(this.store.getSetting(DEFAULT_DRIVER_KEY));
+  }
+
+  /** Choose the agent new tasks run on, unless the operator picks another for a task. */
+  async setDefaultDriver(name: string): Promise<DriverInfo[]> {
+    const driver = checkDriver(name);
+    if (!driver) throw new Error("Choose which agent to use by default");
+    const d = sharedDrivers().find((x) => x.name === driver)!;
+    if (!(await isAvailable(d, 0))) {
+      throw new Error(`${driverLabel(driver)} isn't installed here, so it can't be the default yet`);
+    }
+    this.store.setSetting(DEFAULT_DRIVER_KEY, driver);
+    return this.drivers();
   }
 
   /** Turn one finding from a report into its own task that is allowed to make the change. */
@@ -126,6 +166,7 @@ export class OperatorActions {
       brief: `${f.detail}\n\nFollow-up to task ${m.id}: “${m.title}”.`,
       repoId: m.repoId,
       autonomy: "propose",
+      driver: m.driver,
     });
     this.store.addEvent(m.id, "operator", `Started follow-up ${next.id}: ${f.title}`, { taskId: next.id });
     return next;

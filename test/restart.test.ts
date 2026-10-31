@@ -117,7 +117,7 @@ test("restart: a task the operator cancelled stays cancelled when the factory st
   store.close();
 });
 
-test("store: an older database gains the session column", () => {
+test("store: an older database gains the session and agent columns", () => {
   const file = join(mkdtempSync(join(tmpdir(), "crane-")), "old.db");
   const old = new Database(file);
   old.exec(`CREATE TABLE tasks (
@@ -131,6 +131,7 @@ test("store: an older database gains the session column", () => {
   assert.equal(store.getTask("t-old")?.sessionId, null);
   store.updateTask("t-old", { sessionId: "s-1" });
   assert.equal(store.getTask("t-old")?.sessionId, "s-1");
+  assert.equal(store.getTask("t-old")?.driver, null, "old tasks run on the default agent");
   store.close();
   new Store(file).close(); // opening it again is a no-op
 });

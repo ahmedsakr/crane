@@ -1,14 +1,75 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../App";
+import { api, driverLabel, type DriverInfo } from "../lib/api";
 import { ago, plural } from "../lib/format";
-import { useTick } from "../lib/hooks";
-import { Empty } from "../components/bits";
+import { useDrivers, useTick } from "../lib/hooks";
+import { Empty, useToast } from "../components/bits";
+
+/** The agents the crew can run on. The default is what new tasks use unless the operator picks another. */
+function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: DriverInfo[]) => void }) {
+  const toast = useToast();
+  const { refresh } = useApp();
+  const [busy, setBusy] = useState<string | null>(null);
+  const choose = async (d: DriverInfo) => {
+    setBusy(d.name);
+    try {
+      onChange(await api.setDefaultDriver(d.name));
+      toast({ text: `New tasks run on ${d.label}` });
+      refresh();
+    } catch (e) {
+      toast({ text: (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <section className="section">
+      <div className="section-head">
+        <h2 className="section-title">Runs on</h2>
+      </div>
+      <p className="muted" style={{ maxWidth: "60ch", margin: "0 0 12px", fontSize: 14 }}>
+        New tasks use the default agent. You can pick another for any task when you start it.
+      </p>
+      <ul className="rows card" style={{ padding: "0 18px" }}>
+        {drivers.map((d) => (
+          <li key={d.name}>
+            <div className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
+              <span style={{ minWidth: 0 }}>
+                <span className="row-title" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ color: d.available ? undefined : "var(--graphite)" }}>{d.label}</span>
+                  {d.isDefault && <span className="chip chip-crane">default</span>}
+                </span>
+                <span className="row-meta" style={{ display: "block", whiteSpace: "normal" }}>
+                  {d.hint}
+                </span>
+              </span>
+              <span>
+                {d.isDefault ? null : d.available ? (
+                  <button className="btn btn-quiet btn-sm" disabled={!!busy} onClick={() => choose(d)}>
+                    Make default
+                  </button>
+                ) : (
+                  <span className="muted" style={{ fontSize: 13 }}>
+                    Not installed
+                  </span>
+                )}
+              </span>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
 
 export function Crew() {
   const { overview: o } = useApp();
+  const { drivers, set } = useDrivers();
   useTick();
   if (!o) return null;
-  const driver = o.factory.driver === "claude-code" ? "Claude Code" : o.factory.driver === "simulated" ? "Simulated" : o.factory.driver;
+  const driver = driverLabel(drivers?.find((d) => d.isDefault)?.name ?? o.factory.driver);
 
   return (
     <>
@@ -17,7 +78,7 @@ export function Crew() {
       </div>
       <p className="muted" style={{ maxWidth: "60ch" }}>
         {o.factory.running
-          ? `${plural(o.agents.length, "agent")} on ${driver}. Each picks up the oldest queued task when it's free.`
+          ? `${plural(o.agents.length, "agent")}, on ${driver} unless a task asks for another. Each picks up the oldest queued task when it's free.`
           : "The factory is off. Run crane serve to bring the crew in."}
         {o.factory.driver === "simulated" && " Simulated agents don't call a model; they're for trying Crane out."}
       </p>
@@ -50,7 +111,11 @@ export function Crew() {
                       {a.name}
                     </span>
                     <span className="muted" style={{ fontSize: 13 }}>
-                      {a.state === "working" ? "Working" : a.state === "paused" ? "Paused" : "Waiting for work"}
+                      {a.state === "working"
+                        ? `Working on ${driverLabel(a.driver)}`
+                        : a.state === "paused"
+                          ? "Paused"
+                          : "Waiting for work"}
                     </span>
                   </span>
                   {a.state === "working" && <span className="dot dot-running" style={{ marginLeft: "auto" }} />}
@@ -75,6 +140,8 @@ export function Crew() {
           })}
         </div>
       )}
+
+      {drivers && drivers.length > 0 && <RunsOn drivers={drivers} onChange={set} />}
     </>
   );
 }

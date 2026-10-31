@@ -4,6 +4,7 @@ import type {
   Analytics,
   Autonomy,
   BlockedTool,
+  DriverInfo,
   RepoTools,
   Task,
   TaskEvent,
@@ -14,8 +15,30 @@ import type {
   Repo,
 } from "../../../src/core/types";
 
-export type { Agent, AgentRun, Analytics, Autonomy, BlockedTool, RepoTools, Task, TaskEvent, TaskKind, TaskStatus, Overview, Repo };
-export { AUTONOMY_LABEL, KIND_LABEL, RUN_KIND_LABEL, STATUS_LABEL, lastMergeOutcome } from "../../../src/core/types";
+export type {
+  Agent,
+  AgentRun,
+  Analytics,
+  Autonomy,
+  BlockedTool,
+  DriverInfo,
+  RepoTools,
+  Task,
+  TaskEvent,
+  TaskKind,
+  TaskStatus,
+  Overview,
+  Repo,
+};
+export {
+  AUTONOMY_LABEL,
+  KIND_LABEL,
+  RUN_KIND_LABEL,
+  STATUS_LABEL,
+  choosableDrivers,
+  driverLabel,
+  lastMergeOutcome,
+} from "../../../src/core/types";
 export { ruleLabel } from "../../../src/core/permissions";
 
 export interface TaskDraft extends NewTask {
@@ -58,7 +81,8 @@ export const api = {
   merge: (id: string) => post<Task>(`/tasks/${id}/merge`),
   reject: (id: string, note?: string) => post<Task>(`/tasks/${id}/reject`, { note }),
   cancel: (id: string) => post<Task>(`/tasks/${id}/cancel`),
-  retry: (id: string) => post<Task>(`/tasks/${id}/retry`),
+  /** Run it again as a new task, on the same agent unless `driver` names another. */
+  retry: (id: string, driver?: string) => post<Task>(`/tasks/${id}/retry`, driver ? { driver } : {}),
   followUp: (id: string, finding: number) => post<Task>(`/tasks/${id}/follow-up`, { finding }),
   repos: () => req<Repo[]>("/repos"),
   addRepo: (path: string, name?: string) => post<Repo>("/repos", { path, name }),
@@ -69,6 +93,8 @@ export const api = {
     post<RepoTools>(`/repos/${repoId}/tools/keep-blocked`, { rule, taskId }),
   disallowTool: (repoId: string, rule: string) => post<RepoTools>(`/repos/${repoId}/tools/disallow`, { rule }),
   agents: () => req<Agent[]>("/agents"),
+  drivers: () => req<DriverInfo[]>("/drivers"),
+  setDefaultDriver: (driver: string) => post<DriverInfo[]>("/factory/driver", { driver }),
   pause: () => post("/factory/pause"),
   resume: () => post("/factory/resume"),
 };

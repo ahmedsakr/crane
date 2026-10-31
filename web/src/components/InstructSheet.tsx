@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { api, AUTONOMY_LABEL, KIND_LABEL, type Autonomy, type TaskDraft, type TaskKind, type Repo } from "../lib/api";
+import { api, AUTONOMY_LABEL, KIND_LABEL, choosableDrivers, type Autonomy, type TaskDraft, type TaskKind, type Repo } from "../lib/api";
 import { placeMenu, type MenuPlace } from "../lib/placement";
+import { useDrivers } from "../lib/hooks";
 import { useToast } from "./bits";
 
 const AUTONOMY_HINT: Record<Autonomy, string> = {
@@ -140,6 +141,11 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
   const [text, setText] = useState(initial);
   const [draft, setDraft] = useState<TaskDraft | null>(null);
   const [overrides, setOverrides] = useState<Partial<Pick<TaskDraft, "kind" | "repoId" | "autonomy">>>({});
+  // Null is "the default agent". Only asked about when more than one agent is installed.
+  const [driver, setDriver] = useState<string | null>(null);
+  const { drivers } = useDrivers();
+  const agents = choosableDrivers(drivers ?? []);
+  const defaultAgent = drivers?.find((d) => d.isDefault);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const nav = useNavigate();
@@ -196,6 +202,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
         brief: final.brief,
         repoId: final.repoId,
         autonomy: final.autonomy,
+        driver,
       });
       onClose();
       nav(`/tasks/${m.id}`);
@@ -274,6 +281,17 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
                   }))}
                   onChange={(v) => setOverrides((o) => ({ ...o, autonomy: v }))}
                 />
+                {agents.length > 1 && (
+                  <Choice
+                    k="Agent"
+                    value={driver ?? defaultAgent?.name ?? null}
+                    label={agents.find((a) => a.name === driver)?.label ?? defaultAgent?.label ?? "Default"}
+                    why={driver ? "You chose this" : "Your default agent"}
+                    options={agents.map((a) => ({ value: a.name, label: a.label, hint: a.isDefault ? `Your default. ${a.hint}` : a.hint }))}
+                    // Choosing the default is the same as not choosing: the task follows the default.
+                    onChange={(v) => setDriver(v === defaultAgent?.name ? null : v)}
+                  />
+                )}
               </div>
             </div>
           )}

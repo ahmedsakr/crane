@@ -4,8 +4,11 @@ import pc from "picocolors";
 import { Store } from "../core/store.js";
 import {
   AUTONOMY_LABEL,
+  DRIVER_NAMES,
   KIND_LABEL,
   RUN_KIND_LABEL,
+  choosableDrivers,
+  driverLabel,
   lastMergeOutcome,
   type Autonomy,
   type BlockedTool,
@@ -32,7 +35,7 @@ function factoryLine(): string {
   const paused = store.isPaused();
   if (!running) return `${pc.dim("○")} Factory is off  ${ui.dim("start it with")} crane serve`;
   if (paused) return `${ui.accent("◉")} Factory is paused  ${ui.dim("agents will finish current work, then wait")}`;
-  return `${pc.green("◉")} Factory is running  ${ui.dim(`on ${factoryDriverName(store)}`)}`;
+  return `${pc.green("◉")} Factory is running  ${ui.dim(`on ${driverLabel(factoryDriverName(store))}`)}`;
 }
 
 const program = new Command()
@@ -101,8 +104,9 @@ program
   .option("-r, --repo <repo>", "repo name or id")
   .option("-k, --kind <kind>", "maintenance | repo_feature | factory_feature")
   .option("-a, --autonomy <level>", "observe | propose | act")
+  .option("--agent <agent>", `which agent works it: ${DRIVER_NAMES.join(" | ")} (default: the factory's default)`)
   .option("-y, --yes", "skip the confirmation step")
-  .action(async (words: string[], opts: { repo?: string; kind?: TaskKind; autonomy?: Autonomy; yes?: boolean }) => {
+  .action(async (words: string[], opts: { repo?: string; kind?: TaskKind; autonomy?: Autonomy; agent?: string; yes?: boolean }) => {
     p.intro(`${ui.accent("▟")} ${pc.bold("New task")}`);
     let text = words.join(" ").trim();
     if (!text) {
@@ -140,12 +144,29 @@ program
       if (store.getRepo(draft.repoId)?.isFactory) draft.kind = "factory_feature";
     }
 
+    // The agent: the one asked for, else the factory's default. Only shown when there's a choice to make.
+    const catalog = await actions.drivers();
+    const choosable = choosableDrivers(catalog);
+    const defaultAgent = catalog.find((d) => d.isDefault);
+    let driver: string | null = null;
+    if (opts.agent && opts.agent !== "default") {
+      const d = catalog.find((x) => x.name === opts.agent);
+      if (!d) ui.fail(`No agent called ${opts.agent}. Use one of: ${DRIVER_NAMES.join(", ")}`);
+      if (!d.available) ui.fail(`${d.label} isn't installed here. ${d.hint}`);
+      driver = d.name;
+    }
+    const agentLine = () =>
+      driver
+        ? `${ui.dim("Agent    ")} ${driverLabel(driver)}  ${ui.dim("You chose it")}`
+        : `${ui.dim("Agent    ")} ${defaultAgent?.label ?? "The default"}  ${ui.dim("Your default agent")}`;
+
     const summary = [
       `${pc.bold(draft.title)}`,
       "",
       `${ui.dim("Repo     ")} ${repoName(draft.repoId) ?? "—"}  ${ui.dim(draft.why.repo)}`,
       `${ui.dim("Type     ")} ${KIND_LABEL[draft.kind]}  ${ui.dim(draft.why.kind)}`,
       `${ui.dim("Freedom  ")} ${AUTONOMY_LABEL[draft.autonomy]}  ${ui.dim(draft.why.autonomy)}`,
+      ...(driver || choosable.length > 1 ? [agentLine()] : []),
     ].join("\n");
     p.note(summary, "Here's what I understood");
 
@@ -156,10 +177,21 @@ program
           { value: "go", label: "Start task" },
           { value: "autonomy", label: "Change how much freedom it has" },
           { value: "kind", label: "Change the type" },
+          ...(choosable.length > 1 ? [{ value: "agent", label: "Change the agent" }] : []),
           { value: "stop", label: "Don't start" },
         ],
       });
       if (p.isCancel(next) || next === "stop") return p.cancel("Nothing was created.");
+      if (next === "agent") {
+        const a = await p.select({
+          message: "Which agent?",
+          initialValue: driver ?? defaultAgent?.name ?? choosable[0]!.name,
+          options: choosable.map((d) => ({ value: d.name, label: d.label, hint: d.isDefault ? "your default" : d.hint })),
+        });
+        if (p.isCancel(a)) return p.cancel("Nothing was created.");
+        // Picking the default leaves the task on "whatever the default is", like not choosing at all.
+        driver = a === defaultAgent?.name ? null : String(a);
+      }
       if (next === "autonomy") {
         const a = await p.select({
           message: "How much freedom?",
@@ -185,7 +217,7 @@ program
     }
 
     try {
-      const m = actions.createTask(draft);
+      const m = actions.createTask({ ...draft, driver });
       p.outro(
         `${pc.green("✓")} Task started  ${ui.dim(m.id)}\n   ${ui.dim("follow along:")} crane watch ${m.id}${
           factoryIsRunning(store) ? "" : `\n   ${ui.accent("!")} The factory is off. Run ${pc.bold("crane serve")} to start the agents.`
@@ -257,7 +289,10 @@ program
     );
     const runs = store.listRuns(m.id);
     const cost = m.costUsd ? ` · ${ui.usd(m.costUsd)}${runs.length > 1 ? ` over ${runs.length} runs` : ""}` : "";
-    console.log(`  ${ui.statusText(m.status)}${ui.dim(cost)}`);
+    const ran = store.lastWorkDriver(m.id);
+    const agent = m.driver ?? ran;
+    const on = agent && agent !== "unknown" ? ` · on ${driverLabel(agent)}` : "";
+    console.log(`  ${ui.statusText(m.status)}${ui.dim(on + cost)}`);
 
     if (m.report) {
       console.log(ui.section("Summary"));
@@ -281,7 +316,7 @@ program
         const tokens = r.inputTokens + r.cacheReadTokens + r.cacheWriteTokens + r.outputTokens;
         console.log(
           `  ${RUN_KIND_LABEL[r.kind].padEnd(18)} ${ui.usd(r.costUsd).padStart(8)}  ${ui.dim(
-            [r.outcome, r.model, r.turns ? `${r.turns} turns` : null, tokens ? `${ui.compact(tokens)} tokens` : null, ui.ago(r.startedAt)]
+            [r.outcome, r.driver === "unknown" ? null : driverLabel(r.driver), r.model, r.turns ? `${r.turns} turns` : null, tokens ? `${ui.compact(tokens)} tokens` : null, ui.ago(r.startedAt)]
               .filter(Boolean)
               .join(" · "),
           )}`,
@@ -429,10 +464,11 @@ program
   .command("retry")
   .description("Run a task again from scratch")
   .argument("<id>")
-  .action((id: string) => {
+  .option("--agent <agent>", `run it on another agent: ${DRIVER_NAMES.join(" | ")} | default`)
+  .action((id: string, opts: { agent?: string }) => {
     try {
-      const m = actions.retry(id);
-      ui.ok(`Queued again as ${m.id}`);
+      const m = actions.retry(id, { driver: opts.agent });
+      ui.ok(`Queued again as ${m.id}${m.driver ? ` on ${driverLabel(m.driver)}` : ""}`);
     } catch (err) {
       ui.fail((err as Error).message);
     }
@@ -611,16 +647,45 @@ program
   });
 
 // ── agents & factory control ────────────────────────────────
-program
+const agents = program
   .command("agents")
-  .description("Who's on the crew and what they're doing")
-  .action(() => {
+  .description("Who's on the crew, and which agent they run on")
+  .action(async () => {
     console.log(`\n${factoryLine()}`);
     const list = store.listAgents();
     console.log(ui.section("Crew", list.length));
     if (!list.length) console.log(`  ${ui.dim("No agents yet. They clock in when you run")} crane serve`);
-    for (const a of list) console.log(ui.agentLine(a, a.taskId ? store.getTask(a.taskId)?.title : undefined));
+    for (const a of list) {
+      const title = a.taskId ? store.getTask(a.taskId)?.title : undefined;
+      console.log(ui.agentLine(a, title ? `${title}  ${ui.dim(`on ${driverLabel(a.driver)}`)}` : undefined));
+    }
+    const catalog = await actions.drivers();
+    console.log(ui.section("Runs on"));
+    for (const d of catalog) {
+      const mark = d.isDefault ? ui.accent("●") : d.available ? pc.dim("○") : pc.dim("·");
+      const name = d.label.padEnd(12);
+      console.log(`  ${mark} ${d.available ? name : pc.dim(name)} ${ui.dim(d.isDefault ? `default · ${d.hint}` : d.hint)}`);
+    }
     console.log("");
+    const other = catalog.find((d) => d.available && !d.isDefault && d.name !== "simulated");
+    const next: [string, string][] = [];
+    if (other) next.push([`crane agents use ${other.name}`, `run new tasks on ${other.label}`]);
+    next.push([`crane do --agent <agent> "…"`, "pick the agent for one task"]);
+    console.log(ui.hint(...next) + "\n");
+  });
+
+agents
+  .command("use")
+  .description("Choose the agent new tasks run on")
+  .argument("<agent>", DRIVER_NAMES.join(" | "))
+  .action(async (name: string) => {
+    try {
+      const catalog = await actions.setDefaultDriver(name);
+      const d = catalog.find((x) => x.isDefault)!;
+      ui.ok(`New tasks run on ${d.label}. Tasks already started keep their agent.`);
+    } catch (err) {
+      ui.fail((err as Error).message);
+    }
   });
 
 // ── crane analytics: what the factory costs ─────────────────
@@ -680,7 +745,9 @@ program
         console.log(`  ${ui.statusDot(m.status)} ${ui.dim(m.id)}  ${ui.truncate(m.title, 44).padEnd(44)}  ${ui.usd(m.usd).padStart(8)}`);
       }
     }
-    console.log(`\n  ${ui.dim("Costs are what Claude Code reports, at API prices. On a subscription they're an estimate, not a bill.")}\n`);
+    console.log(
+      `\n  ${ui.dim("Costs are what each agent reports, at API prices. On a subscription they're an estimate, not a bill. Codex reports tokens only, so its runs count as $0.")}\n`,
+    );
     const next: [string, string][] = [];
     if (a.topTasks[0]) next.push([`crane show ${a.topTasks[0].id}`, "see the most expensive task"]);
     next.push([`crane analytics --days ${a.days === 7 ? 30 : 7}`, `see the last ${a.days === 7 ? 30 : 7} days`]);
@@ -708,7 +775,11 @@ program
   .description("Start the factory: agents, API, and dashboard")
   .option("-p, --port <port>", "port for the dashboard", String(DEFAULT_PORT))
   .option("--agents <n>", "crew size", process.env.CRANE_AGENTS ?? "2")
-  .option("--driver <driver>", "auto | claude-code | simulated", process.env.CRANE_DRIVER ?? "auto")
+  .option(
+    "--driver <driver>",
+    `default agent: auto | ${DRIVER_NAMES.join(" | ")}. auto keeps the one you chose with crane agents use`,
+    process.env.CRANE_DRIVER ?? "auto",
+  )
   .option("--no-build-dashboard", "don't build the dashboard from merged changes to Crane; serve web/dist as it is")
   .option("--max-turns <n>", `most turns one agent run may take, 0 for no limit (default ${DEFAULT_MAX_TURNS})`)
   .option("--time-limit <minutes>", `most minutes a task may run, 0 for no limit (default ${DEFAULT_TIME_LIMIT_MIN})`)
