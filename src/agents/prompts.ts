@@ -20,12 +20,29 @@ const AUTONOMY_BRIEF: Record<Task["autonomy"], string> = {
   act: "You may change files. You are working in an isolated git worktree on your own branch. Commit your work with clear messages. Never push, and never touch the default branch.",
 };
 
-export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob): string {
-  if (job?.kind === "resolve_conflicts") return conflictSystemPrompt(repo, job);
+/**
+ * For agents whose sandbox can't write to git (Codex): the worktree's git
+ * directory lives outside it. Crane commits what they leave behind instead.
+ */
+const SANDBOXED_AUTONOMY_BRIEF: Record<Task["autonomy"], string> = {
+  ...AUTONOMY_BRIEF,
+  propose:
+    "You may change files. You are working in an isolated git worktree on your own branch, so edits cannot affect the operator's checkout. Leave your changes in the working tree: Crane commits them to the branch when you finish. Your sandbox can't write to git, so don't try to commit. The operator will review the branch before anything is merged.",
+  act: "You may change files. You are working in an isolated git worktree on your own branch. Leave your changes in the working tree: Crane commits them to the branch when you finish. Your sandbox can't write to git, so don't try to commit, and never push.",
+};
+
+export interface PromptOptions {
+  /** The agent can run `git commit` and `git add` itself. False for sandboxed agents. */
+  agentCommits?: boolean;
+}
+
+export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob, opts: PromptOptions = {}): string {
+  const commits = opts.agentCommits ?? true;
+  if (job?.kind === "resolve_conflicts") return conflictSystemPrompt(repo, job, commits);
   return [
     "You are an agent in Crane, an autonomous software factory steered by a human operator.",
     KIND_BRIEF[task.kind],
-    AUTONOMY_BRIEF[task.autonomy],
+    (commits ? AUTONOMY_BRIEF : SANDBOXED_AUTONOMY_BRIEF)[task.autonomy],
     repo ? `Target repository: ${repo.name} (default branch: ${repo.defaultBranch}).` : "",
     "Narrate briefly as you go: one short sentence before each significant step, so the operator can follow along.",
     reportInstructions(),
@@ -34,7 +51,7 @@ export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob): str
     .join("\n\n");
 }
 
-function conflictSystemPrompt(repo: Repo | null, job: ResolveConflictsJob): string {
+function conflictSystemPrompt(repo: Repo | null, job: ResolveConflictsJob, agentCommits: boolean): string {
   const main = repo?.defaultBranch ?? "the default branch";
   return [
     "You are an agent in Crane, an autonomous software factory steered by a human operator.",
@@ -42,7 +59,9 @@ function conflictSystemPrompt(repo: Repo | null, job: ResolveConflictsJob): stri
     [
       "How to resolve:",
       "- Keep the intent of both sides: the task's change and whatever landed on the default branch since. Never drop one side just to make the conflict go away.",
-      "- Remove every conflict marker, then `git add` each resolved file.",
+      agentCommits
+        ? "- Remove every conflict marker, then `git add` each resolved file."
+        : "- Remove every conflict marker. Crane stages the resolved files itself; your sandbox can't write to git.",
       "- Use `git diff`, `git log`, and `git show` to understand what each side changed. `git log --oneline HEAD..MERGE_HEAD` is the task's work; `git log --oneline MERGE_HEAD..HEAD` is what landed on the default branch.",
       "- If the project has quick checks (a typecheck, the test suite), run them and fix anything the merge broke.",
       "- Do not commit, and do not run git merge, checkout, reset, rebase, or push. Crane checks your resolution, commits it, and pushes.",

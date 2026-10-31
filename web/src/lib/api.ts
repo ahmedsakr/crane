@@ -3,6 +3,7 @@ import type {
   AgentRun,
   Analytics,
   Autonomy,
+  DriverInfo,
   Task,
   TaskEvent,
   TaskKind,
@@ -12,8 +13,16 @@ import type {
   Repo,
 } from "../../../src/core/types";
 
-export type { Agent, AgentRun, Analytics, Autonomy, Task, TaskEvent, TaskKind, TaskStatus, Overview, Repo };
-export { AUTONOMY_LABEL, KIND_LABEL, RUN_KIND_LABEL, STATUS_LABEL, lastMergeOutcome } from "../../../src/core/types";
+export type { Agent, AgentRun, Analytics, Autonomy, DriverInfo, Task, TaskEvent, TaskKind, TaskStatus, Overview, Repo };
+export {
+  AUTONOMY_LABEL,
+  KIND_LABEL,
+  RUN_KIND_LABEL,
+  STATUS_LABEL,
+  choosableDrivers,
+  driverLabel,
+  lastMergeOutcome,
+} from "../../../src/core/types";
 
 export interface TaskDraft extends NewTask {
   why: { kind: string; repo: string; autonomy: string };
@@ -53,12 +62,15 @@ export const api = {
   merge: (id: string) => post<Task>(`/tasks/${id}/merge`),
   reject: (id: string, note?: string) => post<Task>(`/tasks/${id}/reject`, { note }),
   cancel: (id: string) => post<Task>(`/tasks/${id}/cancel`),
-  retry: (id: string) => post<Task>(`/tasks/${id}/retry`),
+  /** Run it again as a new task, on the same agent unless `driver` names another. */
+  retry: (id: string, driver?: string) => post<Task>(`/tasks/${id}/retry`, driver ? { driver } : {}),
   followUp: (id: string, finding: number) => post<Task>(`/tasks/${id}/follow-up`, { finding }),
   repos: () => req<Repo[]>("/repos"),
   addRepo: (path: string, name?: string) => post<Repo>("/repos", { path, name }),
   removeRepo: (id: string) => req<{ ok: true }>(`/repos/${id}`, { method: "DELETE" }),
   agents: () => req<Agent[]>("/agents"),
+  drivers: () => req<DriverInfo[]>("/drivers"),
+  setDefaultDriver: (driver: string) => post<DriverInfo[]>("/factory/driver", { driver }),
   pause: () => post("/factory/pause"),
   resume: () => post("/factory/resume"),
 };

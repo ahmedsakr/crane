@@ -76,21 +76,23 @@ for (let day = 20; day >= 0; day--) {
       finishedAt: iso(end),
       report: { summary: "Sample history for the demo.", findings: [], changedFiles: [] },
     });
-    // Sample costs, roughly what Claude Code reports for runs this size.
+    // Sample usage, roughly what each agent reports for runs this size. Every third task ran on
+    // Codex, which reports tokens but no cost.
+    const codex = n % 3 === 0;
     const runs: ["work" | "resolve_conflicts", number][] = [["work", (end - start) / 60_000]];
     if (n % 5 === 0) runs.push(["resolve_conflicts", 3]);
     for (const [kind, minutes] of runs) {
-      const run = store.startRun({ taskId: m.id, kind, agentId: null, driver: "sample" });
+      const run = store.startRun({ taskId: m.id, kind, agentId: null, driver: codex ? "codex" : "claude-code" });
       const turns = Math.round(minutes * (1 + Math.random()));
       const tokensIn = turns * 18_000;
       store.finishRun(run, status === "failed" ? "failed" : "succeeded", {
-        costUsd: +(minutes * (0.03 + Math.random() * 0.05)).toFixed(4),
+        costUsd: codex ? 0 : +(minutes * (0.03 + Math.random() * 0.05)).toFixed(4),
         inputTokens: Math.round(tokensIn * 0.04),
         cacheReadTokens: Math.round(tokensIn * 0.86),
         cacheWriteTokens: Math.round(tokensIn * 0.1),
         outputTokens: turns * 700,
         turns,
-        model: "claude-sonnet-5-5",
+        model: codex ? null : "claude-sonnet-5-5",
       });
       store.db.prepare("UPDATE runs SET started_at = ?, finished_at = ? WHERE id = ?").run(iso(start), iso(end), run);
     }

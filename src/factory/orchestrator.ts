@@ -1,16 +1,17 @@
 import type { Store } from "../core/store.js";
-import type { RunUsage, Task } from "../core/types.js";
+import { driverLabel, isDriverName, type RunUsage, type Task } from "../core/types.js";
 import type { AgentDriver, RunContext, RunResult } from "../agents/driver.js";
 import { join } from "node:path";
 import { createWorktree, finalizeWorktree, removeWorktree } from "./git.js";
 import { installDependencies } from "./deps.js";
 import { deleteMergedBranch, landTask, MergeError } from "./merge.js";
 import { DashboardBuilder } from "./dashboard.js";
+import { DEFAULT_DRIVER_KEY, isAvailable } from "./drivers.js";
 import { worktreesDir } from "../core/paths.js";
 
 const CREW = ["Jib", "Boom", "Hoist", "Trolley", "Rigger", "Winch", "Gantry", "Mast"];
 const HEARTBEAT_KEY = "factory_heartbeat";
-const DRIVER_KEY = "factory_driver";
+const DRIVER_KEY = DEFAULT_DRIVER_KEY;
 
 export interface FactoryOptions {
   crewSize?: number;
@@ -56,12 +57,17 @@ export class Factory {
   private tickMs: number;
   private log: (line: string) => void;
   private dashboard: DashboardBuilder | null = null;
+  /** Every agent this factory can run, by name. The first is the default until the operator picks one. */
+  private drivers: Map<string, AgentDriver>;
 
   constructor(
     private store: Store,
-    private driver: AgentDriver,
+    drivers: AgentDriver | AgentDriver[],
     opts: FactoryOptions = {},
   ) {
+    const list = Array.isArray(drivers) ? drivers : [drivers];
+    if (!list.length) throw new Error("The factory needs at least one agent driver");
+    this.drivers = new Map(list.map((d) => [d.name, d]));
     const size = Math.max(1, Math.min(CREW.length, opts.crewSize ?? Number(process.env.CRANE_AGENTS ?? 2)));
     this.crew = CREW.slice(0, size).map((name) => ({ id: `a-${name.toLowerCase()}`, name }));
     this.tickMs = opts.tickMs ?? 1000;
@@ -75,13 +81,34 @@ export class Factory {
     }
   }
 
+  /** The operator's default agent, when this factory can run it; otherwise its first driver. */
+  private defaultDriver(): AgentDriver {
+    return this.drivers.get(this.store.getSetting(DRIVER_KEY) ?? "") ?? this.drivers.values().next().value!;
+  }
+
+  /**
+   * Who works a task: the agent the operator chose for it, else the one that
+   * worked it last (it owns the task's session and knows the work so far),
+   * else the factory's default.
+   */
+  private driverFor(task: Task): AgentDriver {
+    if (task.driver) {
+      const chosen = this.drivers.get(task.driver);
+      if (!chosen) throw new Error(`This task asks for ${driverLabel(task.driver)}, which this factory can't run`);
+      return chosen;
+    }
+    return this.drivers.get(this.store.lastWorkDriver(task.id) ?? "") ?? this.defaultDriver();
+  }
+
   start() {
+    // Keep the operator's saved default if this factory can run it.
+    const saved = this.store.getSetting(DRIVER_KEY);
+    if (!saved || !this.drivers.has(saved)) this.store.setSetting(DRIVER_KEY, this.defaultDriver().name);
     for (const a of this.crew) {
-      this.store.upsertAgent({ ...a, driver: this.driver.name });
+      this.store.upsertAgent({ ...a, driver: this.defaultDriver().name });
       this.store.setAgentState(a.id, "idle", null);
     }
     this.store.pruneAgents(this.crew.map((a) => a.id));
-    this.store.setSetting(DRIVER_KEY, this.driver.name);
 
     // A previous factory stopped without getting to put its work back (it crashed,
     // or was killed before it could). Requeue it; the agent picks up where it left off.
@@ -171,12 +198,18 @@ export class Factory {
    * Run the driver with a row in the runs ledger around it, so every run's
    * cost lands on its task: succeeded, failed, or cancelled.
    */
-  private async runAgent(agentId: string, ctx: Omit<RunContext, "onUsage">): Promise<RunResult> {
+  private async runAgent(agentId: string, driver: AgentDriver, ctx: Omit<RunContext, "onUsage">): Promise<RunResult> {
+    if (!(await isAvailable(driver))) {
+      throw new Error(
+        `${driverLabel(driver.name)} isn't installed where the factory runs, or didn't answer. Install it and restart the factory, or retry the task on another agent.`,
+      );
+    }
+    this.store.setAgentDriver(agentId, driver.name);
     const runId = this.store.startRun({
       taskId: ctx.task.id,
       kind: ctx.job?.kind ?? "work",
       agentId,
-      driver: this.driver.name,
+      driver: driver.name,
     });
     let usage: RunUsage | null = null;
     // A driver can report more than once in a run (a failed resume, then a fresh session), so add them up.
@@ -195,7 +228,7 @@ export class Factory {
           };
     };
     try {
-      const result = await this.driver.run({ ...ctx, onUsage });
+      const result = await driver.run({ ...ctx, onUsage });
       this.store.finishRun(runId, "succeeded", usage);
       return result;
     } catch (err) {
@@ -236,8 +269,9 @@ export class Factory {
           } catch {
             // Not fatal: resolving conflicts rarely needs a build.
           }
-          const r = await this.runAgent(agent.id, {
-            task: this.store.getTask(task.id)!,
+          const current = this.store.getTask(task.id)!;
+          const r = await this.runAgent(agent.id, this.driverFor(current), {
+            task: current,
             repo,
             cwd,
             signal: ac.signal,
@@ -312,13 +346,20 @@ export class Factory {
         }
       }
 
-      const result = await this.runAgent(agent.id, {
+      const driver = this.driverFor(task);
+      // A session belongs to the agent that started it. Older runs didn't record theirs, so trust those.
+      const owner = this.store.lastWorkDriver(task.id);
+      const resumable = !!task.sessionId && (!isDriverName(owner) || owner === driver.name);
+      if (task.sessionId && !resumable) {
+        emit("note", `Switching to ${driverLabel(driver.name)}, which starts a new session on the work so far`);
+      }
+      const result = await this.runAgent(agent.id, driver, {
         task: this.store.getTask(task.id)!,
         repo,
         cwd,
         signal: ac.signal,
         emit,
-        resumeSession: task.sessionId ?? undefined,
+        resumeSession: resumable ? task.sessionId! : undefined,
         onSession: (sessionId) => this.store.updateTask(task.id, { sessionId }),
       });
 

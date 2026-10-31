@@ -241,7 +241,8 @@ export function Analytics() {
 
           <p className="muted spend-note">
             {compact(tokensIn)} tokens in ({compact(a.tokens.cacheRead)} read from cache) and {compact(a.tokens.output)} out.
-            Costs are what Claude Code reports for each run, at API prices. On a Claude subscription they're an estimate, not a bill.
+            Costs are what each agent reports for each run, at API prices. On a subscription they're an estimate, not a bill.
+            Codex reports tokens only, so its runs count as $0.
           </p>
         </>
       )}

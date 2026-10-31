@@ -100,6 +100,11 @@ export interface Task {
    * instead of starting over.
    */
   sessionId: string | null;
+  /**
+   * The agent the operator chose for this task, e.g. `codex`. Null means the
+   * factory's default agent at the time it's picked up.
+   */
+  driver: string | null;
   report: Report | null;
   costUsd: number;
   createdAt: string;
@@ -142,6 +147,8 @@ export interface NewTask {
   brief: string;
   repoId: string | null;
   autonomy: Autonomy;
+  /** Which agent works it. Leave out for the factory's default. */
+  driver?: string | null;
 }
 
 /** Why an agent ran: to work the task itself, or to resolve a merge's conflicts. */
@@ -150,7 +157,10 @@ export type RunOutcome = "running" | "succeeded" | "failed" | "cancelled";
 
 /** What one agent run used, as its driver reported it. */
 export interface RunUsage {
-  /** Claude Code's figure, at API prices. On a subscription it's an estimate, not a bill. */
+  /**
+   * The driver's own figure, at API prices. On a subscription it's an estimate,
+   * not a bill. Zero when the driver reports tokens only (Codex).
+   */
   costUsd: number;
   inputTokens: number;
   outputTokens: number;
@@ -237,6 +247,44 @@ export interface Overview {
   recent: Task[];
   agents: Agent[];
   repos: (Repo & { openTasks: number })[];
+}
+
+/** The agents Crane can run tasks on. Each one is a driver in `src/agents/`. */
+export const DRIVER_NAMES = ["claude-code", "codex", "simulated"] as const;
+export type DriverName = (typeof DRIVER_NAMES)[number];
+
+export const DRIVER_LABEL: Record<DriverName, string> = {
+  "claude-code": "Claude Code",
+  codex: "Codex",
+  simulated: "Simulated",
+};
+
+export const isDriverName = (name: unknown): name is DriverName =>
+  typeof name === "string" && (DRIVER_NAMES as readonly string[]).includes(name);
+
+/** A driver's label, or its raw name when Crane doesn't know it (old runs say "unknown"). */
+export const driverLabel = (name: string | null | undefined): string =>
+  isDriverName(name) ? DRIVER_LABEL[name] : (name ?? "—");
+
+/** One agent the operator can choose, and whether this machine can run it. */
+export interface DriverInfo {
+  name: DriverName;
+  label: string;
+  /** Its CLI is installed and answers, or it needs nothing installed (simulated). */
+  available: boolean;
+  /** What it is, or how to install it when it isn't. */
+  hint: string;
+  /** New tasks run on it unless the operator picks another. */
+  isDefault: boolean;
+}
+
+/**
+ * The agents worth offering when the operator starts a task: installed ones,
+ * and Simulated only when it's already the default (a demo). With one or none,
+ * there's no choice to show.
+ */
+export function choosableDrivers(list: DriverInfo[]): DriverInfo[] {
+  return list.filter((d) => d.available && (d.name !== "simulated" || d.isDefault));
 }
 
 export const KIND_LABEL: Record<TaskKind, string> = {

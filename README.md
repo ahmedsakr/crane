@@ -61,7 +61,12 @@ crane serve         # starts the agents and the dashboard at http://localhost:44
 crane do "investigate why the checkout tests are flaky in my-app"
 ```
 
-Agents run through [Claude Code](https://code.claude.com) in headless mode, using whatever login your local `claude` CLI already has. If `claude` isn't installed, Crane falls back to **simulated** agents. They walk through believable steps without calling a model, which is handy for trying the UI. It's always labelled as simulated.
+Agents run through a coding agent CLI you already have, using its existing login:
+
+- [Claude Code](https://code.claude.com), headless (`claude -p`).
+- [Codex](https://github.com/openai/codex), non-interactive (`codex exec`). Investigate-only tasks run in Codex's read-only sandbox. Everything else runs in its workspace sandbox with the network off, confined to the task's worktree, so Codex can't commit, push, or touch your checkout. Crane commits what it leaves. Codex reports tokens but not cost, so its runs count as $0 in analytics.
+
+Pick the default on the Crew page or with `crane agents use codex`. Pick another for one task from the instruct sheet's **Agent** chip (it shows once two agents are installed) or with `crane do --agent codex "…"`. A failed task can be run again on another agent. If no agent is installed, Crane falls back to **simulated** agents. They walk through believable steps without calling a model, which is handy for trying the UI. It's always labelled as simulated.
 
 ## The CLI
 
@@ -78,14 +83,14 @@ Agents run through [Claude Code](https://code.claude.com) in headless mode, usin
 | `crane merge <id>` | Merge and push a task you approved only, or one that finished on its own branch |
 | `crane diff <id>` | See what a task changed on its branch |
 | `crane follow-up <id> <n>` | Turn finding *n* into a task that makes the change |
-| `crane cancel <id>` / `crane retry <id>` | Stop work, or run it again |
+| `crane cancel <id>` / `crane retry <id>` | Stop work, or run it again (`--agent codex` to switch agents) |
 | `crane repos` / `crane repos add <path>` | The codebases the factory works on |
-| `crane agents` | Who's on the crew and what they're doing |
+| `crane agents` / `crane agents use <agent>` | Who's on the crew, which agents are installed, and which one new tasks run on |
 | `crane analytics` | What the factory spent, by day, repo, type, and task (`--days 7`). `crane show <id> --events` lists a task's runs and their costs. |
 | `crane pause` / `crane resume` | Stop or restart picking up new tasks |
 | `crane serve` | Run the factory: agents, API, and dashboard |
 
-You can stop or restart `crane serve` at any time, even while agents are working. Running tasks go back in the queue with their worktree and their agent's Claude Code session, and when the factory starts again each agent resumes its session where it stopped. Merges that were under way run again from the start, which is safe to repeat.
+You can stop or restart `crane serve` at any time, even while agents are working. Running tasks go back in the queue with their worktree and their agent's session, and when the factory starts again each task resumes its session on the agent that started it, even if you've changed the default since. Merges that were under way run again from the start, which is safe to repeat.
 
 When a change to Crane itself is merged, Crane builds the dashboard from that commit in its own directory (`$CRANE_HOME/builds/<sha>`, never your checkout) and serves it, so UI fixes show up without you running `npm run build`. Open pages offer to reload. If you run `npm run build` yourself, your newer `web/dist` is served instead. `crane serve --no-build-dashboard` turns this off.
 
@@ -94,17 +99,19 @@ When a change to Crane itself is merged, Crane builds the dashboard from that co
 | Variable | Default | |
 | --- | --- | --- |
 | `CRANE_HOME` | `~/.crane` | Where state (SQLite) and worktrees live |
-| `CRANE_DRIVER` | `auto` | `claude-code`, `simulated`, or `auto` |
+| `CRANE_DRIVER` | `auto` | Default agent at startup: `claude-code`, `codex`, `simulated`, or `auto` (keeps the one you chose with `crane agents use`, else the first installed) |
 | `CRANE_AGENTS` | `2` | Crew size |
 | `CRANE_MODEL` | Claude Code's default | Model passed to `claude --model` |
 | `CRANE_ALLOWED_TOOLS` | | Extra Claude Code tool rules, comma-separated |
+| `CRANE_CLAUDE_BIN` / `CRANE_CODEX_BIN` | `claude` / `codex` | Where to find each agent's CLI |
+| `CRANE_CODEX_MODEL` | Codex's default | Model passed to `codex exec --model` |
 
 ## How it's built
 
 ```
 src/
   core/      domain types and the SQLite store (the single source of truth)
-  agents/    drivers: Claude Code (headless) and simulated
+  agents/    drivers: Claude Code (headless), Codex (exec), and simulated
   factory/   orchestrator, git worktrees, operator actions, instruction parsing
   server/    HTTP API + server-sent events
   cli/       the `crane` command

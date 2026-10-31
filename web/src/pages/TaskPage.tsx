@@ -5,12 +5,14 @@ import {
   AUTONOMY_LABEL,
   KIND_LABEL,
   RUN_KIND_LABEL,
+  choosableDrivers,
+  driverLabel,
   lastMergeOutcome,
   type AgentRun,
   type TaskDetail,
   type TaskEvent,
 } from "../lib/api";
-import { useEventStream, usePoll, useTick } from "../lib/hooks";
+import { useDrivers, useEventStream, usePoll, useTick } from "../lib/hooks";
 import { ago, clock, compact, duration, plural, usd } from "../lib/format";
 import { StatusChip, useToast } from "../components/bits";
 import { useApp } from "../App";
@@ -78,6 +80,7 @@ function Runs({ runs }: { runs: AgentRun[] }) {
               <span className="runs-meta">
                 {[
                   r.outcome === "failed" ? "Failed" : r.outcome === "cancelled" ? "Cancelled" : null,
+                  r.driver === "unknown" ? null : driverLabel(r.driver),
                   r.model,
                   r.turns ? plural(r.turns, "turn") : null,
                   tokens ? `${compact(tokens)} tokens` : null,
@@ -134,6 +137,7 @@ export function TaskPage() {
   const [live, setLive] = useState<TaskEvent[]>([]);
   const [showDiff, setShowDiff] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const { drivers } = useDrivers();
   useTick(5000);
 
   const lastId = data?.events.at(-1)?.id ?? 0;
@@ -154,6 +158,11 @@ export function TaskPage() {
   const report = m.report;
   const main = repo?.defaultBranch ?? "main";
   const merge = lastMergeOutcome(events);
+  // The agent that worked it, or the one it asked for. Before it starts with no choice, nothing to say.
+  const ranOn = data.runs.filter((r) => r.kind === "work" && r.driver !== "unknown").at(-1)?.driver ?? null;
+  const usedDriver = ranOn ?? m.driver;
+  const runsOn = usedDriver ? driverLabel(usedDriver) : null;
+  const otherAgents = choosableDrivers(drivers ?? []).filter((d) => d.name !== usedDriver);
 
   const run = async (label: string, fn: () => Promise<unknown>, done: string, after?: (r: unknown) => void) => {
     setBusy(label);
@@ -312,7 +321,7 @@ export function TaskPage() {
               <dt>Freedom</dt>
               <dd>{AUTONOMY_LABEL[m.autonomy]}</dd>
               <dt>Agent</dt>
-              <dd>{agent?.name ?? "—"}</dd>
+              <dd>{[agent?.name, runsOn].filter(Boolean).join(" on ") || "—"}</dd>
               <dt>Started</dt>
               <dd>{m.startedAt ? ago(m.startedAt) : "Not yet"}</dd>
               <dt>Took</dt>
@@ -330,7 +339,9 @@ export function TaskPage() {
                 </>
               )}
             </dl>
-            {data.runs.length > 1 || (data.runs[0] && data.runs[0].costUsd > 0) ? <Runs runs={data.runs} /> : null}
+            {data.runs.length > 1 || (data.runs[0] && (data.runs[0].costUsd > 0 || data.runs[0].outputTokens > 0)) ? (
+              <Runs runs={data.runs} />
+            ) : null}
           </div>
 
           <div className="card card-pad">
@@ -353,6 +364,22 @@ export function TaskPage() {
                 Run again
               </button>
             )}
+            {/* When it didn't work out, offer the other installed agents too. */}
+            {["failed", "cancelled", "rejected"].includes(m.status) &&
+              otherAgents.map((d) => (
+                <button
+                  key={d.name}
+                  className="btn btn-quiet btn-sm"
+                  disabled={!!busy}
+                  onClick={() =>
+                    run("retry", () => api.retry(m.id, d.name), `Queued again on ${d.label}`, (r) =>
+                      nav(`/tasks/${(r as { id: string }).id}`),
+                    )
+                  }
+                >
+                  Run again on {d.label}
+                </button>
+              ))}
           </div>
           {(m.status === "approved" || m.status === "done") && m.branch && repo && (
             <div className="card card-pad">

@@ -99,7 +99,10 @@ export function createApp(store: Store) {
     return c.json(await actions.reject(c.req.param("id"), note));
   });
   api.post("/tasks/:id/cancel", (c) => c.json(actions.cancel(c.req.param("id"))));
-  api.post("/tasks/:id/retry", (c) => c.json(actions.retry(c.req.param("id")), 201));
+  api.post("/tasks/:id/retry", async (c) => {
+    const body = await c.req.json<{ driver?: string | null }>().catch(() => ({}) as { driver?: string | null });
+    return c.json(actions.retry(c.req.param("id"), { driver: body.driver }), 201);
+  });
   api.post("/tasks/:id/follow-up", async (c) => {
     const { finding } = await c.req.json<{ finding: number }>();
     return c.json(actions.followUp(c.req.param("id"), finding), 201);
@@ -116,6 +119,13 @@ export function createApp(store: Store) {
   });
 
   api.get("/agents", (c) => c.json(store.listAgents()));
+
+  /** The agents tasks can run on (Claude Code, Codex, …) and which one is the default. */
+  api.get("/drivers", async (c) => c.json(await actions.drivers()));
+  api.post("/factory/driver", async (c) => {
+    const { driver } = await c.req.json<{ driver: string }>();
+    return c.json(await actions.setDefaultDriver(driver));
+  });
 
   api.post("/factory/pause", (c) => {
     actions.pause();

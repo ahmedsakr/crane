@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   branch TEXT,
   worktree TEXT,
   session_id TEXT,
+  driver TEXT,
   report TEXT,
   cost_usd REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
@@ -147,7 +148,10 @@ function migrateMissionsToTasks(db: Database.Database) {
 }
 
 /** Columns added to `tasks` after its first release. */
-const ADDED_TASK_COLUMNS: [name: string, type: string][] = [["session_id", "TEXT"]];
+const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
+  ["session_id", "TEXT"],
+  ["driver", "TEXT"],
+];
 
 /** Add any missing columns to an older database. Safe if two processes open it at once. */
 function addMissingColumns(db: Database.Database) {
@@ -187,6 +191,7 @@ function toTask(r: Row): Task {
     branch: (r.branch as string) ?? null,
     worktree: (r.worktree as string) ?? null,
     sessionId: (r.session_id as string) ?? null,
+    driver: (r.driver as string) ?? null,
     report: r.report ? (JSON.parse(r.report as string) as Report) : null,
     costUsd: (r.cost_usd as number) ?? 0,
     createdAt: r.created_at as string,
@@ -328,10 +333,10 @@ export class Store {
     const ts = now();
     this.db
       .prepare(
-        `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, status, created_at)
-         VALUES(?, ?, ?, ?, ?, ?, 'queued', ?)`,
+        `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, status, created_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
       )
-      .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, ts);
+      .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null, ts);
     this.addEvent(id, "status", "Queued", { status: "queued" });
     return this.getTask(id)!;
   }
@@ -504,6 +509,14 @@ export class Store {
     return (this.db.prepare("SELECT * FROM runs WHERE task_id = ? ORDER BY id ASC").all(taskId) as Row[]).map(toRun);
   }
 
+  /** The driver of the task's latest work run, which owns its session. Null before its first run. */
+  lastWorkDriver(taskId: string): string | null {
+    const r = this.db
+      .prepare("SELECT driver FROM runs WHERE task_id = ? AND kind = 'work' ORDER BY id DESC LIMIT 1")
+      .get(taskId) as Row | undefined;
+    return (r?.driver as string) ?? null;
+  }
+
   /** Spend over the last `days` local days, today included, with the same span before it for comparison. */
   analytics(days = 30, nowMs = Date.now()): Analytics {
     days = Math.max(1, Math.min(366, Math.floor(days) || 30));
@@ -616,6 +629,11 @@ export class Store {
     this.db
       .prepare("UPDATE agents SET state = ?, task_id = ?, last_active_at = ? WHERE id = ?")
       .run(state, taskId, now(), id);
+  }
+
+  /** Which agent a crew member is running on right now. It changes with each task's choice. */
+  setAgentDriver(id: string, driver: string) {
+    this.db.prepare("UPDATE agents SET driver = ? WHERE id = ?").run(driver, id);
   }
 
   bumpAgentCompleted(id: string) {

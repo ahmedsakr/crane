@@ -3,7 +3,7 @@ import pc from "picocolors";
 import type { Store } from "../core/store.js";
 import { createApp } from "../server/app.js";
 import { Factory, factoryIsRunning } from "../factory/orchestrator.js";
-import { resolveDriver } from "../factory/drivers.js";
+import { DEFAULT_DRIVER_KEY, isAvailable, resolveDefaultDriver, sharedDrivers } from "../factory/drivers.js";
 import { factoryBuildOutdated, servedDashboard } from "../core/webbuild.js";
 import * as ui from "./ui.js";
 
@@ -14,10 +14,16 @@ export async function serve(
   if (factoryIsRunning(store)) {
     ui.fail("A factory is already running against this Crane home. Stop it first, or set CRANE_HOME to run another.");
   }
-  const driver = await resolveDriver(opts.driver);
+  const drivers = sharedDrivers();
+  const driver = await resolveDefaultDriver(opts.driver, store.getSetting(DEFAULT_DRIVER_KEY), drivers).catch(
+    (err: Error) => ui.fail(err.message),
+  );
+  // The default comes first, so the factory keeps it. Tasks can still ask for any of the others.
+  store.setSetting(DEFAULT_DRIVER_KEY, driver.name);
+  const others = drivers.filter((d) => d !== driver);
   const time = () => ui.dim(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
   const buildDashboard = opts.buildDashboard ?? true;
-  const factory = new Factory(store, driver, {
+  const factory = new Factory(store, [driver, ...others], {
     crewSize: opts.agents,
     log: (l) => console.log(`${time()}  ${l}`),
     buildDashboard,
@@ -29,9 +35,15 @@ export async function serve(
 
   console.log(`\n${ui.brand()}  ${pc.green("◉")} Factory is running\n`);
   console.log(`  ${ui.dim("Dashboard")}  ${pc.bold(`http://localhost:${opts.port}`)}`);
-  console.log(`  ${ui.dim("Agents   ")}  ${opts.agents} on ${driver.label}`);
+  console.log(`  ${ui.dim("Agents   ")}  ${opts.agents} on ${driver.label} by default`);
+  const installed = (
+    await Promise.all(others.filter((d) => d.name !== "simulated").map(async (d) => ((await isAvailable(d)) ? d.label : null)))
+  ).filter(Boolean);
+  if (installed.length) console.log(`  ${ui.dim("Also      ")}  ${installed.join(", ")}  ${ui.dim("crane agents use <name> to switch")}`);
   if (driver.name === "simulated") {
-    console.log(`  ${ui.accent("!")} ${ui.dim("Simulated agents: no model is called. Install Claude Code or pass --driver claude-code.")}`);
+    console.log(
+      `  ${ui.accent("!")} ${ui.dim("Simulated agents: no model is called. Install Claude Code or Codex, or pass --driver claude-code or --driver codex.")}`,
+    );
   }
   if (factoryBuildOutdated()) {
     console.log(`  ${ui.accent("!")} ${ui.dim("This is an old build of Crane. Run npm run build, then restart, to run the latest code.")}`);
