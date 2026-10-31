@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, AUTONOMY_LABEL, KIND_LABEL, type TaskDetail, type TaskEvent } from "../lib/api";
+import { api, AUTONOMY_LABEL, KIND_LABEL, lastMergeOutcome, type TaskDetail, type TaskEvent } from "../lib/api";
 import { useEventStream, usePoll, useTick } from "../lib/hooks";
 import { ago, clock, duration, plural, usd } from "../lib/format";
 import { StatusChip, useToast } from "../components/bits";
@@ -96,7 +96,7 @@ export function TaskPage() {
 
   const lastId = data?.events.at(-1)?.id ?? 0;
   useEffect(() => setLive([]), [lastId]);
-  useEventStream(data && ["queued", "running"].includes(data.task.status) ? id : null, (e) =>
+  useEventStream(data && ["queued", "running", "merging"].includes(data.task.status) ? id : null, (e) =>
     setLive((l) => (l.some((x) => x.id === e.id) ? l : [...l, e])),
     lastId,
   );
@@ -110,6 +110,8 @@ export function TaskPage() {
   if (!data) return <p className="muted" style={{ paddingTop: 40 }}>Loading…</p>;
   const { task: m, repo, agent } = data;
   const report = m.report;
+  const main = repo?.defaultBranch ?? "main";
+  const merge = lastMergeOutcome(events);
 
   const run = async (label: string, fn: () => Promise<unknown>, done: string, after?: (r: unknown) => void) => {
     setBusy(label);
@@ -146,19 +148,36 @@ export function TaskPage() {
           {m.status === "needs_review" && (
             <div className="decision">
               <div className="decision-copy">
-                <strong>{m.branch ? "Changes are ready for review" : "The report is ready"}</strong>
+                <strong>
+                  {merge?.error ? `Couldn't merge into ${main}` : m.branch ? "Changes are ready for review" : "The report is ready"}
+                </strong>
                 <span>
-                  {m.branch
-                    ? `Approving keeps ${m.branch} for you to merge. Declining throws it away.`
-                    : "Act on a finding below, or mark this as reviewed."}
+                  {merge?.error
+                    ? `${merge.error.replace(/\.$/, "")}. Try again, approve only to merge it yourself, or decline.`
+                    : m.branch
+                      ? `Approving merges ${m.branch} into ${main} and pushes it. An agent resolves any conflicts. Declining throws it away.`
+                      : "Act on a finding below, or mark this as reviewed."}
                 </span>
               </div>
               <div className="decision-actions">
                 <button className="btn btn-quiet" disabled={!!busy} onClick={() => run("reject", () => api.reject(m.id), "Declined")}>
                   Decline
                 </button>
-                <button className="btn btn-crane" disabled={!!busy} onClick={() => run("approve", () => api.approve(m.id), m.branch ? "Approved. The branch is ready to merge." : "Marked as reviewed")}>
-                  {m.branch ? "Approve" : "Mark as reviewed"}
+                {m.branch && (
+                  <button
+                    className="btn btn-quiet"
+                    disabled={!!busy}
+                    onClick={() => run("approve-only", () => api.approve(m.id, { merge: false }), "Approved. The branch is kept for you.")}
+                  >
+                    Approve only
+                  </button>
+                )}
+                <button
+                  className="btn btn-crane"
+                  disabled={!!busy}
+                  onClick={() => run("approve", () => api.approve(m.id), m.branch ? "Approved. Merging it now." : "Marked as reviewed")}
+                >
+                  {m.branch ? "Approve and merge" : "Mark as reviewed"}
                 </button>
               </div>
             </div>
@@ -171,6 +190,12 @@ export function TaskPage() {
           ) : m.status === "queued" ? (
             <p className="summary muted">Waiting for a free agent.</p>
           ) : null}
+          {m.status === "merging" && (
+            <p className="muted">
+              {agent ? `${agent.name} is merging this into ${main}.` : `Waiting for a free agent to merge this into ${main}.`} Progress
+              appears in the activity below.
+            </p>
+          )}
 
           {report && report.findings.length > 0 && (
             <section className="section">
@@ -230,7 +255,7 @@ export function TaskPage() {
             <div className="section-head">
               <h2 className="section-title">
                 Activity
-                {m.status === "running" && <span className="dot dot-running" title="Live" />}
+                {(m.status === "running" || m.status === "merging") && <span className="dot dot-running" title="Live" />}
               </h2>
             </div>
             <Timeline events={events} />
@@ -276,7 +301,7 @@ export function TaskPage() {
                 Cancel task
               </button>
             )}
-            {["failed", "cancelled", "rejected", "done", "approved"].includes(m.status) && (
+            {["failed", "cancelled", "rejected", "done", "approved", "merged"].includes(m.status) && (
               <button
                 className="btn btn-quiet btn-sm"
                 disabled={!!busy}
@@ -286,12 +311,42 @@ export function TaskPage() {
               </button>
             )}
           </div>
-          {m.status === "approved" && m.branch && repo && (
+          {(m.status === "approved" || m.status === "done") && m.branch && repo && (
             <div className="card card-pad">
-              <h3 className="card-title">Merge when you're ready</h3>
-              <p className="mono" style={{ margin: 0, overflowWrap: "anywhere" }}>
-                git -C {repo.path} merge {m.branch}
+              <h3 className="card-title">Merge into {main}</h3>
+              <p style={{ margin: "0 0 12px", fontSize: 14, color: "var(--ink-2)" }}>
+                Crane merges {m.branch} and pushes it. An agent resolves any conflicts.
               </p>
+              <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => run("merge", () => api.merge(m.id), "Merging it now")}>
+                Merge
+              </button>
+              <details style={{ marginTop: 12 }}>
+                <summary className="muted" style={{ fontSize: 13, cursor: "pointer" }}>
+                  Or merge it yourself
+                </summary>
+                <p className="mono" style={{ margin: "8px 0 0", overflowWrap: "anywhere" }}>
+                  git -C {repo.path} merge {m.branch}
+                </p>
+              </details>
+            </div>
+          )}
+          {m.status === "merged" && merge && (
+            <div className="card card-pad">
+              <h3 className="card-title">Merged into {main}</h3>
+              <p style={{ margin: 0, fontSize: 14, color: "var(--ink-2)" }}>
+                {merge.commit ? <span className="mono">{merge.commit.slice(0, 8)}</span> : "Already there"}
+                {merge.pushedTo ? `, pushed to ${merge.pushedTo}.` : "."}
+              </p>
+              {merge.checkoutBehind && (
+                <>
+                  <p style={{ margin: "12px 0 6px", fontSize: 14, color: "var(--ink-2)" }}>
+                    Your checkout had local changes, so Crane left it alone. Catch it up when it's clean:
+                  </p>
+                  <p className="mono" style={{ margin: 0, overflowWrap: "anywhere" }}>
+                    git -C {merge.checkoutBehind} pull --ff-only
+                  </p>
+                </>
+              )}
             </div>
           )}
         </aside>

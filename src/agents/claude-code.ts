@@ -53,7 +53,10 @@ const WRITE_TOOLS = [
   "Bash(go test:*)",
 ];
 
-/** Never allowed, regardless of autonomy. Crane does not ship code on its own. */
+/**
+ * Never allowed, regardless of autonomy. Agents never ship code: when the
+ * operator approves a merge, Crane's own code (src/factory/merge.ts) does it.
+ */
 const ALWAYS_DENIED = ["Bash(git push:*)", "Bash(git checkout main:*)", "Bash(git merge:*)", "Bash(rm -rf:*)"];
 
 function toolsFor(autonomy: Autonomy): { allowed: string[]; denied: string[] } {
@@ -113,17 +116,20 @@ export class ClaudeCodeDriver implements AgentDriver {
   }
 
   run(ctx: RunContext): Promise<RunResult> {
-    const { task, repo, cwd, emit, signal } = ctx;
-    const { allowed, denied } = toolsFor(task.autonomy);
+    const { task, repo, cwd, emit, signal, job } = ctx;
+    // Resolving conflicts means editing files, so it gets write tools. ALWAYS_DENIED
+    // still applies: Crane, not the agent, commits the merge and pushes it.
+    const autonomy: Autonomy = job ? "propose" : task.autonomy;
+    const { allowed, denied } = toolsFor(autonomy);
     const args = [
       "-p",
       "--output-format",
       "stream-json",
       "--verbose",
       "--append-system-prompt",
-      systemPrompt(task, repo),
+      systemPrompt(task, repo, job),
       "--permission-mode",
-      task.autonomy === "observe" ? "default" : "acceptEdits",
+      autonomy === "observe" ? "default" : "acceptEdits",
       "--allowedTools",
       allowed.join(","),
       "--disallowedTools",
@@ -147,7 +153,7 @@ export class ClaudeCodeDriver implements AgentDriver {
       const onAbort = () => child.kill("SIGTERM");
       signal.addEventListener("abort", onAbort, { once: true });
 
-      child.stdin.end(userPrompt(task));
+      child.stdin.end(userPrompt(task, job));
       child.stderr.on("data", (d) => {
         stderr = (stderr + String(d)).slice(-4000);
       });

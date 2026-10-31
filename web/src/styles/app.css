@@ -296,7 +296,8 @@ button {
   flex: none;
   background: var(--hairline-strong);
 }
-.dot-running {
+.dot-running,
+.dot-merging {
   background: var(--live);
   box-shadow: 0 0 0 0 color-mix(in srgb, var(--live) 50%, transparent);
   animation: pulse 1.8s ease-out infinite;
@@ -307,6 +308,7 @@ button {
 }
 .dot-done,
 .dot-approved,
+.dot-merged,
 .dot-on {
   background: var(--ok);
 }
@@ -477,7 +479,8 @@ button {
     animation: none;
     stroke-dashoffset: 0;
   }
-  .dot-running {
+  .dot-running,
+  .dot-merging {
     animation: none;
   }
 }

@@ -11,7 +11,7 @@ export function StatusChip({ status }: { status: TaskStatus }) {
   const cls =
     status === "needs_review"
       ? "chip chip-crane"
-      : status === "done" || status === "approved"
+      : status === "done" || status === "approved" || status === "merged"
         ? "chip chip-ok"
         : status === "failed"
           ? "chip chip-bad"
@@ -35,7 +35,7 @@ export function TaskRow({ m, repoName }: { m: Task; repoName?: string }) {
             {m.title}
           </span>
           <span className="row-meta" style={{ display: "block" }}>
-            {[repoName, KIND_LABEL[m.kind], m.status === "running" ? "Working now" : STATUS_LABEL[m.status]]
+            {[repoName, KIND_LABEL[m.kind], m.status === "running" ? "Working now" : m.status === "merging" ? "Merging now" : STATUS_LABEL[m.status]]
               .filter(Boolean)
               .join(" · ")}
           </span>

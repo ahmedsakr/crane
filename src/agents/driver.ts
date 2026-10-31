@@ -7,7 +7,23 @@ export interface RunContext {
   cwd: string;
   signal: AbortSignal;
   emit: (type: EventType, message: string, data?: Record<string, unknown>) => void;
+  /** Set when the run is a narrower job than working the task itself. */
+  job?: AgentJob;
 }
+
+/**
+ * Resolve the conflicts of a merge Crane has already started in `cwd`: the
+ * task branch merging into `base`. The agent edits and stages files only;
+ * Crane checks the result, commits, and pushes.
+ */
+export interface ResolveConflictsJob {
+  kind: "resolve_conflicts";
+  /** What the task branch is being merged into, e.g. `origin/main`. */
+  base: string;
+  files: string[];
+}
+
+export type AgentJob = ResolveConflictsJob;
 
 export interface RunResult {
   report: Report;

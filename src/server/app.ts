@@ -4,7 +4,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { existsSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { Store } from "../core/store.js";
-import type { TaskStatus, NewTask } from "../core/types.js";
+import { lastMergeOutcome, type TaskStatus, type NewTask } from "../core/types.js";
 import { OperatorActions } from "../factory/actions.js";
 import { draftTask } from "../factory/instruct.js";
 import { diffForTask } from "../factory/git.js";
@@ -45,7 +45,8 @@ export function createApp(store: Store) {
     const m = store.getTask(c.req.param("id"));
     const repo = m?.repoId ? store.getRepo(m.repoId) : null;
     if (!m || !repo) return c.json({ diff: "" });
-    return c.json({ diff: await diffForTask(repo, m) });
+    const merged = m.status === "merged" ? lastMergeOutcome(store.listEvents(m.id))?.commit : null;
+    return c.json({ diff: await diffForTask(repo, m, merged) });
   });
 
   /** Live events for one task, or for the whole factory when id is "all". */
@@ -79,9 +80,12 @@ export function createApp(store: Store) {
   });
 
   api.post("/tasks/:id/approve", async (c) => {
-    const { note } = await c.req.json<{ note?: string }>().catch(() => ({ note: undefined }));
-    return c.json(await actions.approve(c.req.param("id"), note));
+    const { note, merge } = await c.req
+      .json<{ note?: string; merge?: boolean }>()
+      .catch(() => ({ note: undefined, merge: undefined }));
+    return c.json(await actions.approve(c.req.param("id"), note, { merge }));
   });
+  api.post("/tasks/:id/merge", async (c) => c.json(await actions.merge(c.req.param("id"))));
   api.post("/tasks/:id/reject", async (c) => {
     const { note } = await c.req.json<{ note?: string }>().catch(() => ({ note: undefined }));
     return c.json(await actions.reject(c.req.param("id"), note));

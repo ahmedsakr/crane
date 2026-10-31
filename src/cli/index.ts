@@ -2,7 +2,7 @@ import { Command } from "commander";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { Store } from "../core/store.js";
-import { AUTONOMY_LABEL, KIND_LABEL, type Autonomy, type TaskKind, type TaskStatus } from "../core/types.js";
+import { AUTONOMY_LABEL, KIND_LABEL, lastMergeOutcome, type Autonomy, type TaskKind, type TaskStatus } from "../core/types.js";
 import { OperatorActions } from "../factory/actions.js";
 import { draftTask } from "../factory/instruct.js";
 import { factoryDriverName, factoryIsRunning } from "../factory/orchestrator.js";
@@ -185,7 +185,7 @@ program
       ? (opts.status.split(",") as TaskStatus[])
       : opts.all
         ? undefined
-        : (["needs_review", "running", "queued"] as TaskStatus[]);
+        : (["needs_review", "merging", "running", "queued"] as TaskStatus[]);
     const repoId = opts.repo ? store.getRepo(opts.repo)?.id : undefined;
     const list = store.listTasks({ status, repoId, limit: 50 });
     if (!list.length) {
@@ -194,7 +194,18 @@ program
     }
     const groups = new Map<TaskStatus, typeof list>();
     for (const m of list) groups.set(m.status, [...(groups.get(m.status) ?? []), m]);
-    const order: TaskStatus[] = ["needs_review", "running", "queued", "failed", "done", "approved", "rejected", "cancelled"];
+    const order: TaskStatus[] = [
+      "needs_review",
+      "merging",
+      "running",
+      "queued",
+      "failed",
+      "merged",
+      "done",
+      "approved",
+      "rejected",
+      "cancelled",
+    ];
     for (const s of order) {
       const g = groups.get(s);
       if (!g) continue;
@@ -212,6 +223,7 @@ program
   .option("-e, --events", "show the full activity log")
   .action((id: string, opts: { events?: boolean }) => {
     const m = store.getTask(id) ?? ui.fail(`No task ${id}`);
+    const repo = m.repoId ? store.getRepo(m.repoId) : null;
     console.log(`\n${ui.statusDot(m.status)} ${pc.bold(m.title)}`);
     console.log(
       ui.dim(
@@ -243,18 +255,30 @@ program
     if (!opts.events && events.length > shown.length) console.log(ui.dim(`  … crane show ${m.id} --events for all of it`));
 
     console.log("");
+    const merge = lastMergeOutcome(events);
+    const main = repo?.defaultBranch ?? "main";
+    if (merge?.error) {
+      console.log(`\n  ${pc.red("✕")} ${pc.bold(`Couldn't merge into ${main}`)}`);
+      console.log(ui.wrap(merge.error, 4));
+    }
+
     const next: [string, string][] = [];
     if (m.status === "needs_review") {
-      next.push([`crane approve ${m.id}`, m.branch ? `keep branch ${m.branch}` : "mark as reviewed"]);
+      next.push([`crane approve ${m.id}`, m.branch ? `merge into ${main} and push` : "mark as reviewed"]);
+      if (m.branch) next.push([`crane approve ${m.id} --no-merge`, `approve only, keep ${m.branch}`]);
       next.push([`crane decline ${m.id}`, m.branch ? "discard the branch" : "dismiss"]);
       if (m.branch) next.push([`crane diff ${m.id}`, "see the changes"]);
       if (m.report?.findings.length && m.autonomy === "observe") next.push([`crane follow-up ${m.id} 1`, "act on finding 1"]);
     } else if (m.status === "running" || m.status === "queued") {
       next.push([`crane watch ${m.id}`, "follow along live"], [`crane cancel ${m.id}`, "stop it"]);
+    } else if (m.status === "merging") {
+      next.push([`crane watch ${m.id}`, "follow the merge"]);
     } else if (m.status === "failed" || m.status === "cancelled") {
       next.push([`crane retry ${m.id}`, "run it again"]);
-    } else if (m.status === "approved" && m.branch) {
-      next.push([`git merge ${m.branch}`, `from ${repoName(m.repoId)}, when you're ready`]);
+    } else if ((m.status === "approved" || m.status === "done") && m.branch) {
+      next.push([`crane merge ${m.id}`, `merge into ${main} and push`]);
+    } else if (m.status === "merged" && merge?.checkoutBehind) {
+      next.push([`git -C ${merge.checkoutBehind} pull --ff-only`, "catch your checkout up, once it's clean"]);
     }
     if (next.length) console.log(ui.hint(...next) + "\n");
   });
@@ -288,7 +312,7 @@ program
       }
       if (m) {
         const now = store.getTask(m.id)!;
-        if (!["queued", "running"].includes(now.status)) {
+        if (!["queued", "running", "merging"].includes(now.status)) {
           console.log(`\n${ui.statusDot(now.status)} ${ui.statusText(now.status)}  ${ui.dim(`crane show ${m.id}`)}\n`);
           return;
         }
@@ -313,7 +337,43 @@ const act = (name: string, desc: string, fn: (id: string, note?: string) => Prom
       }
     });
 
-act("approve", "Approve a task that's waiting for you", (id, n) => actions.approve(id, n), "Approved");
+program
+  .command("approve")
+  .description("Approve a task that's waiting for you, and merge and push its branch")
+  .argument("<id>")
+  .option("-m, --message <note>", "leave a note on the task")
+  .option("--no-merge", "approve only: keep the branch for you to merge yourself")
+  .action(async (id: string, opts: { message?: string; merge: boolean }) => {
+    try {
+      const m = await actions.approve(id, opts.message, { merge: opts.merge });
+      if (m.status === "merging") mergeQueued(m.id);
+      else ui.ok(`Approved ${ui.dim(m.id)}${m.branch ? `  ${ui.dim(`branch ${m.branch} is kept`)}` : ""}`);
+    } catch (err) {
+      ui.fail((err as Error).message);
+    }
+  });
+
+program
+  .command("merge")
+  .description("Merge an approved task's branch into the default branch and push it")
+  .argument("<id>")
+  .action(async (id: string) => {
+    try {
+      mergeQueued((await actions.merge(id)).id);
+    } catch (err) {
+      ui.fail((err as Error).message);
+    }
+  });
+
+function mergeQueued(id: string) {
+  const m = store.getTask(id)!;
+  const main = (m.repoId && store.getRepo(m.repoId)?.defaultBranch) || "main";
+  ui.ok(`Approved. Merging into ${main}  ${ui.dim(m.id)}`);
+  if (!factoryIsRunning(store)) console.log(`  ${ui.accent("!")} The factory is off. Run ${pc.bold("crane serve")} to merge it.`);
+  else if (store.isPaused()) console.log(`  ${ui.accent("!")} The factory is paused. It merges when you ${pc.bold("crane resume")}.`);
+  console.log(ui.hint([`crane watch ${m.id}`, "follow the merge"]));
+}
+
 act("decline", "Decline a task and discard its branch", (id, n) => actions.reject(id, n), "Declined");
 act("cancel", "Stop a queued or running task", (id) => actions.cancel(id), "Cancelled");
 
@@ -352,7 +412,8 @@ program
     const m = store.getTask(id) ?? ui.fail(`No task ${id}`);
     const repo = m.repoId ? store.getRepo(m.repoId) : null;
     if (!repo || !m.branch) ui.fail("This task didn't change any code.");
-    const diff = await diffForTask(repo, m);
+    const merged = m.status === "merged" ? lastMergeOutcome(store.listEvents(m.id))?.commit : null;
+    const diff = await diffForTask(repo, m, merged);
     if (!diff) return console.log(ui.dim("No changes."));
     for (const line of diff.split("\n")) {
       console.log(
@@ -375,7 +436,7 @@ repos.action(() => {
   const list = store.listRepos();
   console.log(ui.section("Repos", list.length));
   for (const r of list) {
-    const open = store.listTasks({ repoId: r.id, status: ["queued", "running", "needs_review"] }).length;
+    const open = store.listTasks({ repoId: r.id, status: ["queued", "running", "needs_review", "merging"] }).length;
     console.log(
       `  ${r.isFactory ? ui.accent("▟") : pc.dim("■")} ${pc.bold(r.name.padEnd(24))} ${ui.dim(r.path)}${
         open ? `  ${open} open` : ""
