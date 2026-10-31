@@ -20,6 +20,9 @@ const AUTONOMY_BRIEF: Record<Task["autonomy"], string> = {
   act: "You may change files. You are working in an isolated git worktree on your own branch. Commit your work with clear messages. Never push, and never touch the default branch.",
 };
 
+const BLOCKED_BRIEF =
+  "Some commands are not allowed. If one is blocked, don't hunt for a workaround that does the same thing: say what you needed it for, carry on without it if you can, and mention it in your report. Crane shows the operator every blocked command so they can allow it for next time.";
+
 export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob): string {
   if (job?.kind === "resolve_conflicts") return conflictSystemPrompt(repo, job);
   return [
@@ -28,6 +31,7 @@ export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob): str
     AUTONOMY_BRIEF[task.autonomy],
     repo ? `Target repository: ${repo.name} (default branch: ${repo.defaultBranch}).` : "",
     "Narrate briefly as you go: one short sentence before each significant step, so the operator can follow along.",
+    BLOCKED_BRIEF,
     reportInstructions(),
   ]
     .filter(Boolean)
@@ -49,6 +53,7 @@ function conflictSystemPrompt(repo: Repo | null, job: ResolveConflictsJob): stri
       "- If you can't resolve a conflict with confidence, leave its markers in place and explain why in your report. Crane will hand the task back to the operator instead of merging.",
     ].join("\n"),
     "Narrate briefly as you go: one short sentence before each significant step, so the operator can follow along.",
+    BLOCKED_BRIEF,
     reportInstructions(),
   ].join("\n\n");
 }
@@ -65,11 +70,14 @@ export function userPrompt(task: Task, job?: AgentJob): string {
   return `# ${task.title}\n\n${task.brief}`;
 }
 
-/** What an agent is told when it picks its own session back up after the factory restarted. */
+/**
+ * What an agent is told when it picks its own session back up: after the
+ * factory restarted, or after Crane retried it past a temporary API error.
+ */
 export function resumePrompt(): string {
   return [
-    "Crane restarted while you were working on this task, which stopped you mid-step. Your work so far is still in this directory.",
-    "Pick up where you left off. If you were in the middle of a command or an edit, check that it finished (`git status`, `git diff`, re-run the command) before moving on.",
+    "You were stopped mid-step while working on this task, because Crane restarted or the API had a temporary error, and Crane has resumed this session. Your work so far is still in this directory.",
+    "Pick up where you left off without redoing finished work. If you were in the middle of a command or an edit, check that it finished (`git status`, `git diff`, re-run the command) before moving on.",
     `When you are finished, end your final message with the \`${REPORT_FENCE}\` block, as before.`,
   ].join("\n\n");
 }

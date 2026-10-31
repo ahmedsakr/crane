@@ -99,6 +99,15 @@ for (let day = 20; day >= 0; day--) {
     const steps = 12 + Math.floor(Math.random() * 30);
     const ins = store.db.prepare("INSERT INTO events(task_id, ts, type, message) VALUES(?, ?, ?, ?)");
     for (let s = 0; s < steps; s++) ins.run(m.id, iso(start + ((end - start) * s) / steps), s % 3 ? "tool" : "note", "Sample step");
+    // Agents in payments-api keep reaching for the same two commands.
+    if (repoId === api.id && n % 2 === 0) {
+      const blocked = store.db.prepare("INSERT INTO events(task_id, ts, type, message, data) VALUES(?, ?, 'blocked', ?, ?)");
+      const at = iso(start + (end - start) / 3);
+      blocked.run(m.id, at, "Blocked: pnpm audit --prod | tail -20", JSON.stringify({ tool: "Bash", command: "pnpm audit --prod | tail -20", rules: ["Bash(pnpm audit:*)"] }));
+      if (n % 4 === 0) {
+        blocked.run(m.id, at, "Blocked: docker compose up -d db", JSON.stringify({ tool: "Bash", command: "docker compose up -d db", rules: ["Bash(docker compose:*)"] }));
+      }
+    }
   }
 }
 

@@ -79,7 +79,9 @@ Agents run through [Claude Code](https://code.claude.com) in headless mode, usin
 | `crane diff <id>` | See what a task changed on its branch |
 | `crane follow-up <id> <n>` | Turn finding *n* into a task that makes the change |
 | `crane cancel <id>` / `crane retry <id>` | Stop work, or run it again |
-| `crane repos` / `crane repos add <path>` | The codebases the factory works on |
+| `crane blocked` | Commands agents were blocked from, added up across tasks |
+| `crane allow "<command>" -r <repo>` / `crane keep-blocked …` | Let agents in that repo run it from now on, or keep it blocked and stop asking. `crane disallow` takes an allowed command back. |
+| `crane repos` / `crane repos add <path>` | The codebases the factory works on, and the commands allowed in each |
 | `crane agents` | Who's on the crew and what they're doing |
 | `crane analytics` | What the factory spent, by day, repo, type, and task (`--days 7`). `crane show <id> --events` lists a task's runs and their costs. |
 | `crane pause` / `crane resume` | Stop or restart picking up new tasks |
@@ -97,7 +99,12 @@ When a change to Crane itself is merged, Crane builds the dashboard from that co
 | `CRANE_DRIVER` | `auto` | `claude-code`, `simulated`, or `auto` |
 | `CRANE_AGENTS` | `2` | Crew size |
 | `CRANE_MODEL` | Claude Code's default | Model passed to `claude --model` |
-| `CRANE_ALLOWED_TOOLS` | | Extra Claude Code tool rules, comma-separated |
+| `CRANE_ALLOWED_TOOLS` | | Extra Claude Code tool rules for every repo, comma-separated. Prefer `crane allow`, which is per repo. |
+| `CRANE_MAX_TURNS` | `200` | Most turns one agent run may take (`crane serve --max-turns`). `0` for no limit. |
+| `CRANE_TIME_LIMIT_MIN` | `90` | Most minutes a task may hold a crew slot (`crane serve --time-limit`). `0` for no limit. |
+| `CRANE_RETRY_DELAY_SEC` | `60` | Pause before retrying a run that hit an overloaded or rate-limited API. Crane retries once. |
+
+When an agent is blocked from a command, the task shows it, and once the same command is blocked in a second task, Home asks whether to allow it for that repo. Crane's deny list (pushing, merging, checking out the default branch, `rm -rf`) always wins and can't be allowed.
 
 ## How it's built
 

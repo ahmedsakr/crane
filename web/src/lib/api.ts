@@ -3,6 +3,8 @@ import type {
   AgentRun,
   Analytics,
   Autonomy,
+  BlockedTool,
+  RepoTools,
   Task,
   TaskEvent,
   TaskKind,
@@ -12,8 +14,9 @@ import type {
   Repo,
 } from "../../../src/core/types";
 
-export type { Agent, AgentRun, Analytics, Autonomy, Task, TaskEvent, TaskKind, TaskStatus, Overview, Repo };
+export type { Agent, AgentRun, Analytics, Autonomy, BlockedTool, RepoTools, Task, TaskEvent, TaskKind, TaskStatus, Overview, Repo };
 export { AUTONOMY_LABEL, KIND_LABEL, RUN_KIND_LABEL, STATUS_LABEL, lastMergeOutcome } from "../../../src/core/types";
+export { ruleLabel } from "../../../src/core/permissions";
 
 export interface TaskDraft extends NewTask {
   why: { kind: string; repo: string; autonomy: string };
@@ -25,6 +28,8 @@ export interface TaskDetail {
   agent: Agent | null;
   events: TaskEvent[];
   runs: AgentRun[];
+  /** Commands this task was blocked from that still wait on a decision, counted across the repo. */
+  blocked: BlockedTool[];
 }
 
 async function req<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
@@ -58,6 +63,11 @@ export const api = {
   repos: () => req<Repo[]>("/repos"),
   addRepo: (path: string, name?: string) => post<Repo>("/repos", { path, name }),
   removeRepo: (id: string) => req<{ ok: true }>(`/repos/${id}`, { method: "DELETE" }),
+  /** Let agents in this repo use a command they were blocked from. Crane's deny list still wins. */
+  allowTool: (repoId: string, rule: string, taskId?: string) => post<RepoTools>(`/repos/${repoId}/tools/allow`, { rule, taskId }),
+  keepBlocked: (repoId: string, rule: string, taskId?: string) =>
+    post<RepoTools>(`/repos/${repoId}/tools/keep-blocked`, { rule, taskId }),
+  disallowTool: (repoId: string, rule: string) => post<RepoTools>(`/repos/${repoId}/tools/disallow`, { rule }),
   agents: () => req<Agent[]>("/agents"),
   pause: () => post("/factory/pause"),
   resume: () => post("/factory/resume"),

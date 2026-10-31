@@ -44,7 +44,9 @@ export function createApp(store: Store) {
     if (!m) return c.json({ error: "Not found" }, 404);
     const repo = m.repoId ? store.getRepo(m.repoId) : null;
     const agent = m.agentId ? store.listAgents().find((a) => a.id === m.agentId) ?? null : null;
-    return c.json({ task: m, repo, agent, events: store.listEvents(m.id), runs: store.listRuns(m.id) });
+    // Commands this task was refused that are still waiting on a decision, counted across the repo's tasks.
+    const blocked = store.blockedTools({ taskId: m.id, ...(m.repoId ? { repoId: m.repoId } : {}) });
+    return c.json({ task: m, repo, agent, events: store.listEvents(m.id), runs: store.listRuns(m.id), blocked });
   });
 
   api.get("/analytics", (c) => c.json(store.analytics(Number(c.req.query("days") ?? 30))));
@@ -113,6 +115,22 @@ export function createApp(store: Store) {
   api.delete("/repos/:id", (c) => {
     store.removeRepo(c.req.param("id"));
     return c.json({ ok: true });
+  });
+
+  api.get("/blocked", (c) =>
+    c.json(store.blockedTools({ repoId: c.req.query("repo") || undefined, minTasks: Number(c.req.query("min") ?? 1) })),
+  );
+  api.post("/repos/:id/tools/allow", async (c) => {
+    const { rule, taskId } = await c.req.json<{ rule: string; taskId?: string }>();
+    return c.json(actions.allowTool(c.req.param("id"), rule, taskId));
+  });
+  api.post("/repos/:id/tools/keep-blocked", async (c) => {
+    const { rule, taskId } = await c.req.json<{ rule: string; taskId?: string }>();
+    return c.json(actions.keepBlocked(c.req.param("id"), rule, taskId));
+  });
+  api.post("/repos/:id/tools/disallow", async (c) => {
+    const { rule } = await c.req.json<{ rule: string }>();
+    return c.json(actions.disallowTool(c.req.param("id"), rule));
   });
 
   api.get("/agents", (c) => c.json(store.listAgents()));

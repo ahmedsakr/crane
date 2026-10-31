@@ -10,9 +10,10 @@ export interface RunContext {
   /** Set when the run is a narrower job than working the task itself. */
   job?: AgentJob;
   /**
-   * A session from an earlier run of this task that was interrupted, usually
-   * because the factory restarted. The driver continues it, with its history,
-   * instead of starting over. If it can't, it starts a fresh session.
+   * A session from an earlier run of this task that was interrupted, because
+   * the factory restarted or the API had a transient failure. The driver
+   * continues it, with its history, instead of starting over. If it can't, it
+   * starts a fresh session.
    */
   resumeSession?: string;
   /** Called with the driver's session id as soon as it has one, so an interrupted run can be resumed. */
@@ -22,6 +23,10 @@ export interface RunContext {
    * rejecting. A run that fails still costs money, so report it then too.
    */
   onUsage?: (usage: RunUsage) => void;
+  /** Extra permission rules the operator allowed for this repo. Crane's deny list still wins. */
+  allowedTools?: string[];
+  /** Stop the agent after this many turns. */
+  maxTurns?: number;
 }
 
 /**
@@ -40,6 +45,42 @@ export type AgentJob = ResolveConflictsJob;
 
 export interface RunResult {
   report: Report;
+}
+
+/**
+ * A run that ended badly: whether trying again is likely to work, and the
+ * session to continue if so. What it cost goes through `RunContext.onUsage`.
+ */
+export class AgentRunError extends Error {
+  constructor(
+    message: string,
+    readonly opts: {
+      transient?: boolean;
+      sessionId?: string | null;
+      /** Set when the run stopped because it used up its turns. */
+      limit?: "turns";
+    } = {},
+  ) {
+    super(message);
+    this.name = "AgentRunError";
+  }
+  get transient() {
+    return !!this.opts.transient;
+  }
+  get sessionId() {
+    return this.opts.sessionId ?? null;
+  }
+}
+
+/**
+ * Failures worth one more try: the API was overloaded, rate limited, or
+ * briefly unreachable. Plan usage limits are not: they reset hours later.
+ */
+export function isTransientFailure(message: string): boolean {
+  if (/usage limit|hit your limit|limit reached|credit balance|quota/i.test(message)) return false;
+  return /API Error:?\s*(429|5\d\d)\b|\b(overloaded|overloaded_error|rate[ _]limit(ed)?|rate_limit_error|api_error)\b|\b(ECONNRESET|ETIMEDOUT|ECONNREFUSED|EAI_AGAIN)\b|socket hang up|fetch failed|request timed out|temporarily unavailable/i.test(
+    message,
+  );
 }
 
 /** Anything that can work a task. Swap drivers without touching the factory. */

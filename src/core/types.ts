@@ -113,6 +113,7 @@ export type EventType =
   | "tool" // the agent used a tool
   | "finding" // something worth the operator's attention
   | "error"
+  | "blocked" // a tool call the agent's permissions refused; data is a BlockedCall
   | "operator"; // something the operator did
 
 export interface TaskEvent {
@@ -122,6 +123,46 @@ export interface TaskEvent {
   type: EventType;
   message: string;
   data: Record<string, unknown> | null;
+}
+
+/** What a `blocked` event carries: the refused call, and the rules that would have let it through. */
+export interface BlockedCall {
+  tool: string;
+  /** The Bash command, when the tool was Bash. */
+  command?: string;
+  /**
+   * Permission rules (e.g. `Bash(npm ci:*)`) that would have allowed the call.
+   * Empty when it was refused on purpose (ALWAYS_DENIED, or a write in an
+   * investigate-only task) or Crane has nothing safe to suggest.
+   */
+  rules: string[];
+}
+
+/**
+ * A rule an agent was refused in one repo, added up across its tasks, so the
+ * operator can allow it once instead of rediscovering it in every task.
+ */
+export interface BlockedTool {
+  repoId: string;
+  repoName: string;
+  /** The permission rule to allow, e.g. `Bash(npm ci:*)`. */
+  rule: string;
+  /** What the operator reads: `npm ci`. */
+  label: string;
+  /** How many tasks hit it, and how many times in all. */
+  tasks: number;
+  times: number;
+  lastAt: string;
+  /** The most recent task that hit it. */
+  lastTaskId: string;
+}
+
+/** Tool rules the operator has decided on for one repo. */
+export interface RepoTools {
+  /** Allowed for every agent working in this repo, on top of Crane's defaults. */
+  allowed: string[];
+  /** Blocked rules the operator chose to keep blocked, so Crane stops asking. */
+  keptBlocked: string[];
 }
 
 export type AgentState = "idle" | "working" | "paused";
@@ -236,7 +277,9 @@ export interface Overview {
   inFlight: Task[];
   recent: Task[];
   agents: Agent[];
-  repos: (Repo & { openTasks: number })[];
+  repos: (Repo & { openTasks: number; tools: RepoTools })[];
+  /** Commands agents keep getting refused, in more than one task, that the operator hasn't decided on yet. */
+  blocked: BlockedTool[];
 }
 
 export const KIND_LABEL: Record<TaskKind, string> = {
