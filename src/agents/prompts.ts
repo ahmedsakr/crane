@@ -23,6 +23,9 @@ const AUTONOMY_BRIEF: Record<Task["autonomy"], string> = {
 const BLOCKED_BRIEF =
   "Some commands are not allowed. If one is blocked, don't hunt for a workaround that does the same thing: say what you needed it for, carry on without it if you can, and mention it in your report. Crane shows the operator every blocked command so they can allow it for next time.";
 
+const FILE_EDIT_BRIEF =
+  "When file changes are authorized, use your native file-editing tools (such as Edit, Write, or apply_patch) to create and modify files. Avoid shell heredocs for file edits: they can trigger shell security checks even when the intended edit is allowed. Choose file-editing tools before attempting a shell write; a denied command is still subject to the blocked-command instructions.";
+
 /**
  * For agents whose sandbox can't write to git (Codex): the worktree's git
  * directory lives outside it. Crane commits what they leave behind instead.
@@ -49,6 +52,7 @@ export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob, opts
     repo ? `Target repository: ${repo.name} (default branch: ${repo.defaultBranch}).` : "",
     "Narrate briefly as you go: one short sentence before each significant step, so the operator can follow along.",
     BLOCKED_BRIEF,
+    FILE_EDIT_BRIEF,
     reportInstructions(),
   ]
     .filter(Boolean)
@@ -73,6 +77,7 @@ function conflictSystemPrompt(repo: Repo | null, job: ResolveConflictsJob, agent
     ].join("\n"),
     "Narrate briefly as you go: one short sentence before each significant step, so the operator can follow along.",
     BLOCKED_BRIEF,
+    FILE_EDIT_BRIEF,
     reportInstructions(),
   ].join("\n\n");
 }
@@ -97,6 +102,7 @@ export function resumePrompt(): string {
   return [
     "You were stopped mid-step while working on this task, because Crane restarted or the API had a temporary error, and Crane has resumed this session. Your work so far is still in this directory.",
     "Pick up where you left off without redoing finished work. If you were in the middle of a command or an edit, check that it finished (`git status`, `git diff`, re-run the command) before moving on.",
+    FILE_EDIT_BRIEF,
     `When you are finished, end your final message with the \`${REPORT_FENCE}\` block, as before.`,
   ].join("\n\n");
 }
