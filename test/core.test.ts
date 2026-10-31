@@ -38,6 +38,33 @@ test("draft: mentioning Crane targets the factory", () => {
   assert.equal(d.repoId, "r-crane");
 });
 
+test("draft: Crane's own vocabulary targets Crane even with one other repo connected", () => {
+  const two = [repo("crane", true), repo("wedding-guest-service")];
+  for (const text of [
+    `I'd like to change the "missions" concept to be more "tasks" oriented`,
+    `I'd like to rework the "Missions" concept to be more "Tasks" narrative`,
+  ]) {
+    const d = draftMission(text, two);
+    assert.equal(d.repoId, "r-crane", text);
+    assert.equal(d.kind, "factory_feature");
+  }
+});
+
+test("draft: with no signal, Crane is still a candidate, so it asks", () => {
+  const two = [repo("crane", true), repo("wedding-guest-service")];
+  assert.equal(draftMission("Clean up the logging", two).repoId, null);
+});
+
+test("draft: falls back to the repo used last", () => {
+  const two = [repo("crane", true), repo("wedding-guest-service")];
+  assert.equal(draftMission("Clean up the logging", two, { lastRepoId: "r-crane" }).repoId, "r-crane");
+  // An explicit mention still wins over memory.
+  assert.equal(
+    draftMission("Clean up the logging in wedding-guest-service", two, { lastRepoId: "r-crane" }).repoId,
+    "r-wedding-guest-service",
+  );
+});
+
 test("draft: ambiguous repo is left for the operator", () => {
   const d = draftMission("Fix the flaky tests", repos);
   assert.equal(d.repoId, null);

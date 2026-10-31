@@ -91,7 +91,7 @@ program
     }
 
     const repos = store.listRepos();
-    const draft = draftMission(text, repos);
+    const draft = draftMission(text, repos, { lastRepoId: store.getSetting("last_repo") });
     if (opts.repo) {
       const r = store.getRepo(opts.repo);
       if (!r) ui.fail(`No repo called ${opts.repo}. See \`crane repos\`.`);

@@ -38,6 +38,9 @@ const MAINTENANCE = [
 ];
 const FEATURE = ["add", "build", "support", "feature", "implement", "integrat", "new ", "idea", "would be nice", "let users", "allow"];
 const FACTORY = /\b(crane|the factory|this factory|yourself|your own)\b/i;
+/** Words that only make sense about Crane itself, so they point a mission at the factory repo. */
+const FACTORY_VOCAB =
+  /\b(missions?|crew|operator|autonomy|freedom levels?|instruct sheet|needs you|the slab|worktrees?|agent drivers?|simulated driver|factory features?)\b/i;
 const OBSERVE = /\b(investigate|research|look into|audit|why|explore|find out|figure out|assess|evaluate|review|what would it take|should we)\b/i;
 const CHANGE = /\b(fix|implement|build|add|upgrade|bump|refactor|write|create|remove|migrate)\b/i;
 
@@ -58,7 +61,7 @@ function titleFrom(text: string): string {
  * a transparent heuristic: the operator sees each guess with its reason and can
  * change it before anything runs.
  */
-export function draftMission(text: string, repos: Repo[]): MissionDraft {
+export function draftMission(text: string, repos: Repo[], opts: { lastRepoId?: string | null } = {}): MissionDraft {
   const brief = text.trim();
   const factoryRepo = repos.find((r) => r.isFactory) ?? null;
   const targets = repos.filter((r) => !r.isFactory);
@@ -70,18 +73,27 @@ export function draftMission(text: string, repos: Repo[]): MissionDraft {
     .filter((r) => new RegExp(`\\b${r.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(brief))
     .sort((a, b) => b.name.length - a.name.length)[0];
   const aboutFactory = FACTORY.test(brief);
+  const factoryTerm = brief.match(FACTORY_VOCAB)?.[0]?.toLowerCase();
+  const last = opts.lastRepoId ? repos.find((r) => r.id === opts.lastRepoId) : undefined;
 
-  if (aboutFactory && factoryRepo) {
-    repo = factoryRepo;
-    repoWhy = "You mentioned Crane itself";
-  } else if (named) {
+  if (named && !named.isFactory) {
     repo = named;
     repoWhy = `You mentioned ${named.name}`;
-  } else if (targets.length === 1) {
-    repo = targets[0]!;
+  } else if ((aboutFactory || named?.isFactory) && factoryRepo) {
+    repo = factoryRepo;
+    repoWhy = "You mentioned Crane itself";
+  } else if (factoryTerm && factoryRepo) {
+    repo = factoryRepo;
+    repoWhy = `“${factoryTerm}” sounds like Crane's own concepts`;
+  } else if (last) {
+    repo = last;
+    repoWhy = "The repo you used last";
+  } else if (repos.length === 1) {
+    repo = repos[0]!;
     repoWhy = "It's the only repo connected";
   } else {
-    repoWhy = targets.length ? "Pick the repo to work on" : "Connect a repo first";
+    // No signal: ask rather than guess. Crane is always a valid choice.
+    repoWhy = targets.length ? "Pick the repo to work on" : "Connect a repo, or pick Crane";
   }
 
   // What kind?

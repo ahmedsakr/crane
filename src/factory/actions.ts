@@ -33,7 +33,10 @@ export class OperatorActions {
       input.repoId = this.store.listRepos().find((r) => r.isFactory)?.id ?? null;
     }
     if (!input.title.trim()) throw new Error("Give the mission a title");
-    return this.store.createMission(input);
+    const mission = this.store.createMission(input);
+    // Remembered so the next instruction that doesn't name a repo defaults to this one.
+    if (mission.repoId) this.store.setSetting("last_repo", mission.repoId);
+    return mission;
   }
 
   private need(id: string): Mission {

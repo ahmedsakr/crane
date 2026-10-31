@@ -70,7 +70,7 @@ export function createApp(store: Store) {
 
   api.post("/instruct/draft", async (c) => {
     const { text } = await c.req.json<{ text: string }>();
-    return c.json(draftMission(text ?? "", store.listRepos()));
+    return c.json(draftMission(text ?? "", store.listRepos(), { lastRepoId: store.getSetting("last_repo") }));
   });
 
   api.post("/missions", async (c) => {
