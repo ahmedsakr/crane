@@ -49,6 +49,10 @@ const HINT: Record<DriverName, { ok: string; missing: string }> = {
   },
 };
 
+/**
+ * The one place concrete agents are chosen and built. This module is the
+ * composition layer, so it's the only one that imports every driver.
+ */
 export function createDriver(name: DriverName): AgentDriver {
   switch (name) {
     case "claude-code":
@@ -131,5 +135,5 @@ export async function resolveDefaultDriver(
     const d = byName.get(name);
     if (d && (await isAvailable(d))) return d;
   }
-  return byName.get("simulated") ?? new SimulatedDriver();
+  return byName.get("simulated") ?? createDriver("simulated");
 }

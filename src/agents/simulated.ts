@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { git } from "../factory/git.js";
+import { git } from "../core/git.js";
 import type { AgentDriver, RunContext, RunResult } from "./driver.js";
 import type { Finding, TaskKind } from "../core/types.js";
 import { suggestRules } from "../core/permissions.js";

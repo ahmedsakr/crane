@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import { constants, existsSync } from "node:fs";
 import { cp, readFile, readdir, readlink, realpath, rm, symlink, unlink } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { git } from "./git.js";
+import { git } from "../core/git.js";
 
 const run = promisify(execFile);
 

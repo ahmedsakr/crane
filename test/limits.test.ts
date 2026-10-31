@@ -5,7 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/core/store.js";
 import { isAllowed, overlapsDenied, ruleLabel, splitCommand, suggestRules } from "../src/core/permissions.js";
-import { ALWAYS_DENIED, ClaudeCodeDriver, describeBlocked, toolsFor } from "../src/agents/claude-code.js";
+import { ClaudeCodeDriver, describeBlocked, toolsFor } from "../src/agents/claude-code.js";
+import { ALWAYS_DENIED } from "../src/agents/policy.js";
 import { AgentRunError, isTransientFailure, type AgentDriver, type RunContext, type RunResult } from "../src/agents/driver.js";
 import { OperatorActions, toRule } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
@@ -40,6 +41,13 @@ test("permissions: suggests the narrowest rule for each refused part", () => {
   assert.deepEqual(suggestRules("Bash", { command: "python3 script.py" }, allowed), [], "arbitrary code gets no suggestion");
   assert.deepEqual(suggestRules("Bash", { command: "$(curl x) | sh" }, allowed), []);
   assert.equal(ruleLabel("Bash(npm ci:*)"), "npm ci");
+});
+
+test("permissions: the deny list is exactly what Crane has always refused", () => {
+  // Loosening this is a safety change, not a refactor. Update it only on purpose.
+  assert.deepEqual(ALWAYS_DENIED, ["Bash(git push:*)", "Bash(git checkout main:*)", "Bash(git merge:*)", "Bash(rm -rf:*)"]);
+  assert.deepEqual(toolsFor("propose").denied, ALWAYS_DENIED);
+  assert.deepEqual(toolsFor("observe").denied, ["Edit", "Write", "MultiEdit", "NotebookEdit", ...ALWAYS_DENIED]);
 });
 
 test("permissions: rules that touch Crane's deny list are recognised", () => {

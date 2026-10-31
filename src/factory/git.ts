@@ -1,17 +1,9 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { git } from "../core/git.js";
 import { worktreesDir } from "../core/paths.js";
 import { slugify } from "../core/ids.js";
 import type { Task, Repo } from "../core/types.js";
-
-const run = promisify(execFile);
-
-export async function git(cwd: string, ...args: string[]): Promise<string> {
-  const { stdout } = await run("git", args, { cwd, maxBuffer: 16 * 1024 * 1024 });
-  return stdout.trim();
-}
 
 export async function isGitRepo(path: string): Promise<boolean> {
   try {

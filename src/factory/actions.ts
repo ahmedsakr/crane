@@ -21,7 +21,7 @@ import { currentBranch, isGitRepo, removeWorktree, repoRoot } from "./git.js";
 import { DEFAULT_DRIVER_KEY, driverCatalog, driverEffortKey, driverModelKey, isAvailable, sharedDrivers } from "./drivers.js";
 import { factoryRoot } from "../core/paths.js";
 import { overlapsDenied, parseRule, ruleLabel } from "../core/permissions.js";
-import { ALWAYS_DENIED } from "../agents/claude-code.js";
+import { ALWAYS_DENIED } from "../agents/policy.js";
 
 /**
  * Accept what an operator would type: a rule (`Bash(npm ci:*)`, `WebFetch`)
