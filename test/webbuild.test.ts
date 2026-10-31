@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { webBuildOutdated } from "../src/core/webbuild.ts";
 
 function checkout() {
@@ -15,7 +15,15 @@ function checkout() {
     const t = new Date(Date.now() - secondsAgo * 1000);
     utimesSync(p, t, t);
   };
-  return { root, at, done: () => rmSync(root, { recursive: true, force: true }) };
+  /** Like `at`, for a file under the checkout root rather than `web/`. */
+  const rootAt = (path: string, secondsAgo: number) => {
+    const p = join(root, path);
+    mkdirSync(dirname(p), { recursive: true });
+    writeFileSync(p, "x");
+    const t = new Date(Date.now() - secondsAgo * 1000);
+    utimesSync(p, t, t);
+  };
+  return { root, at, rootAt, done: () => rmSync(root, { recursive: true, force: true }) };
 }
 
 // Each case uses its own root, so the short cache never leaks between them.
@@ -35,6 +43,25 @@ test("a source file changed after the build makes it outdated, however deep", ()
   c.at("src/components/Sheet.tsx", 10);
   assert.equal(webBuildOutdated(c.root), true);
   c.done();
+});
+
+test("a change to shared core source the UI bundles makes the build outdated", () => {
+  // Every UI and shared file predates the build; only `changed` (if any) is touched after it.
+  const outdatedAfter = (changed: string | null) => {
+    const c = checkout();
+    c.at("src/components/Sheet.tsx", 100);
+    c.at("index.html", 100);
+    c.rootAt("src/core/types.ts", 100);
+    c.rootAt("src/core/permissions.ts", 100);
+    c.at("dist/index.html", 50);
+    if (changed) c.rootAt(changed, 10);
+    const value = webBuildOutdated(c.root);
+    c.done();
+    return value;
+  };
+  assert.equal(outdatedAfter(null), false);
+  assert.equal(outdatedAfter("src/core/types.ts"), true);
+  assert.equal(outdatedAfter("src/core/permissions.ts"), true);
 });
 
 test("no build, or no source to compare against, is never outdated", () => {
