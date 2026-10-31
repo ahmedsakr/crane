@@ -2,7 +2,15 @@ import Database from "better-sqlite3";
 import { basename } from "node:path";
 import { dbPath } from "./paths.js";
 import { shortId } from "./ids.js";
-import { ALL_STATUSES, SHIPPED_STATUSES, UNSHIPPED_STATUSES, isMaintenanceRole, type MaintenanceRole } from "./types.js";
+import {
+  ACTIVE_STATUSES,
+  ALL_STATUSES,
+  FINISHED_STATUSES,
+  SHIPPED_STATUSES,
+  UNSHIPPED_STATUSES,
+  isMaintenanceRole,
+  type MaintenanceRole,
+} from "./types.js";
 import { ruleLabel } from "./permissions.js";
 import type {
   Agent,
@@ -245,11 +253,16 @@ function localDayStart(ms: number, daysBack = 0): number {
   return d.getTime();
 }
 
-function toAgent(r: Row): Agent {
+/** The settings that hold the operator's choices for one crew member. */
+export const crewSettingKey = {
+  active: (agentId: string) => `crew_active_${agentId}`,
+  defaultDriver: (agentId: string) => `crew_driver_${agentId}`,
+  role: (agentId: string) => `crew_role_${agentId}`,
+};
+
+/** An agent row. The operator's choices for it live in settings; see `Store.listAgents`. */
+function toAgent(r: Row): Omit<Agent, "active" | "defaultDriver" | "role"> {
   return {
-    active: true,
-    defaultDriver: null,
-    role: null,
     id: r.id as string,
     name: r.name as string,
     state: r.state as AgentState,
@@ -482,9 +495,8 @@ export class Store {
   setStatus(id: string, status: TaskStatus, message?: string, data?: Record<string, unknown>) {
     const patch: Partial<Task> = { status };
     if (status === "running") patch.startedAt = now();
-    if (["needs_review", "done", "failed", "cancelled", "approved", "merged", "rejected"].includes(status)) {
-      patch.finishedAt = now();
-    }
+    // Waiting on the operator counts as finished: the agent's part is over.
+    if (status === "needs_review" || FINISHED_STATUSES.includes(status)) patch.finishedAt = now();
     this.updateTask(id, patch);
     this.addEvent(id, "status", message ?? status, { ...data, status });
   }
@@ -712,17 +724,30 @@ export class Store {
 
   // ── agents ────────────────────────────────────────────────
   listAgents(): Agent[] {
-    return (this.db.prepare("SELECT * FROM agents ORDER BY name").all() as Row[]).map((r) => ({
-      ...toAgent(r),
-      active: this.getSetting(`crew_active_${r.id}`) !== "false",
-      defaultDriver: this.getSetting(`crew_driver_${r.id}`) || null,
-      role: this.crewRole(r.id as string),
-    }));
+    return (this.db.prepare("SELECT * FROM agents ORDER BY name").all() as Row[]).map((r) => {
+      const agent = toAgent(r);
+      return {
+        ...agent,
+        active: this.crewActive(agent.id),
+        defaultDriver: this.crewDefaultDriver(agent.id),
+        role: this.crewRole(agent.id),
+      };
+    });
+  }
+
+  /** Whether a crew member takes work. Members are active unless the operator put them on-call. */
+  crewActive(agentId: string): boolean {
+    return this.getSetting(crewSettingKey.active(agentId)) !== "false";
+  }
+
+  /** The agent a crew member prefers to run on, or null to follow the factory's default. */
+  crewDefaultDriver(agentId: string): string | null {
+    return this.getSetting(crewSettingKey.defaultDriver(agentId)) || null;
   }
 
   /** The maintenance a crew member is dedicated to, or null for a general member. */
   crewRole(agentId: string): MaintenanceRole | null {
-    const role = this.getSetting(`crew_role_${agentId}`);
+    const role = this.getSetting(crewSettingKey.role(agentId));
     return isMaintenanceRole(role) ? role : null;
   }
 
@@ -822,8 +847,8 @@ export class Store {
       spendThisWeekUsd: spend,
       activity: [...buckets.entries()].map(([t, v]) => ({ t: iso(t), ...v })),
       needsReview: this.listTasks({ status: ["needs_review"], limit: 20 }),
-      inFlight: this.listTasks({ status: ["merging", "running", "queued"], limit: 20 }),
-      recent: this.listTasks({ status: ["merged", "done", "approved", "rejected", "failed", "cancelled"], limit: 8 }),
+      inFlight: this.listTasks({ status: ACTIVE_STATUSES, limit: 20 }),
+      recent: this.listTasks({ status: FINISHED_STATUSES, limit: 8 }),
       agents: this.listAgents(),
       repos: this.listRepos().map((r) => ({ ...r, openTasks: openByRepo.get(r.id) ?? 0, tools: this.repoTools(r.id) })),
       // One refusal could be a fluke; the same one in a second task is a pattern worth a decision.

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  ACTIVE_STATUSES,
   api,
   AUTONOMY_LABEL,
   KIND_LABEL,
@@ -142,7 +143,7 @@ export function TaskPage() {
 
   const lastId = data?.events.at(-1)?.id ?? 0;
   useEffect(() => setLive([]), [lastId]);
-  useEventStream(data && ["queued", "running", "merging"].includes(data.task.status) ? id : null, (e) =>
+  useEventStream(data && ACTIVE_STATUSES.includes(data.task.status) ? id : null, (e) =>
     setLive((l) => (l.some((x) => x.id === e.id) ? l : [...l, e])),
     lastId,
   );

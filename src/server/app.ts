@@ -8,24 +8,13 @@ import { lastMergeOutcome, type TaskStatus, type NewTask } from "../core/types.j
 import { OperatorActions } from "../factory/actions.js";
 import { draftTask } from "../factory/instruct.js";
 import { diffForTask } from "../factory/git.js";
-import { factoryDriverName, factoryIsRunning } from "../factory/orchestrator.js";
+import { factoryState as readFactoryState } from "../factory/orchestrator.js";
 import { servedDashboard } from "../core/webbuild.js";
 
 export function createApp(store: Store) {
   const app = new Hono();
   const actions = new OperatorActions(store);
-
-  const factoryState = () => {
-    const ui = servedDashboard();
-    return {
-      running: factoryIsRunning(store),
-      paused: store.isPaused(),
-      driver: factoryDriverName(store),
-      uiOutdated: ui?.outdated ?? false,
-      uiBuild: ui?.id ?? null,
-      uiCommit: ui?.commit ?? null,
-    };
-  };
+  const factoryState = () => readFactoryState(store);
 
   app.onError((err, c) => c.json({ error: err.message }, 400));
 

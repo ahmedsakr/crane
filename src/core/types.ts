@@ -40,8 +40,10 @@ export type TaskStatus =
   | "failed"
   | "cancelled";
 
+/** Statuses where something is waiting to run or running: an agent's work, or a merge. */
 export const ACTIVE_STATUSES: TaskStatus[] = ["queued", "running", "merging"];
-export const TERMINAL_STATUSES: TaskStatus[] = ["approved", "merged", "rejected", "done", "failed", "cancelled"];
+/** Statuses where the work is over. Nothing more runs unless the operator merges or retries it. */
+export const FINISHED_STATUSES: TaskStatus[] = ["approved", "merged", "rejected", "done", "failed", "cancelled"];
 export const ALL_STATUSES: TaskStatus[] = [
   "queued",
   "running",
