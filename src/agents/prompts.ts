@@ -21,7 +21,10 @@ const AUTONOMY_BRIEF: Record<Task["autonomy"], string> = {
 };
 
 const BLOCKED_BRIEF =
-  "Some commands are not allowed. If one is blocked, don't hunt for a workaround that does the same thing: say what you needed it for, carry on without it if you can, and mention it in your report. Crane shows the operator every blocked command so they can allow it for next time.";
+  "Some commands are not allowed. If one is blocked, don't hunt for a workaround that does the same thing: say what you needed it for, carry on without it if you can, and mention it in your report. Do not retry the blocked operation through a script, node, Python, another shell, or a rewritten command. A refused compound command does not mean compound commands in general need approval; do not guess which part was denied or repackage it to get past the refusal. Crane shows the operator every blocked command so they can allow it for next time.";
+
+const VALIDATION_BRIEF =
+  "Report validation accurately: distinguish checks that passed from checks that failed, were blocked, or were not run. If a blocked command prevents an end-to-end check, state that the check remains incomplete in your final report; passing unit tests or a clean diff does not complete it. Include the blocked command's purpose and any remaining validation in the report even if you can finish the code changes.";
 
 const FILE_EDIT_BRIEF =
   "When file changes are authorized, use your native file-editing tools (such as Edit, Write, or apply_patch) to create and modify files. Avoid shell heredocs for file edits: they can trigger shell security checks even when the intended edit is allowed. Choose file-editing tools before attempting a shell write; a denied command is still subject to the blocked-command instructions.";
@@ -52,6 +55,7 @@ export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob, opts
     repo ? `Target repository: ${repo.name} (default branch: ${repo.defaultBranch}).` : "",
     "Narrate briefly as you go: one short sentence before each significant step, so the operator can follow along.",
     BLOCKED_BRIEF,
+    VALIDATION_BRIEF,
     FILE_EDIT_BRIEF,
     reportInstructions(),
   ]
@@ -77,6 +81,7 @@ function conflictSystemPrompt(repo: Repo | null, job: ResolveConflictsJob, agent
     ].join("\n"),
     "Narrate briefly as you go: one short sentence before each significant step, so the operator can follow along.",
     BLOCKED_BRIEF,
+    VALIDATION_BRIEF,
     FILE_EDIT_BRIEF,
     reportInstructions(),
   ].join("\n\n");
@@ -101,7 +106,9 @@ export function userPrompt(task: Task, job?: AgentJob): string {
 export function resumePrompt(): string {
   return [
     "You were stopped mid-step while working on this task, because Crane restarted or the API had a temporary error, and Crane has resumed this session. Your work so far is still in this directory.",
-    "Pick up where you left off without redoing finished work. If you were in the middle of a command or an edit, check that it finished (`git status`, `git diff`, re-run the command) before moving on.",
+    "Pick up where you left off without redoing finished work. If you were in the middle of a command or an edit, check whether it finished (`git status`, `git diff`) before moving on. Only re-run a command if it was not denied and repeating it is safe.",
+    BLOCKED_BRIEF,
+    VALIDATION_BRIEF,
     FILE_EDIT_BRIEF,
     `When you are finished, end your final message with the \`${REPORT_FENCE}\` block, as before.`,
   ].join("\n\n");

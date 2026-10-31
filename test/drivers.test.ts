@@ -100,6 +100,24 @@ test("prompts: file-edit guidance reaches fresh, conflict and resumed sessions",
   assert.match(systemPrompt(ctxFor({ autonomy: "observe" }).ctx.task, null), /Do not modify, create, or delete files/);
 });
 
+test("prompts: fresh, conflict and resumed sessions preserve refusals and validation gaps", () => {
+  const { ctx } = ctxFor({ autonomy: "propose" });
+  for (const agentCommits of [true, false]) {
+    const prompts = [
+      systemPrompt(ctx.task, null, undefined, { agentCommits }),
+      systemPrompt(ctx.task, null, { kind: "resolve_conflicts", base: "origin/main", files: ["a.ts"] }, { agentCommits }),
+      resumePrompt(),
+    ];
+    for (const prompt of prompts) {
+      assert.match(prompt, /Do not retry the blocked operation through a script, node, Python/);
+      assert.match(prompt, /do not guess which part was denied or repackage it/);
+      assert.match(prompt, /check remains incomplete in your final report/);
+      assert.match(prompt, /Include the blocked command's purpose and any remaining validation/);
+    }
+  }
+  assert.match(resumePrompt(), /Only re-run a command if it was not denied and repeating it is safe/);
+});
+
 test("codex: runs exec in a read-only sandbox to investigate, and turns its events into the task's", async () => {
   const { bin, log } = fakeCodex("ok");
   const { ctx, notes, tools, sessions, usage } = ctxFor({ autonomy: "observe" });
