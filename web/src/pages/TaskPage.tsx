@@ -76,7 +76,9 @@ function Runs({ runs }: { runs: AgentRun[] }) {
             <li key={r.id}>
               <span className="runs-head">
                 <span>{RUN_KIND_LABEL[r.kind]}</span>
-                <span className="tabular">{r.outcome === "running" ? "Running" : usd(r.costUsd)}</span>
+                <span className="tabular">{r.outcome === "running" ? "Running" : r.costStatus === "unknown"
+                  ? r.costUsd ? `${usd(r.costUsd)} + unknown` : "Unknown"
+                  : `${r.costStatus === "estimated" ? "~" : ""}${usd(r.costUsd)}`}</span>
               </span>
               <span className="runs-meta">
                 {[

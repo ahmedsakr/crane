@@ -319,7 +319,7 @@ program
       for (const r of runs) {
         const tokens = r.inputTokens + r.cacheReadTokens + r.cacheWriteTokens + r.outputTokens;
         console.log(
-          `  ${RUN_KIND_LABEL[r.kind].padEnd(18)} ${ui.usd(r.costUsd).padStart(8)}  ${ui.dim(
+          `  ${RUN_KIND_LABEL[r.kind].padEnd(18)} ${(r.costStatus === "unknown" ? r.costUsd ? `${ui.usd(r.costUsd)} + unknown` : "Unknown" : `${r.costStatus === "estimated" ? "~" : ""}${ui.usd(r.costUsd)}`).padStart(8)}  ${ui.dim(
             [r.outcome, r.driver === "unknown" ? null : driverLabel(r.driver), r.model, r.turns ? `${r.turns} turns` : null, tokens ? `${ui.compact(tokens)} tokens` : null, ui.ago(r.startedAt)]
               .filter(Boolean)
               .join(" · "),

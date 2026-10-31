@@ -245,8 +245,9 @@ export function Analytics() {
 
           <p className="muted spend-note">
             {compact(tokensIn)} tokens in ({compact(a.tokens.cacheRead)} read from cache) and {compact(a.tokens.output)} out.
-            Costs are what each agent reports for each run, at API prices. On a subscription they're an estimate, not a bill.
-            Codex reports tokens only, so its runs count as $0.
+            Costs use agent reports or model-specific estimates at standard API token prices. On a subscription they're an estimate, not a bill.
+            Codex estimates exclude tools and pricing surcharges; unrecognized or unspecified models have unknown costs.
+            {a.unknownCostRuns > 0 && ` ${plural(a.unknownCostRuns, "run")} with unknown costs: totals include only known amounts, so actual costs may be higher.`}
           </p>
         </>
       )}

@@ -5,6 +5,7 @@ import type { AgentDriver, RunContext, RunResult } from "./driver.js";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
 import { parseReport } from "./report.js";
 import type { RunUsage } from "../core/types.js";
+import { codexCost, combinedCost } from "./codex-pricing.js";
 
 /** Codex exited before it got going again on an earlier session. */
 class SessionNotResumed extends Error {}
@@ -56,13 +57,18 @@ export function unwrapShell(command: unknown): string {
 
 /** What Codex used, from its `turn.completed` usage. Its input count includes cached tokens. */
 export function usageFromTurn(usage: Record<string, unknown> | undefined, model: string | null): RunUsage {
-  const n = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
-  const cached = n(usage?.cached_input_tokens);
+  const n = (v: unknown) => (Number.isFinite(Number(v)) ? Math.max(0, Number(v)) : 0);
+  const input = n(usage?.input_tokens);
+  const cached = Math.min(input, n(usage?.cached_input_tokens));
+  const output = n(usage?.output_tokens);
+  const valid = [usage?.input_tokens, usage?.cached_input_tokens, usage?.output_tokens]
+    .every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0) && n(usage?.cached_input_tokens) <= input;
+  const cost = valid ? codexCost(model, input - cached, cached, output) : null;
   return {
-    // Codex reports tokens only. Crane doesn't guess a price, so its runs count as $0.
-    costUsd: 0,
-    inputTokens: Math.max(0, n(usage?.input_tokens) - cached),
-    outputTokens: n(usage?.output_tokens),
+    costUsd: cost ?? 0,
+    costStatus: cost === null ? "unknown" : "estimated",
+    inputTokens: input - cached,
+    outputTokens: output,
     cacheReadTokens: cached,
     cacheWriteTokens: 0,
     turns: 1,
@@ -202,6 +208,7 @@ export class CodexDriver implements AgentDriver {
               ? u
               : {
                   ...usage,
+                  ...combinedCost(usage, u),
                   inputTokens: usage.inputTokens + u.inputTokens,
                   outputTokens: usage.outputTokens + u.outputTokens,
                   cacheReadTokens: usage.cacheReadTokens + u.cacheReadTokens,

@@ -22,7 +22,7 @@ const REPORT = '```crane-report\\n{\\"summary\\":\\"Codex did it\\",\\"findings\
  * A stand-in `codex` that logs its arguments and stdin, then plays back the
  * JSON events `codex exec --json` sends. `mode` picks the story.
  */
-function fakeCodex(mode: "ok" | "lost-session" | "turn-failed"): { bin: string; log: string } {
+function fakeCodex(mode: "ok" | "lost-session" | "turn-failed" | "multi-turn"): { bin: string; log: string } {
   const dir = mkdtempSync(join(tmpdir(), "crane-fake-codex-"));
   const log = join(dir, "calls.log");
   const bin = join(dir, "codex");
@@ -54,6 +54,9 @@ process.stdin.on("end", () => {
   say({ type: "item.completed", item: { id: "i3", type: "reasoning", text: "thinking" } });
   say({ type: "item.completed", item: { id: "i4", type: "agent_message", text: "Fixed it.\\n\\n${REPORT}" } });
   say({ type: "turn.completed", usage: { input_tokens: 1000, cached_input_tokens: 600, output_tokens: 50 } });
+  if (${JSON.stringify(mode)} === "multi-turn") {
+    say({ type: "turn.completed", usage: { input_tokens: 1000, cached_input_tokens: 600, output_tokens: 50 } });
+  }
 });
 `,
   );
@@ -158,7 +161,7 @@ test("codex: runs exec in a read-only sandbox to investigate, and turns its even
   assert.equal(r.report.summary, "Codex did it");
   assert.equal(r.report.findings[0]?.impact, "high");
   assert.deepEqual(usage, [
-    { costUsd: 0, inputTokens: 400, outputTokens: 50, cacheReadTokens: 600, cacheWriteTokens: 0, turns: 1, model: null },
+    { costUsd: 0, costStatus: "unknown", inputTokens: 400, outputTokens: 50, cacheReadTokens: 600, cacheWriteTokens: 0, turns: 1, model: null },
   ]);
 });
 
@@ -214,6 +217,16 @@ test("codex: a failed turn fails the run with Codex's reason", async () => {
   await assert.rejects(new CodexDriver(bin).run(ctxFor({}).ctx), /usage limit/);
 });
 
+test("codex: sums estimated cost across completed turns", async () => {
+  const { bin } = fakeCodex("multi-turn");
+  const { ctx, usage } = ctxFor({}, { model: "gpt-5.3-codex" });
+  await new CodexDriver(bin).run(ctx);
+  assert.equal(usage.length, 1);
+  assert.equal(usage[0]?.turns, 2);
+  assert.ok(Math.abs(usage[0]!.costUsd - 0.00301) < 1e-12);
+  assert.equal(usage[0]?.costStatus, "estimated");
+});
+
 test("codex: a missing binary is unavailable", async () => {
   assert.equal(await new CodexDriver("/nonexistent/codex").available(), false);
   assert.equal(await new CodexDriver(fakeCodex("ok").bin).available(), true);
@@ -225,6 +238,7 @@ test("codex: helpers unwrap shells and count cached tokens apart", () => {
   assert.equal(unwrapShell(["rg", "-n", "foo"]), "rg -n foo");
   assert.deepEqual(usageFromTurn({ input_tokens: 10, cached_input_tokens: 4, output_tokens: 2 }, "m"), {
     costUsd: 0,
+    costStatus: "unknown",
     inputTokens: 6,
     outputTokens: 2,
     cacheReadTokens: 4,
