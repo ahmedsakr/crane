@@ -1,13 +1,13 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { KIND_LABEL, STATUS_LABEL, type Mission, type MissionStatus } from "../lib/api";
+import { KIND_LABEL, STATUS_LABEL, type Task, type TaskStatus } from "../lib/api";
 import { ago } from "../lib/format";
 
-export function Dot({ status }: { status: MissionStatus | "on" | "paused" | "off" }) {
+export function Dot({ status }: { status: TaskStatus | "on" | "paused" | "off" }) {
   return <span className={`dot dot-${status}`} aria-hidden />;
 }
 
-export function StatusChip({ status }: { status: MissionStatus }) {
+export function StatusChip({ status }: { status: TaskStatus }) {
   const cls =
     status === "needs_review"
       ? "chip chip-crane"
@@ -24,11 +24,11 @@ export function StatusChip({ status }: { status: MissionStatus }) {
   );
 }
 
-export function MissionRow({ m, repoName }: { m: Mission; repoName?: string }) {
+export function TaskRow({ m, repoName }: { m: Task; repoName?: string }) {
   const when = m.finishedAt ?? m.startedAt ?? m.createdAt;
   return (
     <li>
-      <Link className="row" to={`/missions/${m.id}`}>
+      <Link className="row" to={`/tasks/${m.id}`}>
         <Dot status={m.status} />
         <span style={{ minWidth: 0 }}>
           <span className="row-title" style={{ display: "block" }}>

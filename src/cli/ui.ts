@@ -1,5 +1,5 @@
 import pc from "picocolors";
-import type { Agent, Mission, MissionEvent, MissionStatus } from "../core/types.js";
+import type { Agent, Task, TaskEvent, TaskStatus } from "../core/types.js";
 import { KIND_LABEL, STATUS_LABEL } from "../core/types.js";
 
 /** Crane yellow: the one accent colour, used sparingly (brand mark, the thing that needs you). */
@@ -14,7 +14,7 @@ export function brand(): string {
   return `${yellow("▟")} ${bold("crane")}`;
 }
 
-const STATUS_COLOR: Record<MissionStatus, (s: string) => string> = {
+const STATUS_COLOR: Record<TaskStatus, (s: string) => string> = {
   queued: pc.dim,
   running: pc.cyan,
   needs_review: yellow,
@@ -25,12 +25,12 @@ const STATUS_COLOR: Record<MissionStatus, (s: string) => string> = {
   cancelled: pc.dim,
 };
 
-export function statusDot(status: MissionStatus): string {
+export function statusDot(status: TaskStatus): string {
   const glyph = status === "running" ? "◉" : status === "queued" ? "○" : "●";
   return STATUS_COLOR[status](glyph);
 }
 
-export function statusText(status: MissionStatus): string {
+export function statusText(status: TaskStatus): string {
   return STATUS_COLOR[status](STATUS_LABEL[status]);
 }
 
@@ -47,8 +47,8 @@ export function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, Math.max(0, n - 1)) + "…" : s;
 }
 
-/** One line per mission: dot, id, title, and a quiet right-hand column. */
-export function missionLine(m: Mission, repoName?: string): string {
+/** One line per task: dot, id, title, and a quiet right-hand column. */
+export function taskLine(m: Task, repoName?: string): string {
   const right = [repoName, ago(m.finishedAt ?? m.startedAt ?? m.createdAt)].filter(Boolean).join(" · ");
   const room = width() - 4 - m.id.length - right.length - 4;
   return `  ${statusDot(m.status)} ${dim(m.id)}  ${truncate(m.title, Math.max(16, room)).padEnd(Math.max(16, room))}  ${dim(right)}`;
@@ -69,15 +69,15 @@ export function sparkline(values: number[]): string {
   return values.map((v) => (v === 0 ? dim("▁") : BARS[Math.min(7, Math.round((v / max) * 7))])).join("");
 }
 
-export function agentLine(a: Agent, missionTitle?: string): string {
+export function agentLine(a: Agent, taskTitle?: string): string {
   const state =
     a.state === "working" ? pc.cyan("working") : a.state === "paused" ? yellow("paused") : dim("idle");
   return `  ${a.state === "working" ? pc.cyan("◉") : dim("○")} ${a.name.padEnd(9)} ${state.padEnd(16)} ${
-    missionTitle ? truncate(missionTitle, width() - 34) : dim(`${a.missionsCompleted} missions done`)
+    taskTitle ? truncate(taskTitle, width() - 34) : dim(`${a.tasksCompleted} tasks done`)
   }`;
 }
 
-export function eventLine(e: MissionEvent): string {
+export function eventLine(e: TaskEvent): string {
   const t = dim(new Date(e.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
   const body = e.message.replace(/\s+/g, " ");
   switch (e.type) {
@@ -96,7 +96,7 @@ export function eventLine(e: MissionEvent): string {
   }
 }
 
-export function kindLabel(m: Mission): string {
+export function kindLabel(m: Task): string {
   return KIND_LABEL[m.kind];
 }
 

@@ -1,6 +1,6 @@
 # Crane
 
-Crane is an autonomous software factory steered by a human operator. Agents run Claude Code headless (`claude -p`) against git repos. This file is read by humans and by Crane's own agents when they work on Crane ("factory feature" missions).
+Crane is an autonomous software factory steered by a human operator. Agents run Claude Code headless (`claude -p`) against git repos. This file is read by humans and by Crane's own agents when they work on Crane ("factory feature" tasks).
 
 ## Commands
 
@@ -16,7 +16,7 @@ Crane is an autonomous software factory steered by a human operator. Agents run 
 - `src/core/store.ts` is the single source of truth (SQLite, WAL). Every process (server, CLI) opens it directly; there is no in-memory state worth trusting across processes. Live views tail the `events` table.
 - `src/factory/actions.ts` holds every operator action. The API and CLI both call it, so add new actions there first.
 - `src/agents/` holds drivers behind `AgentDriver`. Agents end their final message with a fenced `crane-report` JSON block (`src/agents/prompts.ts`), parsed by `src/agents/report.ts`.
-- Missions with autonomy `propose`/`act` run in a git worktree under `$CRANE_HOME/worktrees/<missionId>` on branch `crane/<slug>-<id>`. Crane never pushes or merges.
+- Tasks with autonomy `propose`/`act` run in a git worktree under `$CRANE_HOME/worktrees/<taskId>` on branch `crane/<slug>-<id>`. Crane never pushes or merges.
 - `web/` is React + Vite with no UI library. Its types come straight from `src/core/types.ts`.
 
 ## Rules

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MissionEvent } from "./api";
+import type { TaskEvent } from "./api";
 
 /** Fetch now, then keep it fresh. Pauses while the tab is hidden. */
 export function usePoll<T>(fetcher: () => Promise<T>, intervalMs = 2000, deps: unknown[] = []) {
@@ -30,13 +30,13 @@ export function usePoll<T>(fetcher: () => Promise<T>, intervalMs = 2000, deps: u
   return { data, error, refresh };
 }
 
-/** Subscribe to live events for a mission (or "all"). */
-export function useEventStream(id: string | null, onEvent: (e: MissionEvent) => void, after = 0) {
+/** Subscribe to live events for a task (or "all"). */
+export function useEventStream(id: string | null, onEvent: (e: TaskEvent) => void, after = 0) {
   const cb = useRef(onEvent);
   cb.current = onEvent;
   useEffect(() => {
     if (!id) return;
-    const es = new EventSource(`/api/missions/${id}/stream?after=${after}`);
+    const es = new EventSource(`/api/tasks/${id}/stream?after=${after}`);
     es.addEventListener("event", (msg) => cb.current(JSON.parse((msg as MessageEvent).data)));
     return () => es.close();
   }, [id, after]);

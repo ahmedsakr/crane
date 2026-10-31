@@ -6,10 +6,10 @@ import type {
   Agent,
   AgentState,
   EventType,
-  Mission,
-  MissionEvent,
-  MissionStatus,
-  NewMission,
+  Task,
+  TaskEvent,
+  TaskStatus,
+  NewTask,
   Overview,
   Report,
   Repo,
@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS repos (
   is_factory INTEGER NOT NULL DEFAULT 0,
   added_at TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS missions (
+CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
   kind TEXT NOT NULL,
   title TEXT NOT NULL,
@@ -41,23 +41,23 @@ CREATE TABLE IF NOT EXISTS missions (
   started_at TEXT,
   finished_at TEXT
 );
-CREATE INDEX IF NOT EXISTS missions_status ON missions(status);
+CREATE INDEX IF NOT EXISTS tasks_status ON tasks(status);
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  mission_id TEXT NOT NULL REFERENCES missions(id),
+  task_id TEXT NOT NULL REFERENCES tasks(id),
   ts TEXT NOT NULL,
   type TEXT NOT NULL,
   message TEXT NOT NULL,
   data TEXT
 );
-CREATE INDEX IF NOT EXISTS events_mission ON events(mission_id, id);
+CREATE INDEX IF NOT EXISTS events_task ON events(task_id, id);
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   state TEXT NOT NULL DEFAULT 'idle',
-  mission_id TEXT,
+  task_id TEXT,
   driver TEXT NOT NULL,
-  missions_completed INTEGER NOT NULL DEFAULT 0,
+  tasks_completed INTEGER NOT NULL DEFAULT 0,
   last_active_at TEXT
 );
 CREATE TABLE IF NOT EXISTS settings (
@@ -67,6 +67,33 @@ CREATE TABLE IF NOT EXISTS settings (
 `;
 
 type Row = Record<string, unknown>;
+
+/**
+ * Crane used to call tasks "missions". Rename the old tables and columns in
+ * place so existing history, ids, and branches carry over. Runs inside an
+ * immediate transaction, so two processes opening the store at once can't
+ * both try it.
+ */
+function migrateMissionsToTasks(db: Database.Database) {
+  const hasTable = (name: string) =>
+    !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+  const hasColumn = (table: string, col: string) =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).some((c) => c.name === col);
+
+  // Cheap check first, so normal opens never take the write lock.
+  if (!hasTable("missions") || hasTable("tasks")) return;
+  db.transaction(() => {
+    // Check again under the lock: another process may have just migrated.
+    if (!hasTable("missions") || hasTable("tasks")) return;
+    db.exec("DROP INDEX IF EXISTS missions_status; DROP INDEX IF EXISTS events_mission;");
+    db.exec("ALTER TABLE missions RENAME TO tasks");
+    if (hasColumn("events", "mission_id")) db.exec("ALTER TABLE events RENAME COLUMN mission_id TO task_id");
+    if (hasColumn("agents", "mission_id")) db.exec("ALTER TABLE agents RENAME COLUMN mission_id TO task_id");
+    if (hasColumn("agents", "missions_completed")) {
+      db.exec("ALTER TABLE agents RENAME COLUMN missions_completed TO tasks_completed");
+    }
+  }).immediate();
+}
 
 const now = () => new Date().toISOString();
 
@@ -81,15 +108,15 @@ function toRepo(r: Row): Repo {
   };
 }
 
-function toMission(r: Row): Mission {
+function toTask(r: Row): Task {
   return {
     id: r.id as string,
-    kind: r.kind as Mission["kind"],
+    kind: r.kind as Task["kind"],
     title: r.title as string,
     brief: r.brief as string,
     repoId: (r.repo_id as string) ?? null,
-    autonomy: r.autonomy as Mission["autonomy"],
-    status: r.status as MissionStatus,
+    autonomy: r.autonomy as Task["autonomy"],
+    status: r.status as TaskStatus,
     agentId: (r.agent_id as string) ?? null,
     branch: (r.branch as string) ?? null,
     worktree: (r.worktree as string) ?? null,
@@ -101,10 +128,10 @@ function toMission(r: Row): Mission {
   };
 }
 
-function toEvent(r: Row): MissionEvent {
+function toEvent(r: Row): TaskEvent {
   return {
     id: r.id as number,
-    missionId: r.mission_id as string,
+    taskId: r.task_id as string,
     ts: r.ts as string,
     type: r.type as EventType,
     message: r.message as string,
@@ -117,9 +144,9 @@ function toAgent(r: Row): Agent {
     id: r.id as string,
     name: r.name as string,
     state: r.state as AgentState,
-    missionId: (r.mission_id as string) ?? null,
+    taskId: (r.task_id as string) ?? null,
     driver: r.driver as string,
-    missionsCompleted: r.missions_completed as number,
+    tasksCompleted: r.tasks_completed as number,
     lastActiveAt: (r.last_active_at as string) ?? null,
   };
 }
@@ -137,6 +164,7 @@ export class Store {
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("busy_timeout = 5000");
     this.db.pragma("foreign_keys = ON");
+    migrateMissionsToTasks(this.db);
     this.db.exec(SCHEMA);
   }
 
@@ -197,26 +225,29 @@ export class Store {
     this.db.prepare("DELETE FROM repos WHERE id = ? AND is_factory = 0").run(id);
   }
 
-  // ── missions ──────────────────────────────────────────────
-  createMission(input: NewMission): Mission {
-    const id = shortId("m");
+  // ── tasks ─────────────────────────────────────────────────
+  createTask(input: NewTask): Task {
+    const id = shortId("t");
     const ts = now();
     this.db
       .prepare(
-        `INSERT INTO missions(id, kind, title, brief, repo_id, autonomy, status, created_at)
+        `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, status, created_at)
          VALUES(?, ?, ?, ?, ?, ?, 'queued', ?)`,
       )
       .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, ts);
     this.addEvent(id, "status", "Queued", { status: "queued" });
-    return this.getMission(id)!;
+    return this.getTask(id)!;
   }
 
-  getMission(id: string): Mission | null {
-    const r = this.db.prepare("SELECT * FROM missions WHERE id = ? OR id = ?").get(id, `m-${id}`) as Row | undefined;
-    return r ? toMission(r) : null;
+  getTask(id: string): Task | null {
+    // Accept a bare id too. Tasks created before the rename kept their `m-` prefix.
+    const r = this.db
+      .prepare("SELECT * FROM tasks WHERE id IN (?, ?, ?) ORDER BY id = ? DESC LIMIT 1")
+      .get(id, `t-${id}`, `m-${id}`, id) as Row | undefined;
+    return r ? toTask(r) : null;
   }
 
-  listMissions(opts: { status?: MissionStatus[]; repoId?: string; limit?: number } = {}): Mission[] {
+  listTasks(opts: { status?: TaskStatus[]; repoId?: string; limit?: number } = {}): Task[] {
     const where: string[] = [];
     const params: unknown[] = [];
     if (opts.status?.length) {
@@ -227,13 +258,13 @@ export class Store {
       where.push("repo_id = ?");
       params.push(opts.repoId);
     }
-    const sql = `SELECT * FROM missions ${where.length ? "WHERE " + where.join(" AND ") : ""}
+    const sql = `SELECT * FROM tasks ${where.length ? "WHERE " + where.join(" AND ") : ""}
                  ORDER BY created_at DESC LIMIT ?`;
     params.push(opts.limit ?? 200);
-    return (this.db.prepare(sql).all(...params) as Row[]).map(toMission);
+    return (this.db.prepare(sql).all(...params) as Row[]).map(toTask);
   }
 
-  updateMission(id: string, patch: Partial<Omit<Mission, "id">>) {
+  updateTask(id: string, patch: Partial<Omit<Task, "id">>) {
     const cols: Record<string, string> = {
       status: "status",
       agentId: "agent_id",
@@ -255,54 +286,54 @@ export class Store {
     }
     if (!sets.length) return;
     params.push(id);
-    this.db.prepare(`UPDATE missions SET ${sets.join(", ")} WHERE id = ?`).run(...params);
+    this.db.prepare(`UPDATE tasks SET ${sets.join(", ")} WHERE id = ?`).run(...params);
   }
 
-  setStatus(id: string, status: MissionStatus, message?: string) {
-    const patch: Partial<Mission> = { status };
+  setStatus(id: string, status: TaskStatus, message?: string) {
+    const patch: Partial<Task> = { status };
     if (status === "running") patch.startedAt = now();
     if (["needs_review", "done", "failed", "cancelled", "approved", "rejected"].includes(status)) {
       patch.finishedAt = now();
     }
-    this.updateMission(id, patch);
+    this.updateTask(id, patch);
     this.addEvent(id, "status", message ?? status, { status });
   }
 
-  /** Atomically take the oldest queued mission. Safe if two factories race. */
-  claimNextMission(agentId: string): Mission | null {
+  /** Atomically take the oldest queued task. Safe if two factories race. */
+  claimNextTask(agentId: string): Task | null {
     const tx = this.db.transaction(() => {
       const r = this.db
-        .prepare("SELECT id FROM missions WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1")
+        .prepare("SELECT id FROM tasks WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1")
         .get() as Row | undefined;
       if (!r) return null;
       const changed = this.db
-        .prepare("UPDATE missions SET status = 'running', agent_id = ?, started_at = ? WHERE id = ? AND status = 'queued'")
+        .prepare("UPDATE tasks SET status = 'running', agent_id = ?, started_at = ? WHERE id = ? AND status = 'queued'")
         .run(agentId, now(), r.id).changes;
       return changed ? (r.id as string) : null;
     });
     const id = tx();
     if (!id) return null;
     this.addEvent(id, "status", "Picked up", { status: "running", agentId });
-    return this.getMission(id);
+    return this.getTask(id);
   }
 
   // ── events ────────────────────────────────────────────────
-  addEvent(missionId: string, type: EventType, message: string, data?: Record<string, unknown> | null): MissionEvent {
+  addEvent(taskId: string, type: EventType, message: string, data?: Record<string, unknown> | null): TaskEvent {
     const ts = now();
     const info = this.db
-      .prepare("INSERT INTO events(mission_id, ts, type, message, data) VALUES(?, ?, ?, ?, ?)")
-      .run(missionId, ts, type, message, data ? JSON.stringify(data) : null);
-    return { id: Number(info.lastInsertRowid), missionId, ts, type, message, data: data ?? null };
+      .prepare("INSERT INTO events(task_id, ts, type, message, data) VALUES(?, ?, ?, ?, ?)")
+      .run(taskId, ts, type, message, data ? JSON.stringify(data) : null);
+    return { id: Number(info.lastInsertRowid), taskId, ts, type, message, data: data ?? null };
   }
 
-  listEvents(missionId: string, afterId = 0): MissionEvent[] {
+  listEvents(taskId: string, afterId = 0): TaskEvent[] {
     return (
-      this.db.prepare("SELECT * FROM events WHERE mission_id = ? AND id > ? ORDER BY id ASC").all(missionId, afterId) as Row[]
+      this.db.prepare("SELECT * FROM events WHERE task_id = ? AND id > ? ORDER BY id ASC").all(taskId, afterId) as Row[]
     ).map(toEvent);
   }
 
-  /** Events across every mission, for the live factory feed. */
-  eventsSince(afterId: number, limit = 200): MissionEvent[] {
+  /** Events across every task, for the live factory feed. */
+  eventsSince(afterId: number, limit = 200): TaskEvent[] {
     return (this.db.prepare("SELECT * FROM events WHERE id > ? ORDER BY id ASC LIMIT ?").all(afterId, limit) as Row[]).map(
       toEvent,
     );
@@ -327,14 +358,14 @@ export class Store {
       .run(a.id, a.name, a.driver);
   }
 
-  setAgentState(id: string, state: AgentState, missionId: string | null) {
+  setAgentState(id: string, state: AgentState, taskId: string | null) {
     this.db
-      .prepare("UPDATE agents SET state = ?, mission_id = ?, last_active_at = ? WHERE id = ?")
-      .run(state, missionId, now(), id);
+      .prepare("UPDATE agents SET state = ?, task_id = ?, last_active_at = ? WHERE id = ?")
+      .run(state, taskId, now(), id);
   }
 
   bumpAgentCompleted(id: string) {
-    this.db.prepare("UPDATE agents SET missions_completed = missions_completed + 1 WHERE id = ?").run(id);
+    this.db.prepare("UPDATE agents SET tasks_completed = tasks_completed + 1 WHERE id = ?").run(id);
   }
 
   /** Remove agents beyond the configured crew size. */
@@ -350,8 +381,8 @@ export class Store {
     const counts = Object.fromEntries(
       ["queued", "running", "needs_review", "approved", "rejected", "done", "failed", "cancelled"].map((s) => [s, 0]),
     ) as Overview["counts"];
-    for (const r of this.db.prepare("SELECT status, COUNT(*) AS n FROM missions GROUP BY status").all() as Row[]) {
-      counts[r.status as MissionStatus] = r.n as number;
+    for (const r of this.db.prepare("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status").all() as Row[]) {
+      counts[r.status as TaskStatus] = r.n as number;
     }
 
     const weekMs = 7 * 24 * 3600 * 1000;
@@ -361,13 +392,13 @@ export class Store {
       (
         this.db
           .prepare(
-            `SELECT COUNT(*) AS n FROM missions WHERE status IN ('done','approved') AND finished_at >= ? AND finished_at < ?`,
+            `SELECT COUNT(*) AS n FROM tasks WHERE status IN ('done','approved') AND finished_at >= ? AND finished_at < ?`,
           )
           .get(iso(from), iso(to)) as Row
       ).n as number;
 
     const spend = (
-      this.db.prepare("SELECT COALESCE(SUM(cost_usd), 0) AS s FROM missions WHERE created_at >= ?").get(iso(t0 - weekMs)) as Row
+      this.db.prepare("SELECT COALESCE(SUM(cost_usd), 0) AS s FROM tasks WHERE created_at >= ?").get(iso(t0 - weekMs)) as Row
     ).s as number;
 
     // Hourly activity buckets for the last 7 days.
@@ -382,7 +413,7 @@ export class Store {
       if (b) b.events++;
     }
     for (const r of this.db
-      .prepare("SELECT finished_at FROM missions WHERE status IN ('done','approved') AND finished_at >= ?")
+      .prepare("SELECT finished_at FROM tasks WHERE status IN ('done','approved') AND finished_at >= ?")
       .all(iso(start)) as Row[]) {
       const b = buckets.get(Math.floor(Date.parse(r.finished_at as string) / hour) * hour);
       if (b) b.done++;
@@ -390,7 +421,7 @@ export class Store {
 
     const openByRepo = new Map<string, number>();
     for (const r of this.db
-      .prepare("SELECT repo_id, COUNT(*) AS n FROM missions WHERE status IN ('queued','running','needs_review') GROUP BY repo_id")
+      .prepare("SELECT repo_id, COUNT(*) AS n FROM tasks WHERE status IN ('queued','running','needs_review') GROUP BY repo_id")
       .all() as Row[]) {
       openByRepo.set(r.repo_id as string, r.n as number);
     }
@@ -402,11 +433,11 @@ export class Store {
       shippedLastWeek: shipped(t0 - 2 * weekMs, t0 - weekMs),
       spendThisWeekUsd: spend,
       activity: [...buckets.entries()].map(([t, v]) => ({ t: iso(t), ...v })),
-      needsReview: this.listMissions({ status: ["needs_review"], limit: 20 }),
-      inFlight: this.listMissions({ status: ["running", "queued"], limit: 20 }),
-      recent: this.listMissions({ status: ["done", "approved", "rejected", "failed", "cancelled"], limit: 8 }),
+      needsReview: this.listTasks({ status: ["needs_review"], limit: 20 }),
+      inFlight: this.listTasks({ status: ["running", "queued"], limit: 20 }),
+      recent: this.listTasks({ status: ["done", "approved", "rejected", "failed", "cancelled"], limit: 8 }),
       agents: this.listAgents(),
-      repos: this.listRepos().map((r) => ({ ...r, openMissions: openByRepo.get(r.id) ?? 0 })),
+      repos: this.listRepos().map((r) => ({ ...r, openTasks: openByRepo.get(r.id) ?? 0 })),
     };
   }
 }

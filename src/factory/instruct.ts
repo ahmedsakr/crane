@@ -1,7 +1,7 @@
-import type { Autonomy, MissionKind, Repo } from "../core/types.js";
+import type { Autonomy, TaskKind, Repo } from "../core/types.js";
 
-export interface MissionDraft {
-  kind: MissionKind;
+export interface TaskDraft {
+  kind: TaskKind;
   title: string;
   brief: string;
   repoId: string | null;
@@ -38,7 +38,10 @@ const MAINTENANCE = [
 ];
 const FEATURE = ["add", "build", "support", "feature", "implement", "integrat", "new ", "idea", "would be nice", "let users", "allow"];
 const FACTORY = /\b(crane|the factory|this factory|yourself|your own)\b/i;
-/** Words that only make sense about Crane itself, so they point a mission at the factory repo. */
+/**
+ * Words that only make sense about Crane itself, so they point a task at the factory repo.
+ * "Missions" is what tasks used to be called. "Tasks" itself is too common to count.
+ */
 const FACTORY_VOCAB =
   /\b(missions?|crew|operator|autonomy|freedom levels?|instruct sheet|needs you|the slab|worktrees?|agent drivers?|simulated driver|factory features?)\b/i;
 const OBSERVE = /\b(investigate|research|look into|audit|why|explore|find out|figure out|assess|evaluate|review|what would it take|should we)\b/i;
@@ -57,11 +60,11 @@ function titleFrom(text: string): string {
 }
 
 /**
- * Turn a plain-language instruction into a mission draft. This is deliberately
+ * Turn a plain-language instruction into a task draft. This is deliberately
  * a transparent heuristic: the operator sees each guess with its reason and can
  * change it before anything runs.
  */
-export function draftMission(text: string, repos: Repo[], opts: { lastRepoId?: string | null } = {}): MissionDraft {
+export function draftTask(text: string, repos: Repo[], opts: { lastRepoId?: string | null } = {}): TaskDraft {
   const brief = text.trim();
   const factoryRepo = repos.find((r) => r.isFactory) ?? null;
   const targets = repos.filter((r) => !r.isFactory);
@@ -97,7 +100,7 @@ export function draftMission(text: string, repos: Repo[], opts: { lastRepoId?: s
   }
 
   // What kind?
-  let kind: MissionKind;
+  let kind: TaskKind;
   let kindWhy: string;
   if (repo?.isFactory) {
     kind = "factory_feature";
@@ -123,7 +126,7 @@ export function draftMission(text: string, repos: Repo[], opts: { lastRepoId?: s
 
   return {
     kind,
-    title: titleFrom(brief) || "Untitled mission",
+    title: titleFrom(brief) || "Untitled task",
     brief,
     repoId: repo?.id ?? null,
     autonomy,

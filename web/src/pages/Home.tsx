@@ -1,12 +1,12 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useApp } from "../App";
-import { api, type Mission } from "../lib/api";
+import { api, type Task } from "../lib/api";
 import { ago, plural } from "../lib/format";
 import { useTick } from "../lib/hooks";
 import { Slab } from "../components/Slab";
-import { Empty, MissionRow, useToast } from "../components/bits";
+import { Empty, TaskRow, useToast } from "../components/bits";
 
-function ReviewItem({ m, repoName, onDone }: { m: Mission; repoName?: string; onDone: () => void }) {
+function ReviewItem({ m, repoName, onDone }: { m: Task; repoName?: string; onDone: () => void }) {
   const toast = useToast();
   const nav = useNavigate();
   const findings = m.report?.findings.length ?? 0;
@@ -20,7 +20,7 @@ function ReviewItem({ m, repoName, onDone }: { m: Mission; repoName?: string; on
   return (
     <div className="review-row">
       <div style={{ minWidth: 0 }}>
-        <Link to={`/missions/${m.id}`} className="row-title" style={{ display: "block" }}>
+        <Link to={`/tasks/${m.id}`} className="row-title" style={{ display: "block" }}>
           {m.title}
         </Link>
         <div className="row-meta">
@@ -31,7 +31,7 @@ function ReviewItem({ m, repoName, onDone }: { m: Mission; repoName?: string; on
         {m.report?.summary && <div className="review-summary">{m.report.summary}</div>}
       </div>
       <div className="actions">
-        <button className="btn btn-quiet btn-sm" onClick={() => nav(`/missions/${m.id}`)}>
+        <button className="btn btn-quiet btn-sm" onClick={() => nav(`/tasks/${m.id}`)}>
           Review
         </button>
         <button className="btn btn-primary btn-sm" onClick={quickApprove}>
@@ -60,7 +60,7 @@ export function Home() {
           <div className="notice">
             <strong>The factory is off.</strong>
             <span>
-              Run <span className="mono">crane serve</span> in a terminal to start the agents. Missions you add now will wait in
+              Run <span className="mono">crane serve</span> in a terminal to start the agents. Tasks you add now will wait in
               the queue.
             </span>
           </div>
@@ -84,19 +84,19 @@ export function Home() {
             <h2 className="section-title" id="in-flight">
               In flight <span className="count">{o.inFlight.length || ""}</span>
             </h2>
-            <Link className="link-quiet" to="/missions">
-              All missions
+            <Link className="link-quiet" to="/tasks">
+              All tasks
             </Link>
           </div>
           {o.inFlight.length ? (
             <ul className="rows card" style={{ padding: "0 16px" }}>
               {o.inFlight.map((m) => (
-                <MissionRow key={m.id} m={m} repoName={repoName(m.repoId)} />
+                <TaskRow key={m.id} m={m} repoName={repoName(m.repoId)} />
               ))}
             </ul>
           ) : nothing ? (
             <Empty
-              title={hasTargets ? "Give the factory its first mission" : "Connect a repo to get started"}
+              title={hasTargets ? "Give the factory its first task" : "Connect a repo to get started"}
               action={
                 hasTargets ? (
                   <button className="btn btn-primary" onClick={() => instruct()}>
@@ -117,7 +117,7 @@ export function Home() {
             <p className="muted" style={{ margin: "4px 0" }}>
               Nothing running right now.{" "}
               <button className="inline-link" onClick={() => instruct()}>
-                Start a mission
+                Start a task
               </button>
             </p>
           )}
@@ -132,7 +132,7 @@ export function Home() {
             </div>
             <ul className="rows card" style={{ padding: "0 16px" }}>
               {o.recent.map((m) => (
-                <MissionRow key={m.id} m={m} repoName={repoName(m.repoId)} />
+                <TaskRow key={m.id} m={m} repoName={repoName(m.repoId)} />
               ))}
             </ul>
           </section>
@@ -149,7 +149,7 @@ export function Home() {
           </h3>
           {o.agents.length === 0 && <p className="muted" style={{ margin: 0, fontSize: 14 }}>Agents clock in when the factory starts.</p>}
           {o.agents.map((a) => {
-            const doing = a.missionId ? o.inFlight.find((m) => m.id === a.missionId) : null;
+            const doing = a.taskId ? o.inFlight.find((m) => m.id === a.taskId) : null;
             return (
               <div className="agent" key={a.id}>
                 <span className={`avatar ${a.state === "working" ? "working" : ""}`}>{a.name[0]}</span>
@@ -159,7 +159,7 @@ export function Home() {
                   </span>
                   <span className="agent-doing" style={{ display: "block" }}>
                     {doing ? (
-                      <Link to={`/missions/${doing.id}`}>{doing.title}</Link>
+                      <Link to={`/tasks/${doing.id}`}>{doing.title}</Link>
                     ) : a.state === "paused" ? (
                       "Paused"
                     ) : (
@@ -187,7 +187,7 @@ export function Home() {
                 {r.isFactory && <span className="chip chip-crane">factory</span>}
               </span>
               <span className="muted" style={{ fontSize: 13 }}>
-                {r.openMissions ? `${r.openMissions} open` : ""}
+                {r.openTasks ? `${r.openTasks} open` : ""}
               </span>
             </div>
           ))}

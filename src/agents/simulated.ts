@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AgentDriver, RunContext, RunResult } from "./driver.js";
-import type { Finding, MissionKind } from "../core/types.js";
+import type { Finding, TaskKind } from "../core/types.js";
 
 /**
  * A stand-in driver that walks through a believable sequence of steps without
@@ -18,21 +18,21 @@ export class SimulatedDriver implements AgentDriver {
   }
 
   async run(ctx: RunContext): Promise<RunResult> {
-    const { mission, emit, signal } = ctx;
-    const script = SCRIPTS[mission.kind];
+    const { task, emit, signal } = ctx;
+    const script = SCRIPTS[task.kind];
     for (const [type, message] of script.steps) {
       await sleep(this.stepMs * (0.6 + Math.random() * 0.8), signal);
       emit(type, message, { simulated: true });
     }
     await sleep(this.stepMs, signal);
     // When allowed to change code, leave a real (harmless) change so the review and diff flow is exercised.
-    if (mission.autonomy !== "observe") {
+    if (task.autonomy !== "observe") {
       await mkdir(join(ctx.cwd, ".crane-simulated"), { recursive: true });
       await writeFile(
-        join(ctx.cwd, ".crane-simulated", `${mission.id}.md`),
-        `# ${mission.title}\n\nSimulated change. A real agent would edit:\n\n${script.changedFiles.map((f) => `- ${f}`).join("\n")}\n`,
+        join(ctx.cwd, ".crane-simulated", `${task.id}.md`),
+        `# ${task.title}\n\nSimulated change. A real agent would edit:\n\n${script.changedFiles.map((f) => `- ${f}`).join("\n")}\n`,
       );
-      emit("tool", `Wrote .crane-simulated/${mission.id}.md`, { simulated: true });
+      emit("tool", `Wrote .crane-simulated/${task.id}.md`, { simulated: true });
     }
     return {
       costUsd: 0,
@@ -62,7 +62,7 @@ function sleep(ms: number, signal: AbortSignal) {
 
 type Step = ["note" | "tool" | "finding", string];
 
-const SCRIPTS: Record<MissionKind, { steps: Step[]; summary: string; findings: Finding[]; changedFiles: string[] }> = {
+const SCRIPTS: Record<TaskKind, { steps: Step[]; summary: string; findings: Finding[]; changedFiles: string[] }> = {
   maintenance: {
     steps: [
       ["note", "Starting with the test suite and recent history to see where things break."],
@@ -127,27 +127,27 @@ const SCRIPTS: Record<MissionKind, { steps: Step[]; summary: string; findings: F
       ["tool", "Read src/factory/orchestrator.ts"],
       ["tool", "Read src/agents/driver.ts"],
       ["note", "Drivers are pluggable, so new capabilities can land without touching the scheduler."],
-      ["tool", "Searched for “claimNextMission”"],
-      ["finding", "Add mission priorities to the queue"],
+      ["tool", "Searched for “claimNextTask”"],
+      ["finding", "Add task priorities to the queue"],
       ["note", "Checking how the UI would surface it."],
       ["tool", "Read web/src/pages/Overview.tsx"],
       ["finding", "Let the operator reorder the queue"],
     ],
-    summary: "Crane would benefit most from mission priorities next. The scheduler change is small.",
+    summary: "Crane would benefit most from task priorities next. The scheduler change is small.",
     findings: [
       {
-        title: "Add mission priorities to the queue",
-        detail: "Add a `priority` column and order `claimNextMission` by priority, then age.",
+        title: "Add task priorities to the queue",
+        detail: "Add a `priority` column and order `claimNextTask` by priority, then age.",
         impact: "high",
         effort: "small",
       },
       {
         title: "Let the operator reorder the queue",
-        detail: "Drag to reorder in the Missions view, and `crane bump <id>` in the CLI.",
+        detail: "Drag to reorder in the Tasks view, and `crane bump <id>` in the CLI.",
         impact: "medium",
         effort: "medium",
       },
     ],
-    changedFiles: ["src/core/store.ts", "web/src/pages/Missions.tsx"],
+    changedFiles: ["src/core/store.ts", "web/src/pages/Tasks.tsx"],
   },
 };

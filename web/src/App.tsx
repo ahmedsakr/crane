@@ -1,12 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { NavLink, Route, Routes } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes, useParams } from "react-router-dom";
 import { api, type Overview } from "./lib/api";
 import { usePoll } from "./lib/hooks";
 import { Mark, ToastProvider, useToast } from "./components/bits";
 import { InstructSheet } from "./components/InstructSheet";
 import { Home } from "./pages/Home";
-import { Missions } from "./pages/Missions";
-import { MissionPage } from "./pages/MissionPage";
+import { Tasks } from "./pages/Tasks";
+import { TaskPage } from "./pages/TaskPage";
 import { Repos } from "./pages/Repos";
 import { Crew } from "./pages/Crew";
 
@@ -15,6 +15,12 @@ interface AppCtx {
   refresh: () => void;
   instruct: (text?: string) => void;
 }
+/** Tasks used to be called missions. Keep old links and bookmarks working. */
+function LegacyTaskRedirect() {
+  const { id } = useParams();
+  return <Navigate to={id ? `/tasks/${id}` : "/tasks"} replace />;
+}
+
 const Ctx = createContext<AppCtx>({ overview: null, refresh: () => {}, instruct: () => {} });
 export const useApp = () => useContext(Ctx);
 
@@ -86,8 +92,8 @@ function Shell() {
             <NavLink to="/" end>
               Home
             </NavLink>
-            <NavLink to="/missions">
-              Missions
+            <NavLink to="/tasks">
+              Tasks
               {needs > 0 && <span className="badge">{needs}</span>}
             </NavLink>
             <NavLink to="/repos">Repos</NavLink>
@@ -104,8 +110,10 @@ function Shell() {
       <main className="shell">
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/missions" element={<Missions />} />
-          <Route path="/missions/:id" element={<MissionPage />} />
+          <Route path="/tasks" element={<Tasks />} />
+          <Route path="/tasks/:id" element={<TaskPage />} />
+          <Route path="/missions" element={<LegacyTaskRedirect />} />
+          <Route path="/missions/:id" element={<LegacyTaskRedirect />} />
           <Route path="/repos" element={<Repos />} />
           <Route path="/crew" element={<Crew />} />
         </Routes>

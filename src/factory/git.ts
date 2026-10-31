@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { worktreesDir } from "../core/paths.js";
 import { slugify } from "../core/ids.js";
-import type { Mission, Repo } from "../core/types.js";
+import type { Task, Repo } from "../core/types.js";
 
 const run = promisify(execFile);
 
@@ -38,14 +38,14 @@ export async function currentBranch(path: string): Promise<string> {
   }
 }
 
-export function branchFor(mission: Mission): string {
-  return `crane/${slugify(mission.title, 32)}-${mission.id.slice(2)}`;
+export function branchFor(task: Task): string {
+  return `crane/${slugify(task.title, 32)}-${task.id.slice(2)}`;
 }
 
-/** Give a mission its own branch and working directory so agents never touch the operator's checkout. */
-export async function createWorktree(repo: Repo, mission: Mission): Promise<{ branch: string; path: string }> {
-  const branch = branchFor(mission);
-  const path = join(worktreesDir(), mission.id);
+/** Give a task its own branch and working directory so agents never touch the operator's checkout. */
+export async function createWorktree(repo: Repo, task: Task): Promise<{ branch: string; path: string }> {
+  const branch = branchFor(task);
+  const path = join(worktreesDir(), task.id);
   if (!existsSync(path)) {
     let base = repo.defaultBranch;
     try {
@@ -59,7 +59,7 @@ export async function createWorktree(repo: Repo, mission: Mission): Promise<{ br
 }
 
 /** Commit anything the agent left uncommitted, then list what changed on the branch. */
-export async function finalizeWorktree(repo: Repo, mission: Mission, path: string): Promise<string[]> {
+export async function finalizeWorktree(repo: Repo, task: Task, path: string): Promise<string[]> {
   const dirty = await git(path, "status", "--porcelain");
   if (dirty) {
     await git(path, "add", "-A");
@@ -71,7 +71,7 @@ export async function finalizeWorktree(repo: Repo, mission: Mission, path: strin
       "user.email=crane@localhost",
       "commit",
       "-m",
-      `crane: ${mission.title}\n\nMission ${mission.id}`,
+      `crane: ${task.title}\n\nTask ${task.id}`,
     );
   }
   let base = repo.defaultBranch;
@@ -84,10 +84,10 @@ export async function finalizeWorktree(repo: Repo, mission: Mission, path: strin
   return out ? out.split("\n") : [];
 }
 
-export async function diffForMission(repo: Repo, mission: Mission): Promise<string> {
-  if (!mission.branch) return "";
+export async function diffForTask(repo: Repo, task: Task): Promise<string> {
+  if (!task.branch) return "";
   try {
-    return await git(repo.path, "diff", `${repo.defaultBranch}...${mission.branch}`);
+    return await git(repo.path, "diff", `${repo.defaultBranch}...${task.branch}`);
   } catch {
     return "";
   }

@@ -1,27 +1,27 @@
 import type {
   Agent,
   Autonomy,
-  Mission,
-  MissionEvent,
-  MissionKind,
-  MissionStatus,
-  NewMission,
+  Task,
+  TaskEvent,
+  TaskKind,
+  TaskStatus,
+  NewTask,
   Overview,
   Repo,
 } from "../../../src/core/types";
 
-export type { Agent, Autonomy, Mission, MissionEvent, MissionKind, MissionStatus, Overview, Repo };
+export type { Agent, Autonomy, Task, TaskEvent, TaskKind, TaskStatus, Overview, Repo };
 export { AUTONOMY_LABEL, KIND_LABEL, STATUS_LABEL } from "../../../src/core/types";
 
-export interface MissionDraft extends NewMission {
+export interface TaskDraft extends NewTask {
   why: { kind: string; repo: string; autonomy: string };
 }
 
-export interface MissionDetail {
-  mission: Mission;
+export interface TaskDetail {
+  task: Task;
   repo: Repo | null;
   agent: Agent | null;
-  events: MissionEvent[];
+  events: TaskEvent[];
 }
 
 async function req<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
@@ -39,16 +39,16 @@ const post = <T>(path: string, json: unknown = {}) => req<T>(path, { method: "PO
 
 export const api = {
   overview: () => req<Overview>("/overview"),
-  missions: (status?: string) => req<Mission[]>(`/missions${status ? `?status=${status}` : ""}`),
-  mission: (id: string) => req<MissionDetail>(`/missions/${id}`),
-  diff: (id: string) => req<{ diff: string }>(`/missions/${id}/diff`),
-  draft: (text: string) => post<MissionDraft>("/instruct/draft", { text }),
-  createMission: (m: NewMission) => post<Mission>("/missions", m),
-  approve: (id: string, note?: string) => post<Mission>(`/missions/${id}/approve`, { note }),
-  reject: (id: string, note?: string) => post<Mission>(`/missions/${id}/reject`, { note }),
-  cancel: (id: string) => post<Mission>(`/missions/${id}/cancel`),
-  retry: (id: string) => post<Mission>(`/missions/${id}/retry`),
-  followUp: (id: string, finding: number) => post<Mission>(`/missions/${id}/follow-up`, { finding }),
+  tasks: (status?: string) => req<Task[]>(`/tasks${status ? `?status=${status}` : ""}`),
+  task: (id: string) => req<TaskDetail>(`/tasks/${id}`),
+  diff: (id: string) => req<{ diff: string }>(`/tasks/${id}/diff`),
+  draft: (text: string) => post<TaskDraft>("/instruct/draft", { text }),
+  createTask: (m: NewTask) => post<Task>("/tasks", m),
+  approve: (id: string, note?: string) => post<Task>(`/tasks/${id}/approve`, { note }),
+  reject: (id: string, note?: string) => post<Task>(`/tasks/${id}/reject`, { note }),
+  cancel: (id: string) => post<Task>(`/tasks/${id}/cancel`),
+  retry: (id: string) => post<Task>(`/tasks/${id}/retry`),
+  followUp: (id: string, finding: number) => post<Task>(`/tasks/${id}/follow-up`, { finding }),
   repos: () => req<Repo[]>("/repos"),
   addRepo: (path: string, name?: string) => post<Repo>("/repos", { path, name }),
   removeRepo: (id: string) => req<{ ok: true }>(`/repos/${id}`, { method: "DELETE" }),

@@ -17,7 +17,7 @@ export function Crew() {
       </div>
       <p className="muted" style={{ maxWidth: "60ch" }}>
         {o.factory.running
-          ? `${plural(o.agents.length, "agent")} on ${driver}. Each picks up the oldest queued mission when it's free.`
+          ? `${plural(o.agents.length, "agent")} on ${driver}. Each picks up the oldest queued task when it's free.`
           : "The factory is off. Run crane serve to bring the crew in."}
         {o.factory.driver === "simulated" && " Simulated agents don't call a model; they're for trying Crane out."}
       </p>
@@ -38,7 +38,7 @@ export function Crew() {
           }}
         >
           {o.agents.map((a) => {
-            const doing = a.missionId ? o.inFlight.find((m) => m.id === a.missionId) : null;
+            const doing = a.taskId ? o.inFlight.find((m) => m.id === a.taskId) : null;
             return (
               <div className="card card-pad" key={a.id}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -57,7 +57,7 @@ export function Crew() {
                 </div>
                 <div style={{ marginTop: 16, fontSize: 14, minHeight: 42 }}>
                   {doing ? (
-                    <Link to={`/missions/${doing.id}`} style={{ fontWeight: 600 }}>
+                    <Link to={`/tasks/${doing.id}`} style={{ fontWeight: 600 }}>
                       {doing.title}
                     </Link>
                   ) : (
@@ -66,7 +66,7 @@ export function Crew() {
                 </div>
                 <dl className="facts" style={{ marginTop: 12, borderTop: "1px solid var(--hairline)", paddingTop: 12 }}>
                   <dt>Finished</dt>
-                  <dd className="tabular">{a.missionsCompleted}</dd>
+                  <dd className="tabular">{a.tasksCompleted}</dd>
                   <dt>Last active</dt>
                   <dd>{ago(a.lastActiveAt) || "—"}</dd>
                 </dl>
