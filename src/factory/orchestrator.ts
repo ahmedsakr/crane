@@ -1,4 +1,4 @@
-import type { Store } from "../core/store.js";
+import { crewSettingKey, type Store } from "../core/store.js";
 import { driverLabel, isDriverName, type EventType, type Overview, type RunUsage, type Task } from "../core/types.js";
 import { AgentRunError, type AgentDriver, type RunContext, type RunResult } from "../agents/driver.js";
 import { join } from "node:path";
@@ -132,8 +132,8 @@ export class Factory {
     const size = Math.max(1, Math.min(CREW.length, opts.crewSize ?? Number(process.env.CRANE_AGENTS ?? 2)));
     this.crew = CREW.map((name) => ({ id: `a-${name.toLowerCase()}`, name }));
     for (const [i, a] of this.crew.entries()) {
-      if (this.store.getSetting(`crew_active_${a.id}`) === null) {
-        this.store.setSetting(`crew_active_${a.id}`, String(i < size));
+      if (this.store.getSetting(crewSettingKey.active(a.id)) === null) {
+        this.store.setSetting(crewSettingKey.active(a.id), String(i < size));
       }
     }
     this.tickMs = opts.tickMs ?? 1000;
@@ -187,7 +187,7 @@ export class Factory {
     }
     const previous = this.drivers.get(this.store.lastWorkDriver(task.id) ?? "");
     if (previous) return previous;
-    const preferred = this.store.getSetting(`crew_driver_${agentId}`);
+    const preferred = this.store.crewDefaultDriver(agentId);
     if (preferred) {
       const driver = this.drivers.get(preferred);
       if (!driver) throw new Error(`This crew member asks for ${driverLabel(preferred)}, which this factory can't run`);
@@ -277,7 +277,7 @@ export class Factory {
     for (const agent of this.crew) {
       if (this.busy.has(agent.id)) continue;
       this.store.setAgentState(agent.id, paused ? "paused" : "idle", null);
-      if (paused || this.store.getSetting(`crew_active_${agent.id}`) === "false") continue;
+      if (paused || !this.store.crewActive(agent.id)) continue;
       // Approved merges first: the operator has already said yes and is waiting on them.
       const merge = this.store.claimNextMerge(agent.id, [...this.mergingRepos]);
       if (merge) {

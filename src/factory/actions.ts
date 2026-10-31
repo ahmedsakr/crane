@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import type { Store } from "../core/store.js";
+import { crewSettingKey, type Store } from "../core/store.js";
 import {
   DRIVER_NAMES,
   EFFORT_LEVELS,
@@ -221,9 +221,9 @@ export class OperatorActions {
       const d = sharedDrivers().find((d) => d.name === driver)!;
       if (!(await isAvailable(d))) throw new Error(`${driverLabel(driver)} isn't installed here`);
     }
-    if (input.defaultDriver !== undefined) this.store.setSetting(`crew_driver_${id}`, driver ?? "");
-    if (input.active !== undefined) this.store.setSetting(`crew_active_${id}`, String(input.active));
-    if (input.role !== undefined) this.store.setSetting(`crew_role_${id}`, role ?? "");
+    if (input.defaultDriver !== undefined) this.store.setSetting(crewSettingKey.defaultDriver(id), driver ?? "");
+    if (input.active !== undefined) this.store.setSetting(crewSettingKey.active(id), String(input.active));
+    if (input.role !== undefined) this.store.setSetting(crewSettingKey.role(id), role ?? "");
     return this.store.listAgents().find((a) => a.id === id)!;
   }
 

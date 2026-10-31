@@ -253,11 +253,16 @@ function localDayStart(ms: number, daysBack = 0): number {
   return d.getTime();
 }
 
-function toAgent(r: Row): Agent {
+/** The settings that hold the operator's choices for one crew member. */
+export const crewSettingKey = {
+  active: (agentId: string) => `crew_active_${agentId}`,
+  defaultDriver: (agentId: string) => `crew_driver_${agentId}`,
+  role: (agentId: string) => `crew_role_${agentId}`,
+};
+
+/** An agent row. The operator's choices for it live in settings; see `Store.listAgents`. */
+function toAgent(r: Row): Omit<Agent, "active" | "defaultDriver" | "role"> {
   return {
-    active: true,
-    defaultDriver: null,
-    role: null,
     id: r.id as string,
     name: r.name as string,
     state: r.state as AgentState,
@@ -719,17 +724,30 @@ export class Store {
 
   // ── agents ────────────────────────────────────────────────
   listAgents(): Agent[] {
-    return (this.db.prepare("SELECT * FROM agents ORDER BY name").all() as Row[]).map((r) => ({
-      ...toAgent(r),
-      active: this.getSetting(`crew_active_${r.id}`) !== "false",
-      defaultDriver: this.getSetting(`crew_driver_${r.id}`) || null,
-      role: this.crewRole(r.id as string),
-    }));
+    return (this.db.prepare("SELECT * FROM agents ORDER BY name").all() as Row[]).map((r) => {
+      const agent = toAgent(r);
+      return {
+        ...agent,
+        active: this.crewActive(agent.id),
+        defaultDriver: this.crewDefaultDriver(agent.id),
+        role: this.crewRole(agent.id),
+      };
+    });
+  }
+
+  /** Whether a crew member takes work. Members are active unless the operator put them on-call. */
+  crewActive(agentId: string): boolean {
+    return this.getSetting(crewSettingKey.active(agentId)) !== "false";
+  }
+
+  /** The agent a crew member prefers to run on, or null to follow the factory's default. */
+  crewDefaultDriver(agentId: string): string | null {
+    return this.getSetting(crewSettingKey.defaultDriver(agentId)) || null;
   }
 
   /** The maintenance a crew member is dedicated to, or null for a general member. */
   crewRole(agentId: string): MaintenanceRole | null {
-    const role = this.getSetting(`crew_role_${agentId}`);
+    const role = this.getSetting(crewSettingKey.role(agentId));
     return isMaintenanceRole(role) ? role : null;
   }
 
