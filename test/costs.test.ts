@@ -165,6 +165,33 @@ test("analytics: buckets spend by local day and compares with the span before", 
   store.close();
 });
 
+test("analytics: attributes spend to each run's agent, including zero-cost agents", () => {
+  const store = tmpStore();
+  assert.deepEqual(store.analytics().byAgent, []);
+  const t = store.createTask({ kind: "maintenance", title: "Switch agents", brief: "", autonomy: "observe", driver: "codex" });
+  const finish = (driver: string, cost: number, kind: "work" | "resolve_conflicts" = "work") => {
+    const id = store.startRun({ taskId: t.id, kind, agentId: null, driver });
+    store.finishRun(id, "failed", usage(cost));
+    return id;
+  };
+  finish("claude-code", 2);
+  finish("claude-code", 0.5, "resolve_conflicts");
+  finish("codex", 0);
+  finish("unknown", 0.25);
+  const old = finish("claude-code", 8);
+  store.db.prepare("UPDATE runs SET finished_at = ? WHERE id = ?").run(new Date(Date.now() - 40 * 86400000).toISOString(), old);
+  store.startRun({ taskId: t.id, kind: "work", agentId: null, driver: "running-only" });
+  const a = store.analytics();
+  assert.deepEqual(a.byAgent, [
+    { driver: "claude-code", usd: 2.5, tasks: 1 },
+    { driver: "unknown", usd: 0.25, tasks: 1 },
+    { driver: "codex", usd: 0, tasks: 1 },
+  ]);
+  assert.equal(a.byAgent.reduce((sum, row) => sum + row.usd, 0), a.spendUsd);
+  assert.equal(a.tasks, 1);
+  store.close();
+});
+
 /** Reports what it spent, then fails, like a Claude Code run that hit its turn limit. */
 class CostlyFailure implements AgentDriver {
   readonly name = "costly";

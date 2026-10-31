@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useApp } from "../App";
-import { api, KIND_LABEL, type Analytics as Data } from "../lib/api";
+import { api, driverLabel, KIND_LABEL, type Analytics as Data } from "../lib/api";
 import { compact, plural, usd } from "../lib/format";
 import { usePoll } from "../lib/hooks";
 import { Dot, Empty } from "../components/bits";
@@ -204,6 +204,10 @@ export function Analytics() {
           </section>
 
           <div className="spend-split">
+            <Breakdown
+              title="By agent"
+              rows={a.byAgent.map((r) => ({ key: r.driver, label: driverLabel(r.driver), usd: r.usd, tasks: r.tasks }))}
+            />
             <Breakdown
               title="By repo"
               rows={a.byRepo.map((r) => ({ key: r.repoId ?? "none", label: r.name, usd: r.usd, tasks: r.tasks }))}

@@ -597,7 +597,7 @@ export class Store {
     const prevFrom = localDayStart(nowMs, 2 * days - 1);
     const rows = this.db
       .prepare(
-        `SELECT r.task_id, r.cost_usd, r.input_tokens, r.output_tokens, r.cache_read_tokens, r.cache_write_tokens,
+        `SELECT r.task_id, r.driver, r.cost_usd, r.input_tokens, r.output_tokens, r.cache_read_tokens, r.cache_write_tokens,
                 r.finished_at, t.title, t.status, t.kind, t.repo_id
          FROM runs r JOIN tasks t ON t.id = r.task_id
          WHERE r.outcome != 'running' AND r.finished_at >= ?`,
@@ -609,6 +609,7 @@ export class Store {
     const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
     type TaskSpend = Analytics["topTasks"][number];
     const perTask = new Map<string, TaskSpend>();
+    const perAgent = new Map<string, { usd: number; tasks: Set<string> }>();
     let spendUsd = 0;
     let prevSpendUsd = 0;
     let runs = 0;
@@ -632,6 +633,11 @@ export class Store {
         b.runs++;
       }
       const id = r.task_id as string;
+      const driver = r.driver as string;
+      const agent = perAgent.get(driver) ?? { usd: 0, tasks: new Set<string>() };
+      agent.usd += usd;
+      agent.tasks.add(id);
+      perAgent.set(driver, agent);
       const t =
         perTask.get(id) ??
         perTask
@@ -676,6 +682,8 @@ export class Store {
         ...s,
       })),
       byKind: groupBy((t) => t.kind).map(({ key, ...s }) => ({ kind: key, ...s })),
+      byAgent: [...perAgent].map(([driver, s]) => ({ driver, usd: s.usd, tasks: s.tasks.size }))
+        .sort((a, b) => b.usd - a.usd || a.driver.localeCompare(b.driver)),
       topTasks: tasks
         .filter((t) => t.usd > 0)
         .sort((a, b) => b.usd - a.usd)
