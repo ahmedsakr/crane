@@ -241,6 +241,13 @@ export function TaskPage() {
           ) : m.status === "queued" ? (
             <p className="summary muted">Waiting for a free agent.</p>
           ) : null}
+          {report?.validation?.map((run, i) => (
+            <details key={i} className="card card-pad">
+              <summary>{run.phase} check: {run.status} · {run.command ?? "Configuration"}</summary>
+              <p className="mono">{run.commit} · exit {run.exitCode ?? "—"} · {run.durationMs} ms</p>
+              <pre style={{ whiteSpace: "pre-wrap" }}>{run.logs}</pre>
+            </details>
+          ))}
           {m.status === "merging" && (
             <p className="muted">
               {agent ? `${agent.name} is merging this into ${main}.` : `Waiting for a free agent to merge this into ${main}.`} Progress

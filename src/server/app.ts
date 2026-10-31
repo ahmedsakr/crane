@@ -111,6 +111,16 @@ export function createApp(store: Store) {
   });
 
   api.get("/repos", (c) => c.json(store.listRepos()));
+  api.get("/repos/:id/checks", (c) => c.json(store.repoChecks(c.req.param("id"))));
+  api.put("/repos/:id/checks", async (c) => {
+    const commands: unknown = await c.req.json();
+    if (!store.getRepo(c.req.param("id"))) return c.json({ error: "No such repo" }, 404);
+    if (!Array.isArray(commands) || commands.some(x => typeof x !== "string" || !x.trim())) {
+      return c.json({ error: "Expected an array of nonempty commands" }, 400);
+    }
+    store.setRepoChecks(c.req.param("id"), commands);
+    return c.json(commands);
+  });
   api.post("/repos", async (c) => {
     const { path, name } = await c.req.json<{ path: string; name?: string }>();
     return c.json(await actions.connectRepo(path, name), 201);

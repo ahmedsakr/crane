@@ -339,6 +339,15 @@ export class Store {
     return { allowed: parsed.allowed ?? [], keptBlocked: parsed.keptBlocked ?? [] };
   }
 
+  repoChecks(repoId: string): string[] {
+    const raw = this.getSetting(`checks:${repoId}`);
+    return raw ? JSON.parse(raw) as string[] : this.getRepo(repoId)?.isFactory ? ["npm run typecheck", "npm test"] : [];
+  }
+
+  setRepoChecks(repoId: string, commands: string[]) {
+    this.setSetting(`checks:${repoId}`, JSON.stringify(commands));
+  }
+
   setRepoTools(repoId: string, tools: RepoTools) {
     this.setSetting(`tools:${repoId}`, JSON.stringify({ allowed: [...new Set(tools.allowed)], keptBlocked: [...new Set(tools.keptBlocked)] }));
   }

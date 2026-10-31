@@ -77,10 +77,22 @@ export interface Finding {
 }
 
 export interface Report {
+  /** Factory-owned evidence; never accepted from agent output. */
+  validation?: ValidationRun[];
   summary: string;
   findings: Finding[];
   /** Files the agent changed, when it was allowed to change any. */
   changedFiles: string[];
+}
+
+export interface ValidationRun {
+  phase: "review" | "merge";
+  commit: string;
+  command: string | null;
+  status: "passed" | "failed" | "blocked" | "unconfigured";
+  exitCode: number | null;
+  logs: string;
+  durationMs: number;
 }
 
 export interface Task {
