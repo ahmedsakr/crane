@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/core/store.js";
 import { isAllowed, overlapsDenied, ruleLabel, splitCommand, suggestRules } from "../src/core/permissions.js";
-import { ALWAYS_DENIED, ClaudeCodeDriver, toolsFor } from "../src/agents/claude-code.js";
+import { ALWAYS_DENIED, ClaudeCodeDriver, describeBlocked, toolsFor } from "../src/agents/claude-code.js";
 import { AgentRunError, isTransientFailure, type AgentDriver, type RunContext, type RunResult } from "../src/agents/driver.js";
 import { OperatorActions, toRule } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
@@ -48,6 +48,19 @@ test("permissions: rules that touch Crane's deny list are recognised", () => {
   assert.ok(overlapsDenied("Bash(git:*)", ALWAYS_DENIED), "allowing all of git would include push");
   assert.ok(!overlapsDenied("Bash(git stash:*)", ALWAYS_DENIED));
   assert.ok(!overlapsDenied("Bash(npm ci:*)", ALWAYS_DENIED));
+});
+
+test("permissions: heredoc data never becomes an allow-rule suggestion", () => {
+  for (const command of [
+    "cat > file.ts <<'EOF'\nnpm publish\nEOF",
+    "node <<EOF\nconsole.log('hello')\nEOF",
+    "cat <<-END\n\tgit push origin HEAD\n\tEND\nnpm ci",
+    "cat <<< 'hello'",
+  ]) {
+    const blocked = describeBlocked("Bash", { command }, toolsFor("propose"));
+    assert.deepEqual(blocked.data.rules, [], command);
+    assert.equal(blocked.data.command, command, "keep the command available for operator review");
+  }
 });
 
 test("permissions: repo rules are added, and the deny list stays", () => {

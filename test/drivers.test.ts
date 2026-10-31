@@ -12,6 +12,7 @@ import { SimulatedDriver } from "../src/agents/simulated.js";
 import { CodexDriver, codexArgs, unwrapShell, usageFromTurn } from "../src/agents/codex.js";
 import type { AgentDriver, RunContext, RunResult } from "../src/agents/driver.js";
 import type { RunUsage, Task } from "../src/core/types.js";
+import { resumePrompt, systemPrompt } from "../src/agents/prompts.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
 
@@ -83,6 +84,21 @@ function ctxFor(task: Partial<Task>, extra: Partial<RunContext> = {}) {
   };
   return { ctx, notes, tools, sessions, usage };
 }
+
+test("prompts: file-edit guidance reaches fresh, conflict and resumed sessions", () => {
+  const { ctx } = ctxFor({ autonomy: "propose" });
+  const prompts = [
+    systemPrompt(ctx.task, null),
+    systemPrompt(ctx.task, null, { kind: "resolve_conflicts", base: "origin/main", files: ["a.ts"] }),
+    resumePrompt(),
+  ];
+  for (const prompt of prompts) {
+    assert.match(prompt, /use your native file-editing tools/);
+    assert.match(prompt, /Avoid shell heredocs/);
+    assert.match(prompt, /a denied command is still subject to the blocked-command instructions/);
+  }
+  assert.match(systemPrompt(ctxFor({ autonomy: "observe" }).ctx.task, null), /Do not modify, create, or delete files/);
+});
 
 test("codex: runs exec in a read-only sandbox to investigate, and turns its events into the task's", async () => {
   const { bin, log } = fakeCodex("ok");

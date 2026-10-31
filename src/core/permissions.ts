@@ -137,6 +137,11 @@ export function ruleForCommand(command: string): string | null {
 export function suggestRules(tool: string, input: Record<string, unknown>, allowed: string[]): string[] {
   if (tool !== "Bash") return /^[A-Za-z_][\w-]*$/.test(tool) ? [tool] : [];
   const command = typeof input.command === "string" ? input.command : "";
+  // This splitter is not a shell parser: heredoc bodies and terminators are
+  // data, not commands. Don't turn their lines into permission suggestions,
+  // or claim a prefix grant can resolve Claude Code's shell security checks.
+  // Conservatively include here-strings and quoted occurrences of `<<`.
+  if (command.includes("<<")) return [];
   const out: string[] = [];
   for (const part of splitCommand(command)) {
     if (isAllowed(allowed, "Bash", { command: part })) continue;
