@@ -1144,9 +1144,6 @@ a.row:hover .row-title {
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.choice {
-  position: relative;
-}
 .choice-btn {
   width: 100%;
   text-align: left;
@@ -1182,15 +1179,17 @@ a.row:hover .row-title {
   margin-top: 3px;
   line-height: 1.35;
 }
+/* Choice menus render in a portal on <body> and are placed by InstructSheet's
+   placeMenu(), so nothing in the sheet or scrim can clip them. Above the scrim,
+   below toasts. */
 .menu {
-  position: absolute;
-  z-index: 5;
-  top: calc(100% + 6px);
-  left: 0;
-  min-width: 100%;
+  position: fixed;
+  z-index: 55;
+  box-sizing: border-box;
   width: max-content;
-  max-width: 320px;
-  max-height: min(340px, 60vh);
+  max-width: min(320px, calc(100vw - 24px));
+  max-height: 340px;
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--surface);
@@ -1200,13 +1199,6 @@ a.row:hover .row-title {
   padding: 6px;
   list-style: none;
   margin: 0;
-}
-/* The last column's menu opens toward the sheet, not past the viewport edge. */
-@media (min-width: 621px) {
-  .choice:last-child .menu {
-    left: auto;
-    right: 0;
-  }
 }
 .menu button {
   width: 100%;
@@ -1225,6 +1217,7 @@ a.row:hover .row-title {
   display: block;
   color: var(--graphite);
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 .sheet-foot {
   display: flex;

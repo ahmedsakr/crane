@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { api, AUTONOMY_LABEL, KIND_LABEL, type Autonomy, type TaskDraft, type TaskKind, type Repo } from "../lib/api";
+import { placeMenu, type MenuPlace } from "../lib/placement";
 import { useToast } from "./bits";
 
 const AUTONOMY_HINT: Record<Autonomy, string> = {
@@ -31,16 +33,64 @@ function Choice<T extends string | null>(props: {
   unset?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [place, setPlace] = useState<MenuPlace | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLUListElement>(null);
+
   useEffect(() => {
     if (!open) return;
-    const close = (e: MouseEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
+    const close = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!btnRef.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false);
+    };
+    // Escape closes the menu first; the sheet only closes on a second press.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopImmediatePropagation();
+      setOpen(false);
+      btnRef.current?.focus();
+    };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      window.removeEventListener("keydown", onKey, true);
+    };
   }, [open]);
+
+  // The menu lives in a portal with fixed positioning so the sheet and the
+  // scrolling scrim can never clip it. Place it against the button, flip it
+  // above when there is more room there, and keep it inside the viewport.
+  useLayoutEffect(() => {
+    if (!open) return setPlace(null);
+    const update = () => {
+      const btn = btnRef.current;
+      const menu = menuRef.current;
+      if (!btn || !menu) return;
+      setPlace(
+        placeMenu(
+          btn.getBoundingClientRect(),
+          { width: menu.offsetWidth, height: menu.scrollHeight },
+          { width: document.documentElement.clientWidth, height: window.innerHeight },
+        ),
+      );
+    };
+    // Follow the button when the scrim (or anything else) scrolls, but not when
+    // the operator scrolls the menu's own list.
+    const onScroll = (e: Event) => !menuRef.current?.contains(e.target as Node) && update();
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open, props.options.length]);
+
   return (
-    <div className="choice" ref={ref}>
+    <div className="choice">
       <button
+        ref={btnRef}
         type="button"
         className={`choice-btn ${props.unset ? "unset" : ""}`}
         aria-haspopup="menu"
@@ -51,26 +101,37 @@ function Choice<T extends string | null>(props: {
         <span className="choice-v">{props.label}</span>
         <span className="choice-why">{props.why}</span>
       </button>
-      {open && (
-        <ul className="menu" role="menu">
-          {props.options.map((o) => (
-            <li key={String(o.value)}>
-              <button
-                type="button"
-                role="menuitemradio"
-                aria-checked={o.value === props.value}
-                onClick={() => {
-                  props.onChange(o.value);
-                  setOpen(false);
-                }}
-              >
-                <strong style={{ fontWeight: 600, fontSize: 14 }}>{o.label}</strong>
-                {o.hint && <small>{o.hint}</small>}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
+      {open &&
+        createPortal(
+          <ul
+            className="menu"
+            role="menu"
+            ref={menuRef}
+            style={
+              place
+                ? { top: place.top, bottom: place.bottom, left: place.left, minWidth: place.minWidth, maxHeight: place.maxHeight }
+                : { visibility: "hidden" }
+            }
+          >
+            {props.options.map((o) => (
+              <li key={String(o.value)}>
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={o.value === props.value}
+                  onClick={() => {
+                    props.onChange(o.value);
+                    setOpen(false);
+                  }}
+                >
+                  <strong style={{ fontWeight: 600, fontSize: 14 }}>{o.label}</strong>
+                  {o.hint && <small>{o.hint}</small>}
+                </button>
+              </li>
+            ))}
+          </ul>,
+          document.body,
+        )}
     </div>
   );
 }
