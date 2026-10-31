@@ -99,7 +99,7 @@ test("store: tasks are claimed once, oldest first", () => {
 });
 
 test("worktree: picks the install command from the lockfile", async () => {
-  const { installCommandFor } = await import("../src/factory/git.js");
+  const { installCommandFor } = await import("../src/factory/deps.js");
   const { writeFileSync, mkdirSync } = await import("node:fs");
   const dir = mkdtempSync(join(tmpdir(), "crane-install-"));
   assert.equal(installCommandFor(dir), null, "no package.json, nothing to install");
@@ -110,6 +110,88 @@ test("worktree: picks the install command from the lockfile", async () => {
   assert.deepEqual(installCommandFor(dir)?.args.slice(0, 1), ["ci"]);
   mkdirSync(join(dir, "node_modules"));
   assert.equal(installCommandFor(dir), null, "already installed");
+});
+
+test("worktree: copies dependencies from the checkout only when they match the lockfile", async () => {
+  const { copyDependencies, installDependencies } = await import("../src/factory/deps.js");
+  const { writeFileSync, mkdirSync, symlinkSync, readlinkSync, readFileSync, existsSync } = await import("node:fs");
+  const lock = (extra = {}) =>
+    JSON.stringify({
+      packages: {
+        "": { name: "x" },
+        "node_modules/a": { version: "1.0.0" },
+        "node_modules/fsevents": { version: "2.0.0", optional: true },
+        "web/node_modules/b": { version: "2.0.0" },
+        ...extra,
+      },
+    });
+  const hidden = (version = "1.0.0") =>
+    JSON.stringify({ packages: { "node_modules/a": { version }, "web/node_modules/b": { version: "2.0.0" } } });
+
+  const setup = () => {
+    const from = mkdtempSync(join(tmpdir(), "crane-from-"));
+    const to = mkdtempSync(join(tmpdir(), "crane-to-"));
+    for (const root of [from, to]) {
+      mkdirSync(join(root, "web"));
+      writeFileSync(join(root, "package.json"), "{}");
+      writeFileSync(join(root, "web", "package.json"), "{}");
+      writeFileSync(join(root, "package-lock.json"), lock());
+    }
+    mkdirSync(join(from, "node_modules", "a"), { recursive: true });
+    mkdirSync(join(from, "web", "node_modules", "b"), { recursive: true });
+    writeFileSync(join(from, "node_modules", "a", "index.js"), "module.exports = 1");
+    writeFileSync(join(from, "node_modules", ".package-lock.json"), hidden());
+    // A relative link stays as is; an absolute one into the checkout gets pointed at the worktree.
+    symlinkSync("../../web", join(from, "node_modules", "web"));
+    symlinkSync(join(from, "web"), join(from, "node_modules", "web-abs"));
+    return { from, to };
+  };
+
+  // Workspace packages are found from the package.json files git tracks.
+  const { execFileSync } = await import("node:child_process");
+  const gitInit = (dir: string) => {
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+    execFileSync("git", ["add", "package.json", "web/package.json"], { cwd: dir });
+  };
+
+  {
+    const { from, to } = setup();
+    gitInit(to);
+    assert.deepEqual(await copyDependencies(from, to), ["node_modules", "web/node_modules"]);
+    assert.equal(readFileSync(join(to, "node_modules", "a", "index.js"), "utf8"), "module.exports = 1");
+    assert.ok(existsSync(join(to, "web", "node_modules", "b")));
+    assert.equal(readlinkSync(join(to, "node_modules", "web")), "../../web");
+    assert.equal(readlinkSync(join(to, "node_modules", "web-abs")), "../web");
+    assert.equal(await copyDependencies(from, to), null, "already in place");
+    assert.equal(await installDependencies(to, { from }), null, "nothing left to do");
+  }
+  {
+    const { from, to } = setup();
+    writeFileSync(join(to, "package-lock.json"), lock({ "node_modules/c": { version: "3.0.0" } }));
+    assert.equal(await copyDependencies(from, to), null, "the worktree pins something else");
+  }
+  {
+    const { from, to } = setup();
+    writeFileSync(join(from, "node_modules", ".package-lock.json"), hidden("0.9.0"));
+    assert.equal(await copyDependencies(from, to), null, "the checkout's install is stale");
+  }
+  {
+    const { from, to } = setup();
+    assert.deepEqual(await copyDependencies(from, to), ["node_modules"], "outside git, just the root");
+  }
+});
+
+test("worktree: npm's record of what's installed must agree with the lockfile", async () => {
+  const { npmInstallMatches } = await import("../src/factory/deps.js");
+  const lock = { packages: { "": {}, "node_modules/a": { version: "1" }, "node_modules/b": { version: "1", optional: true } } };
+  assert.ok(npmInstallMatches(lock, { packages: { "node_modules/a": { version: "1" } } }));
+  assert.ok(!npmInstallMatches(lock, { packages: {} }), "a pinned package is missing");
+  assert.ok(!npmInstallMatches(lock, { packages: { "node_modules/a": { version: "2" } } }), "wrong version");
+  assert.ok(
+    !npmInstallMatches(lock, { packages: { "node_modules/a": { version: "1" }, "node_modules/z": { version: "1" } } }),
+    "something extra is installed",
+  );
+  assert.ok(!npmInstallMatches({}, { packages: {} }));
 });
 
 test("store: new tasks get a t- id and can be found without the prefix", () => {
