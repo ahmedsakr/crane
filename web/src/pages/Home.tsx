@@ -13,8 +13,12 @@ function ReviewItem({ m, repoName, onDone }: { m: Task; repoName?: string; onDon
   const files = m.report?.changedFiles.length ?? 0;
   const isChange = !!m.branch;
   const quickApprove = async () => {
-    await api.approve(m.id);
-    toast({ text: isChange ? "Approved. The branch is ready to merge." : "Marked as reviewed" });
+    try {
+      await api.approve(m.id);
+      toast({ text: isChange ? "Approved. Merging it now." : "Marked as reviewed" });
+    } catch (e) {
+      toast({ text: (e as Error).message });
+    }
     onDone();
   };
   return (
@@ -35,7 +39,7 @@ function ReviewItem({ m, repoName, onDone }: { m: Task; repoName?: string; onDon
           Review
         </button>
         <button className="btn btn-primary btn-sm" onClick={quickApprove}>
-          {isChange ? "Approve" : "Done"}
+          {isChange ? "Approve and merge" : "Done"}
         </button>
       </div>
     </div>

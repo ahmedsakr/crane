@@ -1,7 +1,10 @@
 import type { Store } from "../core/store.js";
 import type { Task } from "../core/types.js";
 import type { AgentDriver } from "../agents/driver.js";
-import { createWorktree, finalizeWorktree, installDependencies } from "./git.js";
+import { join } from "node:path";
+import { createWorktree, finalizeWorktree, installDependencies, removeWorktree } from "./git.js";
+import { deleteMergedBranch, landTask, MergeError } from "./merge.js";
+import { worktreesDir } from "../core/paths.js";
 
 const CREW = ["Jib", "Boom", "Hoist", "Trolley", "Rigger", "Winch", "Gantry", "Mast"];
 const HEARTBEAT_KEY = "factory_heartbeat";
@@ -32,6 +35,7 @@ export class Factory {
   private timer: NodeJS.Timeout | null = null;
   private running = new Map<string, AbortController>(); // taskId -> abort
   private busy = new Set<string>(); // agentIds
+  private mergingRepos = new Set<string>(); // repoIds with a merge in progress
   private crew: { id: string; name: string }[];
   private tickMs: number;
   private log: (line: string) => void;
@@ -60,6 +64,10 @@ export class Factory {
       this.store.updateTask(m.id, { status: "queued", agentId: null });
       this.store.addEvent(m.id, "status", "Re-queued after the factory restarted", { status: "queued" });
     }
+    // Merges are safe to run again from the top, so just release them.
+    for (const m of this.store.listTasks({ status: ["merging"] })) {
+      if (m.agentId) this.store.updateTask(m.id, { agentId: null });
+    }
 
     this.timer = setInterval(() => this.tick(), this.tickMs);
     this.tick();
@@ -85,10 +93,95 @@ export class Factory {
       if (this.busy.has(agent.id)) continue;
       this.store.setAgentState(agent.id, paused ? "paused" : "idle", null);
       if (paused) continue;
+      // Approved merges first: the operator has already said yes and is waiting on them.
+      const merge = this.store.claimNextMerge(agent.id, [...this.mergingRepos]);
+      if (merge) {
+        this.busy.add(agent.id);
+        this.merge(agent, merge).finally(() => this.busy.delete(agent.id));
+        continue;
+      }
       const task = this.store.claimNextTask(agent.id);
       if (!task) continue;
       this.busy.add(agent.id);
       this.work(agent, task).finally(() => this.busy.delete(agent.id));
+    }
+  }
+
+  /** Land an approved task on its repo's default branch, with an agent on hand for conflicts. */
+  private async merge(agent: { id: string; name: string }, task: Task) {
+    const ac = new AbortController();
+    const repo = task.repoId ? this.store.getRepo(task.repoId) : null;
+    if (repo) this.mergingRepos.add(repo.id);
+    this.store.setAgentState(agent.id, "working", task.id);
+    this.log(`${agent.name} is merging ${task.id} · ${task.title}`);
+    const emit = (type: Parameters<Store["addEvent"]>[1], message: string, data?: Record<string, unknown>) =>
+      this.store.addEvent(task.id, type, message, data ?? null);
+    let spent = 0;
+    // Stopping the factory aborts every running controller; merges are tracked under their own key.
+    this.running.set(`merge:${task.id}`, ac);
+
+    try {
+      if (!repo) throw new MergeError("This task has no repo to merge into");
+      if (!task.branch) throw new MergeError("This task has no branch to merge");
+      const workdir = task.worktree ?? join(worktreesDir(), task.id);
+      this.store.updateTask(task.id, { worktree: workdir });
+
+      const result = await landTask({
+        repo,
+        task,
+        workdir,
+        emit,
+        signal: ac.signal,
+        resolveConflicts: async ({ cwd, base, files }) => {
+          try {
+            const ran = await installDependencies(cwd, ac.signal);
+            if (ran) emit("note", `Installed dependencies (${ran})`);
+          } catch {
+            // Not fatal: resolving conflicts rarely needs a build.
+          }
+          const r = await this.driver.run({
+            task: this.store.getTask(task.id)!,
+            repo,
+            cwd,
+            signal: ac.signal,
+            emit,
+            job: { kind: "resolve_conflicts", base, files },
+          });
+          spent += r.costUsd;
+          for (const f of r.report.findings) emit("finding", f.title, { impact: f.impact, effort: f.effort });
+        },
+      });
+
+      const main = repo.defaultBranch;
+      const where = result.pushedTo ? ` and pushed to ${result.pushedTo}` : "";
+      const message = result.checkoutBehind
+        ? `Merged into ${main}${where}. Your checkout at ${result.checkoutBehind} has local changes, so it wasn't updated`
+        : `Merged into ${main}${where}`;
+      this.store.updateTask(task.id, { worktree: null, costUsd: (this.store.getTask(task.id)?.costUsd ?? 0) + spent });
+      spent = 0;
+      // Record the outcome before cleaning up: if the merge just updated Crane's own
+      // checkout, a dev server may restart any moment.
+      this.store.setStatus(task.id, "merged", message, {
+        merge: { commit: result.commit, pushedTo: result.pushedTo, checkoutBehind: result.checkoutBehind },
+      });
+      this.log(`${agent.name} merged ${task.id}`);
+      await removeWorktree(repo, workdir);
+      if (!result.checkoutBehind) await deleteMergedBranch(repo, task.branch);
+    } catch (err) {
+      if (spent) this.store.updateTask(task.id, { costUsd: (this.store.getTask(task.id)?.costUsd ?? 0) + spent });
+      if (ac.signal.aborted) {
+        // The factory is stopping. Leave it waiting; the next factory picks it up again.
+        this.store.updateTask(task.id, { agentId: null });
+        return;
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      emit("error", message);
+      this.store.setStatus(task.id, "needs_review", "Couldn't merge. Back with you", { merge: { error: message } });
+      this.log(`${agent.name} couldn't merge ${task.id}: ${message}`);
+    } finally {
+      this.running.delete(`merge:${task.id}`);
+      if (repo) this.mergingRepos.delete(repo.id);
+      this.store.setAgentState(agent.id, this.store.isPaused() ? "paused" : "idle", null);
     }
   }
 

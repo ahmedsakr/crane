@@ -45,13 +45,38 @@ export class OperatorActions {
     return m;
   }
 
-  async approve(id: string, note?: string): Promise<Task> {
+  /**
+   * Approve a task. When it changed code, this also merges its branch into the
+   * repo's default branch and pushes it, unless `merge: false` ("Approve only").
+   */
+  async approve(id: string, note?: string, opts: { merge?: boolean } = {}): Promise<Task> {
     const m = this.need(id);
     if (m.status !== "needs_review") throw new Error(`Task ${m.id} isn't waiting for review`);
+    const merge = (opts.merge ?? true) && !!m.branch;
     this.store.addEvent(m.id, "operator", note ? `Approved: ${note}` : "Approved");
+    if (merge) return this.queueMerge(m);
     await this.cleanupWorktree(m, false);
-    this.store.setStatus(m.id, "approved", m.branch ? `Approved. Branch ${m.branch} is ready to merge` : "Approved");
+    this.store.setStatus(m.id, "approved", m.branch ? `Approved. Branch ${m.branch} is kept for you to merge` : "Approved");
     return this.need(id);
+  }
+
+  /** Merge a task's branch into the default branch and push it. For tasks already approved or done. */
+  async merge(id: string): Promise<Task> {
+    const m = this.need(id);
+    if (m.status === "needs_review") return this.approve(id);
+    if (!m.branch) throw new Error(`Task ${m.id} didn't change any code, so there's nothing to merge`);
+    if (!["approved", "done"].includes(m.status)) throw new Error(`Task ${m.id} isn't ready to merge`);
+    this.store.addEvent(m.id, "operator", "Asked to merge");
+    return this.queueMerge(m);
+  }
+
+  /** Hand the task to the factory, which merges it with the next free agent. */
+  private queueMerge(m: Task): Task {
+    const repo = m.repoId ? this.store.getRepo(m.repoId) : null;
+    if (!repo) throw new Error(`Task ${m.id} has no repo to merge into`);
+    this.store.updateTask(m.id, { agentId: null });
+    this.store.setStatus(m.id, "merging", `Waiting to merge into ${repo.defaultBranch}`);
+    return this.need(m.id);
   }
 
   async reject(id: string, note?: string): Promise<Task> {

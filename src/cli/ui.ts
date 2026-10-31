@@ -19,6 +19,8 @@ const STATUS_COLOR: Record<TaskStatus, (s: string) => string> = {
   running: pc.cyan,
   needs_review: yellow,
   approved: pc.green,
+  merging: pc.cyan,
+  merged: pc.green,
   done: pc.green,
   rejected: pc.dim,
   failed: pc.red,
@@ -26,7 +28,7 @@ const STATUS_COLOR: Record<TaskStatus, (s: string) => string> = {
 };
 
 export function statusDot(status: TaskStatus): string {
-  const glyph = status === "running" ? "◉" : status === "queued" ? "○" : "●";
+  const glyph = status === "running" || status === "merging" ? "◉" : status === "queued" ? "○" : "●";
   return STATUS_COLOR[status](glyph);
 }
 

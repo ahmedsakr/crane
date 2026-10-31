@@ -109,9 +109,14 @@ export async function finalizeWorktree(repo: Repo, task: Task, path: string): Pr
   return out ? out.split("\n") : [];
 }
 
-export async function diffForTask(repo: Repo, task: Task): Promise<string> {
-  if (!task.branch) return "";
+/**
+ * What the task changed. Once merged, that's what its merge commit brought in,
+ * since the branch itself may be gone.
+ */
+export async function diffForTask(repo: Repo, task: Task, mergeCommit?: string | null): Promise<string> {
   try {
+    if (mergeCommit) return await git(repo.path, "diff", `${mergeCommit}^1`, mergeCommit);
+    if (!task.branch) return "";
     return await git(repo.path, "diff", `${repo.defaultBranch}...${task.branch}`);
   } catch {
     return "";

@@ -1,5 +1,7 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { git } from "../factory/git.js";
 import type { AgentDriver, RunContext, RunResult } from "./driver.js";
 import type { Finding, TaskKind } from "../core/types.js";
 
@@ -18,6 +20,7 @@ export class SimulatedDriver implements AgentDriver {
   }
 
   async run(ctx: RunContext): Promise<RunResult> {
+    if (ctx.job?.kind === "resolve_conflicts") return this.resolve(ctx, ctx.job.files);
     const { task, emit, signal } = ctx;
     const script = SCRIPTS[task.kind];
     for (const [type, message] of script.steps) {
@@ -43,6 +46,38 @@ export class SimulatedDriver implements AgentDriver {
       },
     };
   }
+
+  /** Resolve conflicts by keeping both sides, which is what a cautious human does with append-only files. */
+  private async resolve(ctx: RunContext, files: string[]): Promise<RunResult> {
+    const { emit, signal, cwd } = ctx;
+    emit("note", "Reading both sides of each conflict.", { simulated: true });
+    for (const f of files) {
+      await sleep(this.stepMs * 0.5, signal);
+      const p = join(cwd, f);
+      if (!existsSync(p)) continue;
+      await writeFile(p, keepBothSides(await readFile(p, "utf8")));
+      await git(cwd, "add", "--", f);
+      emit("tool", `Edited ${f}`, { simulated: true });
+    }
+    return {
+      costUsd: 0,
+      report: { summary: `Simulated run. Kept both sides of the conflicts in ${files.length} file(s).`, findings: [], changedFiles: files },
+    };
+  }
+}
+
+/** Drop conflict markers (and any diff3 base section), keeping "ours" then "theirs". */
+export function keepBothSides(text: string): string {
+  const out: string[] = [];
+  let state: "plain" | "ours" | "base" | "theirs" = "plain";
+  for (const line of text.split("\n")) {
+    if (/^<{7}(\s|$)/.test(line)) state = "ours";
+    else if (state === "ours" && /^\|{7}(\s|$)/.test(line)) state = "base";
+    else if ((state === "ours" || state === "base") && /^={7}$/.test(line)) state = "theirs";
+    else if (state === "theirs" && /^>{7}(\s|$)/.test(line)) state = "plain";
+    else if (state !== "base") out.push(line);
+  }
+  return out.join("\n");
 }
 
 function sleep(ms: number, signal: AbortSignal) {

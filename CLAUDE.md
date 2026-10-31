@@ -16,12 +16,12 @@ Crane is an autonomous software factory steered by a human operator. Agents run 
 - `src/core/store.ts` is the single source of truth (SQLite, WAL). Every process (server, CLI) opens it directly; there is no in-memory state worth trusting across processes. Live views tail the `events` table.
 - `src/factory/actions.ts` holds every operator action. The API and CLI both call it, so add new actions there first.
 - `src/agents/` holds drivers behind `AgentDriver`. Agents end their final message with a fenced `crane-report` JSON block (`src/agents/prompts.ts`), parsed by `src/agents/report.ts`.
-- Tasks with autonomy `propose`/`act` run in a git worktree under `$CRANE_HOME/worktrees/<taskId>` on branch `crane/<slug>-<id>`. Crane never pushes or merges.
+- Tasks with autonomy `propose`/`act` run in a git worktree under `$CRANE_HOME/worktrees/<taskId>` on branch `crane/<slug>-<id>`. Crane never pushes or merges on its own. Only an operator's Approve (or Merge) does, and then Crane's own code in `src/factory/merge.ts` lands the branch (merge commit, fast-forward push, local default branch moved only when its checkout is clean). Agents only ever resolve conflicts inside Crane's worktree; they never push or merge.
 - `web/` is React + Vite with no UI library. Its types come straight from `src/core/types.ts`.
 
 ## Rules
 
-- Safety first: nothing an agent does may touch the operator's checkout or default branch. Keep `ALWAYS_DENIED` in `src/agents/claude-code.ts` intact.
+- Safety first: nothing an agent does may touch the operator's checkout or default branch. Keep `ALWAYS_DENIED` in `src/agents/claude-code.ts` intact. The one place Crane moves a default branch is `landTask` in `src/factory/merge.ts`, after the operator approves: never force-push, and never touch a checkout that has local changes.
 - Keep the CLI and web UI at feature parity for operator actions.
 - UI work must follow `docs/design.md`. Progressive disclosure is the core principle: show the decision first, the details one tap away.
 - Copy is sentence case, plain verbs, and names things by what the operator controls. An action keeps its name everywhere ("Approve" → "Approved").

@@ -5,9 +5,9 @@ import { usePoll, useTick } from "../lib/hooks";
 import { Empty, TaskRow } from "../components/bits";
 
 const FILTERS = [
-  { key: "open", label: "Open", status: "needs_review,running,queued" },
+  { key: "open", label: "Open", status: "needs_review,merging,running,queued" },
   { key: "review", label: "Needs you", status: "needs_review" },
-  { key: "finished", label: "Finished", status: "done,approved,rejected" },
+  { key: "finished", label: "Finished", status: "merged,done,approved,rejected" },
   { key: "problems", label: "Failed", status: "failed,cancelled" },
   { key: "all", label: "All", status: "" },
 ] as const;

@@ -36,7 +36,15 @@ Each task also has an **autonomy level**, which sets how far an agent may go on 
 | **Change, then ask me** (`propose`) | Works on its own branch in an isolated git worktree, then waits for your review. |
 | **Change on a branch** (`act`) | Works on its own branch and finishes without waiting. |
 
-Crane never pushes, and it never merges into your default branch on its own.
+Crane never merges into your default branch or pushes on its own. When you **approve** a task that changed code, Crane merges its branch into the default branch for you and pushes it:
+
+- It builds one `Merge branch 'crane/…'` commit on top of the latest default branch, in Crane's own worktree.
+- If that conflicts, an agent resolves the conflicts. Crane checks that no conflict markers are left before it commits.
+- It pushes as a plain fast-forward and never force-pushes. If someone else pushed in the meantime, Crane starts over from the new tip.
+- Your checkout of the default branch is fast-forwarded only when it has no local changes. Otherwise Crane leaves it alone and tells you to pull.
+- If anything goes wrong, the task comes back to you with the reason, and nothing is pushed.
+
+Choose **Approve only** (`crane approve <id> --no-merge`) to keep the branch and merge it yourself.
 
 Reports come back as a summary plus **findings**. Turn any finding into its own task with one click (or `crane follow-up <id> <n>`).
 
@@ -66,7 +74,8 @@ Agents run through [Claude Code](https://code.claude.com) in headless mode, usin
 | `crane tasks` | Open tasks (`--all` for everything) |
 | `crane show <id>` | Summary, findings, changed files, and recent activity |
 | `crane watch [id]` | Follow a task, or the whole factory, live |
-| `crane approve <id>` / `crane decline <id>` | Decide on work that's waiting for you |
+| `crane approve <id>` / `crane decline <id>` | Decide on work that's waiting for you. Approving merges and pushes it (`--no-merge` to approve only). |
+| `crane merge <id>` | Merge and push a task you approved only, or one that finished on its own branch |
 | `crane diff <id>` | See what a task changed on its branch |
 | `crane follow-up <id> <n>` | Turn finding *n* into a task that makes the change |
 | `crane cancel <id>` / `crane retry <id>` | Stop work, or run it again |

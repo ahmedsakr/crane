@@ -21,7 +21,8 @@ export type TaskKind =
  * - observe: read-only. Investigates and reports back.
  * - propose: makes changes on an isolated branch, then waits for the operator.
  * - act: makes changes on an isolated branch and finishes without waiting.
- *   Crane never pushes or merges into a default branch on its own.
+ * Crane never pushes or merges into a default branch on its own. That only
+ * happens when the operator approves and merges a task (see `merging`).
  */
 export type Autonomy = "observe" | "propose" | "act";
 
@@ -30,13 +31,31 @@ export type TaskStatus =
   | "running"
   | "needs_review"
   | "approved"
+  /** Approved and waiting for, or in the middle of, landing on the default branch. */
+  | "merging"
+  /** Landed on the default branch (and pushed, when the repo has a remote). */
+  | "merged"
   | "rejected"
   | "done"
   | "failed"
   | "cancelled";
 
-export const ACTIVE_STATUSES: TaskStatus[] = ["queued", "running"];
-export const TERMINAL_STATUSES: TaskStatus[] = ["approved", "rejected", "done", "failed", "cancelled"];
+export const ACTIVE_STATUSES: TaskStatus[] = ["queued", "running", "merging"];
+export const TERMINAL_STATUSES: TaskStatus[] = ["approved", "merged", "rejected", "done", "failed", "cancelled"];
+export const ALL_STATUSES: TaskStatus[] = [
+  "queued",
+  "running",
+  "needs_review",
+  "approved",
+  "merging",
+  "merged",
+  "rejected",
+  "done",
+  "failed",
+  "cancelled",
+];
+/** Statuses that count as shipped work. */
+export const SHIPPED_STATUSES: TaskStatus[] = ["done", "approved", "merged"];
 
 export interface Repo {
   id: string;
@@ -155,8 +174,34 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
   running: "Working",
   needs_review: "Needs you",
   approved: "Approved",
+  merging: "Merging",
+  merged: "Merged",
   rejected: "Declined",
   done: "Done",
   failed: "Failed",
   cancelled: "Cancelled",
 };
+
+/**
+ * What the last merge attempt left behind, carried on its status event so the
+ * UI and CLI can explain it. A failed attempt sends the task back to the
+ * operator with `error` set.
+ */
+export interface MergeOutcome {
+  error?: string;
+  /** The commit that landed on the default branch. */
+  commit?: string;
+  /** The remote it was pushed to, or null when the repo has none. */
+  pushedTo?: string | null;
+  /** A checkout of the default branch Crane left alone (it had local changes), so the operator can catch up. */
+  checkoutBehind?: string | null;
+}
+
+/** The merge outcome on the task's latest status event, if that status came from a merge. */
+export function lastMergeOutcome(events: TaskEvent[]): MergeOutcome | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i]!;
+    if (e.type === "status") return (e.data?.merge as MergeOutcome | undefined) ?? null;
+  }
+  return null;
+}

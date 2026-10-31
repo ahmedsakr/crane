@@ -11,7 +11,7 @@ import type {
 } from "../../../src/core/types";
 
 export type { Agent, Autonomy, Task, TaskEvent, TaskKind, TaskStatus, Overview, Repo };
-export { AUTONOMY_LABEL, KIND_LABEL, STATUS_LABEL } from "../../../src/core/types";
+export { AUTONOMY_LABEL, KIND_LABEL, STATUS_LABEL, lastMergeOutcome } from "../../../src/core/types";
 
 export interface TaskDraft extends NewTask {
   why: { kind: string; repo: string; autonomy: string };
@@ -44,7 +44,9 @@ export const api = {
   diff: (id: string) => req<{ diff: string }>(`/tasks/${id}/diff`),
   draft: (text: string) => post<TaskDraft>("/instruct/draft", { text }),
   createTask: (m: NewTask) => post<Task>("/tasks", m),
-  approve: (id: string, note?: string) => post<Task>(`/tasks/${id}/approve`, { note }),
+  /** Approve, and merge and push the branch unless `merge` is false ("Approve only"). */
+  approve: (id: string, opts: { note?: string; merge?: boolean } = {}) => post<Task>(`/tasks/${id}/approve`, opts),
+  merge: (id: string) => post<Task>(`/tasks/${id}/merge`),
   reject: (id: string, note?: string) => post<Task>(`/tasks/${id}/reject`, { note }),
   cancel: (id: string) => post<Task>(`/tasks/${id}/cancel`),
   retry: (id: string) => post<Task>(`/tasks/${id}/retry`),

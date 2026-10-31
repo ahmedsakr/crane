@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { basename } from "node:path";
 import { dbPath } from "./paths.js";
 import { shortId } from "./ids.js";
+import { ALL_STATUSES, SHIPPED_STATUSES } from "./types.js";
 import type {
   Agent,
   AgentState,
@@ -289,14 +290,14 @@ export class Store {
     this.db.prepare(`UPDATE tasks SET ${sets.join(", ")} WHERE id = ?`).run(...params);
   }
 
-  setStatus(id: string, status: TaskStatus, message?: string) {
+  setStatus(id: string, status: TaskStatus, message?: string, data?: Record<string, unknown>) {
     const patch: Partial<Task> = { status };
     if (status === "running") patch.startedAt = now();
-    if (["needs_review", "done", "failed", "cancelled", "approved", "rejected"].includes(status)) {
+    if (["needs_review", "done", "failed", "cancelled", "approved", "merged", "rejected"].includes(status)) {
       patch.finishedAt = now();
     }
     this.updateTask(id, patch);
-    this.addEvent(id, "status", message ?? status, { status });
+    this.addEvent(id, "status", message ?? status, { ...data, status });
   }
 
   /** Atomically take the oldest queued task. Safe if two factories race. */
@@ -314,6 +315,28 @@ export class Store {
     const id = tx();
     if (!id) return null;
     this.addEvent(id, "status", "Picked up", { status: "running", agentId });
+    return this.getTask(id);
+  }
+
+  /**
+   * Atomically take the oldest task waiting to merge. Skips repos that already
+   * have a merge in progress, so two merges never race for the same branch.
+   */
+  claimNextMerge(agentId: string, busyRepoIds: string[] = []): Task | null {
+    const tx = this.db.transaction(() => {
+      const skip = busyRepoIds.length ? `AND repo_id NOT IN (${busyRepoIds.map(() => "?").join(",")})` : "";
+      const r = this.db
+        .prepare(`SELECT id FROM tasks WHERE status = 'merging' AND agent_id IS NULL ${skip} ORDER BY finished_at ASC LIMIT 1`)
+        .get(...busyRepoIds) as Row | undefined;
+      if (!r) return null;
+      const changed = this.db
+        .prepare("UPDATE tasks SET agent_id = ? WHERE id = ? AND status = 'merging' AND agent_id IS NULL")
+        .run(agentId, r.id).changes;
+      return changed ? (r.id as string) : null;
+    });
+    const id = tx();
+    if (!id) return null;
+    this.addEvent(id, "note", "Picked up to merge", { agentId });
     return this.getTask(id);
   }
 
@@ -379,7 +402,7 @@ export class Store {
   // ── overview ──────────────────────────────────────────────
   overview(factory: Overview["factory"]): Overview {
     const counts = Object.fromEntries(
-      ["queued", "running", "needs_review", "approved", "rejected", "done", "failed", "cancelled"].map((s) => [s, 0]),
+      ALL_STATUSES.map((s) => [s, 0]),
     ) as Overview["counts"];
     for (const r of this.db.prepare("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status").all() as Row[]) {
       counts[r.status as TaskStatus] = r.n as number;
@@ -388,11 +411,12 @@ export class Store {
     const weekMs = 7 * 24 * 3600 * 1000;
     const t0 = Date.now();
     const iso = (ms: number) => new Date(ms).toISOString();
+    const shippedIn = SHIPPED_STATUSES.map((s) => `'${s}'`).join(",");
     const shipped = (from: number, to: number) =>
       (
         this.db
           .prepare(
-            `SELECT COUNT(*) AS n FROM tasks WHERE status IN ('done','approved') AND finished_at >= ? AND finished_at < ?`,
+            `SELECT COUNT(*) AS n FROM tasks WHERE status IN (${shippedIn}) AND finished_at >= ? AND finished_at < ?`,
           )
           .get(iso(from), iso(to)) as Row
       ).n as number;
@@ -413,7 +437,7 @@ export class Store {
       if (b) b.events++;
     }
     for (const r of this.db
-      .prepare("SELECT finished_at FROM tasks WHERE status IN ('done','approved') AND finished_at >= ?")
+      .prepare(`SELECT finished_at FROM tasks WHERE status IN (${shippedIn}) AND finished_at >= ?`)
       .all(iso(start)) as Row[]) {
       const b = buckets.get(Math.floor(Date.parse(r.finished_at as string) / hour) * hour);
       if (b) b.done++;
@@ -421,7 +445,9 @@ export class Store {
 
     const openByRepo = new Map<string, number>();
     for (const r of this.db
-      .prepare("SELECT repo_id, COUNT(*) AS n FROM tasks WHERE status IN ('queued','running','needs_review') GROUP BY repo_id")
+      .prepare(
+        "SELECT repo_id, COUNT(*) AS n FROM tasks WHERE status IN ('queued','running','needs_review','merging') GROUP BY repo_id",
+      )
       .all() as Row[]) {
       openByRepo.set(r.repo_id as string, r.n as number);
     }
@@ -434,8 +460,8 @@ export class Store {
       spendThisWeekUsd: spend,
       activity: [...buckets.entries()].map(([t, v]) => ({ t: iso(t), ...v })),
       needsReview: this.listTasks({ status: ["needs_review"], limit: 20 }),
-      inFlight: this.listTasks({ status: ["running", "queued"], limit: 20 }),
-      recent: this.listTasks({ status: ["done", "approved", "rejected", "failed", "cancelled"], limit: 8 }),
+      inFlight: this.listTasks({ status: ["merging", "running", "queued"], limit: 20 }),
+      recent: this.listTasks({ status: ["merged", "done", "approved", "rejected", "failed", "cancelled"], limit: 8 }),
       agents: this.listAgents(),
       repos: this.listRepos().map((r) => ({ ...r, openTasks: openByRepo.get(r.id) ?? 0 })),
     };
