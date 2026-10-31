@@ -118,6 +118,24 @@ test("prompts: fresh, conflict and resumed sessions preserve refusals and valida
   assert.match(resumePrompt(), /Only re-run a command if it was not denied and repeating it is safe/);
 });
 
+test("prompts: a sandboxed agent is told which checks its sandbox refuses, and to report them, not work around them", () => {
+  const { ctx } = ctxFor({ autonomy: "propose" });
+  const conflict = { kind: "resolve_conflicts", base: "origin/main", files: ["a.ts"] } as const;
+  for (const prompt of [
+    systemPrompt(ctx.task, null, undefined, { agentCommits: false, sandboxed: true }),
+    systemPrompt(ctx.task, null, conflict, { agentCommits: false, sandboxed: true }),
+    systemPrompt(ctxFor({ autonomy: "observe" }).ctx.task, null, undefined, { sandboxed: true }),
+  ]) {
+    assert.match(prompt, /listening on a port, even on localhost/);
+    assert.match(prompt, /`spawnSync` or `execFileSync` with default stdio/);
+    assert.match(prompt, /don't change tests, scripts, or code to get around the sandbox/);
+    assert.match(prompt, /list the blocked check in your report as not run, with its error/);
+  }
+  for (const prompt of [systemPrompt(ctx.task, null), systemPrompt(ctx.task, null, conflict)]) {
+    assert.doesNotMatch(prompt, /Your sandbox has no network/, "Claude Code isn't in that sandbox");
+  }
+});
+
 test("codex: runs exec in a read-only sandbox to investigate, and turns its events into the task's", async () => {
   const { bin, log } = fakeCodex("ok");
   const { ctx, notes, tools, sessions, usage } = ctxFor({ autonomy: "observe" });
@@ -155,6 +173,7 @@ test("codex: work that changes code gets a workspace sandbox with no network, an
   assert.ok(call!.args.includes("sandbox_workspace_write.writable_roots=[]"), "nothing outside its worktree");
   assert.ok(call!.stdin.includes("Crane commits them"), call!.stdin);
   assert.ok(!call!.stdin.includes("Commit your work"));
+  assert.ok(call!.stdin.includes("Your sandbox has no network"), "it knows which checks will be refused");
 });
 
 test("codex: resolving conflicts can edit files even on an investigate-only task", () => {
@@ -232,13 +251,16 @@ test("registry: auto keeps a saved real agent, skips a saved simulated one, and 
 });
 
 const ID = ["-c", "user.name=Test", "-c", "user.email=test@localhost", "-c", "commit.gpgsign=false"];
+// No stdin pipe: closing one fails with EPERM in Codex's sandbox, so the suite couldn't run there.
+const sh = (cwd: string, ...args: string[]) =>
+  execFileSync("git", [...ID, ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 async function setup() {
   const root = mkdtempSync(join(tmpdir(), "crane-drivers-"));
   const checkout = join(root, "checkout");
-  execFileSync("git", [...ID, "init", "-q", "-b", "main", checkout]);
+  sh(root, "init", "-q", "-b", "main", checkout);
   writeFileSync(join(checkout, "README.md"), "hi\n");
-  execFileSync("git", [...ID, "add", "README.md"], { cwd: checkout });
-  execFileSync("git", [...ID, "commit", "-q", "-m", "start"], { cwd: checkout });
+  sh(checkout, "add", "README.md");
+  sh(checkout, "commit", "-q", "-m", "start");
   const store = new Store(join(root, "crane.db"));
   const actions = new OperatorActions(store);
   const repo = await actions.connectRepo(checkout, "drivers");

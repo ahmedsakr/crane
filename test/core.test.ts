@@ -149,9 +149,11 @@ test("worktree: copies dependencies from the checkout only when they match the l
 
   // Workspace packages are found from the package.json files git tracks.
   const { execFileSync } = await import("node:child_process");
+  // No stdin pipe: closing one fails with EPERM in Codex's sandbox.
+  const git = (dir: string, ...args: string[]) => execFileSync("git", args, { cwd: dir, stdio: ["ignore", "pipe", "pipe"] });
   const gitInit = (dir: string) => {
-    execFileSync("git", ["init", "-q"], { cwd: dir });
-    execFileSync("git", ["add", "package.json", "web/package.json"], { cwd: dir });
+    git(dir, "init", "-q");
+    git(dir, "add", "package.json", "web/package.json");
   };
 
   {

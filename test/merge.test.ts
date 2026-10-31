@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { landTask as land, MergeError, type MergeRequest } from "../src/factory/merge.js";
@@ -274,7 +274,7 @@ test("factory: a task goes from work to review to merged and pushed, through a c
     const other = join(root, "other");
     sh(root, "clone", "-q", origin, other);
     sh(other, "checkout", "-q", "main");
-    execFileSync("mkdir", ["-p", join(other, ".crane-simulated")]);
+    mkdirSync(join(other, ".crane-simulated"), { recursive: true });
     commitFile(other, `.crane-simulated/${t.id}.md`, "someone else's take\n", "clash");
     sh(other, "push", "-q", "origin", "main");
 

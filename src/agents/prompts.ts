@@ -30,6 +30,19 @@ const FILE_EDIT_BRIEF =
   "When file changes are authorized, use your native file-editing tools (such as Edit, Write, or apply_patch) to create and modify files. Avoid shell heredocs for file edits: they can trigger shell security checks even when the intended edit is allowed. Choose file-editing tools before attempting a shell write; a denied command is still subject to the blocked-command instructions.";
 
 /**
+ * For agents in a sandbox with no network (Codex). On Linux, Codex enforces
+ * "no network" with a seccomp filter that also refuses calls like `listen`,
+ * `shutdown` and `getsockopt` on local sockets. Node gives child processes
+ * socketpairs for piped stdio, so some subprocesses fail (`spawnSync git EPERM`)
+ * or lose their output, and nothing can serve a page. None of that is the
+ * agent's code, and the sandbox must stay as it is, so the agent is told what
+ * to expect and to report those checks as blocked rather than bend the work to
+ * get them passing.
+ */
+const SANDBOX_BRIEF =
+  'Your sandbox has no network, and it also refuses some local operations that have nothing to do with your change. Expect these to fail with EPERM or "operation not permitted": listening on a port, even on localhost, so dev servers, browsers, and screenshot tools can\'t run; and some child processes started with piped stdin or stdout, such as `spawnSync` or `execFileSync` with default stdio, or a test runner that runs each file in its own process (it then shows only per-file results). When a check fails this way, don\'t change tests, scripts, or code to get around the sandbox. Run the narrowest check that does work, such as a single test file run directly, and list the blocked check in your report as not run, with its error, so the operator can run it outside the sandbox.';
+
+/**
  * For agents whose sandbox can't write to git (Codex): the worktree's git
  * directory lives outside it. Crane commits what they leave behind instead.
  */
@@ -43,11 +56,14 @@ const SANDBOXED_AUTONOMY_BRIEF: Record<Task["autonomy"], string> = {
 export interface PromptOptions {
   /** The agent can run `git commit` and `git add` itself. False for sandboxed agents. */
   agentCommits?: boolean;
+  /** The agent runs in a sandbox with no network, which also refuses some local socket calls (Codex). */
+  sandboxed?: boolean;
 }
 
 export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob, opts: PromptOptions = {}): string {
   const commits = opts.agentCommits ?? true;
-  if (job?.kind === "resolve_conflicts") return conflictSystemPrompt(repo, job, commits);
+  const sandbox = opts.sandboxed ? SANDBOX_BRIEF : "";
+  if (job?.kind === "resolve_conflicts") return conflictSystemPrompt(repo, job, commits, sandbox);
   return [
     "You are an agent in Crane, an autonomous software factory steered by a human operator.",
     KIND_BRIEF[task.kind],
@@ -55,6 +71,7 @@ export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob, opts
     repo ? `Target repository: ${repo.name} (default branch: ${repo.defaultBranch}).` : "",
     "Narrate briefly as you go: one short sentence before each significant step, so the operator can follow along.",
     BLOCKED_BRIEF,
+    sandbox,
     VALIDATION_BRIEF,
     FILE_EDIT_BRIEF,
     reportInstructions(),
@@ -63,7 +80,7 @@ export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob, opts
     .join("\n\n");
 }
 
-function conflictSystemPrompt(repo: Repo | null, job: ResolveConflictsJob, agentCommits: boolean): string {
+function conflictSystemPrompt(repo: Repo | null, job: ResolveConflictsJob, agentCommits: boolean, sandbox: string): string {
   const main = repo?.defaultBranch ?? "the default branch";
   return [
     "You are an agent in Crane, an autonomous software factory steered by a human operator.",
@@ -81,10 +98,13 @@ function conflictSystemPrompt(repo: Repo | null, job: ResolveConflictsJob, agent
     ].join("\n"),
     "Narrate briefly as you go: one short sentence before each significant step, so the operator can follow along.",
     BLOCKED_BRIEF,
+    sandbox,
     VALIDATION_BRIEF,
     FILE_EDIT_BRIEF,
     reportInstructions(),
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export function userPrompt(task: Task, job?: AgentJob): string {
