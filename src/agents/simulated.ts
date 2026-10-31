@@ -1,0 +1,142 @@
+import type { AgentDriver, RunContext, RunResult } from "./driver.js";
+import type { Finding, MissionKind } from "../core/types.js";
+
+/**
+ * A stand-in driver that walks through a believable sequence of steps without
+ * calling any model. Use it to try Crane, demo the UI, or develop offline.
+ * Everything it produces is labelled as simulated.
+ */
+export class SimulatedDriver implements AgentDriver {
+  readonly name = "simulated";
+  readonly label = "Simulated";
+  constructor(private stepMs = Number(process.env.CRANE_SIM_STEP_MS ?? 1400)) {}
+
+  async available() {
+    return true;
+  }
+
+  async run(ctx: RunContext): Promise<RunResult> {
+    const { mission, emit, signal } = ctx;
+    const script = SCRIPTS[mission.kind];
+    for (const [type, message] of script.steps) {
+      await sleep(this.stepMs * (0.6 + Math.random() * 0.8), signal);
+      emit(type, message, { simulated: true });
+    }
+    await sleep(this.stepMs, signal);
+    return {
+      costUsd: 0,
+      report: {
+        summary: `Simulated run. ${script.summary}`,
+        findings: script.findings,
+        changedFiles: mission.autonomy === "observe" ? [] : script.changedFiles,
+      },
+    };
+  }
+}
+
+function sleep(ms: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) return reject(new Error("Cancelled by operator"));
+    const t = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(t);
+        reject(new Error("Cancelled by operator"));
+      },
+      { once: true },
+    );
+  });
+}
+
+type Step = ["note" | "tool" | "finding", string];
+
+const SCRIPTS: Record<MissionKind, { steps: Step[]; summary: string; findings: Finding[]; changedFiles: string[] }> = {
+  maintenance: {
+    steps: [
+      ["note", "Starting with the test suite and recent history to see where things break."],
+      ["tool", "Ran git log --since=30.days --stat"],
+      ["tool", "Searched for “retry”"],
+      ["tool", "Read src/http/client.ts"],
+      ["note", "The retry helper swallows timeouts, which explains the intermittent failures."],
+      ["finding", "Timeouts are retried without backoff"],
+      ["tool", "Read package.json"],
+      ["note", "Two dependencies are a major version behind; one has a published advisory."],
+      ["finding", "Outdated dependency with a known advisory"],
+    ],
+    summary: "Found the cause of the flaky requests and one dependency worth upgrading soon.",
+    findings: [
+      {
+        title: "Timeouts are retried without backoff",
+        detail: "`retry()` in `src/http/client.ts` retries immediately on timeout, so slow upstreams get hammered. Add exponential backoff with jitter.",
+        impact: "high",
+        effort: "small",
+      },
+      {
+        title: "Outdated dependency with a known advisory",
+        detail: "Upgrade to the next minor. The changelog shows no breaking changes for the APIs this repo uses.",
+        impact: "medium",
+        effort: "small",
+      },
+    ],
+    changedFiles: ["src/http/client.ts", "package.json"],
+  },
+  repo_feature: {
+    steps: [
+      ["note", "Mapping the codebase so the feature lands in the right place."],
+      ["tool", "Listed src/**/*.ts"],
+      ["tool", "Read src/routes/index.ts"],
+      ["tool", "Searched for “export function”"],
+      ["note", "The routing layer is the natural seam. There's already a pattern for this."],
+      ["tool", "Searched the web for “prior art and common pitfalls”"],
+      ["finding", "Fits behind the existing middleware chain"],
+      ["note", "Drafting an implementation plan with the smallest first slice."],
+      ["finding", "Ship it in two slices"],
+    ],
+    summary: "The feature fits cleanly behind the existing middleware. Recommend shipping it in two slices.",
+    findings: [
+      {
+        title: "Fits behind the existing middleware chain",
+        detail: "Add a new middleware next to `auth()` and reuse the request context. No schema changes needed for slice one.",
+        impact: "high",
+        effort: "medium",
+      },
+      {
+        title: "Ship it in two slices",
+        detail: "Slice one: read-only behaviour behind a flag. Slice two: writes, once the read path has run for a week.",
+        impact: "medium",
+        effort: "small",
+      },
+    ],
+    changedFiles: ["src/middleware/feature.ts", "src/routes/index.ts"],
+  },
+  factory_feature: {
+    steps: [
+      ["note", "Reading how Crane schedules and runs agents today."],
+      ["tool", "Read src/factory/orchestrator.ts"],
+      ["tool", "Read src/agents/driver.ts"],
+      ["note", "Drivers are pluggable, so new capabilities can land without touching the scheduler."],
+      ["tool", "Searched for “claimNextMission”"],
+      ["finding", "Add mission priorities to the queue"],
+      ["note", "Checking how the UI would surface it."],
+      ["tool", "Read web/src/pages/Overview.tsx"],
+      ["finding", "Let the operator reorder the queue"],
+    ],
+    summary: "Crane would benefit most from mission priorities next. The scheduler change is small.",
+    findings: [
+      {
+        title: "Add mission priorities to the queue",
+        detail: "Add a `priority` column and order `claimNextMission` by priority, then age.",
+        impact: "high",
+        effort: "small",
+      },
+      {
+        title: "Let the operator reorder the queue",
+        detail: "Drag to reorder in the Missions view, and `crane bump <id>` in the CLI.",
+        impact: "medium",
+        effort: "medium",
+      },
+    ],
+    changedFiles: ["src/core/store.ts", "web/src/pages/Missions.tsx"],
+  },
+};

@@ -1,0 +1,40 @@
+{
+  "name": "crane",
+  "version": "0.1.0",
+  "description": "An autonomous software factory you steer. Agents maintain and evolve codebases; you stay in control.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "crane": "./bin/crane.js"
+  },
+  "workspaces": [
+    "web"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n factory,web -c yellow,cyan \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "tsx watch src/cli/index.ts serve --port 4471",
+    "dev:web": "npm run dev -w web",
+    "build": "tsc -p tsconfig.json && npm run build -w web",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w web",
+    "test": "node --import tsx --test test/*.test.ts",
+    "crane": "tsx src/cli/index.ts"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.8.1",
+    "@hono/node-server": "^2.1.5",
+    "better-sqlite3": "^12.11.1",
+    "commander": "^14.0.3",
+    "hono": "^4.13.14",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^20.19.0",
+    "concurrently": "^9.2.1",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3"
+  }
+}

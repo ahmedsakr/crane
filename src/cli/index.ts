@@ -1,0 +1,452 @@
+import { Command } from "commander";
+import * as p from "@clack/prompts";
+import pc from "picocolors";
+import { Store } from "../core/store.js";
+import { AUTONOMY_LABEL, KIND_LABEL, type Autonomy, type MissionKind, type MissionStatus } from "../core/types.js";
+import { OperatorActions } from "../factory/actions.js";
+import { draftMission } from "../factory/instruct.js";
+import { factoryDriverName, factoryIsRunning } from "../factory/orchestrator.js";
+import { diffForMission } from "../factory/git.js";
+import { DEFAULT_PORT } from "../core/paths.js";
+import * as ui from "./ui.js";
+
+const store = new Store();
+const actions = new OperatorActions(store);
+await actions.ensureFactoryRepo();
+
+const repoName = (id: string | null) => (id ? store.getRepo(id)?.name : undefined);
+
+function factoryLine(): string {
+  const running = factoryIsRunning(store);
+  const paused = store.isPaused();
+  if (!running) return `${pc.dim("○")} Factory is off  ${ui.dim("start it with")} crane serve`;
+  if (paused) return `${ui.accent("◉")} Factory is paused  ${ui.dim("agents will finish current work, then wait")}`;
+  return `${pc.green("◉")} Factory is running  ${ui.dim(`on ${factoryDriverName(store)}`)}`;
+}
+
+const program = new Command()
+  .name("crane")
+  .description("An autonomous software factory you steer.")
+  .showSuggestionAfterError()
+  .configureHelp({ sortSubcommands: false });
+
+// ── crane (no args): the one screen you need ────────────────
+program.action(() => {
+  const o = store.overview({ running: factoryIsRunning(store), paused: store.isPaused(), driver: factoryDriverName(store) });
+  const delta = o.shippedThisWeek - o.shippedLastWeek;
+  const last24 = o.activity.slice(-24).map((b) => b.events + b.done * 5);
+
+  console.log(`\n${ui.brand()}   ${factoryLine()}\n`);
+  console.log(
+    `  ${pc.bold(String(o.shippedThisWeek))} shipped this week  ${
+      delta === 0 ? ui.dim("same as last week") : delta > 0 ? pc.green(`+${delta} vs last week`) : pc.red(`${delta} vs last week`)
+    }`,
+  );
+  console.log(`  ${ui.sparkline(last24)}  ${ui.dim("activity, last 24h")}`);
+
+  if (o.needsReview.length) {
+    console.log(ui.section(ui.accent("Needs you"), o.needsReview.length));
+    for (const m of o.needsReview.slice(0, 5)) console.log(ui.missionLine(m, repoName(m.repoId)));
+  }
+  if (o.inFlight.length) {
+    console.log(ui.section("In flight", o.inFlight.length));
+    for (const m of o.inFlight.slice(0, 5)) console.log(ui.missionLine(m, repoName(m.repoId)));
+  }
+  if (!o.needsReview.length && !o.inFlight.length) {
+    console.log(`\n  ${ui.dim("Nothing needs you and nothing is running.")}`);
+  }
+
+  console.log("");
+  const next: [string, string][] = [];
+  if (o.needsReview[0]) next.push([`crane show ${o.needsReview[0].id}`, "review the top item"]);
+  next.push(['crane do "…"', "give the factory an instruction"]);
+  if (!o.repos.some((r) => !r.isFactory)) next.push(["crane repos add <path>", "connect a codebase to work on"]);
+  if (!o.factory.running) next.push(["crane serve", "start agents and open the dashboard"]);
+  next.push(["crane help", "everything else"]);
+  console.log(ui.hint(...next));
+  console.log("");
+});
+
+// ── crane do: instruct the factory ──────────────────────────
+program
+  .command("do")
+  .alias("instruct")
+  .description("Tell the factory what to do, in plain words")
+  .argument("[instruction...]", 'e.g. "investigate the flaky checkout tests in api"')
+  .option("-r, --repo <repo>", "repo name or id")
+  .option("-k, --kind <kind>", "maintenance | repo_feature | factory_feature")
+  .option("-a, --autonomy <level>", "observe | propose | act")
+  .option("-y, --yes", "skip the confirmation step")
+  .action(async (words: string[], opts: { repo?: string; kind?: MissionKind; autonomy?: Autonomy; yes?: boolean }) => {
+    p.intro(`${ui.accent("▟")} ${pc.bold("New mission")}`);
+    let text = words.join(" ").trim();
+    if (!text) {
+      const answer = await p.text({
+        message: "What should the factory do?",
+        placeholder: "Investigate why the checkout tests are flaky",
+        validate: (v) => (v?.trim() ? undefined : "Describe the work in a sentence or two"),
+      });
+      if (p.isCancel(answer)) return p.cancel("Nothing was created.");
+      text = String(answer);
+    }
+
+    const repos = store.listRepos();
+    const draft = draftMission(text, repos);
+    if (opts.repo) {
+      const r = store.getRepo(opts.repo);
+      if (!r) ui.fail(`No repo called ${opts.repo}. See \`crane repos\`.`);
+      draft.repoId = r.id;
+      draft.why.repo = "You chose it";
+      if (r.isFactory) draft.kind = "factory_feature";
+    }
+    if (opts.kind) draft.kind = opts.kind;
+    if (opts.autonomy) draft.autonomy = opts.autonomy;
+
+    if (!draft.repoId && draft.kind !== "factory_feature") {
+      const targets = repos;
+      if (!targets.length) ui.fail("Connect a repo first: crane repos add <path>");
+      const choice = await p.select({
+        message: "Which repo?",
+        options: targets.map((r) => ({ value: r.id, label: r.name, hint: r.isFactory ? "the factory itself" : r.path })),
+      });
+      if (p.isCancel(choice)) return p.cancel("Nothing was created.");
+      draft.repoId = String(choice);
+      draft.why.repo = "You chose it";
+      if (store.getRepo(draft.repoId)?.isFactory) draft.kind = "factory_feature";
+    }
+
+    const summary = [
+      `${pc.bold(draft.title)}`,
+      "",
+      `${ui.dim("Repo     ")} ${repoName(draft.repoId) ?? "—"}  ${ui.dim(draft.why.repo)}`,
+      `${ui.dim("Type     ")} ${KIND_LABEL[draft.kind]}  ${ui.dim(draft.why.kind)}`,
+      `${ui.dim("Freedom  ")} ${AUTONOMY_LABEL[draft.autonomy]}  ${ui.dim(draft.why.autonomy)}`,
+    ].join("\n");
+    p.note(summary, "Here's what I understood");
+
+    if (!opts.yes) {
+      const next = await p.select({
+        message: "Start it?",
+        options: [
+          { value: "go", label: "Start mission" },
+          { value: "autonomy", label: "Change how much freedom it has" },
+          { value: "kind", label: "Change the type" },
+          { value: "stop", label: "Don't start" },
+        ],
+      });
+      if (p.isCancel(next) || next === "stop") return p.cancel("Nothing was created.");
+      if (next === "autonomy") {
+        const a = await p.select({
+          message: "How much freedom?",
+          initialValue: draft.autonomy,
+          options: [
+            { value: "observe", label: AUTONOMY_LABEL.observe, hint: "read-only, reports back" },
+            { value: "propose", label: AUTONOMY_LABEL.propose, hint: "changes on a branch, waits for you" },
+            { value: "act", label: AUTONOMY_LABEL.act, hint: "changes on a branch, no review step" },
+          ],
+        });
+        if (p.isCancel(a)) return p.cancel("Nothing was created.");
+        draft.autonomy = a as Autonomy;
+      }
+      if (next === "kind") {
+        const k = await p.select({
+          message: "What type of work?",
+          initialValue: draft.kind,
+          options: (Object.keys(KIND_LABEL) as MissionKind[]).map((k) => ({ value: k, label: KIND_LABEL[k] })),
+        });
+        if (p.isCancel(k)) return p.cancel("Nothing was created.");
+        draft.kind = k as MissionKind;
+      }
+    }
+
+    try {
+      const m = actions.createMission(draft);
+      p.outro(
+        `${pc.green("✓")} Mission started  ${ui.dim(m.id)}\n   ${ui.dim("follow along:")} crane watch ${m.id}${
+          factoryIsRunning(store) ? "" : `\n   ${ui.accent("!")} The factory is off. Run ${pc.bold("crane serve")} to start the agents.`
+        }`,
+      );
+    } catch (err) {
+      ui.fail((err as Error).message);
+    }
+  });
+
+// ── crane missions ──────────────────────────────────────────
+program
+  .command("missions")
+  .alias("ls")
+  .description("List missions (open ones by default)")
+  .option("-a, --all", "include finished missions")
+  .option("-s, --status <statuses>", "comma-separated, e.g. needs_review,failed")
+  .option("-r, --repo <repo>", "only this repo")
+  .action((opts: { all?: boolean; status?: string; repo?: string }) => {
+    const status = opts.status
+      ? (opts.status.split(",") as MissionStatus[])
+      : opts.all
+        ? undefined
+        : (["needs_review", "running", "queued"] as MissionStatus[]);
+    const repoId = opts.repo ? store.getRepo(opts.repo)?.id : undefined;
+    const list = store.listMissions({ status, repoId, limit: 50 });
+    if (!list.length) {
+      console.log(`\n  ${ui.dim(opts.all ? "No missions yet." : "No open missions.")}  ${ui.dim("Start one with")} crane do "…"\n`);
+      return;
+    }
+    const groups = new Map<MissionStatus, typeof list>();
+    for (const m of list) groups.set(m.status, [...(groups.get(m.status) ?? []), m]);
+    const order: MissionStatus[] = ["needs_review", "running", "queued", "failed", "done", "approved", "rejected", "cancelled"];
+    for (const s of order) {
+      const g = groups.get(s);
+      if (!g) continue;
+      console.log(ui.section(ui.statusText(s), g.length));
+      for (const m of g) console.log(ui.missionLine(m, repoName(m.repoId)));
+    }
+    console.log("");
+  });
+
+// ── crane show ──────────────────────────────────────────────
+program
+  .command("show")
+  .description("Show a mission: what it found and what it needs from you")
+  .argument("<id>")
+  .option("-e, --events", "show the full activity log")
+  .action((id: string, opts: { events?: boolean }) => {
+    const m = store.getMission(id) ?? ui.fail(`No mission ${id}`);
+    console.log(`\n${ui.statusDot(m.status)} ${pc.bold(m.title)}`);
+    console.log(
+      ui.dim(
+        `  ${m.id} · ${ui.kindLabel(m)} · ${repoName(m.repoId) ?? "—"} · ${AUTONOMY_LABEL[m.autonomy]} · ${ui.ago(m.createdAt)}`,
+      ),
+    );
+    console.log(`  ${ui.statusText(m.status)}${m.costUsd ? ui.dim(` · $${m.costUsd.toFixed(2)}`) : ""}`);
+
+    if (m.report) {
+      console.log(ui.section("Summary"));
+      console.log(ui.wrap(m.report.summary, 2));
+      if (m.report.findings.length) {
+        console.log(ui.section("Findings", m.report.findings.length));
+        m.report.findings.forEach((f, i) => {
+          console.log(`  ${ui.accent(String(i + 1))}  ${pc.bold(f.title)}  ${ui.dim(`${f.impact} impact · ${f.effort} effort`)}`);
+          console.log(ui.wrap(f.detail, 5));
+        });
+      }
+      if (m.report.changedFiles.length) {
+        console.log(ui.section("Changed files", m.report.changedFiles.length));
+        for (const f of m.report.changedFiles.slice(0, 12)) console.log(`  ${ui.dim("·")} ${f}`);
+      }
+    }
+
+    const events = store.listEvents(m.id);
+    const shown = opts.events ? events : events.filter((e) => e.type !== "tool").slice(-6);
+    console.log(ui.section("Activity", events.length));
+    for (const e of shown) console.log("  " + ui.eventLine(e));
+    if (!opts.events && events.length > shown.length) console.log(ui.dim(`  … crane show ${m.id} --events for all of it`));
+
+    console.log("");
+    const next: [string, string][] = [];
+    if (m.status === "needs_review") {
+      next.push([`crane approve ${m.id}`, m.branch ? `keep branch ${m.branch}` : "mark as reviewed"]);
+      next.push([`crane decline ${m.id}`, m.branch ? "discard the branch" : "dismiss"]);
+      if (m.branch) next.push([`crane diff ${m.id}`, "see the changes"]);
+      if (m.report?.findings.length && m.autonomy === "observe") next.push([`crane follow-up ${m.id} 1`, "act on finding 1"]);
+    } else if (m.status === "running" || m.status === "queued") {
+      next.push([`crane watch ${m.id}`, "follow along live"], [`crane cancel ${m.id}`, "stop it"]);
+    } else if (m.status === "failed" || m.status === "cancelled") {
+      next.push([`crane retry ${m.id}`, "run it again"]);
+    } else if (m.status === "approved" && m.branch) {
+      next.push([`git merge ${m.branch}`, `from ${repoName(m.repoId)}, when you're ready`]);
+    }
+    if (next.length) console.log(ui.hint(...next) + "\n");
+  });
+
+// ── crane watch ─────────────────────────────────────────────
+program
+  .command("watch")
+  .description("Follow a mission, or the whole factory, live")
+  .argument("[id]", "mission id; omit to watch everything")
+  .action(async (id?: string) => {
+    const m = id ? store.getMission(id) ?? ui.fail(`No mission ${id}`) : null;
+    console.log(`\n${ui.brand()}  ${m ? pc.bold(m.title) : "Watching the factory"}  ${ui.dim("ctrl-c to stop")}\n`);
+    let cursor = 0;
+    if (m) {
+      for (const e of store.listEvents(m.id)) {
+        console.log(ui.eventLine(e));
+        cursor = e.id;
+      }
+    } else {
+      cursor = store.latestEventId();
+    }
+    const titles = new Map<string, string>();
+    for (;;) {
+      const events = m ? store.listEvents(m.id, cursor) : store.eventsSince(cursor);
+      for (const e of events) {
+        if (!m) {
+          if (!titles.has(e.missionId)) titles.set(e.missionId, store.getMission(e.missionId)?.title ?? e.missionId);
+          console.log(`${ui.dim(ui.truncate(titles.get(e.missionId)!, 22).padEnd(22))} ${ui.eventLine(e)}`);
+        } else console.log(ui.eventLine(e));
+        cursor = e.id;
+      }
+      if (m) {
+        const now = store.getMission(m.id)!;
+        if (!["queued", "running"].includes(now.status)) {
+          console.log(`\n${ui.statusDot(now.status)} ${ui.statusText(now.status)}  ${ui.dim(`crane show ${m.id}`)}\n`);
+          return;
+        }
+      }
+      await new Promise((r) => setTimeout(r, 400));
+    }
+  });
+
+// ── review actions ──────────────────────────────────────────
+const act = (name: string, desc: string, fn: (id: string, note?: string) => Promise<unknown> | unknown, done: string) =>
+  program
+    .command(name)
+    .description(desc)
+    .argument("<id>")
+    .option("-m, --message <note>", "leave a note on the mission")
+    .action(async (id: string, opts: { message?: string }) => {
+      try {
+        await fn(id, opts.message);
+        ui.ok(`${done} ${ui.dim(id)}`);
+      } catch (err) {
+        ui.fail((err as Error).message);
+      }
+    });
+
+act("approve", "Approve a mission that's waiting for you", (id, n) => actions.approve(id, n), "Approved");
+act("decline", "Decline a mission and discard its branch", (id, n) => actions.reject(id, n), "Declined");
+act("cancel", "Stop a queued or running mission", (id) => actions.cancel(id), "Cancelled");
+
+program
+  .command("retry")
+  .description("Run a mission again from scratch")
+  .argument("<id>")
+  .action((id: string) => {
+    try {
+      const m = actions.retry(id);
+      ui.ok(`Queued again as ${m.id}`);
+    } catch (err) {
+      ui.fail((err as Error).message);
+    }
+  });
+
+program
+  .command("follow-up")
+  .description("Turn a finding into a mission that makes the change")
+  .argument("<id>")
+  .argument("<finding>", "finding number, as shown in crane show")
+  .action((id: string, n: string) => {
+    try {
+      const m = actions.followUp(id, Number(n) - 1);
+      ui.ok(`Started ${m.id}  ${ui.dim(m.title)}`);
+    } catch (err) {
+      ui.fail((err as Error).message);
+    }
+  });
+
+program
+  .command("diff")
+  .description("Show the changes a mission made on its branch")
+  .argument("<id>")
+  .action(async (id: string) => {
+    const m = store.getMission(id) ?? ui.fail(`No mission ${id}`);
+    const repo = m.repoId ? store.getRepo(m.repoId) : null;
+    if (!repo || !m.branch) ui.fail("This mission didn't change any code.");
+    const diff = await diffForMission(repo, m);
+    if (!diff) return console.log(ui.dim("No changes."));
+    for (const line of diff.split("\n")) {
+      console.log(
+        line.startsWith("+") && !line.startsWith("+++")
+          ? pc.green(line)
+          : line.startsWith("-") && !line.startsWith("---")
+            ? pc.red(line)
+            : line.startsWith("@@")
+              ? pc.cyan(line)
+              : line.startsWith("diff ")
+                ? pc.bold(line)
+                : line,
+      );
+    }
+  });
+
+// ── repos ───────────────────────────────────────────────────
+const repos = program.command("repos").description("The codebases the factory works on");
+repos.action(() => {
+  const list = store.listRepos();
+  console.log(ui.section("Repos", list.length));
+  for (const r of list) {
+    const open = store.listMissions({ repoId: r.id, status: ["queued", "running", "needs_review"] }).length;
+    console.log(
+      `  ${r.isFactory ? ui.accent("▟") : pc.dim("■")} ${pc.bold(r.name.padEnd(24))} ${ui.dim(r.path)}${
+        open ? `  ${open} open` : ""
+      }`,
+    );
+  }
+  console.log(`\n${ui.hint(["crane repos add <path>", "connect another codebase"])}\n`);
+});
+repos
+  .command("add")
+  .description("Connect a git repository")
+  .argument("<path>")
+  .option("-n, --name <name>", "what to call it")
+  .action(async (path: string, opts: { name?: string }) => {
+    try {
+      const r = await actions.connectRepo(path, opts.name);
+      ui.ok(`Connected ${pc.bold(r.name)}  ${ui.dim(`${r.path} · ${r.defaultBranch}`)}`);
+      console.log(ui.hint([`crane do "investigate open maintenance work in ${r.name}"`, "a good first mission"]));
+    } catch (err) {
+      ui.fail((err as Error).message);
+    }
+  });
+repos
+  .command("remove")
+  .alias("rm")
+  .description("Disconnect a repo (its missions are kept)")
+  .argument("<repo>")
+  .action((name: string) => {
+    const r = store.getRepo(name) ?? ui.fail(`No repo ${name}`);
+    if (r.isFactory) ui.fail("The factory's own repo can't be removed.");
+    store.removeRepo(r.id);
+    ui.ok(`Disconnected ${r.name}`);
+  });
+
+// ── agents & factory control ────────────────────────────────
+program
+  .command("agents")
+  .description("Who's on the crew and what they're doing")
+  .action(() => {
+    console.log(`\n${factoryLine()}`);
+    const list = store.listAgents();
+    console.log(ui.section("Crew", list.length));
+    if (!list.length) console.log(`  ${ui.dim("No agents yet. They clock in when you run")} crane serve`);
+    for (const a of list) console.log(ui.agentLine(a, a.missionId ? store.getMission(a.missionId)?.title : undefined));
+    console.log("");
+  });
+
+program
+  .command("pause")
+  .description("Stop picking up new missions (current work finishes)")
+  .action(() => {
+    actions.pause();
+    ui.ok("Factory paused. Agents will finish what they're doing, then wait.");
+  });
+
+program
+  .command("resume")
+  .description("Start picking up missions again")
+  .action(() => {
+    actions.resume();
+    ui.ok("Factory resumed.");
+  });
+
+program
+  .command("serve")
+  .description("Start the factory: agents, API, and dashboard")
+  .option("-p, --port <port>", "port for the dashboard", String(DEFAULT_PORT))
+  .option("--agents <n>", "crew size", process.env.CRANE_AGENTS ?? "2")
+  .option("--driver <driver>", "auto | claude-code | simulated", process.env.CRANE_DRIVER ?? "auto")
+  .action(async (opts: { port: string; agents: string; driver: string }) => {
+    const { serve } = await import("./serve.js");
+    await serve(store, { port: Number(opts.port), agents: Number(opts.agents), driver: opts.driver });
+  });
+
+await program.parseAsync(process.argv);
