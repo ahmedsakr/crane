@@ -58,31 +58,6 @@ export async function createWorktree(repo: Repo, task: Task): Promise<{ branch: 
   return { branch, path };
 }
 
-/**
- * The install command for a worktree's lockfile, or null when there is nothing
- * to install (no lockfile, or dependencies are already in place). Only
- * lockfile-driven installs, so the worktree gets exactly what the repo pins.
- */
-export function installCommandFor(path: string): { cmd: string; args: string[] } | null {
-  if (!existsSync(join(path, "package.json")) || existsSync(join(path, "node_modules"))) return null;
-  if (existsSync(join(path, "package-lock.json"))) return { cmd: "npm", args: ["ci", "--no-audit", "--no-fund"] };
-  if (existsSync(join(path, "pnpm-lock.yaml"))) return { cmd: "pnpm", args: ["install", "--frozen-lockfile"] };
-  if (existsSync(join(path, "yarn.lock"))) return { cmd: "yarn", args: ["install", "--frozen-lockfile"] };
-  return null;
-}
-
-/**
- * Install dependencies in a fresh worktree so agents can build and test without
- * needing permission to install. Returns a short description of what ran, or
- * null if nothing needed installing. Throws if the install fails.
- */
-export async function installDependencies(path: string, signal?: AbortSignal): Promise<string | null> {
-  const install = installCommandFor(path);
-  if (!install) return null;
-  await run(install.cmd, install.args, { cwd: path, signal, timeout: 10 * 60 * 1000, maxBuffer: 64 * 1024 * 1024 });
-  return [install.cmd, ...install.args].join(" ");
-}
-
 /** Commit anything the agent left uncommitted, then list what changed on the branch. */
 export async function finalizeWorktree(repo: Repo, task: Task, path: string): Promise<string[]> {
   const dirty = await git(path, "status", "--porcelain");

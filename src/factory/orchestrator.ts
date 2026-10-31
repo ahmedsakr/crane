@@ -2,7 +2,8 @@ import type { Store } from "../core/store.js";
 import type { Task } from "../core/types.js";
 import type { AgentDriver } from "../agents/driver.js";
 import { join } from "node:path";
-import { createWorktree, finalizeWorktree, installDependencies, removeWorktree } from "./git.js";
+import { createWorktree, finalizeWorktree, removeWorktree } from "./git.js";
+import { installDependencies } from "./deps.js";
 import { deleteMergedBranch, landTask, MergeError } from "./merge.js";
 import { worktreesDir } from "../core/paths.js";
 
@@ -134,8 +135,8 @@ export class Factory {
         signal: ac.signal,
         resolveConflicts: async ({ cwd, base, files }) => {
           try {
-            const ran = await installDependencies(cwd, ac.signal);
-            if (ran) emit("note", `Installed dependencies (${ran})`);
+            const note = await installDependencies(cwd, { from: repo.path, signal: ac.signal });
+            if (note) emit("note", note);
           } catch {
             // Not fatal: resolving conflicts rarely needs a build.
           }
@@ -204,8 +205,8 @@ export class Factory {
         this.store.updateTask(task.id, { branch: wt.branch, worktree: wt.path });
         emit("note", `Working on branch ${wt.branch}`, { branch: wt.branch });
         try {
-          const ran = await installDependencies(wt.path, ac.signal);
-          if (ran) emit("note", `Installed dependencies (${ran})`);
+          const note = await installDependencies(wt.path, { from: repo.path, signal: ac.signal });
+          if (note) emit("note", note);
         } catch (err) {
           if (ac.signal.aborted) throw err;
           // Not fatal: the agent can still read code and may be able to install itself.
