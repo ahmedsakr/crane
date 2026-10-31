@@ -1294,6 +1294,9 @@ a.row:hover .row-title {
 .notice-top {
   margin: 0 0 18px;
 }
+.notice-action {
+  margin-left: auto;
+}
 
 .slab .dot-on,
 .slab .dot-paused {

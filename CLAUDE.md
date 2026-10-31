@@ -26,6 +26,6 @@ Crane is an autonomous software factory steered by a human operator. Agents run 
 - Keep the CLI and web UI at feature parity for operator actions.
 - UI work must follow `docs/design.md`. Progressive disclosure is the core principle: show the decision first, the details one tap away.
 - Look at UI changes before calling them done. Take screenshots with `npm run screenshot` (wide, short, and phone sizes) and read the PNGs; for visual bugs, reproduce in a screenshot first. A clean typecheck says nothing about clipping or layout.
-- The dashboard on :4471 serves the prebuilt `web/dist`, so a merged UI change doesn't show until someone runs `npm run build`. If the operator reports that a fixed UI bug is still there, check for a stale build first.
+- The dashboard on :4471 serves whichever build is newest: Crane's own build of the latest merge to its repo (`$CRANE_HOME/builds/<sha>`, made by `src/factory/dashboard.ts` after each factory-repo merge and on `crane serve`), or the checkout's `web/dist`. If the operator reports that a fixed UI bug is still there, check which build is served (`uiCommit` in `/api/overview`), whether that build failed (a note on the merged task), and whether their tab needs a reload.
 - Copy is sentence case, plain verbs, and names things by what the operator controls. An action keeps its name everywhere ("Approve" → "Approved").
 - Run `npm run typecheck && npm test` before finishing.

@@ -86,6 +86,8 @@ Agents run through [Claude Code](https://code.claude.com) in headless mode, usin
 
 You can stop or restart `crane serve` at any time, even while agents are working. Running tasks go back in the queue with their worktree and their agent's Claude Code session, and when the factory starts again each agent resumes its session where it stopped. Merges that were under way run again from the start, which is safe to repeat.
 
+When a change to Crane itself is merged, Crane builds the dashboard from that commit in its own directory (`$CRANE_HOME/builds/<sha>`, never your checkout) and serves it, so UI fixes show up without you running `npm run build`. Open pages offer to reload. If you run `npm run build` yourself, your newer `web/dist` is served instead. `crane serve --no-build-dashboard` turns this off.
+
 ## Configuration
 
 | Variable | Default | |

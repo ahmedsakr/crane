@@ -151,6 +151,10 @@ export interface Overview {
     driver: string;
     /** The served dashboard is older than its source, so recent UI changes won't show until a rebuild. */
     uiOutdated: boolean;
+    /** Identifies the dashboard being served. When it changes, a newer build has replaced it. */
+    uiBuild: string | null;
+    /** The commit Crane built the served dashboard from, or null when it's the checkout's own web/dist. */
+    uiCommit: string | null;
   };
   counts: Record<TaskStatus, number>;
   shippedThisWeek: number;
