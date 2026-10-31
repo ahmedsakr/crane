@@ -3,10 +3,13 @@ import { basename } from "node:path";
 import { dbPath } from "./paths.js";
 import { shortId } from "./ids.js";
 import { ALL_STATUSES, SHIPPED_STATUSES } from "./types.js";
+import { ruleLabel } from "./permissions.js";
 import type {
   Agent,
   AgentState,
+  BlockedTool,
   EventType,
+  RepoTools,
   Task,
   TaskEvent,
   TaskStatus,
@@ -224,6 +227,75 @@ export class Store {
 
   removeRepo(id: string) {
     this.db.prepare("DELETE FROM repos WHERE id = ? AND is_factory = 0").run(id);
+  }
+
+  /** The tool rules the operator has allowed, or chosen to keep blocked, for one repo. */
+  repoTools(repoId: string): RepoTools {
+    const raw = this.getSetting(`tools:${repoId}`);
+    const parsed = raw ? (JSON.parse(raw) as Partial<RepoTools>) : {};
+    return { allowed: parsed.allowed ?? [], keptBlocked: parsed.keptBlocked ?? [] };
+  }
+
+  setRepoTools(repoId: string, tools: RepoTools) {
+    this.setSetting(`tools:${repoId}`, JSON.stringify({ allowed: [...new Set(tools.allowed)], keptBlocked: [...new Set(tools.keptBlocked)] }));
+  }
+
+  /**
+   * Rules agents were refused, added up per repo across tasks. Leaves out
+   * rules the operator has already allowed or kept blocked for that repo.
+   */
+  blockedTools(opts: { repoId?: string; taskId?: string; minTasks?: number } = {}): BlockedTool[] {
+    const where = ["e.type = 'blocked'"];
+    const params: unknown[] = [];
+    if (opts.repoId) {
+      where.push("t.repo_id = ?");
+      params.push(opts.repoId);
+    }
+    if (opts.taskId) {
+      // Every task's count, but only for rules this task hit.
+      where.push(
+        `r.value IN (SELECT r2.value FROM events e2, json_each(e2.data, '$.rules') r2 WHERE e2.task_id = ? AND e2.type = 'blocked')`,
+      );
+      params.push(opts.taskId);
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT t.repo_id AS repo_id, p.name AS repo_name, r.value AS rule,
+                COUNT(DISTINCT e.task_id) AS tasks, COUNT(*) AS times, MAX(e.ts) AS last_at,
+                (SELECT e3.task_id FROM events e3, json_each(e3.data, '$.rules') r3
+                  JOIN tasks t3 ON t3.id = e3.task_id
+                  WHERE e3.type = 'blocked' AND r3.value = r.value AND t3.repo_id = t.repo_id
+                  ORDER BY e3.id DESC LIMIT 1) AS last_task_id
+         FROM events e
+         JOIN tasks t ON t.id = e.task_id
+         JOIN repos p ON p.id = t.repo_id
+         , json_each(e.data, '$.rules') r
+         WHERE ${where.join(" AND ")}
+         GROUP BY t.repo_id, r.value
+         HAVING COUNT(DISTINCT e.task_id) >= ?
+         ORDER BY tasks DESC, last_at DESC`,
+      )
+      .all(...params, opts.minTasks ?? 1) as Row[];
+    const decided = new Map<string, Set<string>>();
+    const isDecided = (repoId: string, rule: string) => {
+      if (!decided.has(repoId)) {
+        const t = this.repoTools(repoId);
+        decided.set(repoId, new Set([...t.allowed, ...t.keptBlocked]));
+      }
+      return decided.get(repoId)!.has(rule);
+    };
+    return rows
+      .filter((r) => !isDecided(r.repo_id as string, r.rule as string))
+      .map((r) => ({
+        repoId: r.repo_id as string,
+        repoName: r.repo_name as string,
+        rule: r.rule as string,
+        label: ruleLabel(r.rule as string),
+        tasks: r.tasks as number,
+        times: r.times as number,
+        lastAt: r.last_at as string,
+        lastTaskId: r.last_task_id as string,
+      }));
   }
 
   // ── tasks ─────────────────────────────────────────────────
@@ -463,7 +535,9 @@ export class Store {
       inFlight: this.listTasks({ status: ["merging", "running", "queued"], limit: 20 }),
       recent: this.listTasks({ status: ["merged", "done", "approved", "rejected", "failed", "cancelled"], limit: 8 }),
       agents: this.listAgents(),
-      repos: this.listRepos().map((r) => ({ ...r, openTasks: openByRepo.get(r.id) ?? 0 })),
+      repos: this.listRepos().map((r) => ({ ...r, openTasks: openByRepo.get(r.id) ?? 0, tools: this.repoTools(r.id) })),
+      // One refusal could be a fluke; the same one in a second task is a pattern worth a decision.
+      blocked: this.blockedTools({ minTasks: 2 }).slice(0, 5),
     };
   }
 }

@@ -1,5 +1,5 @@
 import pc from "picocolors";
-import type { Agent, Task, TaskEvent, TaskStatus } from "../core/types.js";
+import type { Agent, BlockedTool, Task, TaskEvent, TaskStatus } from "../core/types.js";
 import { KIND_LABEL, STATUS_LABEL } from "../core/types.js";
 
 /** Crane yellow: the one accent colour, used sparingly (brand mark, the thing that needs you). */
@@ -91,11 +91,19 @@ export function eventLine(e: TaskEvent): string {
       return `${t}  ${accent("◆")} ${bold(body)}`;
     case "error":
       return `${t}  ${pc.red("✕")} ${pc.red(body)}`;
+    case "blocked":
+      return `${t}  ${accent("⊘")} ${truncate(body, width() - 14)}`;
     case "operator":
       return `${t}  ${pc.magenta("›")} ${body}`;
     case "status":
       return `${t}  ${dim("—")} ${dim(body)}`;
   }
+}
+
+/** One line per blocked command: what, where, and how often. */
+export function blockedLine(b: BlockedTool): string {
+  const often = b.tasks > 1 ? `in ${b.tasks} tasks` : b.times > 1 ? `${b.times} times` : "once";
+  return `  ${accent("⊘")} ${bold(b.label)}  ${dim(`${b.repoName} · blocked ${often} · ${ago(b.lastAt)}`)}`;
 }
 
 export function kindLabel(m: Task): string {

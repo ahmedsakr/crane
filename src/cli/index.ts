@@ -2,10 +2,19 @@ import { Command } from "commander";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { Store } from "../core/store.js";
-import { AUTONOMY_LABEL, KIND_LABEL, lastMergeOutcome, type Autonomy, type TaskKind, type TaskStatus } from "../core/types.js";
-import { OperatorActions } from "../factory/actions.js";
+import {
+  AUTONOMY_LABEL,
+  KIND_LABEL,
+  lastMergeOutcome,
+  type Autonomy,
+  type BlockedTool,
+  type TaskKind,
+  type TaskStatus,
+} from "../core/types.js";
+import { OperatorActions, toRule } from "../factory/actions.js";
+import { ruleLabel } from "../core/permissions.js";
 import { draftTask } from "../factory/instruct.js";
-import { factoryDriverName, factoryIsRunning } from "../factory/orchestrator.js";
+import { DEFAULT_MAX_TURNS, DEFAULT_TIME_LIMIT_MIN, factoryDriverName, factoryIsRunning } from "../factory/orchestrator.js";
 import { diffForTask } from "../factory/git.js";
 import { DEFAULT_PORT } from "../core/paths.js";
 import { webBuildOutdated } from "../core/webbuild.js";
@@ -58,6 +67,10 @@ program.action(() => {
     console.log(ui.section("In flight", o.inFlight.length));
     for (const m of o.inFlight.slice(0, 5)) console.log(ui.taskLine(m, repoName(m.repoId)));
   }
+  if (o.blocked.length) {
+    console.log(ui.section(ui.accent("Blocked commands"), o.blocked.length));
+    for (const b of o.blocked) console.log(ui.blockedLine(b));
+  }
   if (!o.needsReview.length && !o.inFlight.length) {
     console.log(`\n  ${ui.dim("Nothing needs you and nothing is running.")}`);
   }
@@ -65,6 +78,7 @@ program.action(() => {
   console.log("");
   const next: [string, string][] = [];
   if (o.needsReview[0]) next.push([`crane show ${o.needsReview[0].id}`, "review the top item"]);
+  if (o.blocked[0]) next.push([allowCommand(o.blocked[0]), `let agents run it in ${o.blocked[0].repoName}`]);
   next.push(['crane do "…"', "give the factory an instruction"]);
   if (!o.repos.some((r) => !r.isFactory)) next.push(["crane repos add <path>", "connect a codebase to work on"]);
   if (!o.factory.running) next.push(["crane serve", "start agents and open the dashboard"]);
@@ -255,6 +269,12 @@ program
       }
     }
 
+    const blocked = store.blockedTools({ taskId: m.id, ...(m.repoId ? { repoId: m.repoId } : {}) });
+    if (blocked.length) {
+      console.log(ui.section(ui.accent("Blocked"), blocked.length));
+      for (const b of blocked) console.log(ui.blockedLine(b));
+    }
+
     const events = store.listEvents(m.id);
     const shown = opts.events ? events : events.filter((e) => e.type !== "tool").slice(-6);
     console.log(ui.section("Activity", events.length));
@@ -287,6 +307,7 @@ program
     } else if (m.status === "merged" && merge?.checkoutBehind) {
       next.push([`git -C ${merge.checkoutBehind} pull --ff-only`, "catch your checkout up, once it's clean"]);
     }
+    if (blocked[0]) next.push([allowCommand(blocked[0], m.id), `let agents run it in ${blocked[0].repoName}`]);
     if (next.length) console.log(ui.hint(...next) + "\n");
   });
 
@@ -449,6 +470,8 @@ repos.action(() => {
         open ? `  ${open} open` : ""
       }`,
     );
+    const allowed = store.repoTools(r.id).allowed;
+    if (allowed.length) console.log(`    ${ui.dim("also allowed:")} ${allowed.map(ruleLabel).join(", ")}`);
   }
   console.log(`\n${ui.hint(["crane repos add <path>", "connect another codebase"])}\n`);
 });
@@ -476,6 +499,89 @@ repos
     if (r.isFactory) ui.fail("The factory's own repo can't be removed.");
     store.removeRepo(r.id);
     ui.ok(`Disconnected ${r.name}`);
+  });
+
+// ── blocked commands and per-repo tools ─────────────────────
+function allowCommand(b: BlockedTool, taskId?: string): string {
+  const what = b.rule.startsWith("Bash(") ? b.label : b.rule;
+  return `crane allow ${JSON.stringify(what)} -r ${b.repoName}${taskId ? ` -t ${taskId}` : ""}`;
+}
+
+/** The repo a rule is about: the one named, or the only one where it's been blocked. */
+function repoForRule(input: string, repo?: string) {
+  if (repo) return store.getRepo(repo) ?? ui.fail(`No repo called ${repo}. See \`crane repos\`.`);
+  const rule = toRule(input);
+  const where = [...new Set(store.blockedTools().filter((b) => b.rule === rule).map((b) => b.repoId))];
+  if (where.length === 1) return store.getRepo(where[0]!)!;
+  ui.fail(`Which repo? Add --repo <name>.${where.length ? "" : " Agents haven't been blocked from this anywhere yet."}`);
+}
+
+program
+  .command("blocked")
+  .description("Commands agents were blocked from, added up across tasks")
+  .option("-r, --repo <repo>", "only this repo")
+  .action((opts: { repo?: string }) => {
+    const repoId = opts.repo ? (store.getRepo(opts.repo) ?? ui.fail(`No repo ${opts.repo}`)).id : undefined;
+    const list = store.blockedTools({ repoId });
+    if (!list.length) {
+      console.log(`\n  ${ui.dim("Nothing is waiting on you. Agents haven't been blocked from anything you haven't decided on.")}\n`);
+      return;
+    }
+    console.log(ui.section(ui.accent("Blocked commands"), list.length));
+    for (const b of list) console.log(ui.blockedLine(b));
+    console.log(
+      `\n${ui.hint(
+        [allowCommand(list[0]!), `let agents run it in ${list[0]!.repoName}`],
+        [allowCommand(list[0]!).replace("crane allow", "crane keep-blocked"), "keep it blocked and stop asking"],
+      )}\n`,
+    );
+  });
+
+program
+  .command("allow")
+  .description("Let agents in a repo run a command they were blocked from")
+  .argument("<command>", 'a command, e.g. "npm ci", or a rule, e.g. "Bash(npm ci:*)"')
+  .option("-r, --repo <repo>", "repo name or id")
+  .option("-t, --task <id>", "note it on this task")
+  .action((input: string, opts: { repo?: string; task?: string }) => {
+    try {
+      const r = repoForRule(input, opts.repo);
+      actions.allowTool(r.id, input, opts.task);
+      ui.ok(`Allowed ${pc.bold(ruleLabel(toRule(input)))} for ${r.name}  ${ui.dim("agents can run it from their next task")}`);
+    } catch (err) {
+      ui.fail((err as Error).message);
+    }
+  });
+
+program
+  .command("keep-blocked")
+  .description("Keep a blocked command blocked, and stop asking about it")
+  .argument("<command>")
+  .option("-r, --repo <repo>", "repo name or id")
+  .option("-t, --task <id>", "note it on this task")
+  .action((input: string, opts: { repo?: string; task?: string }) => {
+    try {
+      const r = repoForRule(input, opts.repo);
+      actions.keepBlocked(r.id, input, opts.task);
+      ui.ok(`Kept ${pc.bold(ruleLabel(toRule(input)))} blocked for ${r.name}`);
+    } catch (err) {
+      ui.fail((err as Error).message);
+    }
+  });
+
+program
+  .command("disallow")
+  .description("Stop allowing a command you allowed for a repo")
+  .argument("<command>")
+  .requiredOption("-r, --repo <repo>", "repo name or id")
+  .action((input: string, opts: { repo: string }) => {
+    try {
+      const r = repoForRule(input, opts.repo);
+      actions.disallowTool(r.id, input);
+      ui.ok(`Stopped allowing ${pc.bold(ruleLabel(toRule(input)))} for ${r.name}`);
+    } catch (err) {
+      ui.fail((err as Error).message);
+    }
   });
 
 // ── agents & factory control ────────────────────────────────
@@ -513,9 +619,23 @@ program
   .option("-p, --port <port>", "port for the dashboard", String(DEFAULT_PORT))
   .option("--agents <n>", "crew size", process.env.CRANE_AGENTS ?? "2")
   .option("--driver <driver>", "auto | claude-code | simulated", process.env.CRANE_DRIVER ?? "auto")
-  .action(async (opts: { port: string; agents: string; driver: string }) => {
+  .option("--max-turns <n>", `most turns one agent run may take, 0 for no limit (default ${DEFAULT_MAX_TURNS})`)
+  .option("--time-limit <minutes>", `most minutes a task may run, 0 for no limit (default ${DEFAULT_TIME_LIMIT_MIN})`)
+  .action(async (opts: { port: string; agents: string; driver: string; maxTurns?: string; timeLimit?: string }) => {
+    const num = (v: string | undefined, flag: string) => {
+      if (v === undefined) return undefined;
+      const n = Number(v);
+      if (!Number.isFinite(n) || n < 0) ui.fail(`${flag} takes a number, 0 or more`);
+      return n;
+    };
     const { serve } = await import("./serve.js");
-    await serve(store, { port: Number(opts.port), agents: Number(opts.agents), driver: opts.driver });
+    await serve(store, {
+      port: Number(opts.port),
+      agents: Number(opts.agents),
+      driver: opts.driver,
+      maxTurns: num(opts.maxTurns, "--max-turns"),
+      timeLimit: num(opts.timeLimit, "--time-limit"),
+    });
   });
 
 await program.parseAsync(process.argv);

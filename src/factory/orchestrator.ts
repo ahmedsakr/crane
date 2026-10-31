@@ -1,6 +1,6 @@
 import type { Store } from "../core/store.js";
 import type { Task } from "../core/types.js";
-import type { AgentDriver } from "../agents/driver.js";
+import { AgentRunError, type AgentDriver, type RunContext, type RunResult } from "../agents/driver.js";
 import { join } from "node:path";
 import { createWorktree, finalizeWorktree, removeWorktree } from "./git.js";
 import { installDependencies } from "./deps.js";
@@ -15,7 +15,49 @@ export interface FactoryOptions {
   crewSize?: number;
   tickMs?: number;
   log?: (line: string) => void;
+  /** Most turns one agent run may take. Default CRANE_MAX_TURNS, or 200. 0 for no limit. */
+  maxTurns?: number;
+  /** Most minutes a task may hold a crew slot. Default CRANE_TIME_LIMIT_MIN, or 90. 0 for no limit. */
+  timeLimitMin?: number;
+  /** How long to wait before retrying a transient failure, before jitter. Default CRANE_RETRY_DELAY_SEC, or 60s. */
+  retryDelayMs?: number;
 }
+
+export const DEFAULT_MAX_TURNS = 200;
+export const DEFAULT_TIME_LIMIT_MIN = 90;
+
+const envNumber = (name: string): number | undefined => {
+  const v = process.env[name];
+  return v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : undefined;
+};
+
+/**
+ * Abort `ac` once `minutes` have passed. `hit()` says whether that's why it
+ * was aborted, so the caller can tell a time limit from a cancellation.
+ */
+function timeLimit(ac: AbortController, minutes: number) {
+  let hit = false;
+  const timer = minutes > 0 ? setTimeout(() => ((hit = true), ac.abort()), minutes * 60_000) : null;
+  timer?.unref();
+  return { hit: () => hit, clear: () => timer && clearTimeout(timer) };
+}
+
+function sleep(ms: number, signal: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal.aborted) return reject(new Error("Cancelled"));
+    const t = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(t);
+      reject(new Error("Cancelled"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+const minutes = (n: number) => (n === 1 ? "1 minute" : `${n} minutes`);
 
 /** True if a factory process has checked in within the last few seconds. */
 export function factoryIsRunning(store: Store): boolean {
@@ -40,6 +82,9 @@ export class Factory {
   private crew: { id: string; name: string }[];
   private tickMs: number;
   private log: (line: string) => void;
+  readonly maxTurns: number;
+  readonly timeLimitMin: number;
+  private retryDelayMs: number;
 
   constructor(
     private store: Store,
@@ -50,6 +95,40 @@ export class Factory {
     this.crew = CREW.slice(0, size).map((name) => ({ id: `a-${name.toLowerCase()}`, name }));
     this.tickMs = opts.tickMs ?? 1000;
     this.log = opts.log ?? (() => {});
+    this.maxTurns = Math.max(0, opts.maxTurns ?? envNumber("CRANE_MAX_TURNS") ?? DEFAULT_MAX_TURNS);
+    this.timeLimitMin = Math.max(0, opts.timeLimitMin ?? envNumber("CRANE_TIME_LIMIT_MIN") ?? DEFAULT_TIME_LIMIT_MIN);
+    this.retryDelayMs = Math.max(0, opts.retryDelayMs ?? (envNumber("CRANE_RETRY_DELAY_SEC") ?? 60) * 1000);
+  }
+
+  /**
+   * Run the agent, giving a transient failure (overload, rate limit, network)
+   * one more try after a pause. The retry resumes the same session when there
+   * is one, so the agent picks up where it stopped instead of starting over.
+   */
+  private async runAgent(ctx: Omit<RunContext, "allowedTools" | "maxTurns">): Promise<RunResult> {
+    const full: RunContext = {
+      ...ctx,
+      allowedTools: ctx.repo ? this.store.repoTools(ctx.repo.id).allowed : [],
+      maxTurns: this.maxTurns || undefined,
+    };
+    try {
+      return await this.driver.run(full);
+    } catch (err) {
+      if (ctx.signal.aborted || !(err instanceof AgentRunError) || !err.transient) throw err;
+      // Jitter, so a crew that all hit the same overload doesn't come back at once.
+      const wait = Math.round(this.retryDelayMs * (0.8 + Math.random() * 0.4));
+      const reason = err.message.split("\n")[0]!.slice(0, 200).replace(/\.$/, "");
+      ctx.emit("note", `${reason}. Trying once more in ${Math.max(1, Math.round(wait / 1000))}s`, { retry: true });
+      await sleep(wait, ctx.signal);
+      try {
+        const r = await this.driver.run({ ...full, resume: err.sessionId ?? undefined });
+        return { ...r, costUsd: r.costUsd + err.costUsd };
+      } catch (again) {
+        // Keep what the first attempt cost on whatever the second one throws.
+        if (again instanceof AgentRunError) throw new AgentRunError(again.message, { ...again.opts, costUsd: again.costUsd + err.costUsd });
+        throw again;
+      }
+    }
   }
 
   start() {
@@ -111,6 +190,7 @@ export class Factory {
   /** Land an approved task on its repo's default branch, with an agent on hand for conflicts. */
   private async merge(agent: { id: string; name: string }, task: Task) {
     const ac = new AbortController();
+    const limit = timeLimit(ac, this.timeLimitMin);
     const repo = task.repoId ? this.store.getRepo(task.repoId) : null;
     if (repo) this.mergingRepos.add(repo.id);
     this.store.setAgentState(agent.id, "working", task.id);
@@ -140,7 +220,7 @@ export class Factory {
           } catch {
             // Not fatal: resolving conflicts rarely needs a build.
           }
-          const r = await this.driver.run({
+          const r = await this.runAgent({
             task: this.store.getTask(task.id)!,
             repo,
             cwd,
@@ -169,17 +249,23 @@ export class Factory {
       await removeWorktree(repo, workdir);
       if (!result.checkoutBehind) await deleteMergedBranch(repo, task.branch);
     } catch (err) {
+      if (err instanceof AgentRunError) spent += err.costUsd;
       if (spent) this.store.updateTask(task.id, { costUsd: (this.store.getTask(task.id)?.costUsd ?? 0) + spent });
-      if (ac.signal.aborted) {
+      if (ac.signal.aborted && !limit.hit()) {
         // The factory is stopping. Leave it waiting; the next factory picks it up again.
         this.store.updateTask(task.id, { agentId: null });
         return;
       }
-      const message = err instanceof Error ? err.message : String(err);
-      emit("error", message);
+      const message = limit.hit()
+        ? `Merging took longer than ${minutes(this.timeLimitMin)}, the most a task may run`
+        : err instanceof Error
+          ? err.message
+          : String(err);
+      emit("error", message, limit.hit() ? { limit: "time" } : undefined);
       this.store.setStatus(task.id, "needs_review", "Couldn't merge. Back with you", { merge: { error: message } });
       this.log(`${agent.name} couldn't merge ${task.id}: ${message}`);
     } finally {
+      limit.clear();
       this.running.delete(`merge:${task.id}`);
       if (repo) this.mergingRepos.delete(repo.id);
       this.store.setAgentState(agent.id, this.store.isPaused() ? "paused" : "idle", null);
@@ -188,6 +274,7 @@ export class Factory {
 
   private async work(agent: { id: string; name: string }, task: Task) {
     const ac = new AbortController();
+    const limit = timeLimit(ac, this.timeLimitMin);
     this.running.set(task.id, ac);
     this.store.setAgentState(agent.id, "working", task.id);
     this.log(`${agent.name} picked up ${task.id} · ${task.title}`);
@@ -214,7 +301,7 @@ export class Factory {
         }
       }
 
-      const result = await this.driver.run({
+      const result = await this.runAgent({
         task: this.store.getTask(task.id)!,
         repo,
         cwd,
@@ -242,14 +329,24 @@ export class Factory {
       this.log(`${agent.name} finished ${task.id}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      if (ac.signal.aborted || this.store.getTask(task.id)?.status === "cancelled") {
-        if (this.store.getTask(task.id)?.status !== "cancelled") this.store.setStatus(task.id, "cancelled", "Cancelled");
+      // A failed run still cost something; count it.
+      if (err instanceof AgentRunError && err.costUsd) this.store.updateTask(task.id, { costUsd: err.costUsd });
+      const status = this.store.getTask(task.id)?.status;
+      if (limit.hit() && status !== "cancelled") {
+        const why = `Stopped after ${minutes(this.timeLimitMin)}, the most a task may run. Raise it with crane serve --time-limit or CRANE_TIME_LIMIT_MIN`;
+        emit("error", why, { limit: "time" });
+        this.store.setStatus(task.id, "failed", "Hit the time limit");
+        this.log(`${agent.name} stopped ${task.id} at the time limit`);
+      } else if (ac.signal.aborted || status === "cancelled") {
+        if (status !== "cancelled") this.store.setStatus(task.id, "cancelled", "Cancelled");
       } else {
-        emit("error", message);
-        this.store.setStatus(task.id, "failed", "Failed");
+        const turns = err instanceof AgentRunError && err.opts.limit === "turns";
+        emit("error", message, turns ? { limit: "turns" } : undefined);
+        this.store.setStatus(task.id, "failed", turns ? "Hit the turn limit" : "Failed");
         this.log(`${agent.name} failed ${task.id}: ${message}`);
       }
     } finally {
+      limit.clear();
       this.running.delete(task.id);
       this.store.setAgentState(agent.id, this.store.isPaused() ? "paused" : "idle", null);
     }

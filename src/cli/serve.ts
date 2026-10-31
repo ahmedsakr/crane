@@ -7,13 +7,21 @@ import { resolveDriver } from "../factory/drivers.js";
 import { factoryBuildOutdated, webBuildOutdated } from "../core/webbuild.js";
 import * as ui from "./ui.js";
 
-export async function serve(store: Store, opts: { port: number; agents: number; driver: string }) {
+export async function serve(
+  store: Store,
+  opts: { port: number; agents: number; driver: string; maxTurns?: number; timeLimit?: number },
+) {
   if (factoryIsRunning(store)) {
     ui.fail("A factory is already running against this Crane home. Stop it first, or set CRANE_HOME to run another.");
   }
   const driver = await resolveDriver(opts.driver);
   const time = () => ui.dim(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-  const factory = new Factory(store, driver, { crewSize: opts.agents, log: (l) => console.log(`${time()}  ${l}`) });
+  const factory = new Factory(store, driver, {
+    crewSize: opts.agents,
+    maxTurns: opts.maxTurns,
+    timeLimitMin: opts.timeLimit,
+    log: (l) => console.log(`${time()}  ${l}`),
+  });
   factory.start();
 
   const app = createApp(store);
@@ -22,6 +30,11 @@ export async function serve(store: Store, opts: { port: number; agents: number; 
   console.log(`\n${ui.brand()}  ${pc.green("◉")} Factory is running\n`);
   console.log(`  ${ui.dim("Dashboard")}  ${pc.bold(`http://localhost:${opts.port}`)}`);
   console.log(`  ${ui.dim("Agents   ")}  ${opts.agents} on ${driver.label}`);
+  const limits = [
+    factory.timeLimitMin ? `${factory.timeLimitMin} min` : "no time limit",
+    factory.maxTurns ? `${factory.maxTurns} turns` : "no turn limit",
+  ];
+  console.log(`  ${ui.dim("Limits   ")}  ${limits.join(" · ")} ${ui.dim("per task")}`);
   if (driver.name === "simulated") {
     console.log(`  ${ui.accent("!")} ${ui.dim("Simulated agents: no model is called. Install Claude Code or pass --driver claude-code.")}`);
   }

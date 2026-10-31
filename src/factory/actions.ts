@@ -1,8 +1,20 @@
 import { resolve } from "node:path";
 import type { Store } from "../core/store.js";
-import type { Task, NewTask, Repo } from "../core/types.js";
+import type { Task, NewTask, Repo, RepoTools } from "../core/types.js";
 import { currentBranch, isGitRepo, removeWorktree, repoRoot } from "./git.js";
 import { factoryRoot } from "../core/paths.js";
+import { overlapsDenied, parseRule, ruleLabel } from "../core/permissions.js";
+import { ALWAYS_DENIED } from "../agents/claude-code.js";
+
+/**
+ * Accept what an operator would type: a rule (`Bash(npm ci:*)`, `WebFetch`)
+ * or just a command (`npm ci`), which allows that command and its arguments.
+ */
+export function toRule(input: string): string {
+  const s = input.trim().replace(/^`|`$/g, "");
+  if (/^(mcp__[\w-]+|[A-Z][\w-]*)(\(.+\))?$/.test(s)) return s;
+  return `Bash(${s.replace(/:\*$/, "")}:*)`;
+}
 
 /**
  * Everything an operator can do, shared by the web UI and the CLI so both
@@ -117,6 +129,68 @@ export class OperatorActions {
     });
     this.store.addEvent(m.id, "operator", `Started follow-up ${next.id}: ${f.title}`, { taskId: next.id });
     return next;
+  }
+
+  private needRepo(idOrName: string): Repo {
+    const r = this.store.getRepo(idOrName);
+    if (!r) throw new Error(`No repo ${idOrName}`);
+    return r;
+  }
+
+  /**
+   * Let every agent working in this repo use a tool or command from now on.
+   * Crane's deny list still wins, so this can never allow pushing or merging.
+   * `taskId` notes the decision on the task that prompted it.
+   */
+  allowTool(repoId: string, input: string, taskId?: string): RepoTools {
+    const repo = this.needRepo(repoId);
+    const rule = toRule(input);
+    const parsed = parseRule(rule);
+    if (!parsed) throw new Error(`“${input}” isn't a command or tool Crane can allow`);
+    if (parsed.tool === "Bash" && (!parsed.pattern || /^[:*\s]*$/.test(parsed.pattern))) {
+      throw new Error("Allowing every command would let agents run anything. Allow one command at a time");
+    }
+    if (overlapsDenied(rule, ALWAYS_DENIED)) {
+      throw new Error(`Agents are never allowed to run ${ruleLabel(rule)}. Crane does that itself, and only when you approve`);
+    }
+    const tools = this.store.repoTools(repo.id);
+    const next = {
+      allowed: [...tools.allowed.filter((r) => r !== rule), rule],
+      keptBlocked: tools.keptBlocked.filter((r) => r !== rule),
+    };
+    this.store.setRepoTools(repo.id, next);
+    this.noteOnTask(taskId, `Allowed ${ruleLabel(rule)} for ${repo.name}`, { rule, repoId: repo.id });
+    return next;
+  }
+
+  /** Stop suggesting this blocked command for the repo. It stays blocked, as it already was. */
+  keepBlocked(repoId: string, input: string, taskId?: string): RepoTools {
+    const repo = this.needRepo(repoId);
+    const rule = toRule(input);
+    const tools = this.store.repoTools(repo.id);
+    const next = {
+      allowed: tools.allowed.filter((r) => r !== rule),
+      keptBlocked: [...tools.keptBlocked.filter((r) => r !== rule), rule],
+    };
+    this.store.setRepoTools(repo.id, next);
+    this.noteOnTask(taskId, `Kept ${ruleLabel(rule)} blocked for ${repo.name}`, { rule, repoId: repo.id });
+    return next;
+  }
+
+  /** Take back an allowed command. Agents will be blocked from it again, and Crane may ask about it again. */
+  disallowTool(repoId: string, input: string): RepoTools {
+    const repo = this.needRepo(repoId);
+    const rule = toRule(input);
+    const tools = this.store.repoTools(repo.id);
+    if (!tools.allowed.includes(rule)) throw new Error(`${ruleLabel(rule)} isn't allowed for ${repo.name}`);
+    const next = { ...tools, allowed: tools.allowed.filter((r) => r !== rule) };
+    this.store.setRepoTools(repo.id, next);
+    return next;
+  }
+
+  private noteOnTask(taskId: string | undefined, message: string, data: Record<string, unknown>) {
+    const t = taskId ? this.store.getTask(taskId) : null;
+    if (t) this.store.addEvent(t.id, "operator", message, data);
   }
 
   pause() {

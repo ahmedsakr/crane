@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import type { AgentDriver, RunContext, RunResult } from "./driver.js";
-import { systemPrompt, userPrompt } from "./prompts.js";
+import { AgentRunError, isTransientFailure, type AgentDriver, type RunContext, type RunResult } from "./driver.js";
+import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
 import { parseReport } from "./report.js";
-import type { Autonomy } from "../core/types.js";
+import { overlapsDenied, suggestRules } from "../core/permissions.js";
+import type { Autonomy, BlockedCall } from "../core/types.js";
 
 const READ_ONLY_TOOLS = [
   "Read",
@@ -57,15 +58,40 @@ const WRITE_TOOLS = [
  * Never allowed, regardless of autonomy. Agents never ship code: when the
  * operator approves a merge, Crane's own code (src/factory/merge.ts) does it.
  */
-const ALWAYS_DENIED = ["Bash(git push:*)", "Bash(git checkout main:*)", "Bash(git merge:*)", "Bash(rm -rf:*)"];
+export const ALWAYS_DENIED = ["Bash(git push:*)", "Bash(git checkout main:*)", "Bash(git merge:*)", "Bash(rm -rf:*)"];
 
-function toolsFor(autonomy: Autonomy): { allowed: string[]; denied: string[] } {
+/**
+ * What an agent may use. `repoAllowed` is what the operator allowed for the
+ * repo (see OperatorActions.allowTool). Claude Code applies deny rules before
+ * allow rules, so nothing allowed here can override ALWAYS_DENIED.
+ */
+export function toolsFor(autonomy: Autonomy, repoAllowed: string[] = []): { allowed: string[]; denied: string[] } {
   const extra = process.env.CRANE_ALLOWED_TOOLS?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
-  if (autonomy === "observe") {
-    return { allowed: [...READ_ONLY_TOOLS, ...extra], denied: ["Edit", "Write", "MultiEdit", "NotebookEdit", ...ALWAYS_DENIED] };
-  }
-  return { allowed: [...WRITE_TOOLS, ...extra], denied: ALWAYS_DENIED };
+  const base = autonomy === "observe" ? READ_ONLY_TOOLS : WRITE_TOOLS;
+  const denied = autonomy === "observe" ? ["Edit", "Write", "MultiEdit", "NotebookEdit", ...ALWAYS_DENIED] : ALWAYS_DENIED;
+  return { allowed: [...new Set([...base, ...extra, ...repoAllowed])], denied };
 }
+
+/** What the activity feed says about a refused call, and the rules that would have allowed it. */
+export function describeBlocked(
+  tool: string,
+  input: Record<string, unknown>,
+  tools: { allowed: string[]; denied: string[] },
+): { message: string; data: BlockedCall } {
+  const command = tool === "Bash" && typeof input.command === "string" ? input.command : undefined;
+  let rules = suggestRules(tool, input, tools.allowed);
+  // Refused on purpose: nothing to offer, and any rule we suggested would lose to the deny list anyway.
+  if (rules.some((r) => overlapsDenied(r, tools.denied))) rules = [];
+  const target = [input.file_path, input.path, input.url, input.pattern].find((v) => typeof v === "string") as string | undefined;
+  const what = command ?? (target ? `${tool} ${target}` : tool);
+  return {
+    message: `Blocked: ${what.split("\n")[0]!.slice(0, 160)}`,
+    data: { tool, ...(command ? { command: command.slice(0, 2000) } : {}), rules },
+  };
+}
+
+/** Claude Code's wording when the permission system refuses a tool call. */
+const DENIAL_TEXT = /Claude requested permissions? to |haven't granted it yet|^\s*Permission to (use|read|write|edit) .* has been denied/i;
 
 /** Summarise a tool call in a few words for the activity feed. */
 function describeTool(name: string, input: Record<string, unknown>): string {
@@ -120,7 +146,7 @@ export class ClaudeCodeDriver implements AgentDriver {
     // Resolving conflicts means editing files, so it gets write tools. ALWAYS_DENIED
     // still applies: Crane, not the agent, commits the merge and pushes it.
     const autonomy: Autonomy = job ? "propose" : task.autonomy;
-    const { allowed, denied } = toolsFor(autonomy);
+    const tools = toolsFor(autonomy, ctx.allowedTools);
     const args = [
       "-p",
       "--output-format",
@@ -131,10 +157,12 @@ export class ClaudeCodeDriver implements AgentDriver {
       "--permission-mode",
       autonomy === "observe" ? "default" : "acceptEdits",
       "--allowedTools",
-      allowed.join(","),
+      tools.allowed.join(","),
       "--disallowedTools",
-      denied.join(","),
+      tools.denied.join(","),
     ];
+    if (ctx.maxTurns) args.push("--max-turns", String(ctx.maxTurns));
+    if (ctx.resume) args.push("--resume", ctx.resume);
     if (process.env.CRANE_MODEL) args.push("--model", process.env.CRANE_MODEL);
 
     // Don't let a parent Claude Code session's environment leak into the agent.
@@ -147,13 +175,30 @@ export class ClaudeCodeDriver implements AgentDriver {
       let finalText = "";
       let lastText = "";
       let costUsd = 0;
+      let sessionId: string | null = ctx.resume ?? null;
       let errored: string | null = null;
+      let outOfTurns = false;
       let stderr = "";
+      // Tool calls by id, so a refusal can be reported with what was asked for.
+      const calls = new Map<string, { name: string; input: Record<string, unknown> }>();
+      const reported = new Set<string>();
+      const blocked = (id: string, name: string, input: Record<string, unknown>) => {
+        if (reported.has(id)) return;
+        reported.add(id);
+        const { message, data } = describeBlocked(name, input, tools);
+        emit("blocked", message, { ...data });
+      };
 
-      const onAbort = () => child.kill("SIGTERM");
+      // A stuck agent may ignore SIGTERM. Don't let it hold a crew slot forever.
+      let killTimer: NodeJS.Timeout | null = null;
+      const onAbort = () => {
+        child.kill("SIGTERM");
+        killTimer = setTimeout(() => child.kill("SIGKILL"), 10_000);
+        killTimer.unref();
+      };
       signal.addEventListener("abort", onAbort, { once: true });
 
-      child.stdin.end(userPrompt(task, job));
+      child.stdin.end(ctx.resume ? resumePrompt() : userPrompt(task, job));
       child.stderr.on("data", (d) => {
         stderr = (stderr + String(d)).slice(-4000);
       });
@@ -167,7 +212,10 @@ export class ClaudeCodeDriver implements AgentDriver {
           return;
         }
         if (msg.type === "system" && msg.subtype === "init") {
-          emit("note", `Agent session started${msg.model ? ` on ${msg.model}` : ""}`, { sessionId: msg.session_id });
+          sessionId = msg.session_id ?? sessionId;
+          emit("note", `Agent session ${ctx.resume ? "resumed" : "started"}${msg.model ? ` on ${msg.model}` : ""}`, {
+            sessionId: msg.session_id,
+          });
         } else if (msg.type === "assistant") {
           for (const block of msg.message?.content ?? []) {
             if (block.type === "text" && block.text?.trim()) {
@@ -175,17 +223,45 @@ export class ClaudeCodeDriver implements AgentDriver {
               const visible = block.text.split("```crane-report")[0]!.trim();
               if (visible) emit("note", visible.slice(0, 1200));
             } else if (block.type === "tool_use") {
+              if (block.id) calls.set(block.id, { name: block.name, input: block.input ?? {} });
               emit("tool", describeTool(block.name, block.input ?? {}), { tool: block.name });
             }
           }
+        } else if (msg.type === "user") {
+          // Report refusals as they happen. The result's permission_denials, below, is the full record.
+          for (const block of Array.isArray(msg.message?.content) ? msg.message.content : []) {
+            if (block.type !== "tool_result" || !block.is_error || !block.tool_use_id) continue;
+            const text = typeof block.content === "string" ? block.content : JSON.stringify(block.content ?? "");
+            const call = calls.get(block.tool_use_id);
+            if (call && DENIAL_TEXT.test(text)) blocked(block.tool_use_id, call.name, call.input);
+          }
         } else if (msg.type === "result") {
           costUsd = Number(msg.total_cost_usd ?? 0);
+          sessionId = msg.session_id ?? sessionId;
           finalText = typeof msg.result === "string" ? msg.result : lastText;
-          if (msg.is_error || (msg.subtype && msg.subtype !== "success")) {
-            errored = typeof msg.result === "string" ? msg.result : `Agent stopped: ${msg.subtype}`;
+          const denials: Record<string, any>[] = Array.isArray(msg.permission_denials) ? msg.permission_denials : [];
+          denials.forEach((d, i) => {
+            if (d?.tool_name) blocked(String(d.tool_use_id ?? `denial-${i}`), d.tool_name, d.tool_input ?? {});
+          });
+          if (msg.subtype === "error_max_turns") {
+            outOfTurns = true;
+            errored = `Stopped after ${msg.num_turns ?? ctx.maxTurns} turns, the most one run may take. Raise it with crane serve --max-turns or CRANE_MAX_TURNS`;
+          } else if (msg.is_error || (msg.subtype && msg.subtype !== "success")) {
+            const detail = Array.isArray(msg.errors) && msg.errors.length ? msg.errors.join("; ") : null;
+            errored = (typeof msg.result === "string" && msg.result) || detail || `Agent stopped: ${msg.subtype ?? "error"}`;
           }
         }
       });
+
+      const fail = (message: string) =>
+        reject(
+          new AgentRunError(message, {
+            transient: !outOfTurns && isTransientFailure(message),
+            costUsd,
+            sessionId,
+            ...(outOfTurns ? { limit: "turns" as const } : {}),
+          }),
+        );
 
       child.on("error", (err) => {
         signal.removeEventListener("abort", onAbort);
@@ -193,11 +269,10 @@ export class ClaudeCodeDriver implements AgentDriver {
       });
       child.on("close", (code) => {
         signal.removeEventListener("abort", onAbort);
-        if (signal.aborted) return reject(new Error("Cancelled by operator"));
-        if (errored) return reject(new Error(errored));
-        if (code !== 0 && !finalText) {
-          return reject(new Error(`Claude Code exited with code ${code}. ${stderr.trim().slice(-500)}`));
-        }
+        if (killTimer) clearTimeout(killTimer);
+        if (signal.aborted) return reject(new AgentRunError("Cancelled by operator", { costUsd, sessionId }));
+        if (errored) return fail(errored);
+        if (code !== 0 && !finalText) return fail(`Claude Code exited with code ${code}. ${stderr.trim().slice(-500)}`);
         resolve({ report: parseReport(finalText || lastText), costUsd });
       });
     });

@@ -20,6 +20,14 @@ const AUTONOMY_BRIEF: Record<Task["autonomy"], string> = {
   act: "You may change files. You are working in an isolated git worktree on your own branch. Commit your work with clear messages. Never push, and never touch the default branch.",
 };
 
+const BLOCKED_BRIEF =
+  "Some commands are not allowed. If one is blocked, don't hunt for a workaround that does the same thing: say what you needed it for, carry on without it if you can, and mention it in your report. Crane shows the operator every blocked command so they can allow it for next time.";
+
+/** What a resumed session is told after Crane retried it past a temporary failure. */
+export function resumePrompt(): string {
+  return "Crane here: your run stopped on a temporary API error, and Crane has resumed this session. Carry on from where you left off without redoing finished work, and end with the crane-report block as before.";
+}
+
 export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob): string {
   if (job?.kind === "resolve_conflicts") return conflictSystemPrompt(repo, job);
   return [
@@ -28,6 +36,7 @@ export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob): str
     AUTONOMY_BRIEF[task.autonomy],
     repo ? `Target repository: ${repo.name} (default branch: ${repo.defaultBranch}).` : "",
     "Narrate briefly as you go: one short sentence before each significant step, so the operator can follow along.",
+    BLOCKED_BRIEF,
     reportInstructions(),
   ]
     .filter(Boolean)
@@ -49,6 +58,7 @@ function conflictSystemPrompt(repo: Repo | null, job: ResolveConflictsJob): stri
       "- If you can't resolve a conflict with confidence, leave its markers in place and explain why in your report. Crane will hand the task back to the operator instead of merging.",
     ].join("\n"),
     "Narrate briefly as you go: one short sentence before each significant step, so the operator can follow along.",
+    BLOCKED_BRIEF,
     reportInstructions(),
   ].join("\n\n");
 }
