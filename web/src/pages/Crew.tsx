@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../App";
-import { api, driverLabel, type DriverInfo } from "../lib/api";
+import { api, AUTONOMY_LABEL, driverLabel, MAINTENANCE_ROLE, MAINTENANCE_ROLES, type DriverInfo, type MaintenanceRole } from "../lib/api";
 import { ago, plural } from "../lib/format";
 import { useDrivers, useTick } from "../lib/hooks";
 import { Empty, useToast } from "../components/bits";
@@ -68,10 +68,19 @@ export function Crew() {
   const { overview: o, refresh } = useApp();
   const toast = useToast();
   const [saving, setSaving] = useState<string | null>(null);
-  const configure = async (id: string, input: { active?: boolean; defaultDriver?: string | null }) => {
+  const configure = async (id: string, input: { active?: boolean; defaultDriver?: string | null; role?: MaintenanceRole | null }) => {
     setSaving(id);
     try { await api.configureCrew(id, input); refresh(); }
     catch (e) { toast({ text: (e as Error).message }); }
+    finally { setSaving(null); }
+  };
+  const run = async (id: string) => {
+    setSaving(id);
+    try {
+      const t = await api.runRole(id);
+      toast({ text: `Queued: ${t.title}`, link: { to: `/tasks/${t.id}`, label: "Open" } });
+      refresh();
+    } catch (e) { toast({ text: (e as Error).message }); }
     finally { setSaving(null); }
   };
   const { drivers, set } = useDrivers();
@@ -88,7 +97,7 @@ export function Crew() {
         {o.factory.running
           ? `${plural(o.agents.filter((a) => a.active).length, "active crew member")}, with ${driver} as the factory default. Each picks up the oldest queued task when it's free.`
           : "The factory is off. Run crane serve to bring the crew in."}
-        {" On-call members take no new work until you activate them."}
+        {" On-call members take no new work until you activate them. Members with a maintenance role work only the runs you start for them."}
         {o.factory.driver === "simulated" && " Simulated agents don't call a model; they're for trying Crane out."}
       </p>
 
@@ -109,13 +118,17 @@ export function Crew() {
         >
           {o.agents.map((a) => {
             const doing = a.taskId ? o.inFlight.find((m) => m.id === a.taskId) : null;
+            const role = a.role ? MAINTENANCE_ROLE[a.role] : null;
+            // A run started for this member that it hasn't picked up yet.
+            const waiting = !doing ? o.inFlight.find((m) => m.assignee === a.id && m.status === "queued") : null;
+            const pending = doing ?? waiting;
             return (
               <div className="card card-pad" key={a.id}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <span className={`avatar ${a.state === "working" ? "working" : ""}`} style={{ width: 44, height: 44, fontSize: 18 }}>
                     {a.name[0]}
                   </span>
-                  <span>
+                  <span style={{ minWidth: 0 }}>
                     <span className="agent-name" style={{ display: "block", fontSize: 16 }}>
                       {a.name}
                     </span>
@@ -126,21 +139,43 @@ export function Crew() {
                           ? "On-call"
                           : a.state === "paused"
                           ? "Paused"
+                          : role
+                          ? `${role.label} · waiting for a run`
                           : "Waiting for work"}
                     </span>
                   </span>
                   {a.state === "working" && <span className="dot dot-running" style={{ marginLeft: "auto" }} />}
                 </div>
                 <div style={{ marginTop: 16, fontSize: 14, minHeight: 42 }}>
-                  {doing ? (
-                    <Link to={`/tasks/${doing.id}`} style={{ fontWeight: 600 }}>
-                      {doing.title}
-                    </Link>
+                  {pending ? (
+                    <>
+                      <Link to={`/tasks/${pending.id}`} style={{ fontWeight: 600 }}>
+                        {pending.title}
+                      </Link>
+                      {!doing && <span className="muted" style={{ display: "block", fontSize: 13 }}>Queued for {a.name}</span>}
+                    </>
                   ) : (
                     <span className="muted">Nothing assigned</span>
                   )}
                 </div>
+                {role && a.active && (
+                  <button className="btn btn-primary btn-sm" style={{ width: "100%", marginTop: 12 }}
+                    disabled={!!saving || (!!pending && pending.assignee === a.id)}
+                    title={role.summary}
+                    onClick={() => run(a.id)}>
+                    {role.action}
+                  </button>
+                )}
                 <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                  <label style={{ display: "grid", gap: 6, fontSize: 13 }}>
+                    Maintenance role
+                    <select style={{ minWidth: 0, width: "100%" }} aria-label={`Maintenance role for ${a.name}`} value={a.role ?? ""} disabled={!!saving}
+                      onChange={(e) => configure(a.id, { role: (e.target.value || null) as MaintenanceRole | null })}>
+                      <option value="">None: takes any queued task</option>
+                      {MAINTENANCE_ROLES.map((r) => <option key={r} value={r}>{MAINTENANCE_ROLE[r].label}</option>)}
+                    </select>
+                    {role && <span className="muted">{role.summary} {AUTONOMY_LABEL[role.autonomy]}.</span>}
+                  </label>
                   <label style={{ display: "grid", gap: 6, fontSize: 13 }}>
                     Default agent
                     <select style={{ minWidth: 0, width: "100%" }} aria-label={`Default agent for ${a.name}`} value={a.defaultDriver ?? ""} disabled={!!saving || !drivers}

@@ -269,7 +269,8 @@ export class Factory {
         this.track(this.merge(agent, merge), agent.id);
         continue;
       }
-      const task = this.store.claimNextTask(agent.id);
+      // A member with a maintenance role is kept for the runs the operator starts for it.
+      const task = this.store.claimNextTask(agent.id, { onlyAssigned: this.store.crewRole(agent.id) !== null });
       if (!task) continue;
       this.track(this.work(agent, task), agent.id);
     }

@@ -118,5 +118,9 @@ store.createTask({ kind: "maintenance", title: "Investigate the flaky webhook re
 store.createTask({ kind: "repo_feature", title: "Add a dark mode toggle to the storefront header", brief: "Add a dark mode toggle to the storefront header", repoId: web.id, autonomy: "propose" });
 store.createTask({ kind: "maintenance", title: "Find unused exports across the storefront", brief: "Find unused exports across the storefront", repoId: web.id, autonomy: "observe" });
 
+// One crew member dedicated to security reviews of Crane, waiting for the operator to start one.
+store.setSetting("crew_role_a-hoist", "security");
+store.setSetting("crew_active_a-hoist", "true");
+
 console.log(`Seeded ${n} historical tasks and 3 queued ones into ${home}`);
 store.close();

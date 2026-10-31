@@ -43,7 +43,9 @@ export function createApp(store: Store) {
     const m = store.getTask(c.req.param("id"));
     if (!m) return c.json({ error: "Not found" }, 404);
     const repo = m.repoId ? store.getRepo(m.repoId) : null;
-    const agent = m.agentId ? store.listAgents().find((a) => a.id === m.agentId) ?? null : null;
+    // Who's working it, or, before it's picked up, the crew member it was started for.
+    const agentId = m.agentId ?? (m.status === "queued" ? m.assignee : null);
+    const agent = agentId ? store.listAgents().find((a) => a.id === agentId) ?? null : null;
     // Commands this task was refused that are still waiting on a decision, counted across the repo's tasks.
     const blocked = store.blockedTools({ taskId: m.id, ...(m.repoId ? { repoId: m.repoId } : {}) });
     return c.json({ task: m, repo, agent, events: store.listEvents(m.id), runs: store.listRuns(m.id), blocked });
@@ -147,6 +149,8 @@ export function createApp(store: Store) {
   });
 
   api.post("/agents/:id", async (c) => c.json(await actions.configureCrew(c.req.param("id"), await c.req.json())));
+  /** Start a crew member's maintenance run, assigned to them. */
+  api.post("/agents/:id/run", async (c) => c.json(await actions.runRole(c.req.param("id")), 201));
   api.get("/agents", (c) => c.json(store.listAgents()));
 
   /** The agents tasks can run on (Claude Code, Codex, …) and which one is the default. */

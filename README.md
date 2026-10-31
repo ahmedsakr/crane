@@ -68,6 +68,12 @@ Agents run through a coding agent CLI you already have, using its existing login
 
 The Crew page keeps eight members available. Use **Activate** to bring an on-call member into the pool, or **Put on-call** to let them finish current work and stop taking assignments. Each member can have a default agent; task choices and resumed sessions take priority. These preferences survive restarts. From the CLI, use `crane agents configure Hoist --active --agent codex`, `crane agents configure Hoist --on-call`, or `crane agents configure Hoist --agent default` to follow the factory default.
 
+### Maintenance roles
+
+A crew member can be dedicated to one kind of upkeep on Crane itself: **Code quality**, **Duplication**, **Packaging** (module boundaries, and parts that could be shared as packages), **Best practices**, **Security review**, or **Tests**. Pick it from the member's **Maintenance role** on the Crew page, or with `crane agents configure Hoist --role security` (`--role none` makes them a general member again; `crane agents roles` lists them all). A member with a role stops taking queued tasks and works only the runs you start for them, though they still help land approved merges.
+
+Start a run with the button on their card (**Review security**, **Reduce duplication**, …) or `crane agents run hoist`. It queues a maintenance task on Crane's repo that only that member picks up, with a brief for their role. Packaging and security reviews investigate only, so turn the findings you want into follow-ups; the others make a change on a branch and wait for your review. A member has one run under way at a time, and must be active to start one.
+
 Pick the default on the Crew page or with `crane agents use codex`. Pick another for one task from the instruct sheet's **Agent** chip (it shows once two agents are installed) or with `crane do --agent codex "…"`. A failed task can be run again on another agent. If no agent is installed, Crane falls back to **simulated** agents. They walk through believable steps without calling a model, which is handy for trying the UI. It's always labelled as simulated.
 
 ## The CLI
@@ -90,6 +96,7 @@ Pick the default on the Crew page or with `crane agents use codex`. Pick another
 | `crane allow "<command>" -r <repo>` / `crane keep-blocked …` | Let agents in that repo run it from now on, or keep it blocked and stop asking. `crane disallow` takes an allowed command back. |
 | `crane repos` / `crane repos add <path>` | The codebases the factory works on, and the commands allowed in each |
 | `crane agents` / `crane agents use <agent>` | Who's on the crew, which agents are installed, and which one new tasks run on |
+| `crane agents run <member>` | Start a member's maintenance run on Crane (`crane agents configure <member> --role <role>` to give them one) |
 | `crane analytics` | What the factory spent, by day, repo, type, and task (`--days 7`). `crane show <id> --events` lists a task's runs and their costs. |
 | `crane pause` / `crane resume` | Stop or restart picking up new tasks |
 | `crane serve` | Run the factory: agents, API, and dashboard |

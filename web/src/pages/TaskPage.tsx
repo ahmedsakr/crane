@@ -239,7 +239,11 @@ export function TaskPage() {
           ) : m.status === "running" ? (
             <p className="summary muted">{agent?.name ?? "An agent"} is working on this. Updates appear below as they happen.</p>
           ) : m.status === "queued" ? (
-            <p className="summary muted">Waiting for a free agent.</p>
+            <p className="summary muted">
+              {m.assignee && agent
+                ? agent.active ? `Waiting for ${agent.name}, who picks it up when free.` : `Waiting for ${agent.name}, who is on-call. Activate them on the Crew page.`
+                : "Waiting for a free agent."}
+            </p>
           ) : null}
           {report?.validation?.map((run, i) => (
             <details key={i} className="card card-pad">

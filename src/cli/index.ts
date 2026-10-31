@@ -6,6 +6,8 @@ import {
   AUTONOMY_LABEL,
   DRIVER_NAMES,
   KIND_LABEL,
+  MAINTENANCE_ROLE,
+  MAINTENANCE_ROLES,
   RUN_KIND_LABEL,
   choosableDrivers,
   driverLabel,
@@ -292,7 +294,9 @@ program
     const ran = store.lastWorkDriver(m.id);
     const agent = m.driver ?? ran;
     const on = agent && agent !== "unknown" ? ` · on ${driverLabel(agent)}` : "";
-    console.log(`  ${ui.statusText(m.status)}${ui.dim(on + cost)}`);
+    const member = m.assignee ? store.listAgents().find((a) => a.id === m.assignee) : null;
+    const forMember = member ? ` · for ${member.name}${m.status === "queued" && !member.active ? " (on-call)" : ""}` : "";
+    console.log(`  ${ui.statusText(m.status)}${ui.dim(forMember + on + cost)}`);
 
     if (m.report) {
       console.log(ui.section("Summary"));
@@ -657,7 +661,8 @@ const agents = program
     if (!list.length) console.log(`  ${ui.dim("No agents yet. They clock in when you run")} crane serve`);
     for (const a of list) {
       const title = a.taskId ? store.getTask(a.taskId)?.title : undefined;
-      console.log(`  ${a.active ? "Active" : "On-call"} · default: ${a.defaultDriver ? driverLabel(a.defaultDriver) : "factory default"}`);
+      const role = a.role ? ` · role: ${MAINTENANCE_ROLE[a.role].label}` : "";
+      console.log(`  ${a.active ? "Active" : "On-call"} · default: ${a.defaultDriver ? driverLabel(a.defaultDriver) : "factory default"}${role}`);
       console.log(ui.agentLine(a, title ? `${title}  ${ui.dim(`on ${driverLabel(a.driver)}`)}` : undefined));
     }
     const catalog = await actions.drivers();
@@ -670,25 +675,67 @@ const agents = program
     console.log("");
     const other = catalog.find((d) => d.available && !d.isDefault && d.name !== "simulated");
     const next: [string, string][] = [];
+    const maintainer = list.find((a) => a.role && a.active);
+    if (maintainer) next.push([`crane agents run ${maintainer.name.toLowerCase()}`, MAINTENANCE_ROLE[maintainer.role!].action.toLowerCase()]);
     if (other) next.push([`crane agents use ${other.name}`, `run new tasks on ${other.label}`]);
     next.push([`crane do --agent <agent> "…"`, "pick the agent for one task"]);
     console.log(ui.hint(...next) + "\n");
   });
 
+const crewMember = (member: string) => {
+  const a = store.listAgents().find((a) => a.id === member || a.name.toLowerCase() === member.toLowerCase());
+  if (!a) throw new Error(`No crew member ${member}`);
+  return a;
+};
+
 agents
   .command("configure <member>")
-  .description("Set a crew member's default agent or active/on-call status")
+  .description("Set a crew member's default agent, maintenance role, or active/on-call status")
   .option("--agent <agent>", "default agent, or default to follow the factory")
+  .option("--role <role>", `maintenance role: ${MAINTENANCE_ROLES.join(" | ")}, or none`)
   .option("--active", "activate this member")
   .option("--on-call", "finish current work, then stop taking tasks")
-  .action(async (member: string, opts: { agent?: string; active?: boolean; onCall?: boolean }) => {
+  .action(async (member: string, opts: { agent?: string; role?: string; active?: boolean; onCall?: boolean }) => {
     try {
       if (opts.active && opts.onCall) throw new Error("Choose --active or --on-call");
-      const a = store.listAgents().find((a) => a.id === member || a.name.toLowerCase() === member.toLowerCase());
-      if (!a) throw new Error(`No crew member ${member}`);
-      await actions.configureCrew(a.id, { defaultDriver: opts.agent, active: opts.active ? true : opts.onCall ? false : undefined });
+      const a = crewMember(member);
+      const updated = await actions.configureCrew(a.id, {
+        defaultDriver: opts.agent,
+        role: opts.role,
+        active: opts.active ? true : opts.onCall ? false : undefined,
+      });
       ui.ok(`Updated ${a.name}`);
+      if (opts.role !== undefined && updated.role) {
+        const role = MAINTENANCE_ROLE[updated.role];
+        console.log(`  ${ui.dim(`${role.label}: ${role.summary} Takes only the runs you start.`)}`);
+        console.log(ui.hint([`crane agents run ${a.name.toLowerCase()}`, role.action.toLowerCase()]) + "\n");
+      }
     } catch (err) { ui.fail((err as Error).message); }
+  });
+
+agents
+  .command("run <member>")
+  .description("Start a crew member's maintenance run on Crane's own repo")
+  .action(async (member: string) => {
+    try {
+      const a = crewMember(member);
+      const t = await actions.runRole(a.id);
+      ui.ok(`Queued for ${a.name}: ${t.title}  ${ui.dim(`${t.id} · ${AUTONOMY_LABEL[t.autonomy]}`)}`);
+      console.log(ui.hint([`crane watch ${t.id}`, "follow along"], [`crane show ${t.id}`, "see the result"]) + "\n");
+    } catch (err) { ui.fail((err as Error).message); }
+  });
+
+agents
+  .command("roles")
+  .description("The maintenance roles a crew member can take")
+  .action(() => {
+    console.log(ui.section("Maintenance roles", MAINTENANCE_ROLES.length));
+    for (const r of MAINTENANCE_ROLES) {
+      const role = MAINTENANCE_ROLE[r];
+      const who = store.listAgents().filter((a) => a.role === r).map((a) => a.name);
+      console.log(`  ${pc.bold(r.padEnd(15))} ${role.summary}  ${ui.dim(`${AUTONOMY_LABEL[role.autonomy]}${who.length ? ` · ${who.join(", ")}` : ""}`)}`);
+    }
+    console.log("\n" + ui.hint(["crane agents configure <member> --role <role>", "dedicate a member to one"]) + "\n");
   });
 
 agents

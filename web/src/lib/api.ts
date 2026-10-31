@@ -5,6 +5,7 @@ import type {
   Autonomy,
   BlockedTool,
   DriverInfo,
+  MaintenanceRole,
   RepoTools,
   Task,
   TaskEvent,
@@ -22,6 +23,7 @@ export type {
   Autonomy,
   BlockedTool,
   DriverInfo,
+  MaintenanceRole,
   RepoTools,
   Task,
   TaskEvent,
@@ -33,6 +35,8 @@ export type {
 export {
   AUTONOMY_LABEL,
   KIND_LABEL,
+  MAINTENANCE_ROLE,
+  MAINTENANCE_ROLES,
   RUN_KIND_LABEL,
   STATUS_LABEL,
   choosableDrivers,
@@ -92,7 +96,10 @@ export const api = {
   keepBlocked: (repoId: string, rule: string, taskId?: string) =>
     post<RepoTools>(`/repos/${repoId}/tools/keep-blocked`, { rule, taskId }),
   disallowTool: (repoId: string, rule: string) => post<RepoTools>(`/repos/${repoId}/tools/disallow`, { rule }),
-  configureCrew: (id: string, input: { active?: boolean; defaultDriver?: string | null }) => post<Agent>(`/agents/${id}`, input),
+  configureCrew: (id: string, input: { active?: boolean; defaultDriver?: string | null; role?: MaintenanceRole | null }) =>
+    post<Agent>(`/agents/${id}`, input),
+  /** Start a crew member's maintenance run. Only that member picks it up. */
+  runRole: (id: string) => post<Task>(`/agents/${id}/run`),
   agents: () => req<Agent[]>("/agents"),
   drivers: () => req<DriverInfo[]>("/drivers"),
   setDefaultDriver: (driver: string) => post<DriverInfo[]>("/factory/driver", { driver }),

@@ -4,6 +4,10 @@ import {
   DRIVER_NAMES,
   driverLabel,
   isDriverName,
+  isMaintenanceRole,
+  MAINTENANCE_ROLE,
+  MAINTENANCE_ROLES,
+  type MaintenanceRole,
   type Task,
   type NewTask,
   type Repo,
@@ -31,6 +35,14 @@ function checkDriver(name: string | null | undefined): Task["driver"] {
   if (name === undefined || name === null || name === "" || name === "default") return null;
   if (!isDriverName(name)) throw new Error(`Unknown agent “${name}”. Use one of: ${DRIVER_NAMES.join(", ")}`);
   return name;
+}
+
+/** A maintenance role the operator typed or sent, checked. Null, "" and "none" clear it. */
+function checkRole(name: string | null | undefined): MaintenanceRole | null {
+  if (name === undefined || name === null || name === "" || name === "none") return null;
+  const key = name.trim().toLowerCase().replace(/[-\s]+/g, "_");
+  if (!isMaintenanceRole(key)) throw new Error(`Unknown maintenance role “${name}”. Use one of: ${MAINTENANCE_ROLES.join(", ")}, or none`);
+  return key;
 }
 
 /**
@@ -62,7 +74,11 @@ export class OperatorActions {
       input.repoId = this.store.listRepos().find((r) => r.isFactory)?.id ?? null;
     }
     if (!input.title.trim()) throw new Error("Give the task a title");
-    const task = this.store.createTask({ ...input, driver: checkDriver(input.driver) });
+    // Nobody else claims an assigned task, so it must name someone on the crew.
+    if (input.assignee && !this.store.listAgents().some((a) => a.id === input.assignee)) {
+      throw new Error(`No crew member ${input.assignee}`);
+    }
+    const task = this.store.createTask({ ...input, driver: checkDriver(input.driver), assignee: input.assignee || null });
     // Remembered so the next instruction that doesn't name a repo defaults to this one.
     if (task.repoId) this.store.setSetting("last_repo", task.repoId);
     return task;
@@ -132,7 +148,8 @@ export class OperatorActions {
   retry(id: string, opts: { driver?: string | null } = {}): Task {
     const m = this.need(id);
     const driver = opts.driver === undefined ? m.driver : checkDriver(opts.driver);
-    const next = this.store.createTask({ kind: m.kind, title: m.title, brief: m.brief, repoId: m.repoId, autonomy: m.autonomy, driver });
+    // A maintenance run goes back to the member it was started for.
+    const next = this.store.createTask({ kind: m.kind, title: m.title, brief: m.brief, repoId: m.repoId, autonomy: m.autonomy, driver, assignee: m.assignee });
     const on = opts.driver !== undefined ? ` on ${driver ? driverLabel(driver) : "the default agent"}` : "";
     this.store.addEvent(m.id, "operator", `Retried as ${next.id}${on}`, { taskId: next.id });
     return next;
@@ -155,10 +172,15 @@ export class OperatorActions {
     return this.drivers();
   }
 
-  /** Preferences apply to the next assignment; current work finishes normally. */
-  async configureCrew(id: string, input: { active?: boolean; defaultDriver?: string | null }) {
+  /**
+   * Preferences apply to the next assignment; current work finishes normally.
+   * A `role` dedicates the member to one kind of maintenance (null makes it a
+   * general member again): from then on it takes only the runs started for it.
+   */
+  async configureCrew(id: string, input: { active?: boolean; defaultDriver?: string | null; role?: string | null }) {
     if (!this.store.listAgents().some((a) => a.id === id)) throw new Error(`No crew member ${id}`);
     if (input.active !== undefined && typeof input.active !== "boolean") throw new Error("Active must be a boolean");
+    const role = checkRole(input.role);
     const driver = checkDriver(input.defaultDriver);
     if (driver) {
       const d = sharedDrivers().find((d) => d.name === driver)!;
@@ -166,7 +188,40 @@ export class OperatorActions {
     }
     if (input.defaultDriver !== undefined) this.store.setSetting(`crew_driver_${id}`, driver ?? "");
     if (input.active !== undefined) this.store.setSetting(`crew_active_${id}`, String(input.active));
+    if (input.role !== undefined) this.store.setSetting(`crew_role_${id}`, role ?? "");
     return this.store.listAgents().find((a) => a.id === id)!;
+  }
+
+  /**
+   * Start a crew member's maintenance run on Crane's own repo. The task is
+   * assigned to that member, so only they pick it up, at their role's freedom.
+   */
+  async runRole(id: string): Promise<Task> {
+    const member = this.store.listAgents().find((a) => a.id === id);
+    if (!member) throw new Error(`No crew member ${id}`);
+    if (!member.role) throw new Error(`${member.name} has no maintenance role. Give them one first`);
+    if (!member.active) throw new Error(`${member.name} is on-call. Activate them first, so the run doesn't wait in the queue`);
+    const repo = await this.ensureFactoryRepo();
+    if (!repo) throw new Error("Crane's own repo isn't connected, so there's nothing to maintain");
+    const open = this.store
+      .listTasks({ status: ["queued", "running"], repoId: repo.id })
+      .find((t) => t.assignee === member.id);
+    if (open) throw new Error(`${member.name} already has a run under way: ${open.id} · ${open.title}`);
+
+    const role = MAINTENANCE_ROLE[member.role];
+    const task = this.createTask({
+      kind: "maintenance",
+      title: `${role.action} in ${repo.name}`,
+      brief: `${role.brief}\n\nStarted from ${member.name}'s maintenance role: ${role.label}.`,
+      repoId: repo.id,
+      autonomy: role.autonomy,
+      assignee: member.id,
+    });
+    this.store.addEvent(task.id, "operator", `Started ${member.name}'s ${role.label.toLowerCase()} run`, {
+      agentId: member.id,
+      role: member.role,
+    });
+    return task;
   }
 
   /** Turn one finding from a report into its own task that is allowed to make the change. */
