@@ -230,6 +230,13 @@ test("the server serves Crane's build, its assets, and pages that aren't files",
     assert.equal((await get("/assets/missing.js")).status, 404);
     assert.equal(await (await get("/../build.json")).text(), "<p>crane build</p>");
     assert.equal(await (await get("/%2e%2e/build.json")).text(), "<p>crane build</p>");
+    // Encoded slashes survive URL normalization and reach staticFile's decoder.
+    // build.json exists just outside dist, so serving it would expose traversal.
+    for (const path of ["/..%2fbuild.json", "/assets/..%2f..%2fbuild.json"]) {
+      const response = await get(path);
+      assert.equal(response.status, path.startsWith("/assets/") ? 404 : 200);
+      assert.equal(await response.text(), path.startsWith("/assets/") ? "Not found" : "<p>crane build</p>");
+    }
 
     const o = (await (await get("/api/overview")).json()) as { factory: { uiBuild: string; uiCommit: string; uiOutdated: boolean } };
     assert.equal(o.factory.uiBuild, B);
