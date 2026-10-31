@@ -59,7 +59,8 @@ export function section(title: string, count?: number): string {
 }
 
 export function hint(...cmds: [string, string][]): string {
-  return cmds.map(([cmd, what]) => `  ${accent("›")} ${cmd.padEnd(26)}${dim(what)}`).join("\n");
+  const col = Math.max(26, ...cmds.map(([c]) => c.length + 3));
+  return cmds.map(([cmd, what]) => `  ${accent("›")} ${cmd.padEnd(col)}${dim(what)}`).join("\n");
 }
 
 const BARS = "▁▂▃▄▅▆▇█";

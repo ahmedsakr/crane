@@ -124,7 +124,10 @@ export class Factory {
         const changed = await finalizeWorktree(repo, mission, cwd);
         result.report.changedFiles = [...new Set([...changed, ...result.report.changedFiles])];
       }
-      for (const f of result.report.findings) emit("finding", f.title, { impact: f.impact, effort: f.effort });
+      const logged = new Set(this.store.listEvents(mission.id).filter((e) => e.type === "finding").map((e) => e.message));
+      for (const f of result.report.findings) {
+        if (!logged.has(f.title)) emit("finding", f.title, { impact: f.impact, effort: f.effort });
+      }
 
       this.store.updateMission(mission.id, { report: result.report, costUsd: result.costUsd });
 

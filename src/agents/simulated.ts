@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { AgentDriver, RunContext, RunResult } from "./driver.js";
 import type { Finding, MissionKind } from "../core/types.js";
 
@@ -23,12 +25,21 @@ export class SimulatedDriver implements AgentDriver {
       emit(type, message, { simulated: true });
     }
     await sleep(this.stepMs, signal);
+    // When allowed to change code, leave a real (harmless) change so the review and diff flow is exercised.
+    if (mission.autonomy !== "observe") {
+      await mkdir(join(ctx.cwd, ".crane-simulated"), { recursive: true });
+      await writeFile(
+        join(ctx.cwd, ".crane-simulated", `${mission.id}.md`),
+        `# ${mission.title}\n\nSimulated change. A real agent would edit:\n\n${script.changedFiles.map((f) => `- ${f}`).join("\n")}\n`,
+      );
+      emit("tool", `Wrote .crane-simulated/${mission.id}.md`, { simulated: true });
+    }
     return {
       costUsd: 0,
       report: {
         summary: `Simulated run. ${script.summary}`,
         findings: script.findings,
-        changedFiles: mission.autonomy === "observe" ? [] : script.changedFiles,
+        changedFiles: [],
       },
     };
   }

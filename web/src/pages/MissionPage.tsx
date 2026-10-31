@@ -1,0 +1,301 @@
+import { useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { api, AUTONOMY_LABEL, KIND_LABEL, type MissionDetail, type MissionEvent } from "../lib/api";
+import { useEventStream, usePoll, useTick } from "../lib/hooks";
+import { ago, clock, duration, plural, usd } from "../lib/format";
+import { StatusChip, useToast } from "../components/bits";
+import { useApp } from "../App";
+
+/** Group consecutive tool calls so the timeline reads as a story, with the mechanics one click away. */
+function groupEvents(events: MissionEvent[]) {
+  const out: (MissionEvent | { tools: MissionEvent[] })[] = [];
+  for (const e of events) {
+    const last = out[out.length - 1];
+    if (e.type === "tool") {
+      if (last && "tools" in last) last.tools.push(e);
+      else out.push({ tools: [e] });
+    } else out.push(e);
+  }
+  return out;
+}
+
+function Timeline({ events }: { events: MissionEvent[] }) {
+  const [open, setOpen] = useState<Set<number>>(new Set());
+  const groups = groupEvents(events);
+  return (
+    <ol className="timeline">
+      {groups.map((g, i) =>
+        "tools" in g ? (
+          open.has(i) || g.tools.length === 1 ? (
+            g.tools.map((e) => (
+              <li key={e.id} className="tl tl-tool">
+                <span className="tl-time">{clock(e.ts)}</span>
+                {e.message}
+              </li>
+            ))
+          ) : (
+            <li key={`g${i}`}>
+              <button className="tool-fold" onClick={() => setOpen(new Set(open).add(i))}>
+                {plural(g.tools.length, "step")}: {g.tools[0]!.message}
+                {g.tools.length > 1 ? ", …" : ""} <span aria-hidden>▸</span>
+              </button>
+            </li>
+          )
+        ) : (
+          <li key={g.id} className={`tl tl-${g.type}`}>
+            <span className="tl-time">{clock(g.ts)}</span>
+            <span className="tl-msg">{g.message}</span>
+          </li>
+        ),
+      )}
+    </ol>
+  );
+}
+
+function Diff({ id }: { id: string }) {
+  const [diff, setDiff] = useState<string | null>(null);
+  useEffect(() => {
+    api.diff(id).then((d) => setDiff(d.diff));
+  }, [id]);
+  if (diff === null) return <p className="muted">Loading changes…</p>;
+  if (!diff) return <p className="muted">No changes on the branch.</p>;
+  return (
+    <div className="diff" role="region" aria-label="Changes" tabIndex={0}>
+      {diff.split("\n").map((l, i) => (
+        <div
+          key={i}
+          className={
+            l.startsWith("diff ")
+              ? "file"
+              : l.startsWith("@@")
+                ? "hunk"
+                : l.startsWith("+") && !l.startsWith("+++")
+                  ? "add"
+                  : l.startsWith("-") && !l.startsWith("---")
+                    ? "del"
+                    : ""
+          }
+        >
+          {l || " "}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export function MissionPage() {
+  const { id = "" } = useParams();
+  const { refresh: refreshApp } = useApp();
+  const toast = useToast();
+  const nav = useNavigate();
+  const { data, error, refresh } = usePoll<MissionDetail>(() => api.mission(id), 3000, [id]);
+  const [live, setLive] = useState<MissionEvent[]>([]);
+  const [showDiff, setShowDiff] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  useTick(5000);
+
+  const lastId = data?.events.at(-1)?.id ?? 0;
+  useEffect(() => setLive([]), [lastId]);
+  useEventStream(data && ["queued", "running"].includes(data.mission.status) ? id : null, (e) =>
+    setLive((l) => (l.some((x) => x.id === e.id) ? l : [...l, e])),
+    lastId,
+  );
+
+  const events = useMemo(() => {
+    const seen = new Set<number>();
+    return [...(data?.events ?? []), ...live].filter((e) => !seen.has(e.id) && seen.add(e.id));
+  }, [data, live]);
+
+  if (error) return <p className="muted" style={{ paddingTop: 40 }}>{error}</p>;
+  if (!data) return <p className="muted" style={{ paddingTop: 40 }}>Loading…</p>;
+  const { mission: m, repo, agent } = data;
+  const report = m.report;
+
+  const run = async (label: string, fn: () => Promise<unknown>, done: string, after?: (r: unknown) => void) => {
+    setBusy(label);
+    try {
+      const r = await fn();
+      toast({ text: done });
+      refresh();
+      refreshApp();
+      after?.(r);
+    } catch (e) {
+      toast({ text: (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const followUp = (i: number) =>
+    run("f" + i, () => api.followUp(m.id, i), "Follow-up started", (r) => nav(`/missions/${(r as { id: string }).id}`));
+
+  return (
+    <article>
+      <Link className="back" to="/missions">
+        ← Missions
+      </Link>
+      <div className="detail">
+        <div style={{ minWidth: 0 }}>
+          <div className="meta-line">
+            <StatusChip status={m.status} />
+            <span className="chip">{KIND_LABEL[m.kind]}</span>
+            {repo && <span className="chip">{repo.name}</span>}
+          </div>
+          <h1 className="detail-title">{m.title}</h1>
+
+          {m.status === "needs_review" && (
+            <div className="decision">
+              <div className="decision-copy">
+                <strong>{m.branch ? "Changes are ready for review" : "The report is ready"}</strong>
+                <span>
+                  {m.branch
+                    ? `Approving keeps ${m.branch} for you to merge. Declining throws it away.`
+                    : "Act on a finding below, or mark this as reviewed."}
+                </span>
+              </div>
+              <div className="decision-actions">
+                <button className="btn btn-quiet" disabled={!!busy} onClick={() => run("reject", () => api.reject(m.id), "Declined")}>
+                  Decline
+                </button>
+                <button className="btn btn-crane" disabled={!!busy} onClick={() => run("approve", () => api.approve(m.id), m.branch ? "Approved. The branch is ready to merge." : "Marked as reviewed")}>
+                  {m.branch ? "Approve" : "Mark as reviewed"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {report ? (
+            <p className="summary">{report.summary}</p>
+          ) : m.status === "running" ? (
+            <p className="summary muted">{agent?.name ?? "An agent"} is working on this. Updates appear below as they happen.</p>
+          ) : m.status === "queued" ? (
+            <p className="summary muted">Waiting for a free agent.</p>
+          ) : null}
+
+          {report && report.findings.length > 0 && (
+            <section className="section">
+              <div className="section-head">
+                <h2 className="section-title">
+                  Findings <span className="count">{report.findings.length}</span>
+                </h2>
+              </div>
+              <div className="card">
+                {report.findings.map((f, i) => (
+                  <div className="finding" key={i}>
+                    <div style={{ minWidth: 0 }}>
+                      <h4>{f.title}</h4>
+                      <p>{f.detail}</p>
+                      <div className="chips">
+                        <span className={`chip ${f.impact === "high" ? "chip-crane" : ""}`}>{f.impact} impact</span>
+                        <span className="chip">{f.effort} effort</span>
+                      </div>
+                    </div>
+                    {m.autonomy === "observe" && (
+                      <div>
+                        <button className="btn btn-quiet btn-sm" disabled={!!busy} onClick={() => followUp(i)}>
+                          Make this change
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {report && report.changedFiles.length > 0 && (
+            <section className="section">
+              <div className="section-head">
+                <h2 className="section-title">
+                  Changed files <span className="count">{report.changedFiles.length}</span>
+                </h2>
+                {m.branch && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => setShowDiff((s) => !s)}>
+                    {showDiff ? "Hide changes" : "Show changes"}
+                  </button>
+                )}
+              </div>
+              <div className="card card-pad" style={{ paddingBlock: 6 }}>
+                <ul className="files">
+                  {report.changedFiles.map((f) => (
+                    <li key={f}>{f}</li>
+                  ))}
+                </ul>
+              </div>
+              {showDiff && <Diff id={m.id} />}
+            </section>
+          )}
+
+          <section className="section">
+            <div className="section-head">
+              <h2 className="section-title">
+                Activity
+                {m.status === "running" && <span className="dot dot-running" title="Live" />}
+              </h2>
+            </div>
+            <Timeline events={events} />
+          </section>
+        </div>
+
+        <aside className="rail">
+          <div className="card card-pad">
+            <dl className="facts">
+              <dt>Mission</dt>
+              <dd className="mono">{m.id}</dd>
+              <dt>Freedom</dt>
+              <dd>{AUTONOMY_LABEL[m.autonomy]}</dd>
+              <dt>Agent</dt>
+              <dd>{agent?.name ?? "—"}</dd>
+              <dt>Started</dt>
+              <dd>{m.startedAt ? ago(m.startedAt) : "Not yet"}</dd>
+              <dt>Took</dt>
+              <dd className="tabular">{duration(m.startedAt, m.finishedAt)}</dd>
+              {m.costUsd > 0 && (
+                <>
+                  <dt>Cost</dt>
+                  <dd className="tabular">{usd(m.costUsd)}</dd>
+                </>
+              )}
+              {m.branch && (
+                <>
+                  <dt>Branch</dt>
+                  <dd className="mono">{m.branch}</dd>
+                </>
+              )}
+            </dl>
+          </div>
+
+          <div className="card card-pad">
+            <h3 className="card-title">Instruction</h3>
+            <p style={{ margin: 0, fontSize: 14, whiteSpace: "pre-wrap", color: "var(--ink-2)" }}>{m.brief}</p>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {["queued", "running"].includes(m.status) && (
+              <button className="btn btn-quiet btn-sm" disabled={!!busy} onClick={() => run("cancel", () => api.cancel(m.id), "Cancelled")}>
+                Cancel mission
+              </button>
+            )}
+            {["failed", "cancelled", "rejected", "done", "approved"].includes(m.status) && (
+              <button
+                className="btn btn-quiet btn-sm"
+                disabled={!!busy}
+                onClick={() => run("retry", () => api.retry(m.id), "Queued again", (r) => nav(`/missions/${(r as { id: string }).id}`))}
+              >
+                Run again
+              </button>
+            )}
+          </div>
+          {m.status === "approved" && m.branch && repo && (
+            <div className="card card-pad">
+              <h3 className="card-title">Merge when you're ready</h3>
+              <p className="mono" style={{ margin: 0, overflowWrap: "anywhere" }}>
+                git -C {repo.path} merge {m.branch}
+              </p>
+            </div>
+          )}
+        </aside>
+      </div>
+    </article>
+  );
+}

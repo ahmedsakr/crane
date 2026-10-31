@@ -119,9 +119,9 @@ export function createApp(store: Store) {
   // Serve the built web app, if there is one.
   const webDist = join(factoryRoot(), "web", "dist");
   if (existsSync(webDist)) {
-    const index = readFileSync(join(webDist, "index.html"), "utf8");
     app.use("/*", serveStatic({ root: relative(process.cwd(), webDist) || "." }));
-    app.get("*", (c) => c.html(index));
+    // Read per request so a rebuilt UI is picked up without restarting the factory.
+    app.get("*", (c) => c.html(readFileSync(join(webDist, "index.html"), "utf8")));
   } else {
     app.get("/", (c) =>
       c.text("Crane's API is running. Build the web app with `npm run build`, or run `npm run dev` for the live UI on :5173."),
