@@ -1,7 +1,7 @@
 import type { Store } from "../core/store.js";
 import type { Mission } from "../core/types.js";
 import type { AgentDriver } from "../agents/driver.js";
-import { createWorktree, finalizeWorktree } from "./git.js";
+import { createWorktree, finalizeWorktree, installDependencies } from "./git.js";
 
 const CREW = ["Jib", "Boom", "Hoist", "Trolley", "Rigger", "Winch", "Gantry", "Mast"];
 const HEARTBEAT_KEY = "factory_heartbeat";
@@ -110,6 +110,14 @@ export class Factory {
         cwd = wt.path;
         this.store.updateMission(mission.id, { branch: wt.branch, worktree: wt.path });
         emit("note", `Working on branch ${wt.branch}`, { branch: wt.branch });
+        try {
+          const ran = await installDependencies(wt.path, ac.signal);
+          if (ran) emit("note", `Installed dependencies (${ran})`);
+        } catch (err) {
+          if (ac.signal.aborted) throw err;
+          // Not fatal: the agent can still read code and may be able to install itself.
+          emit("note", `Couldn't install dependencies: ${(err as Error).message.split("\n")[0]}`);
+        }
       }
 
       const result = await this.driver.run({

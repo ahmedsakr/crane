@@ -96,3 +96,17 @@ test("store: missions are claimed once, oldest first", () => {
   assert.equal(store.getMission(a.id)?.status, "running");
   store.close();
 });
+
+test("worktree: picks the install command from the lockfile", async () => {
+  const { installCommandFor } = await import("../src/factory/git.js");
+  const { writeFileSync, mkdirSync } = await import("node:fs");
+  const dir = mkdtempSync(join(tmpdir(), "crane-install-"));
+  assert.equal(installCommandFor(dir), null, "no package.json, nothing to install");
+  writeFileSync(join(dir, "package.json"), "{}");
+  assert.equal(installCommandFor(dir), null, "no lockfile, nothing to install");
+  writeFileSync(join(dir, "package-lock.json"), "{}");
+  assert.equal(installCommandFor(dir)?.cmd, "npm");
+  assert.deepEqual(installCommandFor(dir)?.args.slice(0, 1), ["ci"]);
+  mkdirSync(join(dir, "node_modules"));
+  assert.equal(installCommandFor(dir), null, "already installed");
+});

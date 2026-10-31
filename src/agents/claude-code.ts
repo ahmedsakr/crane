@@ -19,6 +19,14 @@ const READ_ONLY_TOOLS = [
   "Bash(git blame:*)",
   "Bash(ls:*)",
   "Bash(wc:*)",
+  // Agents pipe output through these constantly (`npm test 2>&1 | tail -20`);
+  // every command in a pipeline must be allowed or the whole call is refused.
+  "Bash(cat:*)",
+  "Bash(head:*)",
+  "Bash(tail:*)",
+  "Bash(grep:*)",
+  "Bash(rg:*)",
+  "Bash(pwd:*)",
 ];
 
 const WRITE_TOOLS = [
@@ -33,6 +41,9 @@ const WRITE_TOOLS = [
   "Bash(npm test:*)",
   "Bash(npm run:*)",
   "Bash(npm install:*)",
+  "Bash(npm ci:*)",
+  "Bash(pnpm install:*)",
+  "Bash(yarn install:*)",
   "Bash(npx tsc:*)",
   "Bash(node:*)",
   "Bash(python3 -m pytest:*)",
