@@ -8,7 +8,7 @@ import { draftTask } from "../factory/instruct.js";
 import { factoryDriverName, factoryIsRunning } from "../factory/orchestrator.js";
 import { diffForTask } from "../factory/git.js";
 import { DEFAULT_PORT } from "../core/paths.js";
-import { webBuildOutdated } from "../core/webbuild.js";
+import { servedDashboard } from "../core/webbuild.js";
 import * as ui from "./ui.js";
 
 const store = new Store();
@@ -33,11 +33,14 @@ const program = new Command()
 
 // ── crane (no args): the one screen you need ────────────────
 program.action(() => {
+  const dashboard = servedDashboard();
   const o = store.overview({
     running: factoryIsRunning(store),
     paused: store.isPaused(),
     driver: factoryDriverName(store),
-    uiOutdated: webBuildOutdated(),
+    uiOutdated: dashboard?.outdated ?? false,
+    uiBuild: dashboard?.id ?? null,
+    uiCommit: dashboard?.commit ?? null,
   });
   const delta = o.shippedThisWeek - o.shippedLastWeek;
   const last24 = o.activity.slice(-24).map((b) => b.events + b.done * 5);
@@ -593,9 +596,15 @@ program
   .option("-p, --port <port>", "port for the dashboard", String(DEFAULT_PORT))
   .option("--agents <n>", "crew size", process.env.CRANE_AGENTS ?? "2")
   .option("--driver <driver>", "auto | claude-code | simulated", process.env.CRANE_DRIVER ?? "auto")
-  .action(async (opts: { port: string; agents: string; driver: string }) => {
+  .option("--no-build-dashboard", "don't build the dashboard from merged changes to Crane; serve web/dist as it is")
+  .action(async (opts: { port: string; agents: string; driver: string; buildDashboard: boolean }) => {
     const { serve } = await import("./serve.js");
-    await serve(store, { port: Number(opts.port), agents: Number(opts.agents), driver: opts.driver });
+    await serve(store, {
+      port: Number(opts.port),
+      agents: Number(opts.agents),
+      driver: opts.driver,
+      buildDashboard: opts.buildDashboard,
+    });
   });
 
 await program.parseAsync(process.argv);

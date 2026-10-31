@@ -124,7 +124,9 @@ async function bootDemo(): Promise<string> {
   const env = { ...process.env, CRANE_HOME: home };
   execFileSync(process.execPath, ["--import", "tsx", "scripts/seed-demo.ts"], { cwd: root, env, stdio: "ignore" });
   const port = await freePort();
-  const server = spawn(process.execPath, ["--import", "tsx", "src/cli/index.ts", "serve", "--port", String(port), "--driver", "simulated"], {
+  // --no-build-dashboard: screenshot this checkout's web/dist, never a build of its default branch.
+  const args = ["serve", "--port", String(port), "--driver", "simulated", "--no-build-dashboard"];
+  const server = spawn(process.execPath, ["--import", "tsx", "src/cli/index.ts", ...args], {
     cwd: root,
     env,
     stdio: "ignore",

@@ -20,6 +20,13 @@ export function worktreesDir(): string {
   return dir;
 }
 
+/** Dashboards Crane has built from merged commits of its own repo, one directory per commit. */
+export function buildsDir(): string {
+  const dir = join(craneHome(), "builds");
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
 /** The root of the Crane checkout itself (used to register the factory as a repo). */
 export function factoryRoot(): string {
   // src/core/paths.ts or dist/core/paths.js -> two levels up

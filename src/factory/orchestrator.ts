@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { createWorktree, finalizeWorktree, removeWorktree } from "./git.js";
 import { installDependencies } from "./deps.js";
 import { deleteMergedBranch, landTask, MergeError } from "./merge.js";
+import { DashboardBuilder } from "./dashboard.js";
 import { worktreesDir } from "../core/paths.js";
 
 const CREW = ["Jib", "Boom", "Hoist", "Trolley", "Rigger", "Winch", "Gantry", "Mast"];
@@ -15,6 +16,11 @@ export interface FactoryOptions {
   crewSize?: number;
   tickMs?: number;
   log?: (line: string) => void;
+  /**
+   * Build the dashboard from each merged commit of Crane's own repo, so it's
+   * served instead of the checkout's web/dist. See `dashboard.ts`.
+   */
+  buildDashboard?: boolean;
 }
 
 /**
@@ -49,6 +55,7 @@ export class Factory {
   private crew: { id: string; name: string }[];
   private tickMs: number;
   private log: (line: string) => void;
+  private dashboard: DashboardBuilder | null = null;
 
   constructor(
     private store: Store,
@@ -59,6 +66,13 @@ export class Factory {
     this.crew = CREW.slice(0, size).map((name) => ({ id: `a-${name.toLowerCase()}`, name }));
     this.tickMs = opts.tickMs ?? 1000;
     this.log = opts.log ?? (() => {});
+    if (opts.buildDashboard) {
+      this.dashboard = new DashboardBuilder({
+        repo: () => this.store.listRepos().find((r) => r.isFactory) ?? null,
+        log: this.log,
+        note: (taskId, message) => this.store.addEvent(taskId, "note", message),
+      });
+    }
   }
 
   start() {
@@ -83,6 +97,7 @@ export class Factory {
 
     this.timer = setInterval(() => this.tick(), this.tickMs);
     this.tick();
+    this.dashboard?.start().catch((err) => this.log(`Couldn't check the dashboard build: ${(err as Error).message}`));
   }
 
   /**
@@ -99,7 +114,7 @@ export class Factory {
     // Give agents a moment to exit, so their last events and the requeue are recorded in order.
     let timeout: NodeJS.Timeout | undefined;
     await Promise.race([
-      Promise.allSettled([...this.inflight]),
+      Promise.allSettled([...this.inflight, this.dashboard?.stop()]),
       new Promise((r) => (timeout = setTimeout(r, opts.graceMs ?? STOP_GRACE_MS))),
     ]);
     clearTimeout(timeout);
@@ -247,6 +262,8 @@ export class Factory {
       this.log(`${agent.name} merged ${task.id}`);
       await removeWorktree(repo, workdir);
       if (!result.checkoutBehind) await deleteMergedBranch(repo, task.branch);
+      // A change to Crane itself: build the dashboard from it, so it shows without anyone running npm run build.
+      if (repo.isFactory) this.dashboard?.request(result.head, task.id).catch(() => {});
     } catch (err) {
       if (ac.signal.aborted) {
         // The factory is stopping. Leave it waiting; the next factory picks it up again.

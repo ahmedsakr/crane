@@ -4,16 +4,24 @@ import type { Store } from "../core/store.js";
 import { createApp } from "../server/app.js";
 import { Factory, factoryIsRunning } from "../factory/orchestrator.js";
 import { resolveDriver } from "../factory/drivers.js";
-import { factoryBuildOutdated, webBuildOutdated } from "../core/webbuild.js";
+import { factoryBuildOutdated, servedDashboard } from "../core/webbuild.js";
 import * as ui from "./ui.js";
 
-export async function serve(store: Store, opts: { port: number; agents: number; driver: string }) {
+export async function serve(
+  store: Store,
+  opts: { port: number; agents: number; driver: string; buildDashboard?: boolean },
+) {
   if (factoryIsRunning(store)) {
     ui.fail("A factory is already running against this Crane home. Stop it first, or set CRANE_HOME to run another.");
   }
   const driver = await resolveDriver(opts.driver);
   const time = () => ui.dim(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
-  const factory = new Factory(store, driver, { crewSize: opts.agents, log: (l) => console.log(`${time()}  ${l}`) });
+  const buildDashboard = opts.buildDashboard ?? true;
+  const factory = new Factory(store, driver, {
+    crewSize: opts.agents,
+    log: (l) => console.log(`${time()}  ${l}`),
+    buildDashboard,
+  });
   factory.start();
 
   const app = createApp(store);
@@ -27,7 +35,7 @@ export async function serve(store: Store, opts: { port: number; agents: number; 
   }
   if (factoryBuildOutdated()) {
     console.log(`  ${ui.accent("!")} ${ui.dim("This is an old build of Crane. Run npm run build, then restart, to run the latest code.")}`);
-  } else if (webBuildOutdated()) {
+  } else if (!buildDashboard && servedDashboard()?.outdated) {
     console.log(`  ${ui.accent("!")} ${ui.dim("The dashboard is older than its source. Run npm run build to see the latest UI.")}`);
   }
   console.log(`\n${ui.hint(['crane do "…"', "in another terminal, to give it work"])}\n`);

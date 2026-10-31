@@ -79,6 +79,17 @@ function Shell() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // The dashboard this page loaded. When Crane serves a different one (it built a
+  // merged change, or someone ran npm run build), this page is running old code.
+  const [loadedUi, setLoadedUi] = useState<string | null>();
+  useEffect(() => {
+    if (overview && loadedUi === undefined) setLoadedUi(overview.factory.uiBuild);
+  }, [overview, loadedUi]);
+  const servedUi = overview?.factory.uiBuild;
+  // The dev server always serves fresh source, so only a built dashboard can fall behind.
+  const built = !import.meta.env.DEV;
+  const newerUi = built && !!loadedUi && !!servedUi && servedUi !== loadedUi;
+
   const needs = overview?.counts.needs_review ?? 0;
 
   return (
@@ -110,14 +121,24 @@ function Shell() {
         </div>
       </header>
       <main className="shell">
-        {/* The dev server always serves fresh source, so only a built dashboard can fall behind. */}
-        {overview?.factory.uiOutdated && !import.meta.env.DEV && (
+        {newerUi ? (
           <div className="notice notice-top" role="status">
-            <strong>This dashboard is out of date.</strong>
-            <span>
-              Recent changes to Crane's UI won't show until you run <span className="mono">npm run build</span> and reload.
-            </span>
+            <strong>A newer dashboard is ready.</strong>
+            <span>Reload to see the latest changes to Crane.</span>
+            <button className="btn btn-primary btn-sm notice-action" onClick={() => window.location.reload()}>
+              Reload
+            </button>
           </div>
+        ) : (
+          built &&
+          overview?.factory.uiOutdated && (
+            <div className="notice notice-top" role="status">
+              <strong>This dashboard is out of date.</strong>
+              <span>
+                Recent changes to Crane's UI won't show until you run <span className="mono">npm run build</span> and reload.
+              </span>
+            </div>
+          )
         )}
         <Routes>
           <Route path="/" element={<Home />} />
