@@ -6,10 +6,10 @@ import { buildsDir, factoryRoot } from "./paths.js";
 /** UI source the build depends on, relative to `web/`. */
 const SOURCES = ["src", "index.html", "vite.config.ts", "package.json"];
 /**
- * Source outside `web/` the UI bundles at runtime (labels and helpers), relative
- * to the root. Keep in step with what `web/src` imports from `src/core/`.
+ * Source outside `web/` the UI bundles at runtime, relative to the root:
+ * `src/core/contracts.ts` and every file it re-exports.
  */
-const SHARED_SOURCES = [join("src", "core", "types.ts"), join("src", "core", "permissions.ts")];
+export const SHARED_SOURCES = ["contracts.ts", "types.ts", "permissions.ts"].map((f) => join("src", "core", f));
 
 function newestMtime(path: string): number {
   if (!existsSync(path)) return 0;

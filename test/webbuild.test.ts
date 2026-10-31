@@ -46,13 +46,13 @@ test("a source file changed after the build makes it outdated, however deep", ()
 });
 
 test("a change to shared core source the UI bundles makes the build outdated", () => {
+  const shared = ["src/core/contracts.ts", "src/core/types.ts", "src/core/permissions.ts"];
   // Every UI and shared file predates the build; only `changed` (if any) is touched after it.
   const outdatedAfter = (changed: string | null) => {
     const c = checkout();
     c.at("src/components/Sheet.tsx", 100);
     c.at("index.html", 100);
-    c.rootAt("src/core/types.ts", 100);
-    c.rootAt("src/core/permissions.ts", 100);
+    for (const f of shared) c.rootAt(f, 100);
     c.at("dist/index.html", 50);
     if (changed) c.rootAt(changed, 10);
     const value = webBuildOutdated(c.root);
@@ -60,8 +60,7 @@ test("a change to shared core source the UI bundles makes the build outdated", (
     return value;
   };
   assert.equal(outdatedAfter(null), false);
-  assert.equal(outdatedAfter("src/core/types.ts"), true);
-  assert.equal(outdatedAfter("src/core/permissions.ts"), true);
+  for (const f of shared) assert.equal(outdatedAfter(f), true, f);
 });
 
 test("no build, or no source to compare against, is never outdated", () => {

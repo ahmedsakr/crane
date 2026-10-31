@@ -12,5 +12,5 @@
     "allowImportingTsExtensions": false,
     "types": ["vite/client"]
   },
-  "include": ["src", "../src/core/types.ts"]
+  "include": ["src", "../src/core/contracts.ts"]
 }
