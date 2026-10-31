@@ -1291,6 +1291,9 @@ a.row:hover .row-title {
   align-items: center;
   flex-wrap: wrap;
 }
+.notice-top {
+  margin: 0 0 18px;
+}
 
 .slab .dot-on,
 .slab .dot-paused {

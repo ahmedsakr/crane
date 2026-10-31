@@ -8,6 +8,7 @@ import { draftTask } from "../factory/instruct.js";
 import { factoryDriverName, factoryIsRunning } from "../factory/orchestrator.js";
 import { diffForTask } from "../factory/git.js";
 import { DEFAULT_PORT } from "../core/paths.js";
+import { webBuildOutdated } from "../core/webbuild.js";
 import * as ui from "./ui.js";
 
 const store = new Store();
@@ -32,7 +33,12 @@ const program = new Command()
 
 // ── crane (no args): the one screen you need ────────────────
 program.action(() => {
-  const o = store.overview({ running: factoryIsRunning(store), paused: store.isPaused(), driver: factoryDriverName(store) });
+  const o = store.overview({
+    running: factoryIsRunning(store),
+    paused: store.isPaused(),
+    driver: factoryDriverName(store),
+    uiOutdated: webBuildOutdated(),
+  });
   const delta = o.shippedThisWeek - o.shippedLastWeek;
   const last24 = o.activity.slice(-24).map((b) => b.events + b.done * 5);
 
@@ -62,6 +68,7 @@ program.action(() => {
   next.push(['crane do "…"', "give the factory an instruction"]);
   if (!o.repos.some((r) => !r.isFactory)) next.push(["crane repos add <path>", "connect a codebase to work on"]);
   if (!o.factory.running) next.push(["crane serve", "start agents and open the dashboard"]);
+  if (o.factory.uiOutdated) next.push(["npm run build", "the dashboard is older than its source; rebuild it"]);
   next.push(["crane help", "everything else"]);
   console.log(ui.hint(...next));
   console.log("");

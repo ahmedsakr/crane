@@ -143,6 +143,8 @@ export interface Overview {
     running: boolean;
     paused: boolean;
     driver: string;
+    /** The served dashboard is older than its source, so recent UI changes won't show until a rebuild. */
+    uiOutdated: boolean;
   };
   counts: Record<TaskStatus, number>;
   shippedThisWeek: number;

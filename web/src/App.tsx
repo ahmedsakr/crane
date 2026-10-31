@@ -108,6 +108,15 @@ function Shell() {
         </div>
       </header>
       <main className="shell">
+        {/* The dev server always serves fresh source, so only a built dashboard can fall behind. */}
+        {overview?.factory.uiOutdated && !import.meta.env.DEV && (
+          <div className="notice notice-top" role="status">
+            <strong>This dashboard is out of date.</strong>
+            <span>
+              Recent changes to Crane's UI won't show until you run <span className="mono">npm run build</span> and reload.
+            </span>
+          </div>
+        )}
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/tasks" element={<Tasks />} />

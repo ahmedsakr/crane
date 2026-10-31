@@ -10,6 +10,7 @@ Crane is an autonomous software factory steered by a human operator. Agents run 
 - `npm run build`: compiles `src/` to `dist/` and builds `web/dist/`
 - `npx tsx src/cli/index.ts <cmd>`: run the CLI from source
 - Demo data: `CRANE_HOME=/tmp/crane-demo npx tsx scripts/seed-demo.ts`, then `serve --driver simulated`
+- `npm run screenshot -- <path> [steps] --out <file.png>`: boots a throwaway demo factory and screenshots the built UI in headless Chromium. Steps run in order: `--click <sel>`, `--type <text>`, `--key Escape`, `--wait-for <sel>`, `--eval <js>`, `--shot <file>`, `--size 390x844`. Run `npm run build -w web` first. Example: `npm run screenshot -- "/?instruct=Fix the tests" --click ".choice-btn" --out .crane/menu.png`
 
 ## Shape
 
@@ -24,5 +25,7 @@ Crane is an autonomous software factory steered by a human operator. Agents run 
 - Safety first: nothing an agent does may touch the operator's checkout or default branch. Keep `ALWAYS_DENIED` in `src/agents/claude-code.ts` intact. The one place Crane moves a default branch is `landTask` in `src/factory/merge.ts`, after the operator approves: never force-push, and never touch a checkout that has local changes.
 - Keep the CLI and web UI at feature parity for operator actions.
 - UI work must follow `docs/design.md`. Progressive disclosure is the core principle: show the decision first, the details one tap away.
+- Look at UI changes before calling them done. Take screenshots with `npm run screenshot` (wide, short, and phone sizes) and read the PNGs; for visual bugs, reproduce in a screenshot first. A clean typecheck says nothing about clipping or layout.
+- The dashboard on :4471 serves the prebuilt `web/dist`, so a merged UI change doesn't show until someone runs `npm run build`. If the operator reports that a fixed UI bug is still there, check for a stale build first.
 - Copy is sentence case, plain verbs, and names things by what the operator controls. An action keeps its name everywhere ("Approve" → "Approved").
 - Run `npm run typecheck && npm test` before finishing.

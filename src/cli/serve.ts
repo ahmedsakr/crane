@@ -4,6 +4,7 @@ import type { Store } from "../core/store.js";
 import { createApp } from "../server/app.js";
 import { Factory, factoryIsRunning } from "../factory/orchestrator.js";
 import { resolveDriver } from "../factory/drivers.js";
+import { factoryBuildOutdated, webBuildOutdated } from "../core/webbuild.js";
 import * as ui from "./ui.js";
 
 export async function serve(store: Store, opts: { port: number; agents: number; driver: string }) {
@@ -23,6 +24,11 @@ export async function serve(store: Store, opts: { port: number; agents: number; 
   console.log(`  ${ui.dim("Agents   ")}  ${opts.agents} on ${driver.label}`);
   if (driver.name === "simulated") {
     console.log(`  ${ui.accent("!")} ${ui.dim("Simulated agents: no model is called. Install Claude Code or pass --driver claude-code.")}`);
+  }
+  if (factoryBuildOutdated()) {
+    console.log(`  ${ui.accent("!")} ${ui.dim("This is an old build of Crane. Run npm run build, then restart, to run the latest code.")}`);
+  } else if (webBuildOutdated()) {
+    console.log(`  ${ui.accent("!")} ${ui.dim("The dashboard is older than its source. Run npm run build to see the latest UI.")}`);
   }
   console.log(`\n${ui.hint(['crane do "…"', "in another terminal, to give it work"])}\n`);
 

@@ -10,6 +10,7 @@ import { draftTask } from "../factory/instruct.js";
 import { diffForTask } from "../factory/git.js";
 import { factoryDriverName, factoryIsRunning } from "../factory/orchestrator.js";
 import { factoryRoot } from "../core/paths.js";
+import { webBuildOutdated } from "../core/webbuild.js";
 
 export function createApp(store: Store) {
   const app = new Hono();
@@ -19,6 +20,7 @@ export function createApp(store: Store) {
     running: factoryIsRunning(store),
     paused: store.isPaused(),
     driver: factoryDriverName(store),
+    uiOutdated: webBuildOutdated(),
   });
 
   app.onError((err, c) => c.json({ error: err.message }, 400));
