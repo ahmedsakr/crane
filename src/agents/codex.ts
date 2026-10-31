@@ -22,7 +22,7 @@ class SessionNotResumed extends Error {}
  * The `-c` overrides beat anything in the operator's own ~/.codex/config.toml
  * that would loosen this (extra writable roots, network, approvals).
  */
-export function codexArgs(opts: { cwd: string; readOnly: boolean; resume?: string; model?: string }): string[] {
+export function codexArgs(opts: { cwd: string; readOnly: boolean; resume?: string; model?: string; effort?: string }): string[] {
   const args = [
     "exec",
     "--json",
@@ -39,6 +39,8 @@ export function codexArgs(opts: { cwd: string; readOnly: boolean; resume?: strin
     "sandbox_workspace_write.writable_roots=[]",
   ];
   if (opts.model) args.push("--model", opts.model);
+  // A bare word only: the value is parsed as TOML, and nothing else belongs in this override.
+  if (opts.effort && /^[a-z]+$/.test(opts.effort)) args.push("-c", `model_reasoning_effort="${opts.effort}"`);
   // `-` reads the prompt from stdin, which keeps long briefs out of the process list.
   if (opts.resume) args.push("resume", opts.resume, "-");
   else args.push("-");
@@ -104,12 +106,12 @@ export class CodexDriver implements AgentDriver {
     const { task, repo, cwd, emit, signal, job } = ctx;
     // Resolving conflicts means editing files, so it gets a writable sandbox.
     const readOnly = !job && task.autonomy === "observe";
-    const args = codexArgs({ cwd, readOnly, resume, model: this.model });
+    const model = ctx.model || this.model || null;
+    const args = codexArgs({ cwd, readOnly, resume, model: model ?? undefined, effort: ctx.effort });
     // Codex has no separate system prompt flag, so Crane's brief leads the first message.
     const prompt = resume
       ? resumePrompt()
       : `${systemPrompt(task, repo, job, { agentCommits: false, sandboxed: true })}\n\n---\n\n${userPrompt(task, job)}`;
-    const model = this.model ?? null;
     const rel = (p: unknown) => {
       const s = typeof p === "string" ? p : "";
       return isAbsolute(s) && s.startsWith(cwd) ? relative(cwd, s) || s : s;
@@ -185,7 +187,8 @@ export class CodexDriver implements AgentDriver {
             started = true;
             if (typeof msg.thread_id === "string") ctx.onSession?.(msg.thread_id);
             const verb = resume ? "resumed" : "started";
-            emit("note", `Agent session ${verb} on Codex${model ? ` (${model})` : ""}`, { sessionId: msg.thread_id });
+            const tuned = [model, ctx.effort ? `${ctx.effort} effort` : null].filter(Boolean).join(", ");
+            emit("note", `Agent session ${verb} on Codex${tuned ? ` (${tuned})` : ""}`, { sessionId: msg.thread_id });
             return;
           }
           case "item.started":

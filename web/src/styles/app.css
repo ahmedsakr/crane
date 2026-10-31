@@ -1323,6 +1323,44 @@ a.row:hover .row-title {
   outline-offset: -1px;
 }
 
+/* An agent's model and effort, opened from its row on the Crew page. */
+.tuning-change {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.tuning {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+.tuning-field {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--graphite);
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.tuning-field .input {
+  height: 36px;
+  width: 100%;
+  font-size: 14px;
+}
+.tuning-actions {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 2px;
+}
+
 /* ── toast ──────────────────────────────────────────────── */
 .toast {
   position: fixed;

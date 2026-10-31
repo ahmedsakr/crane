@@ -155,6 +155,8 @@ export function createApp(store: Store) {
 
   /** The agents tasks can run on (Claude Code, Codex, …) and which one is the default. */
   api.get("/drivers", async (c) => c.json(await actions.drivers()));
+  /** The model and effort one agent runs with. */
+  api.post("/drivers/:name", async (c) => c.json(await actions.configureDriver(c.req.param("name"), await c.req.json())));
   api.post("/factory/driver", async (c) => {
     const { driver } = await c.req.json<{ driver: string }>();
     return c.json(await actions.setDefaultDriver(driver));

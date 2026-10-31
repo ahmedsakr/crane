@@ -5,6 +5,7 @@ import { Store } from "../core/store.js";
 import {
   AUTONOMY_LABEL,
   DRIVER_NAMES,
+  EFFORT_LEVELS,
   KIND_LABEL,
   MAINTENANCE_ROLE,
   MAINTENANCE_ROLES,
@@ -12,6 +13,7 @@ import {
   choosableDrivers,
   driverLabel,
   lastMergeOutcome,
+  settingsLabel,
   type Autonomy,
   type BlockedTool,
   type TaskKind,
@@ -671,13 +673,18 @@ const agents = program
       const mark = d.isDefault ? ui.accent("●") : d.available ? pc.dim("○") : pc.dim("·");
       const name = d.label.padEnd(12);
       console.log(`  ${mark} ${d.available ? name : pc.dim(name)} ${ui.dim(d.isDefault ? `default · ${d.hint}` : d.hint)}`);
+      if (d.efforts.length && d.available) {
+        console.log(`    ${" ".repeat(12)} ${settingsLabel(d) ?? ui.dim("its default model and effort")}`);
+      }
     }
     console.log("");
     const other = catalog.find((d) => d.available && !d.isDefault && d.name !== "simulated");
+    const tunable = catalog.find((d) => d.isDefault && d.efforts.length) ?? catalog.find((d) => d.available && d.efforts.length);
     const next: [string, string][] = [];
     const maintainer = list.find((a) => a.role && a.active);
     if (maintainer) next.push([`crane agents run ${maintainer.name.toLowerCase()}`, MAINTENANCE_ROLE[maintainer.role!].action.toLowerCase()]);
     if (other) next.push([`crane agents use ${other.name}`, `run new tasks on ${other.label}`]);
+    if (tunable) next.push([`crane agents set ${tunable.name} --model <model> --effort <level>`, `choose ${tunable.label}'s model and effort`]);
     next.push([`crane do --agent <agent> "…"`, "pick the agent for one task"]);
     console.log(ui.hint(...next) + "\n");
   });
@@ -747,6 +754,26 @@ agents
       const catalog = await actions.setDefaultDriver(name);
       const d = catalog.find((x) => x.isDefault)!;
       ui.ok(`Factory default set to ${d.label}. Crew preferences, task choices, and resumed sessions take priority.`);
+    } catch (err) {
+      ui.fail((err as Error).message);
+    }
+  });
+
+agents
+  .command("set")
+  .description("Choose the model and effort an agent runs with")
+  .argument("<agent>", DRIVER_NAMES.filter((n) => EFFORT_LEVELS[n].length).join(" | "))
+  .option("--model <model>", "model name or alias, or default for the agent's own")
+  .option(
+    "--effort <level>",
+    `${DRIVER_NAMES.filter((n) => EFFORT_LEVELS[n].length).map((n) => `${n}: ${EFFORT_LEVELS[n].join(", ")}`).join("; ")}; or default`,
+  )
+  .action(async (name: string, opts: { model?: string; effort?: string }) => {
+    try {
+      if (opts.model === undefined && opts.effort === undefined) throw new Error("Give --model, --effort, or both");
+      const catalog = await actions.configureDriver(name, opts);
+      const d = catalog.find((x) => x.name === name)!;
+      ui.ok(`${d.label} runs on ${settingsLabel(d) ?? "its default model and effort"} from its next run.`);
     } catch (err) {
       ui.fail((err as Error).message);
     }

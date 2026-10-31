@@ -27,6 +27,10 @@ export interface RunContext {
   allowedTools?: string[];
   /** Stop the agent after this many turns. */
   maxTurns?: number;
+  /** The model the operator chose for this agent. Unset leaves it to the driver's own default. */
+  model?: string;
+  /** The effort level the operator chose for this agent, one of `EFFORT_LEVELS` for it. */
+  effort?: string;
 }
 
 /**

@@ -2,10 +2,34 @@ import type { AgentDriver } from "../agents/driver.js";
 import { ClaudeCodeDriver } from "../agents/claude-code.js";
 import { CodexDriver } from "../agents/codex.js";
 import { SimulatedDriver } from "../agents/simulated.js";
-import { DRIVER_LABEL, DRIVER_NAMES, isDriverName, type DriverInfo, type DriverName } from "../core/types.js";
+import {
+  DRIVER_LABEL,
+  DRIVER_NAMES,
+  EFFORT_LEVELS,
+  MODEL_SUGGESTIONS,
+  isDriverName,
+  type DriverInfo,
+  type DriverName,
+  type DriverSettings,
+} from "../core/types.js";
 
 /** The setting that holds the operator's default agent. */
 export const DEFAULT_DRIVER_KEY = "factory_driver";
+
+/** The settings that hold the model and effort the operator chose for one agent. */
+export const driverModelKey = (name: string) => `driver_model:${name}`;
+export const driverEffortKey = (name: string) => `driver_effort:${name}`;
+
+/**
+ * The model and effort an agent runs with. Null leaves it to the agent: its
+ * env fallback (`CRANE_MODEL`, `CRANE_CODEX_MODEL`), else its CLI's own config.
+ */
+export function driverSettings(getSetting: (key: string) => string | null, name: string): DriverSettings {
+  return {
+    model: getSetting(driverModelKey(name)) || null,
+    effort: getSetting(driverEffortKey(name)) || null,
+  };
+}
 
 /** Real agents, in the order `auto` tries them. Simulated is the fallback, never picked over a real one. */
 const AUTO_ORDER: DriverName[] = ["claude-code", "codex"];
@@ -57,8 +81,12 @@ export function isAvailable(driver: AgentDriver, maxAgeMs = 30_000): Promise<boo
 let shared: AgentDriver[] | null = null;
 export const sharedDrivers = () => (shared ??= allDrivers());
 
-/** Every agent Crane knows, whether it's installed here, and which one is the default. */
-export async function driverCatalog(defaultName: string | null, drivers = sharedDrivers()): Promise<DriverInfo[]> {
+/** Every agent Crane knows, whether it's installed here, which one is the default, and how each is tuned. */
+export async function driverCatalog(
+  defaultName: string | null,
+  drivers = sharedDrivers(),
+  getSetting: (key: string) => string | null = () => null,
+): Promise<DriverInfo[]> {
   return Promise.all(
     drivers
       .filter((d) => isDriverName(d.name))
@@ -71,6 +99,9 @@ export async function driverCatalog(defaultName: string | null, drivers = shared
           available,
           hint: available ? HINT[name].ok : HINT[name].missing,
           isDefault: name === defaultName,
+          ...driverSettings(getSetting, name),
+          efforts: EFFORT_LEVELS[name],
+          models: MODEL_SUGGESTIONS[name],
         };
       }),
   );

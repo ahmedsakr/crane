@@ -1,16 +1,98 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../App";
-import { api, AUTONOMY_LABEL, driverLabel, MAINTENANCE_ROLE, MAINTENANCE_ROLES, type DriverInfo, type MaintenanceRole } from "../lib/api";
+import {
+  api,
+  AUTONOMY_LABEL,
+  driverLabel,
+  MAINTENANCE_ROLE,
+  MAINTENANCE_ROLES,
+  settingsLabel,
+  type DriverInfo,
+  type MaintenanceRole,
+} from "../lib/api";
 import { ago, plural } from "../lib/format";
 import { useDrivers, useTick } from "../lib/hooks";
 import { Empty, useToast } from "../components/bits";
+
+/** What an agent runs on, with the editor one tap away. */
+function TuningSummary({ driver: d, onEdit }: { driver: DriverInfo; onEdit: () => void }) {
+  const label = settingsLabel(d);
+  return (
+    <span className="row-meta" style={{ display: "block", whiteSpace: "normal", marginTop: 4 }}>
+      <span style={{ color: label ? "var(--ink)" : undefined }}>{label ?? "Default model and effort"}</span>
+{" "}
+      <span style={{ whiteSpace: "nowrap" }}>
+        ·{" "}
+        <button className="tuning-change" onClick={onEdit} aria-label={`Change ${d.label} model and effort`}>
+          Change
+        </button>
+      </span>
+    </span>
+  );
+}
+
+/** Choose the model and effort one agent runs with. */
+function TuningForm({ driver: d, onChange, onClose }: { driver: DriverInfo; onChange: (d: DriverInfo[]) => void; onClose: () => void }) {
+  const toast = useToast();
+  const [model, setModel] = useState(d.model ?? "");
+  const [effort, setEffort] = useState(d.effort ?? "");
+  const [saving, setSaving] = useState(false);
+  const save = async () => {
+    setSaving(true);
+    try {
+      const next = await api.configureDriver(d.name, { model: model.trim() || null, effort: effort || null });
+      onChange(next);
+      const now = next.find((x) => x.name === d.name);
+      toast({ text: `${d.label} runs on ${(now && settingsLabel(now)) ?? "its default model and effort"} from its next run` });
+      onClose();
+    } catch (e) {
+      toast({ text: (e as Error).message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const listId = `models-${d.name}`;
+  return (
+    <form
+      className="tuning"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <label className="tuning-field">
+        <span>Model</span>
+        <input className="input" list={listId} value={model} placeholder="Its default" autoFocus
+          onChange={(e) => setModel(e.target.value)} aria-label={`${d.label} model`} />
+        {d.models.length > 0 && (
+          <datalist id={listId}>
+            {d.models.map((m) => <option key={m} value={m} />)}
+          </datalist>
+        )}
+      </label>
+      <label className="tuning-field">
+        <span>Effort</span>
+        <select className="input" value={effort} onChange={(e) => setEffort(e.target.value)} aria-label={`${d.label} effort`}>
+          <option value="">Its default</option>
+          {d.efforts.map((e) => <option key={e} value={e}>{e}</option>)}
+        </select>
+      </label>
+      <span className="tuning-actions">
+        <button className="btn btn-primary btn-sm" type="submit" disabled={saving}>Save</button>
+        <button className="btn btn-ghost btn-sm" type="button" disabled={saving} onClick={onClose}>Cancel</button>
+      </span>
+    </form>
+  );
+}
 
 /** The agents the crew can run on. The default is what new tasks use unless the operator picks another. */
 function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: DriverInfo[]) => void }) {
   const toast = useToast();
   const { refresh } = useApp();
   const [busy, setBusy] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const choose = async (d: DriverInfo) => {
     setBusy(d.name);
     try {
@@ -30,7 +112,7 @@ function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: Dr
         <h2 className="section-title">Runs on</h2>
       </div>
       <p className="muted" style={{ maxWidth: "60ch", margin: "0 0 12px", fontSize: 14 }}>
-        Crew members follow the factory default unless you choose an agent for them. A task’s agent choice and resumed sessions take priority.
+        Crew members follow the factory default unless you choose an agent for them. A task’s agent choice and resumed sessions take priority. Each agent runs on the model and effort you set here.
       </p>
       <ul className="rows card" style={{ padding: "0 18px" }}>
         {drivers.map((d) => (
@@ -44,6 +126,9 @@ function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: Dr
                 <span className="row-meta" style={{ display: "block", whiteSpace: "normal" }}>
                   {d.hint}
                 </span>
+                {d.available && d.efforts.length > 0 && editing !== d.name && (
+                  <TuningSummary driver={d} onEdit={() => setEditing(d.name)} />
+                )}
               </span>
               <span>
                 {d.isDefault ? null : d.available ? (
@@ -56,6 +141,11 @@ function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: Dr
                   </span>
                 )}
               </span>
+              {editing === d.name && (
+                <div style={{ gridColumn: "1 / -1", marginTop: -6 }}>
+                  <TuningForm driver={d} onChange={onChange} onClose={() => setEditing(null)} />
+                </div>
+              )}
             </div>
           </li>
         ))}

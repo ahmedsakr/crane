@@ -7,7 +7,7 @@ import { installDependencies } from "./deps.js";
 import { deleteMergedBranch, landTask, MergeError } from "./merge.js";
 import { runChecks } from "./checks.js";
 import { DashboardBuilder } from "./dashboard.js";
-import { DEFAULT_DRIVER_KEY, isAvailable } from "./drivers.js";
+import { DEFAULT_DRIVER_KEY, driverSettings, isAvailable } from "./drivers.js";
 import { worktreesDir } from "../core/paths.js";
 
 const CREW = ["Jib", "Boom", "Hoist", "Trolley", "Rigger", "Winch", "Gantry", "Mast"];
@@ -284,7 +284,7 @@ export class Factory {
   private async runAgent(
     agentId: string,
     driver: AgentDriver,
-    ctx: Omit<RunContext, "onUsage" | "allowedTools" | "maxTurns">,
+    ctx: Omit<RunContext, "onUsage" | "allowedTools" | "maxTurns" | "model" | "effort">,
   ): Promise<RunResult> {
     if (!(await isAvailable(driver))) {
       throw new Error(
@@ -314,12 +314,16 @@ export class Factory {
             model: u.model ?? prev.model,
           };
     };
+    // Read at the start of every run, so a change on the Crew page applies to the next one without a restart.
+    const { model, effort } = driverSettings((k) => this.store.getSetting(k), driver.name);
     try {
       const result = await this.runWithRetry(driver, {
         ...ctx,
         onUsage,
         allowedTools: ctx.repo ? this.store.repoTools(ctx.repo.id).allowed : [],
         maxTurns: this.maxTurns || undefined,
+        model: model ?? undefined,
+        effort: effort ?? undefined,
       });
       this.store.finishRun(runId, "succeeded", usage);
       return result;
