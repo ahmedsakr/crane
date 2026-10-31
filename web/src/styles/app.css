@@ -1053,7 +1053,8 @@ a.row:hover .row-title {
   border-radius: var(--r-lg);
   box-shadow: var(--shadow-lift);
   animation: rise 0.22s cubic-bezier(0.2, 0.9, 0.3, 1.1);
-  overflow: hidden;
+  /* No overflow clipping: choice menus must be able to extend past the sheet.
+     The footer rounds its own corners instead. */
 }
 @keyframes fade {
   from {
@@ -1186,6 +1187,9 @@ a.row:hover .row-title {
   min-width: 100%;
   width: max-content;
   max-width: 320px;
+  max-height: min(340px, 60vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: var(--surface);
   border: 1px solid var(--hairline);
   border-radius: 12px;
@@ -1193,6 +1197,13 @@ a.row:hover .row-title {
   padding: 6px;
   list-style: none;
   margin: 0;
+}
+/* The last column's menu opens toward the sheet, not past the viewport edge. */
+@media (min-width: 621px) {
+  .choice:last-child .menu {
+    left: auto;
+    right: 0;
+  }
 }
 .menu button {
   width: 100%;
@@ -1219,6 +1230,7 @@ a.row:hover .row-title {
   gap: 12px;
   padding: 14px 26px 22px;
   background: var(--surface-2);
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
   flex-wrap: wrap;
 }
 .error-text {
