@@ -4,7 +4,7 @@ import { api, type Task } from "../lib/api";
 import { ago, plural } from "../lib/format";
 import { useTick } from "../lib/hooks";
 import { Slab } from "../components/Slab";
-import { Empty, TaskRow, useToast } from "../components/bits";
+import { BlockedItem, Empty, TaskRow, useToast } from "../components/bits";
 
 function ReviewItem({ m, repoName, onDone }: { m: Task; repoName?: string; onDone: () => void }) {
   const toast = useToast();
@@ -80,6 +80,21 @@ export function Home() {
             {o.needsReview.map((m) => (
               <ReviewItem key={m.id} m={m} repoName={repoName(m.repoId)} onDone={refresh} />
             ))}
+          </section>
+        )}
+
+        {o.blocked.length > 0 && (
+          <section className="section" aria-labelledby="blocked">
+            <div className="section-head">
+              <h2 className="section-title" id="blocked">
+                Blocked commands <span className="count">{o.blocked.length}</span>
+              </h2>
+            </div>
+            <div className="card">
+              {o.blocked.map((b) => (
+                <BlockedItem key={`${b.repoId}:${b.rule}`} b={b} showTask onDone={refresh} />
+              ))}
+            </div>
           </section>
         )}
 

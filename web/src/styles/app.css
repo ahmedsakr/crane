@@ -626,6 +626,64 @@ a.row:hover .row-title {
   overflow: hidden;
 }
 
+/* ── blocked commands ───────────────────────────────────── */
+.blocked-item {
+  padding: 14px 18px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px 16px;
+  align-items: center;
+}
+.blocked-item + .blocked-item {
+  border-top: 1px solid var(--hairline);
+}
+.blocked-item .actions {
+  display: flex;
+  gap: 8px;
+}
+.blocked-title {
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.blocked-cmd {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+@media (max-width: 560px) {
+  .blocked-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.section-note {
+  font-size: 13px;
+  margin: 8px 0 0;
+}
+.allowed-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.chip-x {
+  border: 0;
+  background: transparent;
+  color: var(--graphite);
+  font-size: 15px;
+  line-height: 1;
+  padding: 0 0 1px 2px;
+  cursor: pointer;
+}
+.chip-x:hover {
+  color: var(--ink);
+}
+
 /* ── chips ──────────────────────────────────────────────── */
 .chip {
   display: inline-flex;
@@ -978,6 +1036,16 @@ a.row:hover .row-title {
 .tl-operator::before {
   background: var(--live);
   border-color: var(--live);
+}
+/* A refused tool call: hollow, ringed in red, so it stands out from the folded steps around it. */
+.tl-blocked::before {
+  border-color: var(--bad);
+  border-width: 2px;
+}
+.tl-blocked .tl-msg {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
 }
 .tl-tool {
   color: var(--graphite);

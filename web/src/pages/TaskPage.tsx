@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, AUTONOMY_LABEL, KIND_LABEL, lastMergeOutcome, type TaskDetail, type TaskEvent } from "../lib/api";
 import { useEventStream, usePoll, useTick } from "../lib/hooks";
 import { ago, clock, duration, plural, usd } from "../lib/format";
-import { StatusChip, useToast } from "../components/bits";
+import { BlockedItem, StatusChip, useToast } from "../components/bits";
 import { useApp } from "../App";
 
 /** Group consecutive tool calls so the timeline reads as a story, with the mechanics one click away. */
@@ -195,6 +195,30 @@ export function TaskPage() {
               {agent ? `${agent.name} is merging this into ${main}.` : `Waiting for a free agent to merge this into ${main}.`} Progress
               appears in the activity below.
             </p>
+          )}
+
+          {data.blocked.length > 0 && (
+            <section className="section" aria-labelledby="blocked">
+              <div className="section-head">
+                <h2 className="section-title" id="blocked">
+                  Blocked <span className="count">{data.blocked.length}</span>
+                </h2>
+              </div>
+              <div className="card">
+                {data.blocked.map((b) => (
+                  <BlockedItem
+                    key={b.rule}
+                    b={b}
+                    taskId={m.id}
+                    onDone={() => {
+                      refresh();
+                      refreshApp();
+                    }}
+                  />
+                ))}
+              </div>
+              <p className="muted section-note">Allowing applies to every agent in {repo?.name ?? "this repo"} from its next run.</p>
+            </section>
           )}
 
           {report && report.findings.length > 0 && (

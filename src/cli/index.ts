@@ -473,7 +473,13 @@ repos.action(() => {
     const allowed = store.repoTools(r.id).allowed;
     if (allowed.length) console.log(`    ${ui.dim("also allowed:")} ${allowed.map(ruleLabel).join(", ")}`);
   }
-  console.log(`\n${ui.hint(["crane repos add <path>", "connect another codebase"])}\n`);
+  const withAllowed = list.find((r) => store.repoTools(r.id).allowed.length);
+  const next: [string, string][] = [["crane repos add <path>", "connect another codebase"]];
+  if (withAllowed) {
+    const first = ruleLabel(store.repoTools(withAllowed.id).allowed[0]!);
+    next.push([`crane disallow ${JSON.stringify(first)} -r ${withAllowed.name}`, "stop allowing a command"]);
+  }
+  console.log(`\n${ui.hint(...next)}\n`);
 });
 repos
   .command("add")

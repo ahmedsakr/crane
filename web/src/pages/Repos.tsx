@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useApp } from "../App";
-import { api } from "../lib/api";
+import { api, ruleLabel } from "../lib/api";
 import { useToast } from "../components/bits";
 
 export function Repos() {
@@ -77,6 +77,32 @@ export function Repos() {
                   {r.path} · {r.defaultBranch}
                   {r.openTasks ? ` · ${r.openTasks} open` : ""}
                 </span>
+                {r.tools.allowed.length > 0 && (
+                  <span className="allowed-tools">
+                    <span className="row-meta">Also allowed</span>
+                    {r.tools.allowed.map((rule) => (
+                      <span className="chip" key={rule}>
+                        <span className="mono">{ruleLabel(rule)}</span>
+                        <button
+                          className="chip-x"
+                          aria-label={`Stop allowing ${ruleLabel(rule)}`}
+                          title={`Stop allowing ${ruleLabel(rule)}`}
+                          onClick={async () => {
+                            try {
+                              await api.disallowTool(r.id, rule);
+                              toast({ text: `Stopped allowing ${ruleLabel(rule)} for ${r.name}` });
+                              refresh();
+                            } catch (e) {
+                              toast({ text: (e as Error).message });
+                            }
+                          }}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </span>
+                )}
               </span>
               <span style={{ display: "flex", gap: 6 }}>
                 <button

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { KIND_LABEL, STATUS_LABEL, type Task, type TaskStatus } from "../lib/api";
-import { ago } from "../lib/format";
+import { api, KIND_LABEL, STATUS_LABEL, type BlockedTool, type Task, type TaskStatus } from "../lib/api";
+import { ago, plural } from "../lib/format";
 
 export function Dot({ status }: { status: TaskStatus | "on" | "paused" | "off" }) {
   return <span className={`dot dot-${status}`} aria-hidden />;
@@ -71,6 +71,73 @@ export function Empty({ title, children, action }: { title: string; children?: R
       <strong>{title}</strong>
       {children}
       {action && <div>{action}</div>}
+    </div>
+  );
+}
+
+/**
+ * One blocked command, as a decision: allow it for the repo, or keep it
+ * blocked and stop asking. `taskId` notes the choice on the task it came from.
+ */
+export function BlockedItem({
+  b,
+  taskId,
+  showTask,
+  onDone,
+}: {
+  b: BlockedTool;
+  taskId?: string;
+  /** Link to the task that last hit it (on Home, where there's no task in view). */
+  showTask?: boolean;
+  onDone: () => void;
+}) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const decide = async (fn: () => Promise<unknown>, done: string) => {
+    setBusy(true);
+    try {
+      await fn();
+      toast({ text: done });
+      onDone();
+    } catch (e) {
+      toast({ text: (e as Error).message });
+    } finally {
+      setBusy(false);
+    }
+  };
+  const often = b.tasks > 1 ? `Blocked in ${plural(b.tasks, "task")}` : b.times > 1 ? `Blocked ${b.times} times` : "Blocked once";
+  return (
+    <div className="blocked-item">
+      <div style={{ minWidth: 0 }}>
+        <div className="blocked-title">
+          Allow <code className="blocked-cmd">{b.label}</code> for {b.repoName}?
+        </div>
+        <div className="row-meta">
+          {often} · {ago(b.lastAt)}
+          {showTask && (
+            <>
+              {" · "}
+              <Link to={`/tasks/${b.lastTaskId}`}>Latest task</Link>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="actions">
+        <button
+          className="btn btn-quiet btn-sm"
+          disabled={busy}
+          onClick={() => decide(() => api.keepBlocked(b.repoId, b.rule, taskId), `${b.label} stays blocked. Crane won't ask again.`)}
+        >
+          Keep blocked
+        </button>
+        <button
+          className="btn btn-primary btn-sm"
+          disabled={busy}
+          onClick={() => decide(() => api.allowTool(b.repoId, b.rule, taskId), `Allowed ${b.label} for ${b.repoName}`)}
+        >
+          Allow
+        </button>
+      </div>
     </div>
   );
 }

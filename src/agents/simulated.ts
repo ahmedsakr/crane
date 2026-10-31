@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { git } from "../factory/git.js";
 import type { AgentDriver, RunContext, RunResult } from "./driver.js";
 import type { Finding, TaskKind } from "../core/types.js";
+import { suggestRules } from "../core/permissions.js";
 
 /**
  * A stand-in driver that walks through a believable sequence of steps without
@@ -25,7 +26,11 @@ export class SimulatedDriver implements AgentDriver {
     const script = SCRIPTS[task.kind];
     for (const [type, message] of script.steps) {
       await sleep(this.stepMs * (0.6 + Math.random() * 0.8), signal);
-      emit(type, message, { simulated: true });
+      if (type === "blocked") {
+        // Shaped like the Claude Code driver's, so the decision flow can be tried offline.
+        const rules = suggestRules("Bash", { command: message }, ["Bash(tail:*)", "Bash(head:*)", "Bash(grep:*)"]);
+        emit("blocked", `Blocked: ${message}`, { tool: "Bash", command: message, rules, simulated: true });
+      } else emit(type, message, { simulated: true });
     }
     await sleep(this.stepMs, signal);
     // When allowed to change code, leave a real (harmless) change so the review and diff flow is exercised.
@@ -95,7 +100,7 @@ function sleep(ms: number, signal: AbortSignal) {
   });
 }
 
-type Step = ["note" | "tool" | "finding", string];
+type Step = ["note" | "tool" | "finding" | "blocked", string];
 
 const SCRIPTS: Record<TaskKind, { steps: Step[]; summary: string; findings: Finding[]; changedFiles: string[] }> = {
   maintenance: {
@@ -107,6 +112,7 @@ const SCRIPTS: Record<TaskKind, { steps: Step[]; summary: string; findings: Find
       ["note", "The retry helper swallows timeouts, which explains the intermittent failures."],
       ["finding", "Timeouts are retried without backoff"],
       ["tool", "Read package.json"],
+      ["blocked", "pnpm audit --prod | tail -20"],
       ["note", "Two dependencies are a major version behind; one has a published advisory."],
       ["finding", "Outdated dependency with a known advisory"],
     ],
