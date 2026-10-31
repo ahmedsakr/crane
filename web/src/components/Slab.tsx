@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import type { Overview } from "../lib/api";
 import { hourLabel, plural, usd } from "../lib/format";
 
@@ -184,9 +185,9 @@ export function Slab({ o }: { o: Overview }) {
           <span>
             <b>{o.counts.needs_review}</b> need you
           </span>
-          <span>
+          <Link to="/analytics?days=7" className="slab-stat-link" title="See what the factory spent">
             <b>{usd(o.spendThisWeekUsd)}</b> spent this week
-          </span>
+          </Link>
         </div>
       </div>
     </section>

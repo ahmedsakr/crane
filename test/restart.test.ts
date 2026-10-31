@@ -165,6 +165,7 @@ test("claude code: resumes with --resume, and starts fresh if the old session ca
   const task = { id: "t-x", kind: "maintenance", title: "X", brief: "", autonomy: "observe", report: null } as unknown as Task;
   const notes: string[] = [];
   const sessions: string[] = [];
+  const costs: number[] = [];
   const r = await driver.run({
     task,
     repo: null,
@@ -173,6 +174,7 @@ test("claude code: resumes with --resume, and starts fresh if the old session ca
     emit: (_t, m) => void notes.push(m),
     resumeSession: "lost-session",
     onSession: (id) => void sessions.push(id),
+    onUsage: (u) => void costs.push(u.costUsd),
   });
 
   const calls = (await import("node:fs")).readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l) as string[]);
@@ -182,5 +184,5 @@ test("claude code: resumes with --resume, and starts fresh if the old session ca
   assert.ok(notes.some((n) => /Couldn't pick up the agent's earlier session/.test(n)), notes.join("\n"));
   assert.deepEqual(sessions, ["fresh-session"], "the new session is recorded so a later restart resumes it");
   assert.equal(r.report.summary, "All good");
-  assert.equal(r.costUsd, 0.25);
+  assert.deepEqual(costs, [0.25], "only the fresh session reported a cost");
 });

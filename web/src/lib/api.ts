@@ -1,5 +1,7 @@
 import type {
   Agent,
+  AgentRun,
+  Analytics,
   Autonomy,
   Task,
   TaskEvent,
@@ -10,8 +12,8 @@ import type {
   Repo,
 } from "../../../src/core/types";
 
-export type { Agent, Autonomy, Task, TaskEvent, TaskKind, TaskStatus, Overview, Repo };
-export { AUTONOMY_LABEL, KIND_LABEL, STATUS_LABEL, lastMergeOutcome } from "../../../src/core/types";
+export type { Agent, AgentRun, Analytics, Autonomy, Task, TaskEvent, TaskKind, TaskStatus, Overview, Repo };
+export { AUTONOMY_LABEL, KIND_LABEL, RUN_KIND_LABEL, STATUS_LABEL, lastMergeOutcome } from "../../../src/core/types";
 
 export interface TaskDraft extends NewTask {
   why: { kind: string; repo: string; autonomy: string };
@@ -22,6 +24,7 @@ export interface TaskDetail {
   repo: Repo | null;
   agent: Agent | null;
   events: TaskEvent[];
+  runs: AgentRun[];
 }
 
 async function req<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
@@ -39,6 +42,7 @@ const post = <T>(path: string, json: unknown = {}) => req<T>(path, { method: "PO
 
 export const api = {
   overview: () => req<Overview>("/overview"),
+  analytics: (days: number) => req<Analytics>(`/analytics?days=${days}`),
   tasks: (status?: string) => req<Task[]>(`/tasks${status ? `?status=${status}` : ""}`),
   task: (id: string) => req<TaskDetail>(`/tasks/${id}`),
   diff: (id: string) => req<{ diff: string }>(`/tasks/${id}/diff`),

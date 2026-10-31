@@ -3,7 +3,7 @@ import { createInterface } from "node:readline";
 import type { AgentDriver, RunContext, RunResult } from "./driver.js";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
 import { parseReport } from "./report.js";
-import type { Autonomy } from "../core/types.js";
+import type { Autonomy, RunUsage } from "../core/types.js";
 
 const READ_ONLY_TOOLS = [
   "Read",
@@ -101,6 +101,27 @@ function describeTool(name: string, input: Record<string, unknown>): string {
 class SessionNotResumed extends Error {}
 
 /**
+ * What a run used, from the `result` message that ends Claude Code's stream.
+ * `modelUsage` breaks it down per model (it includes any subagents), so prefer
+ * it; older versions only send the main loop's `usage`.
+ */
+export function usageFromResult(msg: Record<string, any>, initModel: string | null = null): RunUsage {
+  const n = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const perModel = Object.entries((msg.modelUsage ?? {}) as Record<string, Record<string, unknown>>);
+  const sum = (key: string) => perModel.reduce((s, [, u]) => s + n(u[key]), 0);
+  const top = perModel.sort(([, a], [, b]) => n(b.costUSD) - n(a.costUSD))[0]?.[0];
+  return {
+    costUsd: n(msg.total_cost_usd),
+    inputTokens: perModel.length ? sum("inputTokens") : n(msg.usage?.input_tokens),
+    outputTokens: perModel.length ? sum("outputTokens") : n(msg.usage?.output_tokens),
+    cacheReadTokens: perModel.length ? sum("cacheReadInputTokens") : n(msg.usage?.cache_read_input_tokens),
+    cacheWriteTokens: perModel.length ? sum("cacheCreationInputTokens") : n(msg.usage?.cache_creation_input_tokens),
+    turns: n(msg.num_turns),
+    model: top ?? initModel,
+  };
+}
+
+/**
  * Runs tasks through Claude Code in headless mode (`claude -p`), which uses
  * whatever auth the local `claude` CLI already has, a Claude subscription or an
  * API key. Each run streams JSON events that we translate into task events.
@@ -162,7 +183,7 @@ export class ClaudeCodeDriver implements AgentDriver {
       const child = spawn(this.bin, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
       let finalText = "";
       let lastText = "";
-      let costUsd = 0;
+      let model: string | null = null;
       let errored: string | null = null;
       let stderr = "";
       let started = false;
@@ -189,6 +210,7 @@ export class ClaudeCodeDriver implements AgentDriver {
         }
         if (msg.type === "system" && msg.subtype === "init") {
           started = true;
+          model = typeof msg.model === "string" ? msg.model : null;
           if (typeof msg.session_id === "string") ctx.onSession?.(msg.session_id);
           const verb = resume ? "resumed" : "started";
           emit("note", `Agent session ${verb}${msg.model ? ` on ${msg.model}` : ""}`, { sessionId: msg.session_id });
@@ -203,7 +225,8 @@ export class ClaudeCodeDriver implements AgentDriver {
             }
           }
         } else if (msg.type === "result") {
-          costUsd = Number(msg.total_cost_usd ?? 0);
+          // Reported before we decide whether the run succeeded: a failed run still cost this.
+          ctx.onUsage?.(usageFromResult(msg, model));
           finalText = typeof msg.result === "string" ? msg.result : lastText;
           if (msg.is_error || (msg.subtype && msg.subtype !== "success")) {
             errored = typeof msg.result === "string" ? msg.result : `Agent stopped: ${msg.subtype}`;
@@ -225,7 +248,7 @@ export class ClaudeCodeDriver implements AgentDriver {
         if (code !== 0 && !finalText) {
           return reject(new Error(`Claude Code exited with code ${code}. ${stderr.trim().slice(-500)}`));
         }
-        resolve({ report: parseReport(finalText || lastText), costUsd });
+        resolve({ report: parseReport(finalText || lastText) });
       });
     });
   }

@@ -2,10 +2,16 @@ import Database from "better-sqlite3";
 import { basename } from "node:path";
 import { dbPath } from "./paths.js";
 import { shortId } from "./ids.js";
-import { ALL_STATUSES, SHIPPED_STATUSES } from "./types.js";
+import { ALL_STATUSES, SHIPPED_STATUSES, UNSHIPPED_STATUSES } from "./types.js";
 import type {
   Agent,
+  AgentRun,
   AgentState,
+  Analytics,
+  RunKind,
+  RunOutcome,
+  RunUsage,
+  TaskKind,
   EventType,
   Task,
   TaskEvent,
@@ -68,7 +74,51 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 `;
 
+/** Created by migrateCostsToRuns, so the first open can backfill it from older tasks. */
+const RUNS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  kind TEXT NOT NULL,
+  agent_id TEXT,
+  driver TEXT NOT NULL,
+  model TEXT,
+  outcome TEXT NOT NULL DEFAULT 'running',
+  cost_usd REAL NOT NULL DEFAULT 0,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  turns INTEGER NOT NULL DEFAULT 0,
+  started_at TEXT NOT NULL,
+  finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS runs_task ON runs(task_id, id);
+CREATE INDEX IF NOT EXISTS runs_finished ON runs(finished_at);
+`;
+
 type Row = Record<string, unknown>;
+
+const hasTable = (db: Database.Database, name: string) =>
+  !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+
+/**
+ * Costs used to live only on the task row. Give every task that already cost
+ * something one run carrying that cost, so analytics include past spend.
+ */
+function migrateCostsToRuns(db: Database.Database) {
+  if (hasTable(db, "runs")) return;
+  db.transaction(() => {
+    if (hasTable(db, "runs")) return;
+    db.exec(RUNS_SCHEMA);
+    db.exec(`
+      INSERT INTO runs(task_id, kind, agent_id, driver, outcome, cost_usd, started_at, finished_at)
+      SELECT id, 'work', agent_id, 'unknown',
+             CASE status WHEN 'failed' THEN 'failed' WHEN 'cancelled' THEN 'cancelled' ELSE 'succeeded' END,
+             cost_usd, COALESCE(started_at, created_at), COALESCE(finished_at, started_at, created_at)
+      FROM tasks WHERE cost_usd > 0`);
+  }).immediate();
+}
 
 /**
  * Crane used to call tasks "missions". Rename the old tables and columns in
@@ -77,16 +127,15 @@ type Row = Record<string, unknown>;
  * both try it.
  */
 function migrateMissionsToTasks(db: Database.Database) {
-  const hasTable = (name: string) =>
-    !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+  const has = (name: string) => hasTable(db, name);
   const hasColumn = (table: string, col: string) =>
     (db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).some((c) => c.name === col);
 
   // Cheap check first, so normal opens never take the write lock.
-  if (!hasTable("missions") || hasTable("tasks")) return;
+  if (!has("missions") || has("tasks")) return;
   db.transaction(() => {
     // Check again under the lock: another process may have just migrated.
-    if (!hasTable("missions") || hasTable("tasks")) return;
+    if (!has("missions") || has("tasks")) return;
     db.exec("DROP INDEX IF EXISTS missions_status; DROP INDEX IF EXISTS events_mission;");
     db.exec("ALTER TABLE missions RENAME TO tasks");
     if (hasColumn("events", "mission_id")) db.exec("ALTER TABLE events RENAME COLUMN mission_id TO task_id");
@@ -157,6 +206,34 @@ function toEvent(r: Row): TaskEvent {
   };
 }
 
+function toRun(r: Row): AgentRun {
+  return {
+    id: r.id as number,
+    taskId: r.task_id as string,
+    kind: r.kind as RunKind,
+    agentId: (r.agent_id as string) ?? null,
+    driver: r.driver as string,
+    model: (r.model as string) ?? null,
+    outcome: r.outcome as RunOutcome,
+    costUsd: r.cost_usd as number,
+    inputTokens: r.input_tokens as number,
+    outputTokens: r.output_tokens as number,
+    cacheReadTokens: r.cache_read_tokens as number,
+    cacheWriteTokens: r.cache_write_tokens as number,
+    turns: r.turns as number,
+    startedAt: r.started_at as string,
+    finishedAt: (r.finished_at as string) ?? null,
+  };
+}
+
+/** Local midnight, `days` days before the one containing `ms`. */
+function localDayStart(ms: number, daysBack = 0): number {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - daysBack);
+  return d.getTime();
+}
+
 function toAgent(r: Row): Agent {
   return {
     id: r.id as string,
@@ -185,6 +262,7 @@ export class Store {
     migrateMissionsToTasks(this.db);
     this.db.exec(SCHEMA);
     addMissingColumns(this.db);
+    migrateCostsToRuns(this.db);
   }
 
   close() {
@@ -386,6 +464,140 @@ export class Store {
     return (r.id as number) ?? 0;
   }
 
+  // ── runs: what each agent run cost ────────────────────────
+  startRun(input: { taskId: string; kind: RunKind; agentId: string | null; driver: string }): number {
+    const info = this.db
+      .prepare("INSERT INTO runs(task_id, kind, agent_id, driver, started_at) VALUES(?, ?, ?, ?, ?)")
+      .run(input.taskId, input.kind, input.agentId, input.driver, now());
+    return Number(info.lastInsertRowid);
+  }
+
+  /**
+   * Close a run and add what it cost to its task, in one transaction so the
+   * task's total always equals the sum of its runs. `usage` is null when the
+   * run ended before its driver could say (e.g. it was killed).
+   */
+  finishRun(id: number, outcome: Exclude<RunOutcome, "running">, usage: RunUsage | null) {
+    const u = usage ?? { costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turns: 0, model: null };
+    const cost = Number.isFinite(u.costUsd) && u.costUsd > 0 ? u.costUsd : 0;
+    this.db.transaction(() => {
+      const run = this.db
+        .prepare(
+          `UPDATE runs SET outcome = ?, finished_at = ?, cost_usd = ?, input_tokens = ?, output_tokens = ?,
+             cache_read_tokens = ?, cache_write_tokens = ?, turns = ?, model = COALESCE(?, model)
+           WHERE id = ? AND outcome = 'running' RETURNING task_id`,
+        )
+        .get(outcome, now(), cost, u.inputTokens, u.outputTokens, u.cacheReadTokens, u.cacheWriteTokens, u.turns, u.model, id) as
+        | Row
+        | undefined;
+      // Already closed (say, by a restarted factory): don't count its cost twice.
+      if (run && cost) this.db.prepare("UPDATE tasks SET cost_usd = cost_usd + ? WHERE id = ?").run(cost, run.task_id);
+    })();
+  }
+
+  /** Runs a dead factory left open. Their cost is unknown, so they close at zero. */
+  closeStaleRuns(): number {
+    return this.db.prepare("UPDATE runs SET outcome = 'cancelled', finished_at = ? WHERE outcome = 'running'").run(now()).changes;
+  }
+
+  listRuns(taskId: string): AgentRun[] {
+    return (this.db.prepare("SELECT * FROM runs WHERE task_id = ? ORDER BY id ASC").all(taskId) as Row[]).map(toRun);
+  }
+
+  /** Spend over the last `days` local days, today included, with the same span before it for comparison. */
+  analytics(days = 30, nowMs = Date.now()): Analytics {
+    days = Math.max(1, Math.min(366, Math.floor(days) || 30));
+    const iso = (ms: number) => new Date(ms).toISOString();
+    const from = localDayStart(nowMs, days - 1);
+    const prevFrom = localDayStart(nowMs, 2 * days - 1);
+    const rows = this.db
+      .prepare(
+        `SELECT r.task_id, r.cost_usd, r.input_tokens, r.output_tokens, r.cache_read_tokens, r.cache_write_tokens,
+                r.finished_at, t.title, t.status, t.kind, t.repo_id
+         FROM runs r JOIN tasks t ON t.id = r.task_id
+         WHERE r.outcome != 'running' AND r.finished_at >= ?`,
+      )
+      .all(iso(prevFrom)) as Row[];
+
+    const daily = new Map<number, { usd: number; runs: number }>();
+    for (let i = days - 1; i >= 0; i--) daily.set(localDayStart(nowMs, i), { usd: 0, runs: 0 });
+    const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+    type TaskSpend = Analytics["topTasks"][number];
+    const perTask = new Map<string, TaskSpend>();
+    let spendUsd = 0;
+    let prevSpendUsd = 0;
+    let runs = 0;
+
+    for (const r of rows) {
+      const at = Date.parse(r.finished_at as string);
+      const usd = r.cost_usd as number;
+      if (at < from) {
+        prevSpendUsd += usd;
+        continue;
+      }
+      spendUsd += usd;
+      runs++;
+      tokens.input += r.input_tokens as number;
+      tokens.output += r.output_tokens as number;
+      tokens.cacheRead += r.cache_read_tokens as number;
+      tokens.cacheWrite += r.cache_write_tokens as number;
+      const b = daily.get(localDayStart(at));
+      if (b) {
+        b.usd += usd;
+        b.runs++;
+      }
+      const id = r.task_id as string;
+      const t =
+        perTask.get(id) ??
+        perTask
+          .set(id, {
+            id,
+            title: r.title as string,
+            status: r.status as TaskStatus,
+            kind: r.kind as TaskKind,
+            repoId: (r.repo_id as string) ?? null,
+            usd: 0,
+            runs: 0,
+          })
+          .get(id)!;
+      t.usd += usd;
+      t.runs++;
+    }
+
+    const tasks = [...perTask.values()];
+    const slice = (list: TaskSpend[]) => ({ usd: list.reduce((s, t) => s + t.usd, 0), tasks: list.length });
+    const groupBy = <K extends string | null>(key: (t: TaskSpend) => K) => {
+      const groups = new Map<K, TaskSpend[]>();
+      for (const t of tasks) if (t.usd > 0) groups.set(key(t), [...(groups.get(key(t)) ?? []), t]);
+      return [...groups.entries()].map(([k, list]) => ({ key: k, ...slice(list) })).sort((a, b) => b.usd - a.usd);
+    };
+    const repoNames = new Map(this.listRepos().map((r) => [r.id, r.name]));
+
+    return {
+      days,
+      from: iso(from),
+      to: iso(nowMs),
+      spendUsd,
+      prevSpendUsd,
+      runs,
+      tasks: tasks.length,
+      shipped: slice(tasks.filter((t) => SHIPPED_STATUSES.includes(t.status))),
+      unshipped: slice(tasks.filter((t) => UNSHIPPED_STATUSES.includes(t.status))),
+      tokens,
+      daily: [...daily.entries()].map(([t, v]) => ({ day: iso(t), ...v })),
+      byRepo: groupBy((t) => t.repoId).map(({ key, ...s }) => ({
+        repoId: key,
+        name: key ? (repoNames.get(key) ?? "Disconnected repo") : "No repo",
+        ...s,
+      })),
+      byKind: groupBy((t) => t.kind).map(({ key, ...s }) => ({ kind: key, ...s })),
+      topTasks: tasks
+        .filter((t) => t.usd > 0)
+        .sort((a, b) => b.usd - a.usd)
+        .slice(0, 10),
+    };
+  }
+
   // ── agents ────────────────────────────────────────────────
   listAgents(): Agent[] {
     return (this.db.prepare("SELECT * FROM agents ORDER BY name").all() as Row[]).map(toAgent);
@@ -440,8 +652,11 @@ export class Store {
           .get(iso(from), iso(to)) as Row
       ).n as number;
 
+    // Counted when the money was spent, not when the task was created.
     const spend = (
-      this.db.prepare("SELECT COALESCE(SUM(cost_usd), 0) AS s FROM tasks WHERE created_at >= ?").get(iso(t0 - weekMs)) as Row
+      this.db
+        .prepare("SELECT COALESCE(SUM(cost_usd), 0) AS s FROM runs WHERE outcome != 'running' AND finished_at >= ?")
+        .get(iso(t0 - weekMs)) as Row
     ).s as number;
 
     // Hourly activity buckets for the last 7 days.

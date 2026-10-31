@@ -1325,3 +1325,274 @@ a.row:hover .row-title {
   text-underline-offset: 3px;
   text-decoration-color: var(--hairline-strong);
 }
+
+/* ── analytics ──────────────────────────────────────────── */
+.slab-stat-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+.slab-stat-link:hover {
+  text-decoration-color: currentColor;
+}
+.spend-hero {
+  margin-top: 20px;
+}
+.spend-headline {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 20px 32px;
+  flex-wrap: wrap;
+}
+.spend-number {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(44px, 7vw, 64px);
+  letter-spacing: -0.045em;
+  line-height: 1;
+  margin-bottom: 6px;
+}
+.spend-stats {
+  display: flex;
+  gap: 12px 28px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+.spend-stats dt {
+  font-size: 13px;
+  color: var(--graphite);
+}
+.spend-stats dd {
+  margin: 2px 0 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+.spend-stats dd .muted {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+/* Daily columns: a recessive axis on the left, the plot, then sparse day labels. */
+.spend-chart {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: 180px auto;
+  column-gap: 10px;
+  margin-top: 28px;
+}
+.spend-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  font-size: 12px;
+  color: var(--graphite);
+  /* Center each tick label on its gridline. */
+  margin: -8px 0;
+}
+.spend-plot {
+  position: relative;
+  border-bottom: 1px solid var(--hairline-strong);
+}
+.spend-grid {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--hairline);
+}
+/* 2px between columns, shrinking below that only when 90 days squeeze onto a phone. */
+.spend-cols,
+.spend-x {
+  gap: min(2px, 0.3%);
+}
+.spend-cols {
+  position: absolute;
+  inset: 0;
+  display: flex;
+}
+.spend-col {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  outline: none;
+  border-radius: 4px 4px 0 0;
+}
+.spend-col.on,
+.spend-col:focus-visible {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.spend-col:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--live);
+}
+.spend-bar {
+  width: 100%;
+  max-width: 24px;
+  border-radius: 4px 4px 0 0;
+  background: var(--graphite);
+}
+.spend-col.on .spend-bar {
+  background: var(--ink);
+}
+.spend-tip {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 7px 11px;
+  border-radius: var(--r-sm);
+  background: var(--ink);
+  color: var(--concrete);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow);
+}
+.spend-tip strong {
+  font-size: 14px;
+}
+.spend-x {
+  grid-column: 2;
+  display: flex;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--graphite);
+}
+.spend-x span {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: visible;
+  white-space: nowrap;
+  text-align: center;
+  display: flex;
+  justify-content: center;
+}
+
+.spend-details {
+  margin-top: 16px;
+  font-size: 14px;
+}
+.spend-details summary {
+  cursor: pointer;
+  color: var(--graphite);
+  font-size: 13px;
+}
+.spend-table {
+  margin-top: 10px;
+  width: 100%;
+  max-width: 420px;
+  border-collapse: collapse;
+}
+.spend-table th,
+.spend-table td {
+  text-align: right;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.spend-table th:first-child,
+.spend-table td:first-child {
+  text-align: left;
+}
+.spend-table th {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--graphite);
+}
+
+.spend-split {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+.spend-breakdown {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.spend-breakdown li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 12px;
+  font-size: 14px;
+}
+.spend-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.spend-amount {
+  text-align: right;
+}
+.spend-track {
+  height: 8px;
+  border-radius: 0 4px 4px 0;
+  background: var(--surface-2);
+}
+.spend-track span {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: 0 4px 4px 0;
+  background: var(--graphite);
+}
+.spend-sub {
+  font-size: 13px;
+  color: var(--graphite);
+  text-align: right;
+  line-height: 8px;
+}
+.spend-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.spend-row-usd {
+  font-weight: 600;
+}
+.spend-note {
+  margin: 24px 0 8px;
+  font-size: 13px;
+  max-width: 70ch;
+}
+
+/* Per-run costs on a task. */
+.runs {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+  font-size: 14px;
+}
+.runs summary {
+  cursor: pointer;
+  color: var(--graphite);
+  font-size: 13px;
+}
+.runs ul {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.runs-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.runs-meta {
+  display: block;
+  font-size: 12px;
+  color: var(--graphite);
+  overflow-wrap: anywhere;
+}

@@ -45,7 +45,6 @@ export class SimulatedDriver implements AgentDriver {
       emit("tool", `Wrote .crane-simulated/${task.id}.md`, { simulated: true });
     }
     return {
-      costUsd: 0,
       report: {
         summary: `Simulated run. ${script.summary}`,
         findings: script.findings,
@@ -67,7 +66,6 @@ export class SimulatedDriver implements AgentDriver {
       emit("tool", `Edited ${f}`, { simulated: true });
     }
     return {
-      costUsd: 0,
       report: { summary: `Simulated run. Kept both sides of the conflicts in ${files.length} file(s).`, findings: [], changedFiles: files },
     };
   }
