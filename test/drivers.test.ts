@@ -393,6 +393,32 @@ test("factory: each run uses the model and effort saved for its agent, read fres
   assert.deepEqual(claude.tuned.at(-1), { model: "opus", effort: "max" });
 });
 
+test("factory: follow-up model and effort override saved settings only for the chosen task", async (t) => {
+  const { store, actions, repo } = await setup();
+  const codex = named("codex");
+  const claude = named("claude-code");
+  await actions.configureDriver("codex", { model: "gpt-saved", effort: "medium" });
+  const parent = actions.createTask({ kind: "maintenance", title: "Review", brief: "", repoId: repo.id,
+    autonomy: "observe", driver: "claude-code" });
+  store.updateTask(parent.id, { status: "needs_review", report: { summary: "Review", changedFiles: [], findings: [
+    { title: "Fix", detail: "Fix it", impact: "low", effort: "small" },
+  ] } });
+  const tuned = actions.followUp(parent.id, 0, { driver: "codex", model: "gpt-task", effort: "xhigh" });
+  const partial = actions.followUp(parent.id, 0, { driver: "codex", effort: "low" });
+  const untuned = actions.followUp(parent.id, 0, { driver: "codex" });
+  // Simulate a restart with a session whose driver owns its continuation.
+  store.finishRun(store.startRun({ taskId: tuned.id, kind: "work", agentId: null, driver: "codex" }), "cancelled", null);
+  store.updateTask(tuned.id, { sessionId: "saved-session" });
+  startFactory(t, store, [claude, codex]);
+  await until(() => [tuned, partial, untuned].every(task => finished(store, task.id)), "follow-ups to finish");
+  const tuningFor = (id: string) => codex.tuned[codex.ran.findIndex(run => run.task === id)];
+  assert.deepEqual(tuningFor(tuned.id), { model: "gpt-task", effort: "xhigh" });
+  assert.deepEqual(tuningFor(partial.id), { model: "gpt-saved", effort: "low" });
+  assert.deepEqual(tuningFor(untuned.id), { model: "gpt-saved", effort: "medium" });
+  assert.equal(codex.ran.find(run => run.task === tuned.id)?.resume, "saved-session");
+  assert.equal(claude.ran.length, 0, "the follow-ups use the selected agent");
+});
+
 test("factory: a run that changes code is told the checks Crane runs after it; an investigate-only run isn't", async (t) => {
   const { store, actions, repo } = await setup();
   const agent = named("claude-code");

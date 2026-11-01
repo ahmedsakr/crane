@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   worktree TEXT,
   session_id TEXT,
   driver TEXT,
+  model TEXT,
+  effort TEXT,
   assignee TEXT,
   report TEXT,
   cost_usd REAL NOT NULL DEFAULT 0,
@@ -176,6 +178,8 @@ const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
   ["session_id", "TEXT"],
   ["driver", "TEXT"],
   ["assignee", "TEXT"],
+  ["model", "TEXT"],
+  ["effort", "TEXT"],
 ];
 
 /** Add any missing columns to an older database. Safe if two processes open it at once. */
@@ -217,6 +221,8 @@ function toTask(r: Row): Task {
     worktree: (r.worktree as string) ?? null,
     sessionId: (r.session_id as string) ?? null,
     driver: (r.driver as string) ?? null,
+    model: (r.model as string) ?? null,
+    effort: (r.effort as string) ?? null,
     assignee: (r.assignee as string) ?? null,
     report: r.report ? (JSON.parse(r.report as string) as Report) : null,
     costUsd: (r.cost_usd as number) ?? 0,
@@ -447,10 +453,11 @@ export class Store {
     const ts = now();
     this.db
       .prepare(
-        `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, assignee, status, created_at)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
+        `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, status, created_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
       )
-      .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null, input.assignee ?? null, ts);
+      .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null,
+        input.model ?? null, input.effort ?? null, input.assignee ?? null, ts);
     this.addEvent(id, "status", "Queued", { status: "queued" });
     return this.getTask(id)!;
   }

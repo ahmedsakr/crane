@@ -102,6 +102,8 @@ const task = (autonomy: Task["autonomy"] = "observe"): Task => ({
   worktree: null,
   sessionId: null,
   driver: null,
+  model: null,
+  effort: null,
   assignee: null,
   report: null,
   costUsd: 0,

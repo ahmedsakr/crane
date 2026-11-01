@@ -50,7 +50,7 @@ A task's worktree is removed once nothing needs it: after it merges, when you ap
 
 After a successful merge, Crane queues a read-only **Post-mortem** task in the same repository. It reviews the original brief, final report, and recorded activity, prioritizing blocked commands and errors, and recommends ways to reduce friction for future tasks. Large histories are bounded and omissions are marked; this is recorded activity rather than the agent's full private conversation. Findings appear through the usual task report and review flow in both the CLI and dashboard. The review uses a fresh session, consumes a normal crew slot and agent usage, and can be cancelled like any other task. It never changes code or permissions automatically, and it does not run for failed merges or **Approve only**.
 
-Reports come back as a summary plus **findings**. Turn any finding into its own task with one click (or `crane follow-up <id> <n>`).
+Reports come back as a summary plus **findings**. **Make this change** opens scheduling choices for a finding: choose the agent, model, and model effort, then queue the follow-up. The CLI mirrors it: `crane follow-up <id> <n> --agent codex --model <model> --effort high`. Model and effort overrides apply only to that task; blank fields use the agent's saved settings. Without options, the follow-up keeps the original task's agent and any task overrides.
 
 Tasks that build or change UI are instructed to capture and inspect screenshots, then attach them to their report. The task page shows previews you can open at full size; `crane show <id>` lists captions and local image paths. Crane retains the images separately from the branch, so they survive worktree cleanup. Agents report worktree-relative PNG, JPEG, or WebP paths in `screenshots: [{ "path": ".crane/screenshots/view.png", "caption": "Updated view at 1280 × 800" }]` (up to 12 images, 10 MiB each). If browser tools are unavailable or blocked, including in Codex's sandbox, the agent must explain the missing screenshots and remaining visual validation in its summary. Crane does not bypass those restrictions to capture them.
 
@@ -100,7 +100,7 @@ Start a run with the button on their card (**Review security**, **Reduce duplica
 | `crane approve <id>` / `crane decline <id>` | Decide on work that's waiting for you. Approving merges and pushes it (`--no-merge` to approve only). |
 | `crane merge <id>` | Merge and push a task you approved only, or one that finished on its own branch |
 | `crane diff <id>` | See what a task changed on its branch |
-| `crane follow-up <id> <n>` | Turn finding *n* into a task that makes the change |
+| `crane follow-up <id> <n> [--agent <agent>] [--model <model>] [--effort <level>]` | Turn finding *n* into a task with optional agent, model, and effort choices |
 | `crane cancel <id>` / `crane retry <id>` | Stop work, or run it again (`--agent codex` to switch agents) |
 | `crane blocked` | Commands agents were blocked from, added up across tasks |
 | `crane allow "<command>" -r <repo>` / `crane keep-blocked …` | Let agents in that repo run it from now on, or keep it blocked and stop asking. `crane disallow` takes an allowed command back. |

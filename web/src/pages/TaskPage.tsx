@@ -8,15 +8,18 @@ import {
   RUN_KIND_LABEL,
   choosableDrivers,
   driverLabel,
+  settingsLabel,
   lastMergeOutcome,
   type AgentRun,
   type TaskDetail,
   type TaskEvent,
+  type TaskRunOptions,
 } from "../lib/api";
 import { useDrivers, useEventStream, usePoll, useTick } from "../lib/hooks";
 import { ago, clock, compact, duration, plural, usd } from "../lib/format";
 import { BlockedItem, StatusChip, useToast } from "../components/bits";
 import { useApp } from "../lib/app-context";
+import { FollowUpForm } from "../components/FollowUpForm";
 
 /** Group consecutive tool calls so the timeline reads as a story, with the mechanics one click away. */
 function groupEvents(events: TaskEvent[]) {
@@ -140,11 +143,13 @@ export function TaskPage() {
   const [live, setLive] = useState<TaskEvent[]>([]);
   const [showDiff, setShowDiff] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
+  const [finding, setFinding] = useState<number | null>(null);
   const { drivers } = useDrivers();
   useTick(5000);
 
   const lastId = data?.events.at(-1)?.id ?? 0;
   useEffect(() => setLive([]), [lastId]);
+  useEffect(() => setFinding(null), [id]);
   useEventStream(data && ACTIVE_STATUSES.includes(data.task.status) ? id : null, (e) =>
     setLive((l) => (l.some((x) => x.id === e.id) ? l : [...l, e])),
     lastId,
@@ -182,8 +187,8 @@ export function TaskPage() {
     }
   };
 
-  const followUp = (i: number) =>
-    run("f" + i, () => api.followUp(m.id, i), "Follow-up started", (r) => nav(`/tasks/${(r as { id: string }).id}`));
+  const followUp = (i: number, opts: TaskRunOptions) =>
+    run("f" + i, () => api.followUp(m.id, i, opts), "Follow-up queued", (r) => nav(`/tasks/${(r as { id: string }).id}`));
 
   return (
     <article>
@@ -326,10 +331,15 @@ export function TaskPage() {
                     </div>
                     {m.autonomy === "observe" && (
                       <div>
-                        <button className="btn btn-quiet btn-sm" disabled={!!busy} onClick={() => followUp(i)}>
+                        <button className="btn btn-quiet btn-sm" disabled={!!busy} aria-expanded={finding === i} onClick={() => setFinding(finding === i ? null : i)}>
                           Make this change
                         </button>
                       </div>
+                    )}
+                    {m.autonomy === "observe" && finding === i && (
+                      drivers?.length ? <FollowUpForm key={`${m.id}-${i}`} task={m} drivers={drivers} busy={!!busy}
+                        onSubmit={opts => followUp(i, opts)} onClose={() => setFinding(null)} />
+                        : <p className="follow-up-form muted">{drivers ? "Couldn't load agents. Reload to try again." : "Loading agents…"}</p>
                     )}
                   </div>
                 ))}
@@ -380,6 +390,10 @@ export function TaskPage() {
               <dd>{AUTONOMY_LABEL[m.autonomy]}</dd>
               <dt>Agent</dt>
               <dd>{[agent?.name, runsOn].filter(Boolean).join(" on ") || "—"}</dd>
+              {settingsLabel(m) && <>
+                <dt>Model settings</dt>
+                <dd>{settingsLabel(m)}</dd>
+              </>}
               <dt>Started</dt>
               <dd>{m.startedAt ? ago(m.startedAt) : "Not yet"}</dd>
               <dt>Took</dt>

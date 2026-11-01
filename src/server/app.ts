@@ -4,7 +4,7 @@ import { getMimeType } from "hono/utils/mime";
 import { readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import type { Store } from "../core/store.js";
-import { lastMergeOutcome, type TaskStatus, type NewTask, type TaskDetail, type TaskDraft } from "../core/types.js";
+import { lastMergeOutcome, type TaskStatus, type NewTask, type TaskDetail, type TaskDraft, type TaskRunOptions } from "../core/types.js";
 import { OperatorActions } from "../factory/actions.js";
 import { draftTask } from "../factory/instruct.js";
 import { diffForTask } from "../factory/git.js";
@@ -120,8 +120,8 @@ export function createApp(store: Store) {
     return c.json(actions.retry(c.req.param("id"), { driver: body.driver }), 201);
   });
   api.post("/tasks/:id/follow-up", async (c) => {
-    const { finding } = await c.req.json<{ finding: number }>();
-    return c.json(actions.followUp(c.req.param("id"), finding), 201);
+    const { finding, ...opts } = await optionalJsonObject<TaskRunOptions & { finding: number }>(c.req.raw);
+    return c.json(actions.followUp(c.req.param("id"), finding, opts), 201);
   });
 
   api.get("/repos", (c) => c.json(store.listRepos()));

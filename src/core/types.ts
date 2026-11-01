@@ -126,6 +126,9 @@ export interface Task {
    * factory's default agent at the time it's picked up.
    */
   driver: string | null;
+  /** Task overrides; null follows the chosen agent's saved settings. */
+  model: string | null;
+  effort: string | null;
   /**
    * The crew member this task is for, e.g. `a-jib`, when the operator started
    * it from that member's maintenance role. Only that member picks it up.
@@ -216,14 +219,20 @@ export interface Agent {
   lastActiveAt: string | null;
 }
 
-export interface NewTask {
+export interface TaskRunOptions {
+  /** Which agent works it. Null uses the factory's default. */
+  driver?: string | null;
+  /** Overrides for this task only; null follows the agent's saved settings. */
+  model?: string | null;
+  effort?: string | null;
+}
+
+export interface NewTask extends TaskRunOptions {
   kind: TaskKind;
   title: string;
   brief: string;
   repoId: string | null;
   autonomy: Autonomy;
-  /** Which agent works it. Leave out for the factory's default. */
-  driver?: string | null;
   /** The crew member who must work it. Leave out for whoever is free next. */
   assignee?: string | null;
 }

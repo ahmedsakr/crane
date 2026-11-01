@@ -299,6 +299,7 @@ program
     const member = m.assignee ? store.listAgents().find((a) => a.id === m.assignee) : null;
     const forMember = member ? ` · for ${member.name}${m.status === "queued" && !member.active ? " (on-call)" : ""}` : "";
     console.log(`  ${ui.statusText(m.status)}${ui.dim(forMember + on + cost)}`);
+    if (settingsLabel(m)) console.log(ui.dim(`  Model settings: ${settingsLabel(m)}`));
 
     if (m.report) {
       console.log(ui.section("Summary"));
@@ -492,9 +493,12 @@ program
   .description("Turn a finding into a task that makes the change")
   .argument("<id>")
   .argument("<finding>", "finding number, as shown in crane show")
-  .action((id: string, n: string) => {
+  .option("--agent <agent>", `run it on an agent: ${DRIVER_NAMES.join(" | ")} | default`)
+  .option("--model <model>", "model for this follow-up only; requires a chosen agent")
+  .option("--effort <level>", "model effort for this follow-up only; requires a chosen agent")
+  .action((id: string, n: string, opts: { agent?: string; model?: string; effort?: string }) => {
     try {
-      const m = actions.followUp(id, Number(n) - 1);
+      const m = actions.followUp(id, Number(n) - 1, { driver: opts.agent, model: opts.model, effort: opts.effort });
       ui.ok(`Started ${m.id}  ${ui.dim(m.title)}`);
     } catch (err) {
       ui.fail((err as Error).message);
