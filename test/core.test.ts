@@ -109,7 +109,7 @@ test("worktree: picks the install command from the lockfile", async () => {
   assert.equal(installCommandFor(dir)?.cmd, "npm");
   assert.deepEqual(installCommandFor(dir)?.args.slice(0, 1), ["ci"]);
   mkdirSync(join(dir, "node_modules"));
-  assert.equal(installCommandFor(dir), null, "already installed");
+  assert.equal(installCommandFor(dir)?.cmd, "npm", "an existing directory alone does not prove dependencies are current");
 });
 
 test("worktree: copies dependencies from the checkout only when they match the lockfile", async () => {
@@ -158,6 +158,7 @@ test("worktree: copies dependencies from the checkout only when they match the l
 
   {
     const { from, to } = setup();
+    gitInit(from);
     gitInit(to);
     assert.deepEqual(await copyDependencies(from, to), ["node_modules", "web/node_modules"]);
     assert.equal(readFileSync(join(to, "node_modules", "a", "index.js"), "utf8"), "module.exports = 1");

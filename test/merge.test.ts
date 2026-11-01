@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { landTask as land, MergeError, type MergeRequest } from "../src/factory/merge.js";
 const landTask = (req: MergeRequest) => land({ checks: ["true"], ...req });
 import { keepBothSides } from "../src/agents/simulated.js";
+import { installDependencies } from "../src/factory/deps.js";
 import type { Repo, Task } from "@crane/contracts";
 
 const ID = ["-c", "user.name=Test", "-c", "user.email=test@localhost", "-c", "commit.gpgsign=false"];
@@ -150,6 +151,44 @@ test("merge: conflicts go to the resolver and the resolution lands", async () =>
   assert.match(merged, /from main/);
   assert.match(merged, /from the task/);
   assert.doesNotMatch(merged, /<<<<<<<|>>>>>>>/);
+});
+
+test("merge: a newly introduced workspace is available to conflict agents and merge checks", async () => {
+  for (const conflict of [false, true]) {
+    const { checkout, repo, task, wt } = setup({ remote: false });
+    commitFile(checkout, ".gitignore", "node_modules/\n", "ignore dependencies");
+    const manifest = { name: "fixture", version: "1.0.0", private: true, workspaces: ["packages/*"] };
+    const packages: Record<string, unknown> = { "": manifest };
+    commitFile(checkout, "package.json", JSON.stringify(manifest), "manifest");
+    commitFile(checkout, "package-lock.json", JSON.stringify({ lockfileVersion: 3, packages }), "lock");
+    sh(wt, "merge", "--ff-only", "main");
+    await installDependencies(wt);
+
+    // Main adds a workspace after the task's environment was prepared.
+    mkdirSync(join(checkout, "packages/contracts"), { recursive: true });
+    commitFile(checkout, "packages/contracts/package.json", JSON.stringify({ name: "@fixture/contracts", version: "1.0.0" }), "workspace");
+    packages["packages/contracts"] = { name: "@fixture/contracts", version: "1.0.0" };
+    packages["node_modules/@fixture/contracts"] = { link: true, resolved: "packages/contracts" };
+    commitFile(checkout, "package-lock.json", JSON.stringify({ lockfileVersion: 3, packages }), "workspace lock");
+    commitFile(wt, "notes.md", "from the task\n", "task edit");
+    if (conflict) commitFile(checkout, "notes.md", "from main\n", "main edit");
+
+    let resolved = false;
+    const result = await landTask({
+      repo, task, workdir: wt, emit,
+      checks: ["test -f node_modules/@fixture/contracts/package.json"],
+      resolveConflicts: async ({ cwd, files }) => {
+        resolved = true;
+        assert.equal(JSON.parse(readFileSync(join(cwd, "node_modules/@fixture/contracts/package.json"), "utf8")).name, "@fixture/contracts");
+        for (const file of files) writeFileSync(join(cwd, file), keepBothSides(readFileSync(join(cwd, file), "utf8")));
+        // Conflict resolution can damage a link; preparation must run again before checks.
+        const { rmSync } = await import("node:fs");
+        rmSync(join(cwd, "node_modules/@fixture/contracts"));
+      },
+    });
+    assert.equal(resolved, conflict);
+    assert.ok(result.commit, "the merge landed after its workspace check passed");
+  }
 });
 
 test("merge: unresolved conflicts stop before anything is pushed", async () => {

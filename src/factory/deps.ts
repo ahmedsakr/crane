@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { constants, existsSync } from "node:fs";
-import { cp, readFile, readdir, readlink, realpath, rm, symlink, unlink } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { cp, lstat, mkdir, readFile, readdir, readlink, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { git } from "../core/git.js";
 
@@ -26,17 +27,17 @@ function lockfileFor(path: string): Lockfile | null {
 
 /**
  * The install command for a worktree's lockfile, or null when there is nothing
- * to install (no lockfile, or dependencies are already in place). Only
+ * to install (no lockfile). Only
  * lockfile-driven installs, so the worktree gets exactly what the repo pins.
  */
 export function installCommandFor(path: string): { cmd: string; args: string[] } | null {
   const lock = lockfileFor(path);
-  if (!lock || existsSync(join(path, "node_modules"))) return null;
+  if (!lock) return null;
   return { cmd: lock.cmd, args: lock.args };
 }
 
 /**
- * Get a fresh worktree's dependencies in place so agents can build and test
+ * Get a worktree's dependencies in place so agents can build and test
  * without needing permission to install. Copies them from `from` (the repo's
  * own checkout) when that checkout has installed exactly what the worktree's
  * lockfile pins, since that skips downloads and native rebuilds. Otherwise runs
@@ -47,6 +48,14 @@ export async function installDependencies(
   path: string,
   opts: { from?: string; signal?: AbortSignal } = {},
 ): Promise<string | null> {
+  const install = installCommandFor(path);
+  if (!install) return null;
+  await checkDependencyDirs(path);
+  const fingerprint = await dependencyFingerprint(path);
+  const prepared = await readFile(join(path, PREPARED), "utf8").catch(() => null);
+  if (prepared === fingerprint && await localLinksMatch(path)) return null;
+  // A failed refresh must not leave a previous preparation marked as valid.
+  await rm(join(path, PREPARED), { force: true });
   if (opts.from) {
     try {
       const copied = await copyDependencies(opts.from, path, opts.signal);
@@ -56,15 +65,77 @@ export async function installDependencies(
       // Fall through: a clean install still gets the worktree what it needs.
     }
   }
-  const install = installCommandFor(path);
-  if (!install) return null;
   await run(install.cmd, install.args, {
     cwd: path,
     signal: opts.signal,
     timeout: 10 * 60 * 1000,
     maxBuffer: 64 * 1024 * 1024,
   });
+  if (!(await localLinksMatch(path))) throw new Error("Installed local package links do not point inside the worktree");
+  // npm can omit node_modules entirely when the lock has no dependencies.
+  await mkdir(join(path, "node_modules"), { recursive: true });
+  await writeFile(join(path, PREPARED), fingerprint);
   return `Installed dependencies (${[install.cmd, ...install.args].join(" ")})`;
+}
+
+// Kept under node_modules so it is untracked and disappears with the install.
+const PREPARED = "node_modules/.crane-dependencies";
+
+/** Refreshes must never follow a dependency directory back into another checkout. */
+async function checkDependencyDirs(path: string): Promise<void> {
+  const root = await realpath(path);
+  for (const dir of await packageDirs(path)) {
+    const packagePath = await realpath(join(path, dir)).catch((err: NodeJS.ErrnoException) => {
+      if (err.code === "ENOENT") return null;
+      throw err;
+    });
+    if (packagePath && !within(root, packagePath)) throw new Error(`Package directory must stay inside the worktree: ${dir}`);
+    const modules = join(path, dir, "node_modules");
+    const stat = await lstat(modules).catch((err: NodeJS.ErrnoException) => {
+      if (err.code === "ENOENT") return null;
+      throw err;
+    });
+    if (stat && (stat.isSymbolicLink() || !within(root, await realpath(modules)))) {
+      throw new Error(`Dependency directory must stay inside the worktree: ${modules}`);
+    }
+  }
+}
+
+/** Include manifests as well as locks: workspace names/paths can change independently. */
+async function dependencyFingerprint(path: string): Promise<string> {
+  const files = (await packageDirs(path)).flatMap(d =>
+    ["package.json", ...LOCKFILES.map(l => l.file)].map(f => join(d, f)),
+  );
+  files.push("pnpm-workspace.yaml", ".npmrc", ".yarnrc.yml");
+  const inputs = await Promise.all(files.sort().map(async file => {
+    const contents = await readFile(join(path, file), "utf8").catch((err: NodeJS.ErrnoException) => {
+      if (err.code === "ENOENT") return null;
+      throw err;
+    });
+    return [file, contents];
+  }));
+  return createHash("sha256").update(JSON.stringify(inputs)).digest("hex");
+}
+
+/** npm records workspace/local links in the lockfile, including their exact destinations. */
+async function localLinksMatch(path: string): Promise<boolean> {
+  if (lockfileFor(path)?.file !== "package-lock.json") return true;
+  try {
+    const root = await realpath(path);
+    const lock: NpmLock = JSON.parse(await readFile(join(path, "package-lock.json"), "utf8"));
+    if (!lock.packages) return true; // npm v1 locks have no workspace link entries.
+    for (const [file, pkg] of Object.entries(lock.packages)) {
+      if (!pkg.link) continue;
+      if (!pkg.resolved || !file.includes("node_modules/")) return false;
+      const expected = resolve(root, pkg.resolved);
+      if (!within(root, expected)) return false;
+      const [target, linked] = await Promise.all([realpath(expected), realpath(join(root, file))]);
+      if (!within(root, target) || target !== linked) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -77,7 +148,13 @@ export async function installDependencies(
 export async function copyDependencies(from: string, to: string, signal?: AbortSignal): Promise<string[] | null> {
   const lock = lockfileFor(to);
   if (!lock || existsSync(join(to, "node_modules")) || !existsSync(join(from, "node_modules"))) return null;
+  await checkDependencyDirs(to);
+  await checkDependencyDirs(from);
   if (!(await installedMatches(from, to, lock))) return null;
+  const fingerprint = await dependencyFingerprint(to);
+  if (fingerprint !== await dependencyFingerprint(from) || !(await localLinksMatch(from))) return null;
+  const prepared = await readFile(join(from, PREPARED), "utf8").catch(() => null);
+  if (prepared !== null && prepared !== fingerprint) return null;
 
   const dirs = (await packageDirs(to)).filter(
     (d) => existsSync(join(from, d, "node_modules")) && !existsSync(join(to, d, "node_modules")),
@@ -90,6 +167,8 @@ export async function copyDependencies(from: string, to: string, signal?: AbortS
       await copyTree(join(from, d, "node_modules"), dst, signal);
       await retargetLinks(dst, from, to);
     }
+    if (!(await localLinksMatch(to))) throw new Error("Copied local package links do not point inside the worktree");
+    await writeFile(join(to, PREPARED), fingerprint);
   } catch (err) {
     for (const dst of created) await rm(dst, { recursive: true, force: true });
     throw err;
@@ -117,7 +196,7 @@ async function installedMatches(from: string, to: string, lock: Lockfile): Promi
   }
 }
 
-type NpmLock = { packages?: Record<string, { version?: string; optional?: boolean }> };
+type NpmLock = { packages?: Record<string, { version?: string; optional?: boolean; link?: boolean; resolved?: string }> };
 
 /**
  * Compare a package-lock.json with npm's hidden lockfile. Every installed
@@ -129,7 +208,9 @@ export function npmInstallMatches(lock: NpmLock, hidden: NpmLock): boolean {
   const installed = hidden.packages;
   if (!pinned || !installed) return false;
   for (const [key, pkg] of Object.entries(installed)) {
-    if (pinned[key]?.version !== pkg.version) return false;
+    const pin = pinned[key];
+    if (!pin || pin.version !== pkg.version || pin.link !== pkg.link) return false;
+    if (pkg.link && pin.resolved !== pkg.resolved) return false;
   }
   for (const [key, pkg] of Object.entries(pinned)) {
     if (key === "" || pkg.optional || !key.includes("node_modules/")) continue;
