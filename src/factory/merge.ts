@@ -256,7 +256,11 @@ async function buildMerge(req: MergeRequest, base: { sha: string; label: string 
 }
 
 async function prepareDependencies(req: MergeRequest): Promise<void> {
-  const note = await installDependencies(req.workdir, { from: req.repo.path, signal: req.signal });
+  const note = await installDependencies(req.workdir, {
+    from: req.repo.path,
+    signal: req.signal,
+    onProgress: (progress) => req.emit("note", progress),
+  });
   if (note) req.emit("note", note);
 }
 

@@ -43,29 +43,44 @@ export function installCommandFor(path: string): { cmd: string; args: string[] }
  * lockfile pins, since that skips downloads and native rebuilds. Otherwise runs
  * a clean, lockfile-driven install. Returns a note for the activity feed, or
  * null if nothing needed doing. Throws if the install fails.
+ *
+ * `onProgress` hears about the slow part (a copy or a clean install) before it
+ * starts, including why the copy was skipped, so a long setup is explained
+ * while it runs rather than after. The returned note carries the same reason
+ * and how long the setup took.
  */
 export async function installDependencies(
   path: string,
-  opts: { from?: string; signal?: AbortSignal } = {},
+  opts: { from?: string; signal?: AbortSignal; onProgress?: (note: string) => void } = {},
 ): Promise<string | null> {
-  const install = installCommandFor(path);
-  if (!install) return null;
+  const lock = lockfileFor(path);
+  if (!lock) return null;
   await checkDependencyDirs(path);
   const fingerprint = await dependencyFingerprint(path);
   const prepared = await readFile(join(path, PREPARED), "utf8").catch(() => null);
   if (prepared === fingerprint && await localLinksMatch(path)) return null;
+  const started = Date.now();
   // A failed refresh must not leave a previous preparation marked as valid.
   await rm(join(path, PREPARED), { force: true });
+  let skipped: string | null = null;
   if (opts.from) {
     try {
-      const copied = await copyDependencies(opts.from, path, opts.signal);
-      if (copied) return `Copied dependencies from your checkout (${copied.join(", ")})`;
+      skipped = await copyRejection(opts.from, path, lock, fingerprint);
+      if (!skipped) {
+        opts.onProgress?.("Copying dependencies from your checkout");
+        const copied = await copyInto(opts.from, path, fingerprint, opts.signal);
+        return `Copied dependencies from your checkout (${copied.join(", ")}) in ${elapsed(Date.now() - started)}`;
+      }
     } catch (err) {
       if (opts.signal?.aborted) throw err;
       // Fall through: a clean install still gets the worktree what it needs.
+      skipped = `copying failed: ${firstLine(err)}`;
     }
   }
-  await run(install.cmd, install.args, {
+  const command = [lock.cmd, ...lock.args].join(" ");
+  const because = skipped ? ` · didn't copy from your checkout: ${skipped}` : "";
+  opts.onProgress?.(`Installing dependencies (${command})${because}`);
+  await run(lock.cmd, lock.args, {
     cwd: path,
     signal: opts.signal,
     timeout: 10 * 60 * 1000,
@@ -75,8 +90,17 @@ export async function installDependencies(
   // npm can omit node_modules entirely when the lock has no dependencies.
   await mkdir(join(path, "node_modules"), { recursive: true });
   await writeFile(join(path, PREPARED), fingerprint);
-  return `Installed dependencies (${[install.cmd, ...install.args].join(" ")})`;
+  return `Installed dependencies (${command}) in ${elapsed(Date.now() - started)}${because}`;
 }
+
+/** A short, readable duration for the activity feed: "0.4s", "12s", "2m 41s". */
+export function elapsed(ms: number): string {
+  if (ms < 10_000) return `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
+  const s = Math.round(ms / 1000);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+const firstLine = (err: unknown) => (err instanceof Error ? err.message : String(err)).split("\n")[0];
 
 // Kept under node_modules so it is untracked and disappears with the install.
 const PREPARED = "node_modules/.crane-dependencies";
@@ -141,21 +165,45 @@ async function localLinksMatch(path: string): Promise<boolean> {
 /**
  * Copy `node_modules` (the root's and every workspace package's) from `from`
  * into the worktree at `to`. Returns the directories copied, relative to the
- * worktree, or null when `from` can't be trusted to match the worktree's
- * lockfile. It's a real copy, never a link, so nothing run in the worktree can
- * change the operator's checkout. On failure, removes whatever it copied.
+ * worktree as `copied`, or, as `skipped`, why `from` can't be trusted to match
+ * the worktree's lockfile. It's a real copy, never a link, so nothing run in
+ * the worktree can change the operator's checkout. On failure, removes
+ * whatever it copied and throws.
  */
-export async function copyDependencies(from: string, to: string, signal?: AbortSignal): Promise<string[] | null> {
+export async function copyDependencies(
+  from: string,
+  to: string,
+  signal?: AbortSignal,
+): Promise<{ copied: string[] } | { skipped: string }> {
   const lock = lockfileFor(to);
-  if (!lock || existsSync(join(to, "node_modules")) || !existsSync(join(from, "node_modules"))) return null;
+  if (!lock) return { skipped: "the worktree has no lockfile" };
+  const fingerprint = await dependencyFingerprint(to);
+  const skipped = await copyRejection(from, to, lock, fingerprint);
+  return skipped ? { skipped } : { copied: await copyInto(from, to, fingerprint, signal) };
+}
+
+/**
+ * Why `from`'s installed dependencies can't be copied into `to`, phrased to
+ * follow "didn't copy from your checkout:", or null when they can. Only reads.
+ */
+async function copyRejection(from: string, to: string, lock: Lockfile, fingerprint: string): Promise<string | null> {
+  if (existsSync(join(to, "node_modules"))) return "the worktree already has node_modules";
+  if (!existsSync(join(from, "node_modules"))) return "it has no node_modules";
   await checkDependencyDirs(to);
   await checkDependencyDirs(from);
-  if (!(await installedMatches(from, to, lock))) return null;
-  const fingerprint = await dependencyFingerprint(to);
-  if (fingerprint !== await dependencyFingerprint(from) || !(await localLinksMatch(from))) return null;
+  const mismatch = await installedMismatch(from, to, lock);
+  if (mismatch) return mismatch;
+  if (fingerprint !== await dependencyFingerprint(from)) {
+    return "its package.json files or package manager settings differ from the worktree's";
+  }
+  if (!(await localLinksMatch(from))) return "its local package links don't point inside it";
   const prepared = await readFile(join(from, PREPARED), "utf8").catch(() => null);
-  if (prepared !== null && prepared !== fingerprint) return null;
+  if (prepared !== null && prepared !== fingerprint) return "its install predates its current package.json files";
+  return null;
+}
 
+/** The copy itself, once `copyRejection` has cleared it. */
+async function copyInto(from: string, to: string, fingerprint: string, signal?: AbortSignal): Promise<string[]> {
   const dirs = (await packageDirs(to)).filter(
     (d) => existsSync(join(from, d, "node_modules")) && !existsSync(join(to, d, "node_modules")),
   );
@@ -177,23 +225,29 @@ export async function copyDependencies(from: string, to: string, signal?: AbortS
 }
 
 /**
- * Whether `from` has installed exactly what the worktree's lockfile pins: the
- * lockfiles must be identical and, for npm, `node_modules/.package-lock.json`
- * (what npm last installed) must agree with it, so a checkout that pulled a new
- * lockfile but never reinstalled isn't copied.
+ * Why `from` hasn't installed exactly what the worktree's lockfile pins, or
+ * null when it has: the lockfiles must be identical and, for npm,
+ * `node_modules/.package-lock.json` (what npm last installed) must agree with
+ * it, so a checkout that pulled a new lockfile but never reinstalled isn't copied.
  */
-async function installedMatches(from: string, to: string, lock: Lockfile): Promise<boolean> {
+async function installedMismatch(from: string, to: string, lock: Lockfile): Promise<string | null> {
   const theirs = join(from, lock.file);
-  if (!existsSync(theirs)) return false;
+  if (!existsSync(theirs)) return `it has no ${lock.file}`;
   const [mine, source] = await Promise.all([readFile(join(to, lock.file)), readFile(theirs)]);
-  if (!mine.equals(source)) return false;
-  if (lock.file !== "package-lock.json") return true;
+  if (!mine.equals(source)) return `its ${lock.file} differs from the worktree's`;
+  if (lock.file !== "package-lock.json") return null;
+  let hidden: NpmLock;
   try {
-    const hidden = JSON.parse(await readFile(join(from, "node_modules", ".package-lock.json"), "utf8"));
-    return npmInstallMatches(JSON.parse(source.toString("utf8")), hidden);
+    hidden = JSON.parse(await readFile(join(from, "node_modules", ".package-lock.json"), "utf8"));
   } catch {
-    return false;
+    return "it has no readable record of what npm installed (node_modules/.package-lock.json)";
   }
+  try {
+    if (npmInstallMatches(JSON.parse(source.toString("utf8")), hidden)) return null;
+  } catch {
+    return `its ${lock.file} isn't valid JSON`;
+  }
+  return "what it has installed doesn't match its package-lock.json (run npm install there)";
 }
 
 type NpmLock = { packages?: Record<string, { version?: string; optional?: boolean; link?: boolean; resolved?: string }> };

@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyDependencies, installDependencies, npmInstallMatches } from "../src/factory/deps.js";
+import { copyDependencies, elapsed, installDependencies, npmInstallMatches } from "../src/factory/deps.js";
 
 function fixture(t: { after(fn: () => void): void }) {
   const root = mkdtempSync(join(tmpdir(), "crane-deps-"));
@@ -82,14 +82,18 @@ test("dependencies: copied preparations are reusable and require matching manife
   from.addWorkspace();
   to.addWorkspace();
   await installDependencies(from.root);
-  assert.deepEqual(await copyDependencies(from.root, to.root), ["node_modules"]);
+  assert.deepEqual(await copyDependencies(from.root, to.root), { copied: ["node_modules"] });
   assert.equal(realpathSync(join(to.root, "node_modules/@fixture/contracts")), join(to.root, "packages/contracts"));
   assert.equal(await installDependencies(to.root, { from: from.root }), null);
 
   const stale = fixture(t);
   stale.addWorkspace();
   writeFileSync(join(stale.root, "packages/contracts/package.json"), '{"name":"@fixture/renamed","version":"1.0.0"}');
-  assert.equal(await copyDependencies(from.root, stale.root), null, "identical locks cannot hide different workspace manifests");
+  assert.match(
+    (await copyDependencies(from.root, stale.root) as { skipped: string }).skipped,
+    /package\.json files or package manager settings differ/,
+    "identical locks cannot hide different workspace manifests",
+  );
 
   const updated = fixture(t);
   updated.addWorkspace();
@@ -98,7 +102,44 @@ test("dependencies: copied preparations are reusable and require matching manife
     manifest.description = "changed since preparation";
     writeFileSync(join(root, "package.json"), JSON.stringify(manifest));
   }
-  assert.equal(await copyDependencies(from.root, updated.root), null, "a source preparation with stale inputs cannot be reused");
+  assert.deepEqual(
+    await copyDependencies(from.root, updated.root),
+    { skipped: "its install predates its current package.json files" },
+    "a source preparation with stale inputs cannot be reused",
+  );
+});
+
+test("dependencies: a skipped copy is explained before the install starts and on the final note", async t => {
+  const from = fixture(t);
+  const to = fixture(t);
+  const lock = JSON.parse(readFileSync(join(to.root, "package-lock.json"), "utf8"));
+  lock.name = "different";
+  writeFileSync(join(to.root, "package-lock.json"), JSON.stringify(lock));
+  await installDependencies(from.root);
+  const progress: string[] = [];
+  const note = await installDependencies(to.root, { from: from.root, onProgress: (n) => progress.push(n) });
+  const reason = "didn't copy from your checkout: its package-lock.json differs from the worktree's";
+  assert.deepEqual(progress, [`Installing dependencies (npm ci --no-audit --no-fund) · ${reason}`]);
+  assert.match(note!, /^Installed dependencies \(npm ci --no-audit --no-fund\) in \d+(\.\d)?s · /);
+  assert.ok(note!.endsWith(reason), note!);
+});
+
+test("dependencies: a copied preparation reports progress and its duration", async t => {
+  const from = fixture(t);
+  const to = fixture(t);
+  from.addWorkspace();
+  to.addWorkspace();
+  await installDependencies(from.root);
+  const progress: string[] = [];
+  const note = await installDependencies(to.root, { from: from.root, onProgress: (n) => progress.push(n) });
+  assert.deepEqual(progress, ["Copying dependencies from your checkout"]);
+  assert.match(note!, /^Copied dependencies from your checkout \(node_modules\) in \d+\.\ds$/);
+});
+
+test("dependencies: durations read naturally", () => {
+  assert.equal(elapsed(420), "0.4s");
+  assert.equal(elapsed(12_400), "12s");
+  assert.equal(elapsed(161_000), "2m 41s");
 });
 
 test("dependencies: npm install records must match workspace link destinations", () => {

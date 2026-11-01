@@ -160,27 +160,35 @@ test("worktree: copies dependencies from the checkout only when they match the l
     const { from, to } = setup();
     gitInit(from);
     gitInit(to);
-    assert.deepEqual(await copyDependencies(from, to), ["node_modules", "web/node_modules"]);
+    assert.deepEqual(await copyDependencies(from, to), { copied: ["node_modules", "web/node_modules"] });
     assert.equal(readFileSync(join(to, "node_modules", "a", "index.js"), "utf8"), "module.exports = 1");
     assert.ok(existsSync(join(to, "web", "node_modules", "b")));
     assert.equal(readlinkSync(join(to, "node_modules", "web")), "../../web");
     assert.equal(readlinkSync(join(to, "node_modules", "web-abs")), "../web");
-    assert.equal(await copyDependencies(from, to), null, "already in place");
+    assert.deepEqual(await copyDependencies(from, to), { skipped: "the worktree already has node_modules" }, "already in place");
     assert.equal(await installDependencies(to, { from }), null, "nothing left to do");
   }
   {
     const { from, to } = setup();
     writeFileSync(join(to, "package-lock.json"), lock({ "node_modules/c": { version: "3.0.0" } }));
-    assert.equal(await copyDependencies(from, to), null, "the worktree pins something else");
+    assert.deepEqual(
+      await copyDependencies(from, to),
+      { skipped: "its package-lock.json differs from the worktree's" },
+      "the worktree pins something else",
+    );
   }
   {
     const { from, to } = setup();
     writeFileSync(join(from, "node_modules", ".package-lock.json"), hidden("0.9.0"));
-    assert.equal(await copyDependencies(from, to), null, "the checkout's install is stale");
+    assert.deepEqual(
+      await copyDependencies(from, to),
+      { skipped: "what it has installed doesn't match its package-lock.json (run npm install there)" },
+      "the checkout's install is stale",
+    );
   }
   {
     const { from, to } = setup();
-    assert.deepEqual(await copyDependencies(from, to), ["node_modules"], "outside git, just the root");
+    assert.deepEqual(await copyDependencies(from, to), { copied: ["node_modules"] }, "outside git, just the root");
   }
 });
 
