@@ -1,4 +1,4 @@
-import type { Task, Repo } from "../core/types.js";
+import type { Task, Repo } from "@crane/contracts";
 import type { AgentJob, ResolveConflictsJob } from "./driver.js";
 import { REPORT_FENCE } from "./report.js";
 

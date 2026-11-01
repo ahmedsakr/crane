@@ -3,7 +3,7 @@ import { promisify } from "node:util";
 import { existsSync } from "node:fs";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Repo } from "../core/types.js";
+import type { Repo } from "@crane/contracts";
 import { buildsDir, factoryRoot } from "../core/paths.js";
 import { BUILD_MANIFEST, dashboardBuilds, webBuildOutdated } from "../core/webbuild.js";
 import { installDependencies } from "./deps.js";

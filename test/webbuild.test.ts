@@ -45,8 +45,11 @@ test("a source file changed after the build makes it outdated, however deep", ()
   c.done();
 });
 
-test("a change to shared core source the UI bundles makes the build outdated", () => {
-  const shared = ["src/core/contracts.ts", "src/core/types.ts", "src/core/permissions.ts"];
+test("a change to shared contracts the UI bundles makes the build outdated", () => {
+  const shared = [
+    "packages/contracts/src/index.ts", "packages/contracts/src/types.ts", "packages/contracts/src/rules.ts",
+    "packages/contracts/package.json", "packages/contracts/tsconfig.json",
+  ];
   // Every UI and shared file predates the build; only `changed` (if any) is touched after it.
   const outdatedAfter = (changed: string | null) => {
     const c = checkout();
@@ -106,6 +109,20 @@ test("source-mode factories and builds with no source to compare don't report ba
     assert.equal(createFactoryBuildCheck(c.root, true)(), false, "installed package without source");
     rmSync(join(c.root, "dist"), { recursive: true });
     assert.equal(createFactoryBuildCheck(c.root, true)(), false, "no compiled build to compare");
+  } finally {
+    c.done();
+  }
+});
+
+test("a running factory notices shared contract changes", () => {
+  const c = checkout();
+  try {
+    c.rootAt("packages/contracts/src/types.ts", 100);
+    c.rootAt("dist/cli/index.js", 50);
+    const outdated = createFactoryBuildCheck(c.root, true);
+    assert.equal(outdated(0), false);
+    c.rootAt("packages/contracts/src/types.ts", 10);
+    assert.equal(outdated(5_000), true);
   } finally {
     c.done();
   }

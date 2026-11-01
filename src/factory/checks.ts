@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { ValidationRun } from "../core/types.js";
+import type { ValidationRun } from "@crane/contracts";
 import { git } from "../core/git.js";
 
 const exec = promisify(execFile);

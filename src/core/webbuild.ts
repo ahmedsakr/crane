@@ -6,10 +6,11 @@ import { buildsDir, factoryRoot } from "./paths.js";
 /** UI source the build depends on, relative to `web/`. */
 const SOURCES = ["src", "index.html", "vite.config.ts", "package.json"];
 /**
- * Source outside `web/` the UI bundles at runtime, relative to the root:
- * `src/core/contracts.ts` and every file it re-exports.
+ * Shared package inputs, relative to the root. Both builds depend on these.
+ * Keep the source list in sync with packages/contracts/src (checked in tests).
  */
-export const SHARED_SOURCES = ["contracts.ts", "types.ts", "permissions.ts"].map((f) => join("src", "core", f));
+export const SHARED_SOURCES = ["src/index.ts", "src/types.ts", "src/rules.ts", "package.json", "tsconfig.json"]
+  .map((f) => join("packages", "contracts", f));
 
 function newestMtime(path: string): number {
   if (!existsSync(path)) return 0;
@@ -53,7 +54,10 @@ export function createFactoryBuildCheck(root: string, compiled: boolean): (now?:
   return (now = Date.now()) => {
     if (loadedAt === null) return false;
     if (cached && now - cached.at < 5_000) return cached.value;
-    const value = newestMtime(join(root, "src")) > loadedAt;
+    const value = Math.max(
+      newestMtime(join(root, "src")),
+      ...SHARED_SOURCES.map((s) => newestMtime(join(root, s))),
+    ) > loadedAt;
     cached = { at: now, value };
     return value;
   };

@@ -13,24 +13,32 @@
     "web/dist/"
   ],
   "workspaces": [
-    "web"
+    "web",
+    "packages/contracts"
   ],
+  "bundledDependencies": ["@crane/contracts"],
   "engines": {
     "node": ">=20.19"
   },
   "scripts": {
-    "dev": "concurrently -k -n factory,web -c yellow,cyan \"npm:dev:server\" \"npm:dev:web\"",
+    "dev": "concurrently -k -n contracts,factory,web -c blue,yellow,cyan \"npm:dev:contracts\" \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:contracts": "npm run dev -w @crane/contracts",
+    "predev:server": "npm run build:contracts",
     "dev:server": "tsx watch src/cli/index.ts serve --port 4471",
     "dev:web": "npm run dev -w web",
-    "build": "tsc -p tsconfig.json && npm run build -w web",
+    "build:contracts": "npm run build -w @crane/contracts",
+    "build": "npm run build:contracts && tsc -p tsconfig.json && npm run build -w web",
     "prepack": "npm run build",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm run typecheck -w web",
+    "typecheck": "npm run build:contracts && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm run typecheck -w web",
+    "pretest": "npm run build:contracts",
     "test": "node --import tsx --test test/*.test.ts",
+    "precrane": "npm run build:contracts",
     "crane": "tsx src/cli/index.ts",
     "screenshot": "node --import tsx scripts/screenshot.ts"
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",
+    "@crane/contracts": "0.1.0",
     "@hono/node-server": "^2.1.5",
     "better-sqlite3": "^12.11.1",
     "commander": "^14.0.3",

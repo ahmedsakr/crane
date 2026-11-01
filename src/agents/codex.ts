@@ -4,7 +4,7 @@ import { relative, isAbsolute } from "node:path";
 import type { AgentDriver, RunContext, RunResult } from "./driver.js";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
 import { parseReport } from "./report.js";
-import type { RunUsage } from "../core/types.js";
+import type { RunUsage } from "@crane/contracts";
 import { codexCost, combinedCost } from "./codex-pricing.js";
 
 /** Codex exited before it got going again on an earlier session. */

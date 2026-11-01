@@ -7,7 +7,7 @@
  * refused, so a denial can need more than one rule.
  */
 
-const RULE = /^([A-Za-z_][\w-]*)(?:\((.+)\))?$/;
+import { parseRule } from "@crane/contracts/rules";
 
 /** Commands whose first word alone says too little to allow (`npm` could be anything). */
 const SUBCOMMAND_TOOLS = new Set([
@@ -36,11 +36,6 @@ const SUBCOMMAND_TOOLS = new Set([
 
 /** Interpreters run arbitrary code. Suggest the narrow form (`python3 -m pytest`) or nothing. */
 const INTERPRETERS = new Set(["python", "python3", "ruby", "perl", "bash", "sh", "zsh", "node"]);
-
-export function parseRule(rule: string): { tool: string; pattern: string | null } | null {
-  const m = RULE.exec(rule.trim());
-  return m ? { tool: m[1]!, pattern: m[2] ?? null } : null;
-}
 
 /** Split a shell command into the simple commands Claude Code checks one by one. */
 export function splitCommand(command: string): string[] {
@@ -150,14 +145,6 @@ export function suggestRules(tool: string, input: Record<string, unknown>, allow
     if (!out.includes(rule)) out.push(rule);
   }
   return out;
-}
-
-/** A short, human label for a rule: `Bash(npm ci:*)` → `npm ci`. */
-export function ruleLabel(rule: string): string {
-  const r = parseRule(rule);
-  if (!r) return rule;
-  if (r.tool === "Bash" && r.pattern) return r.pattern.replace(/:\*$/, "").replace(/\*$/, "");
-  return r.pattern ? `${r.tool} ${r.pattern}` : r.tool;
 }
 
 /** Would allowing `rule` let through anything one of `denied` blocks? */

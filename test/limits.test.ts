@@ -4,13 +4,14 @@ import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/core/store.js";
-import { isAllowed, overlapsDenied, ruleLabel, splitCommand, suggestRules } from "../src/core/permissions.js";
+import { isAllowed, overlapsDenied, splitCommand, suggestRules } from "../src/core/permissions.js";
+import { ruleLabel } from "@crane/contracts";
 import { ClaudeCodeDriver, describeBlocked, toolsFor } from "../src/agents/claude-code.js";
 import { ALWAYS_DENIED } from "../src/agents/policy.js";
 import { AgentRunError, isTransientFailure, type AgentDriver, type RunContext, type RunResult } from "../src/agents/driver.js";
 import { OperatorActions, toRule } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
-import type { BlockedCall, EventType, Repo, Task } from "../src/core/types.js";
+import type { BlockedCall, EventType, Repo, Task } from "@crane/contracts";
 
 const scratch = (p: string) => mkdtempSync(join(tmpdir(), p));
 const newStore = () => new Store(join(scratch("crane-"), "t.db"));

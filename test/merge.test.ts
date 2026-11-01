@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { landTask as land, MergeError, type MergeRequest } from "../src/factory/merge.js";
 const landTask = (req: MergeRequest) => land({ checks: ["true"], ...req });
 import { keepBothSides } from "../src/agents/simulated.js";
-import type { Repo, Task } from "../src/core/types.js";
+import type { Repo, Task } from "@crane/contracts";
 
 const ID = ["-c", "user.name=Test", "-c", "user.email=test@localhost", "-c", "commit.gpgsign=false"];
 const sh = (cwd: string, ...args: string[]) =>
@@ -81,7 +81,7 @@ test("merge: failed and unconfigured checks never push", async () => {
     const { root, repo, task, wt } = setup();
     commitFile(wt, "feature.txt", "feature\n", "feature");
     const before = sh(join(root, "origin.git"), "rev-parse", "main");
-    const evidence: import("../src/core/types.js").ValidationRun[] = [];
+    const evidence: import("@crane/contracts").ValidationRun[] = [];
     await assert.rejects(landTask({ repo, task, workdir: wt, emit, resolveConflicts: noResolve,
       checks, recordValidation: r => evidence.push(r) }), /checks did not pass/);
     assert.equal(sh(join(root, "origin.git"), "rev-parse", "main"), before);
@@ -96,7 +96,7 @@ test("merge: blocked execution and checks that edit the candidate never push", a
     const { root, repo, task, wt } = setup();
     commitFile(wt, "feature.txt", "feature\n", "feature");
     const before = sh(join(root, "origin.git"), "rev-parse", "main");
-    const evidence: import("../src/core/types.js").ValidationRun[] = [];
+    const evidence: import("@crane/contracts").ValidationRun[] = [];
     await assert.rejects(landTask({ repo, task, workdir: wt, emit, resolveConflicts: noResolve,
       checks, recordValidation: r => evidence.push(r) }), /checks did not pass/);
     assert.equal(evidence.at(-1)!.status, "blocked");
@@ -315,7 +315,7 @@ test("factory: a task goes from work to review to merged and pushed, through a c
 test("actions: approve merges by default, approve only keeps the branch, merge picks it up later", async () => {
   const { Store } = await import("../src/core/store.js");
   const { OperatorActions } = await import("../src/factory/actions.js");
-  const { lastMergeOutcome } = await import("../src/core/types.js");
+  const { lastMergeOutcome } = await import("@crane/contracts");
   const store = new Store(join(mkdtempSync(join(tmpdir(), "crane-")), "t.db"));
   const actions = new OperatorActions(store);
   const r = store.addRepo({ path: mkdtempSync(join(tmpdir(), "crane-repo-")) });

@@ -1,4 +1,4 @@
-import type { RunUsage } from "../core/types.js";
+import type { RunUsage } from "@crane/contracts";
 
 // Standard API USD per million tokens: input, cached input, output.
 // Verified 2026-10-31: https://developers.openai.com/api/docs/pricing

@@ -14,14 +14,14 @@ import {
   choosableDrivers,
   driverLabel,
   lastMergeOutcome,
+  ruleLabel,
   settingsLabel,
   type Autonomy,
   type BlockedTool,
   type TaskKind,
   type TaskStatus,
-} from "../core/types.js";
+} from "@crane/contracts";
 import { OperatorActions, toRule } from "../factory/actions.js";
-import { ruleLabel } from "../core/permissions.js";
 import { draftTask } from "../factory/instruct.js";
 import {
   DEFAULT_MAX_TURNS,

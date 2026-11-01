@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { git } from "../core/git.js";
 import { worktreesDir } from "../core/paths.js";
 import { slugify } from "../core/ids.js";
-import type { Task, Repo } from "../core/types.js";
+import type { Task, Repo } from "@crane/contracts";
 
 export async function isGitRepo(path: string): Promise<boolean> {
   try {

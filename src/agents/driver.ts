@@ -1,4 +1,4 @@
-import type { EventType, Task, Report, Repo, RunUsage } from "../core/types.js";
+import type { EventType, Task, Report, Repo, RunUsage } from "@crane/contracts";
 
 export interface RunContext {
   task: Task;

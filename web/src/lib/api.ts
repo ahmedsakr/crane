@@ -17,7 +17,7 @@ import type {
   Repo,
   TaskDetail,
   TaskDraft,
-} from "../../../src/core/contracts";
+} from "@crane/contracts";
 
 export type {
   Agent,
@@ -51,7 +51,7 @@ export {
   lastMergeOutcome,
   ruleLabel,
   settingsLabel,
-} from "../../../src/core/contracts";
+} from "@crane/contracts";
 
 async function req<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
   const res = await fetch(`/api${path}`, {

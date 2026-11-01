@@ -4,7 +4,7 @@ import { Store } from "../src/core/store.js";
 import { OperatorActions } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import { SimulatedDriver } from "../src/agents/simulated.js";
-import { MAINTENANCE_ROLE, MAINTENANCE_ROLES } from "../src/core/types.js";
+import { MAINTENANCE_ROLE, MAINTENANCE_ROLES } from "@crane/contracts";
 
 const until = async (ok: () => boolean, what: string) => {
   for (let i = 0; i < 500 && !ok(); i++) await new Promise((r) => setTimeout(r, 10));

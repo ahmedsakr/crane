@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/core/store.js";
 import { createApp } from "../src/server/app.js";
-import { ALL_STATUSES } from "../src/core/types.js";
+import { ALL_STATUSES } from "@crane/contracts";
 import { driverEffortKey, driverModelKey } from "../src/factory/drivers.js";
 
 test("api: invalid task decision bodies leave tasks and history unchanged", async () => {

@@ -1,5 +1,5 @@
 /**
- * Crane's domain model.
+ * Crane's shared domain model and HTTP response shapes.
  *
  * The operator (a human) issues Tasks. Agents pick tasks up and work them
  * inside a target Repo. What comes back is a stream of Events and, at the end,

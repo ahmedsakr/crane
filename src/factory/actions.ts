@@ -4,6 +4,7 @@ import {
   DRIVER_NAMES,
   EFFORT_LEVELS,
   driverLabel,
+  ruleLabel,
   isDriverName,
   isMaintenanceRole,
   isTunable,
@@ -16,11 +17,12 @@ import {
   type RepoTools,
   type DriverInfo,
   type DriverName,
-} from "../core/types.js";
+} from "@crane/contracts";
 import { currentBranch, isGitRepo, removeWorktree, repoRoot } from "./git.js";
 import { DEFAULT_DRIVER_KEY, driverCatalog, driverEffortKey, driverModelKey, isAvailable, sharedDrivers } from "./drivers.js";
 import { factoryRoot } from "../core/paths.js";
-import { overlapsDenied, parseRule, ruleLabel } from "../core/permissions.js";
+import { parseRule } from "@crane/contracts/rules";
+import { overlapsDenied } from "../core/permissions.js";
 import { ALWAYS_DENIED } from "../agents/policy.js";
 
 /**

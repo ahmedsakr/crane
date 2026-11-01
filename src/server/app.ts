@@ -4,7 +4,7 @@ import { getMimeType } from "hono/utils/mime";
 import { readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import type { Store } from "../core/store.js";
-import { lastMergeOutcome, type TaskStatus, type NewTask, type TaskDetail, type TaskDraft } from "../core/types.js";
+import { lastMergeOutcome, type TaskStatus, type NewTask, type TaskDetail, type TaskDraft } from "@crane/contracts";
 import { OperatorActions } from "../factory/actions.js";
 import { draftTask } from "../factory/instruct.js";
 import { diffForTask } from "../factory/git.js";

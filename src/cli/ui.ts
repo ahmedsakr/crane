@@ -1,6 +1,6 @@
 import pc from "picocolors";
-import type { Agent, BlockedTool, Task, TaskEvent, TaskStatus } from "../core/types.js";
-import { KIND_LABEL, STATUS_LABEL } from "../core/types.js";
+import type { Agent, BlockedTool, Task, TaskEvent, TaskStatus } from "@crane/contracts";
+import { KIND_LABEL, STATUS_LABEL } from "@crane/contracts";
 
 /** Crane yellow: the one accent colour, used sparingly (brand mark, the thing that needs you). */
 const yellow = (s: string) => (pc.isColorSupported ? `\x1b[38;2;242;184;7m${s}\x1b[39m` : s);
