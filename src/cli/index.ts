@@ -241,14 +241,22 @@ program
   .option("-a, --all", "include finished tasks")
   .option("-s, --status <statuses>", "comma-separated, e.g. needs_review,failed")
   .option("-r, --repo <repo>", "only this repo")
-  .action((opts: { all?: boolean; status?: string; repo?: string }) => {
+  .option("-n, --limit <n>", "how many to list, newest first", "50")
+  .option("--json", "print the tasks as JSON, with each one's branch and worktree")
+  .action((opts: { all?: boolean; status?: string; repo?: string; limit: string; json?: boolean }) => {
     const status = opts.status
       ? (opts.status.split(",") as TaskStatus[])
       : opts.all
         ? undefined
         : (["needs_review", "merging", "running", "queued"] as TaskStatus[]);
-    const repoId = opts.repo ? store.getRepo(opts.repo)?.id : undefined;
-    const list = store.listTasks({ status, repoId, limit: 50 });
+    const repoId = opts.repo ? (store.getRepo(opts.repo) ?? ui.fail(`No repo called ${opts.repo}. See \`crane repos\`.`)).id : undefined;
+    const limit = Number(opts.limit);
+    if (!Number.isInteger(limit) || limit < 1) ui.fail(`--limit takes a whole number above 0, not ${opts.limit}`);
+    const list = store.listTasks({ status, repoId, limit });
+    if (opts.json) {
+      console.log(JSON.stringify(list.map((m) => ({ ...m, repo: repoName(m.repoId) ?? null })), null, 2));
+      return;
+    }
     if (!list.length) {
       console.log(`\n  ${ui.dim(opts.all ? "No tasks yet." : "No open tasks.")}  ${ui.dim("Start one with")} crane do "…"\n`);
       return;
