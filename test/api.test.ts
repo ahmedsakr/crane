@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/core/store.js";
 import { createApp } from "../src/server/app.js";
+import { ALL_STATUSES } from "../src/core/types.js";
 
 test("api: invalid check settings cannot replace the operator's merge gates", async () => {
   const store = new Store(":memory:");
@@ -42,5 +43,53 @@ test("api: premature approval is rejected without changing the task or its histo
     assert.deepEqual(store.getTask(task.id), task);
     assert.deepEqual(store.listEvents(task.id), events);
     assert.equal((await app.request("/api/tasks/t-missing")).status, 404);
+  } finally { store.close(); }
+});
+
+test("api: task actions reject invalid states without changing tasks or history", async () => {
+  const store = new Store(":memory:");
+  try {
+    const repo = store.addRepo({ path: "/repo" });
+    const app = createApp(store);
+    for (const action of ["approve", "reject", "cancel", "merge"]) {
+      const allowed = action === "cancel" ? ["queued", "running"]
+        : action === "merge" ? ["needs_review", "approved", "done"] : ["needs_review"];
+      for (const status of ALL_STATUSES.filter(status => !allowed.includes(status))) {
+        const task = store.createTask({ kind: "maintenance", title: `${action} ${status}`, brief: "", repoId: repo.id, autonomy: "propose" });
+        // A branch makes merge exercise its state guard rather than its no-code guard.
+        store.updateTask(task.id, { status, branch: `crane/${task.id}` });
+        const before = store.getTask(task.id);
+        const events = store.listEvents(task.id);
+        const response = await app.request(`/api/tasks/${task.id}/${action}`, { method: "POST" });
+        const context = `${action} from ${status}`;
+        assert.equal(response.status, 400, context);
+        assert.match((await response.json()).error, /isn't (waiting for review|in progress|ready to merge)/, context);
+        assert.deepEqual(store.getTask(task.id), before, context);
+        assert.deepEqual(store.listEvents(task.id), events, context);
+      }
+    }
+  } finally { store.close(); }
+});
+
+test("api: cancellation records the decision once and cannot cancel a finished task", async () => {
+  const store = new Store(":memory:");
+  try {
+    const repo = store.addRepo({ path: "/repo" });
+    const app = createApp(store);
+    for (const status of ["queued", "running"] as const) {
+      const task = store.createTask({ kind: "maintenance", title: status, brief: "", repoId: repo.id, autonomy: "observe" });
+      store.updateTask(task.id, { status });
+      const response = await app.request(`/api/tasks/${task.id}/cancel`, { method: "POST" });
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).status, "cancelled");
+      const cancelled = store.getTask(task.id)!;
+      assert.equal(cancelled.status, "cancelled");
+      assert.ok(cancelled.finishedAt);
+      const events = store.listEvents(task.id);
+      assert.equal(events.filter(e => e.type === "operator" && e.message === "Cancelled by operator").length, 1);
+      assert.equal((await app.request(`/api/tasks/${task.id}/cancel`, { method: "POST" })).status, 400);
+      assert.deepEqual(store.getTask(task.id), cancelled);
+      assert.deepEqual(store.listEvents(task.id), events);
+    }
   } finally { store.close(); }
 });
