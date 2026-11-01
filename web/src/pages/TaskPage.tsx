@@ -14,7 +14,9 @@ import {
   lastMergeOutcome,
   unmetAcceptance,
   type AgentRun,
+  diffFiles,
   type TaskDetail,
+  type TaskDiff,
   type TaskEvent,
   type TaskGates,
   type TaskRunOptions,
@@ -107,13 +109,40 @@ function Runs({ runs }: { runs: AgentRun[] }) {
   );
 }
 
-function Diff({ id }: { id: string }) {
-  const [diff, setDiff] = useState<string | null>(null);
+/**
+ * A task's changes, fetched while `on`. A running task's keep changing, so with `live`
+ * they refresh every few seconds while the tab is visible.
+ */
+function useTaskDiff(id: string, on: boolean, live: boolean) {
+  const [state, setState] = useState<{ id: string; diff: TaskDiff | null; error: string | null }>({ id, diff: null, error: null });
   useEffect(() => {
-    api.diff(id).then((d) => setDiff(d.diff));
-  }, [id]);
-  if (diff === null) return <p className="muted">Loading changes…</p>;
-  if (!diff) return <p className="muted">No changes on the branch.</p>;
+    if (!on) return;
+    let current = true;
+    const load = () =>
+      api.diff(id).then(
+        (diff) => current && setState({ id, diff, error: null }),
+        (e: Error) => current && setState((s) => ({ id, diff: s.id === id ? s.diff : null, error: e.message })),
+      );
+    load();
+    const t = live ? setInterval(() => document.visibilityState === "visible" && load(), 4000) : undefined;
+    return () => {
+      current = false;
+      clearInterval(t);
+    };
+  }, [id, on, live]);
+  // Never show another task's changes while this one's load.
+  return state.id === id ? state : { diff: null, error: null };
+}
+
+function Diff({ id }: { id: string }) {
+  const { diff, error } = useTaskDiff(id, true, false);
+  return <DiffView diff={diff} error={error} />;
+}
+
+function DiffView({ diff: d, error }: { diff: TaskDiff | null; error: string | null }) {
+  if (!d) return <p className="muted">{error ? `Couldn't load changes: ${error}` : "Loading changes…"}</p>;
+  const diff = d.diff;
+  if (!diff) return <p className="muted">{d.live ? "No changes yet." : "No changes on the branch."}</p>;
   return (
     <div className="diff" role="region" aria-label="Changes" tabIndex={0}>
       {diff.split("\n").map((l, i) => (
@@ -163,6 +192,11 @@ export function TaskPage() {
     const seen = new Set<number>();
     return [...(data?.events ?? []), ...live].filter((e) => !seen.has(e.id) && seen.add(e.id));
   }, [data, live]);
+
+  // While an agent works on its branch, follow its changes as they happen, uncommitted work included.
+  const working = data?.task.status === "running" && !!data.task.branch;
+  const sofar = useTaskDiff(id, working, true);
+  const sofarFiles = useMemo(() => (sofar.diff ? diffFiles(sofar.diff.diff) : []), [sofar.diff]);
 
   if (error) return <p className="muted" style={{ paddingTop: 40 }}>{error}</p>;
   if (!data) return <p className="muted" style={{ paddingTop: 40 }}>Loading…</p>;
@@ -437,14 +471,44 @@ export function TaskPage() {
             </section>
           )}
 
-          {report && report.changedFiles.length > 0 && (
+          {working && sofar.diff && (
+            <section className="section" aria-labelledby="changes-so-far">
+              <div className="section-head">
+                <h2 className="section-title" id="changes-so-far">
+                  Changes so far {sofarFiles.length > 0 && <span className="count">{sofarFiles.length}</span>}
+                </h2>
+                {sofarFiles.length > 0 && (
+                  <button className="btn btn-ghost btn-sm" aria-expanded={showDiff} onClick={() => setShowDiff((s) => !s)}>
+                    {showDiff ? "Hide changes" : "Show changes"}
+                  </button>
+                )}
+              </div>
+              {sofarFiles.length > 0 ? (
+                <div className="card card-pad" style={{ paddingBlock: 6 }}>
+                  <ul className="files">
+                    {sofarFiles.map((f) => (
+                      <li key={f}>{f}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <p className="muted section-note">No changes yet.</p>
+              )}
+              {showDiff && sofarFiles.length > 0 && <DiffView diff={sofar.diff} error={sofar.error} />}
+              {sofar.diff.live && sofarFiles.length > 0 && (
+                <p className="muted section-note">Includes work it hasn't committed yet, and updates as it goes.</p>
+              )}
+            </section>
+          )}
+
+          {!working && report && report.changedFiles.length > 0 && (
             <section className="section">
               <div className="section-head">
                 <h2 className="section-title">
                   Changed files <span className="count">{report.changedFiles.length}</span>
                 </h2>
                 {m.branch && (
-                  <button className="btn btn-ghost btn-sm" onClick={() => setShowDiff((s) => !s)}>
+                  <button className="btn btn-ghost btn-sm" aria-expanded={showDiff} onClick={() => setShowDiff((s) => !s)}>
                     {showDiff ? "Hide changes" : "Show changes"}
                   </button>
                 )}
