@@ -91,7 +91,8 @@ program.action(() => {
   next.push(['crane do "…"', "give the factory an instruction"]);
   if (!o.repos.some((r) => !r.isFactory)) next.push(["crane repos add <path>", "connect a codebase to work on"]);
   if (!o.factory.running) next.push(["crane serve", "start agents and open the dashboard"]);
-  if (o.factory.uiOutdated) next.push(["npm run build", "the dashboard is older than its source; rebuild it"]);
+  if (o.factory.factoryOutdated) next.push(["npm run build", "then restart the factory to load recent backend changes"]);
+  else if (o.factory.uiOutdated) next.push(["npm run build", "the dashboard is older than its source; rebuild it"]);
   next.push(["crane help", "everything else"]);
   console.log(ui.hint(...next));
   console.log("");

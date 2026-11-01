@@ -121,6 +121,14 @@ function Shell() {
         </div>
       </header>
       <main className="shell">
+        {overview?.factory.factoryOutdated && (
+          <div className="notice notice-top" role="status">
+            <strong>The factory is running an older build.</strong>
+            <span>
+              Run <span className="mono">npm run build</span> in Crane's checkout, then restart the factory to load recent backend changes.
+            </span>
+          </div>
+        )}
         {newerUi ? (
           <div className="notice notice-top" role="status">
             <strong>A newer dashboard is ready.</strong>

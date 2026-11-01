@@ -45,17 +45,25 @@ export function webBuildOutdated(root = factoryRoot(), now = Date.now()): boolea
   return value;
 }
 
-/**
- * Whether this process is running compiled code (`dist/`, which `bin/crane.js`
- * prefers) that's older than the TypeScript source beside it, so merged
- * changes to Crane aren't actually running.
- */
-export function factoryBuildOutdated(root = factoryRoot()): boolean {
-  if (!fileURLToPath(import.meta.url).includes(`${sep}dist${sep}`)) return false;
+/** Capture the build this process loaded; rebuilding on disk doesn't reload it. */
+export function createFactoryBuildCheck(root: string, compiled: boolean): (now?: number) => boolean {
   const built = join(root, "dist", "cli", "index.js");
-  if (!existsSync(built) || !existsSync(join(root, "src"))) return false;
-  return newestMtime(join(root, "src")) > statSync(built).mtimeMs;
+  const loadedAt = compiled && existsSync(built) ? statSync(built).mtimeMs : null;
+  let cached: { at: number; value: boolean } | undefined;
+  return (now = Date.now()) => {
+    if (loadedAt === null) return false;
+    if (cached && now - cached.at < 5_000) return cached.value;
+    const value = newestMtime(join(root, "src")) > loadedAt;
+    cached = { at: now, value };
+    return value;
+  };
 }
+
+/** Whether the running compiled factory needs rebuilding and restarting. Cached briefly since the UI polls. */
+export const factoryBuildOutdated = createFactoryBuildCheck(
+  factoryRoot(),
+  fileURLToPath(import.meta.url).includes(`${sep}dist${sep}`),
+);
 
 // ── dashboards Crane builds itself ──────────────────────────
 

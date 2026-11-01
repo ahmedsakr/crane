@@ -380,6 +380,8 @@ export interface Overview {
     running: boolean;
     paused: boolean;
     driver: string;
+    /** The running backend is older than its source; rebuild and restart the factory to load changes. */
+    factoryOutdated: boolean;
     /** The served dashboard is older than its source, so recent UI changes won't show until a rebuild. */
     uiOutdated: boolean;
     /** Identifies the dashboard being served. When it changes, a newer build has replaced it. */

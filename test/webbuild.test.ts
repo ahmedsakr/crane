@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { webBuildOutdated } from "../src/core/webbuild.ts";
+import { createFactoryBuildCheck, webBuildOutdated } from "../src/core/webbuild.ts";
 
 function checkout() {
   const root = mkdtempSync(join(tmpdir(), "crane-webbuild-"));
@@ -74,4 +74,39 @@ test("no build, or no source to compare against, is never outdated", () => {
   noSource.at("dist/index.html", 100);
   assert.equal(webBuildOutdated(noSource.root), false);
   noSource.done();
+});
+
+test("a running compiled factory notices source changes and stays outdated after rebuilding until restart", () => {
+  const c = checkout();
+  try {
+    c.rootAt("src/agents/prompts.ts", 100);
+    c.rootAt("dist/cli/index.js", 50);
+    const outdated = createFactoryBuildCheck(c.root, true);
+    assert.equal(outdated(0), false);
+
+    c.rootAt("src/agents/prompts.ts", 20);
+    assert.equal(outdated(1_000), false, "cache avoids walking the source tree on every poll");
+    assert.equal(outdated(5_000), true, "merged backend changes are noticed without restarting");
+
+    c.rootAt("dist/cli/index.js", 0);
+    assert.equal(outdated(10_000), true, "rebuilding doesn't update code already loaded by this process");
+    assert.equal(createFactoryBuildCheck(c.root, true)(), false, "a restarted factory sees the new build");
+  } finally {
+    c.done();
+  }
+});
+
+test("source-mode factories and builds with no source to compare don't report backend staleness", () => {
+  const c = checkout();
+  try {
+    c.rootAt("dist/cli/index.js", 100);
+    c.rootAt("src/agents/prompts.ts", 10);
+    assert.equal(createFactoryBuildCheck(c.root, false)(), false, "tsx runs source directly");
+    rmSync(join(c.root, "src"), { recursive: true });
+    assert.equal(createFactoryBuildCheck(c.root, true)(), false, "installed package without source");
+    rmSync(join(c.root, "dist"), { recursive: true });
+    assert.equal(createFactoryBuildCheck(c.root, true)(), false, "no compiled build to compare");
+  } finally {
+    c.done();
+  }
 });
