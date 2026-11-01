@@ -32,6 +32,7 @@ import {
 } from "../factory/orchestrator.js";
 import { diffForTask } from "../factory/git.js";
 import { DEFAULT_PORT } from "../core/paths.js";
+import { screenshotPath } from "../core/screenshots.js";
 import * as ui from "./ui.js";
 
 const store = new Store();
@@ -302,6 +303,13 @@ program
     if (m.report) {
       console.log(ui.section("Summary"));
       console.log(ui.wrap(m.report.summary, 2));
+      if (m.report.screenshots?.length) {
+        console.log(ui.section("Screenshots", m.report.screenshots.length));
+        for (const image of m.report.screenshots) {
+          const path = screenshotPath(m.id, image.path);
+          if (path) console.log(`  ${image.caption}\n  ${ui.dim(path)}`);
+        }
+      }
       if (m.report.findings.length) {
         console.log(ui.section("Findings", m.report.findings.length));
         m.report.findings.forEach((f, i) => {

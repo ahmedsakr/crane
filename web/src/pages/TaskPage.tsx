@@ -248,6 +248,26 @@ export function TaskPage() {
                 : "Waiting for a free agent."}
             </p>
           ) : null}
+          {!!report?.screenshots?.length && (
+            <section className="section" aria-labelledby="screenshots">
+              <div className="section-head">
+                <h2 className="section-title" id="screenshots">Screenshots <span className="count">{report.screenshots.length}</span></h2>
+              </div>
+              <div className="task-screenshots">
+                {report.screenshots.map(image => {
+                  const url = `/api/tasks/${encodeURIComponent(m.id)}/screenshots/${encodeURIComponent(image.path)}`;
+                  return (
+                    <figure className="card" key={image.path}>
+                      <a href={url} target="_blank" rel="noreferrer" aria-label={`Open screenshot: ${image.caption}`}>
+                        <img src={url} alt={image.caption} loading="lazy" />
+                      </a>
+                      <figcaption>{image.caption}</figcaption>
+                    </figure>
+                  );
+                })}
+              </div>
+            </section>
+          )}
           {report?.validation?.map((run, i) => (
             <details key={i} className="card card-pad">
               <summary>{run.phase} check: {run.status} · {run.command ?? "Configuration"}</summary>

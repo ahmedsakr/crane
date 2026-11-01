@@ -85,6 +85,13 @@ export interface Report {
   findings: Finding[];
   /** Files the agent changed, when it was allowed to change any. */
   changedFiles: string[];
+  /** Agent paths are relative to the worktree; Crane replaces them with retained attachment names. */
+  screenshots?: Screenshot[];
+}
+
+export interface Screenshot {
+  path: string;
+  caption: string;
 }
 
 export interface ValidationRun {

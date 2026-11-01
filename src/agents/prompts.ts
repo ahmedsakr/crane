@@ -28,6 +28,9 @@ const VALIDATION_BRIEF =
 const FILE_EDIT_BRIEF =
   "When file changes are authorized, use your native file-editing tools (such as Edit, Write, or apply_patch) to create and modify files. Avoid shell heredocs for file edits: they can trigger shell security checks even when the intended edit is allowed. Choose file-editing tools before attempting a shell write; a denied command is still subject to the blocked-command instructions.";
 
+const SCREENSHOT_BRIEF =
+  "If you built or changed UI, capture screenshots of the finished UI using the repository's existing screenshot or browser tools, inspect them, and attach them in your report's screenshots array. Include the changed views and relevant desktop and phone sizes, with captions describing the view and viewport. Save PNG, JPEG, or WebP files inside the worktree (prefer an ignored directory such as .crane/screenshots), and report worktree-relative paths. Crane retains up to 12 images, each at most 10 MiB, with the task after the worktree is removed. Do not commit screenshots just to attach them. If capture is blocked or unavailable, explain the reason and the remaining visual validation in your summary; leave screenshots empty and never substitute mockups or claim capture succeeded. Screenshot instructions do not authorize writes in investigate-only mode or bypassing sandbox restrictions.";
+
 /**
  * For agents in a sandbox with no network (Codex). On Linux, Codex enforces
  * "no network" with a seccomp filter that also refuses calls like `listen`,
@@ -91,6 +94,7 @@ export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob, opts
     VALIDATION_BRIEF,
     checks,
     FILE_EDIT_BRIEF,
+    task.autonomy !== "observe" ? SCREENSHOT_BRIEF : "",
     reportInstructions(),
   ]
     .filter(Boolean)
@@ -125,6 +129,7 @@ function conflictSystemPrompt(
     VALIDATION_BRIEF,
     checks,
     FILE_EDIT_BRIEF,
+    SCREENSHOT_BRIEF,
     reportInstructions(),
   ]
     .filter(Boolean)
@@ -154,6 +159,7 @@ export function resumePrompt(): string {
     BLOCKED_BRIEF,
     VALIDATION_BRIEF,
     FILE_EDIT_BRIEF,
+    SCREENSHOT_BRIEF,
     `When you are finished, end your final message with the \`${REPORT_FENCE}\` block, as before.`,
   ].join("\n\n");
 }
@@ -174,6 +180,7 @@ function reportInstructions(): string {
           },
         ],
         changedFiles: ["path/relative/to/repo"],
+        screenshots: [{ path: ".crane/screenshots/updated-view.png", caption: "Updated view at 1280 × 800" }],
       },
       null,
       2,

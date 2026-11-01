@@ -1,4 +1,4 @@
-import type { Finding, Report } from "../core/types.js";
+import type { Finding, Report, Screenshot } from "../core/types.js";
 
 /** The fence tag agents put on the JSON block that ends their final message. Prompts ask for it; parseReport reads it. */
 export const REPORT_FENCE = "crane-report";
@@ -35,6 +35,9 @@ export function parseReport(finalText: string): Report {
         summary: String(raw.summary ?? "").trim() || firstParagraph(finalText.replace(fence, "")),
         findings,
         changedFiles: Array.isArray(raw.changedFiles) ? raw.changedFiles.map(String) : [],
+        ...(Array.isArray(raw.screenshots) ? { screenshots: raw.screenshots
+          .filter((s): s is Screenshot => !!s && typeof s === "object" && typeof s.path === "string" && typeof s.caption === "string")
+          .map(s => ({ path: s.path, caption: s.caption.slice(0, 300) })) } : {}),
       };
     } catch {
       // fall through to the plain-text report
