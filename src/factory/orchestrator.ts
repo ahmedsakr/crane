@@ -1,9 +1,10 @@
 import { crewSettingKey, type Store } from "../core/store.js";
-import { driverLabel, isDriverName, type EventType, type Overview, type RunUsage, type Task } from "../core/types.js";
+import { driverLabel, isDriverName, type EventType, type Overview, type RunUsage, type Task, type TaskStatus } from "../core/types.js";
 import { AgentRunError, type AgentDriver, type RunContext, type RunResult } from "../agents/driver.js";
 import { combinedCost } from "../agents/codex-pricing.js";
+import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { createWorktree, finalizeWorktree, removeWorktree } from "./git.js";
+import { createWorktree, finalizeWorktree, putAwayWorktree, removeWorktree } from "./git.js";
 import { installDependencies } from "./deps.js";
 import { deleteMergedBranch, landTask, MergeError } from "./merge.js";
 import { runChecks } from "./checks.js";
@@ -40,6 +41,16 @@ export interface FactoryOptions {
  */
 const STOP_GRACE_MS = 3500;
 const STOPPED_MESSAGE = "Stopped with the factory. Back in the queue to pick up where it left off";
+
+/**
+ * Tasks whose worktree nothing will use again: a retry is a new task with its
+ * own. Approved and done tasks keep theirs, since the operator may still merge.
+ */
+const PUT_AWAY_STATUSES: TaskStatus[] = ["merged", "rejected", "failed", "cancelled"];
+/** Statuses where the agent may have left work uncommitted, which goes to the branch first. */
+const SAVE_WORK_STATUSES: TaskStatus[] = ["failed", "cancelled"];
+/** How often to look for worktrees to put away, besides right after a task stops. */
+const SWEEP_MS = 60_000;
 
 export const DEFAULT_MAX_TURNS = 200;
 export const DEFAULT_TIME_LIMIT_MIN = 90;
@@ -120,6 +131,10 @@ export class Factory {
   readonly maxTurns: number;
   readonly timeLimitMin: number;
   private retryDelayMs: number;
+  private sweeping: Promise<void> | null = null;
+  private lastSweep = 0;
+  /** Worktrees left in place this run, so each is reported once rather than every sweep. */
+  private keptWorktrees = new Set<string>();
   /** Every agent this factory can run, by name. The first is the default until the operator picks one. */
   private drivers: Map<string, AgentDriver>;
 
@@ -239,7 +254,7 @@ export class Factory {
     // Give agents a moment to exit, so their last events and the requeue are recorded in order.
     let timeout: NodeJS.Timeout | undefined;
     await Promise.race([
-      Promise.allSettled([...this.inflight, this.dashboard?.stop()]),
+      Promise.allSettled([...this.inflight, this.sweeping, this.dashboard?.stop()]),
       new Promise((r) => (timeout = setTimeout(r, opts.graceMs ?? STOP_GRACE_MS))),
     ]);
     clearTimeout(timeout);
@@ -267,6 +282,57 @@ export class Factory {
     this.inflight.add(p);
   }
 
+  /** Start a sweep for worktrees nothing needs any more, unless one ran lately or is under way. */
+  private sweepWorktrees() {
+    if (this.sweeping || this.stopping || Date.now() - this.lastSweep < SWEEP_MS) return;
+    this.lastSweep = Date.now();
+    this.sweeping = this.putAwayWorktrees()
+      .catch((err) => this.log(`Couldn't clean up worktrees: ${(err as Error).message}`))
+      .finally(() => (this.sweeping = null));
+  }
+
+  /**
+   * Remove the worktrees of tasks that are over: merged, declined, failed, or
+   * cancelled. Work a failed or cancelled task left uncommitted is committed to
+   * its branch first, so the branch still has it. Also finds directories left
+   * after a crash, whose task no longer records them.
+   */
+  private async putAwayWorktrees() {
+    const found = new Map<string, string>(); // taskId -> path
+    for (const t of this.store.tasksWithWorktrees(PUT_AWAY_STATUSES)) found.set(t.id, t.worktree!);
+    const dir = worktreesDir();
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory() && !found.has(entry.name)) found.set(entry.name, join(dir, entry.name));
+    }
+
+    for (const [id, path] of found) {
+      if (this.stopping) return;
+      if (this.running.has(id) || this.running.has(`merge:${id}`) || this.keptWorktrees.has(path)) continue;
+      // Read it fresh: the operator may have acted on it since the sweep started.
+      const task = this.store.getTask(id);
+      if (!task || task.id !== id || !PUT_AWAY_STATUSES.includes(task.status)) continue;
+      const repo = task.repoId ? this.store.getRepo(task.repoId) : null;
+      if (!repo) continue;
+      let result;
+      try {
+        result = await putAwayWorktree(repo, task, path, { saveWork: SAVE_WORK_STATUSES.includes(task.status) });
+      } catch (err) {
+        result = { removed: false as const, reason: (err as Error).message.split("\n")[0]! };
+      }
+      if (!result.removed) {
+        this.keptWorktrees.add(path);
+        this.log(`Left the worktree of ${task.id} at ${path}: ${result.reason}`);
+        continue;
+      }
+      if (task.worktree) this.store.updateTask(task.id, { worktree: null });
+      if (result.saved) {
+        this.store.addEvent(task.id, "note", `Saved its unfinished work to ${task.branch} and removed its worktree`, {
+          branch: task.branch,
+        });
+      }
+    }
+  }
+
   private tick() {
     this.store.setSetting(HEARTBEAT_KEY, String(Date.now()));
 
@@ -274,6 +340,7 @@ export class Factory {
     for (const [taskId, ac] of this.running) {
       if (this.store.getTask(taskId)?.status === "cancelled") ac.abort();
     }
+    this.sweepWorktrees();
 
     const paused = this.store.isPaused();
     for (const agent of this.crew) {
@@ -547,6 +614,8 @@ export class Factory {
     } finally {
       limit.clear();
       this.running.delete(task.id);
+      // If it failed or was cancelled, its worktree goes on the next tick.
+      if (PUT_AWAY_STATUSES.includes(this.store.getTask(task.id)?.status ?? "queued")) this.lastSweep = 0;
       this.store.setAgentState(agent.id, this.store.isPaused() ? "paused" : "idle", null);
     }
   }
