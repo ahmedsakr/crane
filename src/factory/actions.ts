@@ -17,6 +17,8 @@ import {
   type RepoTools,
   type DriverInfo,
   type DriverName,
+  type DriverSettings,
+  type TaskRunOptions,
 } from "@crane/contracts";
 import { currentBranch, isGitRepo, removeWorktree, repoRoot } from "./git.js";
 import { DEFAULT_DRIVER_KEY, driverCatalog, driverEffortKey, driverModelKey, isAvailable, sharedDrivers } from "./drivers.js";
@@ -59,6 +61,36 @@ function normalizeDriverSetting(value: string | null): string {
   return text === "default" ? "" : text;
 }
 
+/** Shared validation for saved preferences and task overrides, before any writes. */
+function checkDriverSettings(driver: DriverName, input: Partial<DriverSettings>): Partial<DriverSettings> {
+  if (!isTunable(driver)) throw new Error(`${driverLabel(driver)} doesn't call a model, so there's no model or effort to set`);
+  const settings: Partial<DriverSettings> = {};
+  if (input.model !== undefined) {
+    if (input.model !== null && typeof input.model !== "string") throw new Error("Model must be text");
+    const model = normalizeDriverSetting(input.model);
+    if (model && !MODEL_NAME.test(model)) throw new Error(`“${model}” doesn't look like a model name`);
+    settings.model = model || null;
+  }
+  if (input.effort !== undefined) {
+    if (input.effort !== null && typeof input.effort !== "string") throw new Error("Effort must be text");
+    const effort = normalizeDriverSetting(input.effort).toLowerCase();
+    const levels = EFFORT_LEVELS[driver];
+    if (effort && !levels.includes(effort)) {
+      throw new Error(`${driverLabel(driver)} takes effort ${levels.join(", ")}, or default`);
+    }
+    settings.effort = effort || null;
+  }
+  return settings;
+}
+
+function checkTaskRunOptions(input: TaskRunOptions): TaskRunOptions {
+  const driver = checkDriver(input.driver);
+  // Untuned tasks may follow the default agent, which can change before pickup.
+  if (input.model == null && input.effort == null) return { driver, model: null, effort: null };
+  if (!driver) throw new Error("Choose an agent before setting a task's model or effort");
+  return { driver, ...checkDriverSettings(driver as DriverName, input) };
+}
+
 /**
  * Everything an operator can do, shared by the web UI and the CLI so both
  * behave identically. Task decisions record an `operator` event on the task.
@@ -92,7 +124,7 @@ export class OperatorActions {
     if (input.assignee && !this.store.listAgents().some((a) => a.id === input.assignee)) {
       throw new Error(`No crew member ${input.assignee}`);
     }
-    const task = this.store.createTask({ ...input, driver: checkDriver(input.driver), assignee: input.assignee || null });
+    const task = this.store.createTask({ ...input, ...checkTaskRunOptions(input), assignee: input.assignee || null });
     // Remembered so the next instruction that doesn't name a repo defaults to this one.
     if (task.repoId) this.store.setSetting("last_repo", task.repoId);
     return task;
@@ -166,7 +198,8 @@ export class OperatorActions {
     const m = this.need(id);
     const driver = opts.driver === undefined ? m.driver : checkDriver(opts.driver);
     // A maintenance run goes back to the member it was started for.
-    const next = this.store.createTask({ kind: m.kind, title: m.title, brief: m.brief, repoId: m.repoId, autonomy: m.autonomy, driver, assignee: m.assignee });
+    const next = this.store.createTask({ kind: m.kind, title: m.title, brief: m.brief, repoId: m.repoId, autonomy: m.autonomy,
+      driver, model: driver === m.driver ? m.model : null, effort: driver === m.driver ? m.effort : null, assignee: m.assignee });
     const on = opts.driver !== undefined ? ` on ${driver ? driverLabel(driver) : "the default agent"}` : "";
     this.store.addEvent(m.id, "operator", `Retried as ${next.id}${on}`, { taskId: next.id });
     return next;
@@ -185,26 +218,10 @@ export class OperatorActions {
   async configureDriver(name: string, input: { model?: string | null; effort?: string | null }): Promise<DriverInfo[]> {
     const driver = checkDriver(name) as DriverName | null;
     if (!driver) throw new Error("Choose which agent to set up");
-    if (!isTunable(driver)) throw new Error(`${driverLabel(driver)} doesn't call a model, so there's no model or effort to set`);
-    let model: string | undefined;
-    let effort: string | undefined;
-    if (input.model !== undefined) {
-      if (input.model !== null && typeof input.model !== "string") throw new Error("Model must be text");
-      model = normalizeDriverSetting(input.model);
-      // Passed to the agent's CLI as one argument. Keep it to what model names look like, and never a flag.
-      if (model && !MODEL_NAME.test(model)) throw new Error(`“${model}” doesn't look like a model name`);
-    }
-    if (input.effort !== undefined) {
-      if (input.effort !== null && typeof input.effort !== "string") throw new Error("Effort must be text");
-      effort = normalizeDriverSetting(input.effort).toLowerCase();
-      const levels = EFFORT_LEVELS[driver];
-      if (effort && !levels.includes(effort)) {
-        throw new Error(`${driverLabel(driver)} takes effort ${levels.join(", ")}, or default`);
-      }
-    }
+    const { model, effort } = checkDriverSettings(driver, input);
     // Validate the whole request before changing either saved preference.
-    if (model !== undefined) this.store.setSetting(driverModelKey(driver), model);
-    if (effort !== undefined) this.store.setSetting(driverEffortKey(driver), effort);
+    if (model !== undefined) this.store.setSetting(driverModelKey(driver), model ?? "");
+    if (effort !== undefined) this.store.setSetting(driverEffortKey(driver), effort ?? "");
     return this.drivers();
   }
 
@@ -273,17 +290,24 @@ export class OperatorActions {
   }
 
   /** Turn one finding from a report into its own task that is allowed to make the change. */
-  followUp(id: string, findingIndex: number): Task {
+  followUp(id: string, findingIndex: number, opts: TaskRunOptions = {}): Task {
     const m = this.need(id);
+    if (!Number.isInteger(findingIndex) || findingIndex < 0) throw new Error("Choose a finding by its number");
     const f = m.report?.findings[findingIndex];
     if (!f) throw new Error(`Task ${m.id} has no finding #${findingIndex + 1}`);
+    const driver = opts.driver === undefined ? m.driver : checkDriver(opts.driver);
+    const settings = checkTaskRunOptions({
+      driver,
+      model: opts.model === undefined ? (driver === m.driver ? m.model : null) : opts.model,
+      effort: opts.effort === undefined ? (driver === m.driver ? m.effort : null) : opts.effort,
+    });
     const next = this.store.createTask({
       kind: m.kind,
       title: f.title,
       brief: `${f.detail}\n\nFollow-up to task ${m.id}: “${m.title}”.`,
       repoId: m.repoId,
       autonomy: "propose",
-      driver: m.driver,
+      ...settings,
     });
     this.store.addEvent(m.id, "operator", `Started follow-up ${next.id}: ${f.title}`, { taskId: next.id });
     return next;

@@ -233,6 +233,8 @@ test("store: a database from before the rename keeps its missions as tasks", () 
   const t = store.getTask("old123");
   assert.equal(t?.id, "m-old123");
   assert.equal(t?.title, "Old work");
+  assert.equal(t?.model, null);
+  assert.equal(t?.effort, null);
   assert.equal(store.listEvents("m-old123")[0]?.taskId, "m-old123");
   assert.deepEqual(
     store.listAgents().map((a) => [a.taskId, a.tasksCompleted]),

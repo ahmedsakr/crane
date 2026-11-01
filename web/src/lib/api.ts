@@ -17,6 +17,7 @@ import type {
   Repo,
   TaskDetail,
   TaskDraft,
+  TaskRunOptions,
 } from "@crane/contracts";
 
 export type {
@@ -37,6 +38,7 @@ export type {
   Repo,
   TaskDetail,
   TaskDraft,
+  TaskRunOptions,
 };
 export {
   ACTIVE_STATUSES,
@@ -81,7 +83,7 @@ export const api = {
   cancel: (id: string) => post<Task>(`/tasks/${id}/cancel`),
   /** Run it again as a new task, on the same agent unless `driver` names another. */
   retry: (id: string, driver?: string) => post<Task>(`/tasks/${id}/retry`, driver ? { driver } : {}),
-  followUp: (id: string, finding: number) => post<Task>(`/tasks/${id}/follow-up`, { finding }),
+  followUp: (id: string, finding: number, opts: TaskRunOptions = {}) => post<Task>(`/tasks/${id}/follow-up`, { finding, ...opts }),
   repos: () => req<Repo[]>("/repos"),
   addRepo: (path: string, name?: string) => post<Repo>("/repos", { path, name }),
   removeRepo: (id: string) => req<{ ok: true }>(`/repos/${id}`, { method: "DELETE" }),

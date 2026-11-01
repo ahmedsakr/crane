@@ -400,14 +400,16 @@ export class Factory {
     };
     // Read at the start of every run, so a change on the Crew page applies to the next one without a restart.
     const { model, effort } = driverSettings((k) => this.store.getSetting(k), driver.name);
+    // Task overrides belong to their chosen driver, including after a restart.
+    const taskSettings = ctx.task.driver === driver.name ? ctx.task : null;
     try {
       const result = await this.runWithRetry(driver, {
         ...ctx,
         onUsage,
         allowedTools: ctx.repo ? this.store.repoTools(ctx.repo.id).allowed : [],
         maxTurns: this.maxTurns || undefined,
-        model: model ?? undefined,
-        effort: effort ?? undefined,
+        model: taskSettings?.model ?? model ?? undefined,
+        effort: taskSettings?.effort ?? effort ?? undefined,
       });
       this.store.finishRun(runId, "succeeded", usage);
       return result;

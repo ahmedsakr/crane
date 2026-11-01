@@ -16,6 +16,7 @@ export type {
   RepoTools,
   AgentState,
   Agent,
+  TaskRunOptions,
   NewTask,
   MaintenanceRole,
   MaintenanceRoleInfo,

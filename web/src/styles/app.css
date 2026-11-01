@@ -957,6 +957,16 @@ a.row:hover .row-title {
   margin-top: 10px;
   flex-wrap: wrap;
 }
+.follow-up-form {
+  grid-column: 1 / -1;
+  min-width: 0;
+  border-top: 1px solid var(--hairline);
+  padding-top: 14px;
+}
+.follow-up-form .tuning-actions {
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
 @media (max-width: 560px) {
   .finding {
     grid-template-columns: minmax(0, 1fr);
