@@ -8,8 +8,10 @@ import {
   isDriverName,
   isMaintenanceRole,
   isTunable,
+  LOOKOUTS,
   MAINTENANCE_ROLE,
   MAINTENANCE_ROLES,
+  type Lookout,
   type MaintenanceRole,
   type Task,
   type NewTask,
@@ -96,6 +98,19 @@ function checkAcceptance(input: unknown): string[] {
   return criteria;
 }
 
+/**
+ * What else the agent should look out for, by name. Takes `test-gaps` as well
+ * as `test_gaps`, drops repeats, and keeps Crane's own order.
+ */
+export function checkLookouts(input: unknown): Lookout[] {
+  if (input === undefined || input === null) return [];
+  if (!Array.isArray(input) || input.some((l) => typeof l !== "string")) throw new Error("Lookouts must be a list of names");
+  const given = new Set(input.map((l: string) => l.trim().toLowerCase().replace(/[-\s]+/g, "_")).filter(Boolean));
+  const unknown = [...given].filter((l) => !(LOOKOUTS as readonly string[]).includes(l));
+  if (unknown.length) throw new Error(`Crane can't look out for “${unknown[0]}”. Choose from ${LOOKOUTS.join(", ")}`);
+  return LOOKOUTS.filter((l) => given.has(l));
+}
+
 function checkTaskRunOptions(input: TaskRunOptions): TaskRunOptions {
   const driver = checkDriver(input.driver);
   // Untuned tasks may follow the default agent, which can change before pickup.
@@ -141,6 +156,7 @@ export class OperatorActions {
       ...input,
       ...checkTaskRunOptions(input),
       ...this.checkGates(input, input.repoId),
+      lookouts: checkLookouts(input.lookouts),
       assignee: input.assignee || null,
       driverSettings: null,
     });
@@ -292,7 +308,7 @@ export class OperatorActions {
       driver, model: driver === m.driver ? m.model : null, effort: driver === m.driver ? m.effort : null, assignee: m.assignee,
       driverSettings: driver === m.driver ? m.driverSettings : null,
       // The same gates, but not a waiver: that approved the scope of the earlier run only.
-      prerequisites: m.prerequisites, acceptance: m.acceptance });
+      prerequisites: m.prerequisites, acceptance: m.acceptance, lookouts: m.lookouts });
     const on = opts.driver !== undefined ? ` on ${driver ? driverLabel(driver) : "the default agent"}` : "";
     this.store.addEvent(m.id, "operator", `Retried as ${next.id}${on}`, { taskId: next.id });
     return next;
@@ -411,9 +427,10 @@ export class OperatorActions {
 
   /**
    * Turn one finding from a report into its own task that is allowed to make
-   * the change, optionally waiting on prerequisites and held to acceptance criteria.
+   * the change, optionally waiting on prerequisites, held to acceptance
+   * criteria, and looking out for more along the way.
    */
-  followUp(id: string, findingIndex: number, opts: TaskRunOptions & TaskGates = {}): Task {
+  followUp(id: string, findingIndex: number, opts: TaskRunOptions & TaskGates & Pick<NewTask, "lookouts"> = {}): Task {
     const m = this.need(id);
     if (!Number.isInteger(findingIndex) || findingIndex < 0) throw new Error("Choose a finding by its number");
     const f = m.report?.findings[findingIndex];
@@ -425,6 +442,7 @@ export class OperatorActions {
       effort: opts.effort === undefined ? (driver === m.driver ? m.effort : null) : opts.effort,
     });
     const gates = this.checkGates(opts, m.repoId);
+    const lookouts = checkLookouts(opts.lookouts);
     const next = this.store.createTask({
       kind: m.kind,
       title: f.title,
@@ -433,6 +451,7 @@ export class OperatorActions {
       autonomy: "propose",
       ...settings,
       ...gates,
+      lookouts,
     });
     this.store.addEvent(m.id, "operator", `Started follow-up ${next.id}: ${f.title}`, { taskId: next.id });
     return next;

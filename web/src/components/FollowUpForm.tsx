@@ -1,19 +1,25 @@
 import { useId, useState } from "react";
-import { driverLabel, type DriverInfo, type Task, type TaskGates, type TaskRunOptions } from "../lib/api";
+import { UNSHIPPED_STATUSES, driverLabel, prerequisiteMet, type DriverInfo, type FollowUpOptions, type Lookout, type Task } from "../lib/api";
 import { GateFields, NO_GATES, parseGates } from "./GateFields";
+import { LookoutFields } from "./LookoutFields";
 
 /** Opened from a finding so scheduling choices stay next to the work they apply to. */
 export function FollowUpForm({ task, drivers, busy, onSubmit, onClose }: {
   task: Task;
   drivers: DriverInfo[];
   busy: boolean;
-  onSubmit: (opts: TaskRunOptions & TaskGates) => void;
+  onSubmit: (opts: FollowUpOptions) => void;
   onClose: () => void;
 }) {
   const [driver, setDriver] = useState(task.driver ?? "");
   const [model, setModel] = useState(task.model ?? "");
   const [effort, setEffort] = useState(task.effort ?? "");
-  const [gates, setGates] = useState(NO_GATES);
+  // A finding from a change that hasn't landed may build on it, so the follow-up
+  // waits for it by default (the operator can clear that). A failed, cancelled,
+  // or declined task keeps its branch only for the record, so nothing to wait for.
+  const waitsForTask = !!task.branch && !prerequisiteMet(task) && !UNSHIPPED_STATUSES.includes(task.status);
+  const [gates, setGates] = useState(waitsForTask ? { ...NO_GATES, prerequisites: task.id } : NO_GATES);
+  const [lookouts, setLookouts] = useState<Lookout[]>([]);
   const listId = useId();
   const defaultAgent = drivers.find(d => d.isDefault);
   const selected = driver ? drivers.find(d => d.name === driver) : defaultAgent;
@@ -29,6 +35,7 @@ export function FollowUpForm({ task, drivers, busy, onSubmit, onClose }: {
         model: tunable ? model.trim() || null : null,
         effort: tunable ? effort || null : null,
         ...parseGates(gates),
+        lookouts,
       });
     }}>
       <div className="tuning">
@@ -64,8 +71,12 @@ export function FollowUpForm({ task, drivers, busy, onSubmit, onClose }: {
           </label>
         </>}
       </div>
+      <LookoutFields value={lookouts} onChange={setLookouts} disabled={busy} />
       <GateFields value={gates} onChange={setGates} disabled={busy} />
-      <p>Applies to this follow-up only. Changes wait for your review.</p>
+      <p>
+        Applies to this follow-up only. Changes wait for your review.
+        {waitsForTask && " It starts once this task lands, since the finding may build on its changes."}
+      </p>
       <div className="tuning-actions">
         <button className="btn btn-primary btn-sm" type="submit" disabled={busy || !selected?.available}>
           {busy ? "Scheduling…" : "Make this change"}

@@ -8,21 +8,27 @@ import {
   DRIVER_NAMES,
   EFFORT_LEVELS,
   KIND_LABEL,
+  LOOKOUT,
+  LOOKOUTS,
   MAINTENANCE_ROLE,
   MAINTENANCE_ROLES,
   RUN_KIND_LABEL,
+  UNSHIPPED_STATUSES,
   acceptanceFor,
   choosableDrivers,
   driverLabel,
   lastMergeOutcome,
+  lookoutsLabel,
+  prerequisiteMet,
   ruleLabel,
   settingsLabel,
   type Autonomy,
+  type Lookout,
   type BlockedTool,
   type TaskKind,
   type TaskStatus,
 } from "@crane/contracts";
-import { OperatorActions, toRule } from "../factory/actions.js";
+import { OperatorActions, checkLookouts, toRule } from "../factory/actions.js";
 import { draftTask } from "../factory/instruct.js";
 import {
   DEFAULT_MAX_TURNS,
@@ -46,6 +52,15 @@ const repoName = (id: string | null) => (id ? store.getRepo(id)?.name : undefine
 const collect = (value: string, previous: string[]) => [...previous, value];
 const AFTER_HELP = "wait for this task to land first; repeat for more";
 const ACCEPT_HELP = "an observable condition the work must meet; repeat for more";
+const LOOK_FOR_HELP = `what else the agent should look out for and report: ${LOOKOUTS.join(" | ")}; repeat or separate with commas`;
+/** `--look-for refactoring,test_gaps --look-for improvements`, checked. Fails the command on an unknown name. */
+const lookFor = (given: string[]): Lookout[] => {
+  try {
+    return checkLookouts(given.flatMap((g) => g.split(",")));
+  } catch (err) {
+    return ui.fail((err as Error).message);
+  }
+};
 
 function factoryLine(): string {
   const running = factoryIsRunning(store);
@@ -117,10 +132,13 @@ program
   .option("--agent <agent>", `which agent works it: ${DRIVER_NAMES.join(" | ")} (default: the factory's default)`)
   .option("--after <id>", AFTER_HELP, collect, [])
   .option("--accept <criterion>", ACCEPT_HELP, collect, [])
+  .option("--look-for <what>", LOOK_FOR_HELP, collect, [])
   .option("-y, --yes", "skip the confirmation step")
   .action(async (words: string[], opts: {
     repo?: string; kind?: TaskKind; autonomy?: Autonomy; agent?: string; yes?: boolean; after: string[]; accept: string[];
+    lookFor: string[];
   }) => {
+    let lookouts = lookFor(opts.lookFor);
     p.intro(`${ui.accent("▟")} ${pc.bold("New task")}`);
     let text = words.join(" ").trim();
     if (!text) {
@@ -183,6 +201,7 @@ program
       ...(driver || choosable.length > 1 ? [agentLine()] : []),
       ...(opts.after.length ? [`${ui.dim("After    ")} ${opts.after.join(", ")}  ${ui.dim("Starts once they land")}`] : []),
       ...opts.accept.map((c, i) => `${ui.dim(i ? "         " : "Accept   ")} ${c}`),
+      ...(lookouts.length ? [`${ui.dim("Look for ")} ${lookoutsLabel(lookouts)}  ${ui.dim("Reported as findings")}`] : []),
     ].join("\n");
     p.note(summary, "Here's what I understood");
 
@@ -194,6 +213,7 @@ program
           { value: "autonomy", label: "Change how much freedom it has" },
           { value: "kind", label: "Change the type" },
           ...(choosable.length > 1 ? [{ value: "agent", label: "Change the agent" }] : []),
+          { value: "lookouts", label: "Change what else it looks for" },
           { value: "stop", label: "Don't start" },
         ],
       });
@@ -230,10 +250,20 @@ program
         if (p.isCancel(k)) return p.cancel("Nothing was created.");
         draft.kind = k as TaskKind;
       }
+      if (next === "lookouts") {
+        const l = await p.multiselect({
+          message: "What else should it look out for? It reports what it finds as findings.",
+          initialValues: lookouts,
+          required: false,
+          options: LOOKOUTS.map((l) => ({ value: l, label: LOOKOUT[l].label, hint: LOOKOUT[l].hint })),
+        });
+        if (p.isCancel(l)) return p.cancel("Nothing was created.");
+        lookouts = l;
+      }
     }
 
     try {
-      const m = actions.createTask({ ...draft, driver, prerequisites: opts.after, acceptance: opts.accept });
+      const m = actions.createTask({ ...draft, driver, prerequisites: opts.after, acceptance: opts.accept, lookouts });
       const waiting = store.unmetPrerequisites(m).map((t) => t.id);
       p.outro(
         `${pc.green("✓")} ${waiting.length ? `Task queued. It starts once ${waiting.join(", ")} land${waiting.length === 1 ? "s" : ""}` : "Task started"}  ${ui.dim(m.id)}\n   ${ui.dim("follow along:")} crane watch ${m.id}${
@@ -322,6 +352,7 @@ program
     const preApproved = m.preApprovedAt && ["queued", "running"].includes(m.status) ? " · pre-approved" : "";
     console.log(`  ${ui.statusText(m.status)}${ui.dim(forMember + on + cost + preApproved)}`);
     if (settingsLabel(m)) console.log(ui.dim(`  Model settings: ${settingsLabel(m)}`));
+    if (m.lookouts.length) console.log(ui.dim(`  Also looks for: ${lookoutsLabel(m.lookouts)}`));
 
     const prerequisites = store.prerequisiteStates(m);
     const waiting = store.unmetPrerequisites(m);
@@ -579,13 +610,22 @@ program
   .option("--effort <level>", "model effort for this follow-up only; requires a chosen agent")
   .option("--after <id>", AFTER_HELP, collect, [])
   .option("--accept <criterion>", ACCEPT_HELP, collect, [])
-  .action((id: string, n: string, opts: { agent?: string; model?: string; effort?: string; after: string[]; accept: string[] }) => {
+  .option("--look-for <what>", LOOK_FOR_HELP, collect, [])
+  .action((id: string, n: string, opts: {
+    agent?: string; model?: string; effort?: string; after: string[]; accept: string[]; lookFor: string[];
+  }) => {
     try {
       const m = actions.followUp(id, Number(n) - 1, {
         driver: opts.agent, model: opts.model, effort: opts.effort, prerequisites: opts.after, acceptance: opts.accept,
+        lookouts: lookFor(opts.lookFor),
       });
       const waiting = store.unmetPrerequisites(m).map((t) => t.id);
       ui.ok(`${waiting.length ? `Queued ${m.id}. It starts once ${waiting.join(", ")} land${waiting.length === 1 ? "s" : ""}` : `Started ${m.id}`}  ${ui.dim(m.title)}`);
+      // The web form waits for an unlanded parent by default; here it's a hint, so scripts keep their behaviour.
+      const parent = store.getTask(id);
+      if (parent?.branch && !prerequisiteMet(parent) && !UNSHIPPED_STATUSES.includes(parent.status) && !m.prerequisites.includes(parent.id)) {
+        console.log(ui.dim(`  It starts from the default branch, without ${parent.id}'s unmerged changes. To wait for them, cancel it and add --after ${parent.id}.`));
+      }
     } catch (err) {
       ui.fail((err as Error).message);
     }

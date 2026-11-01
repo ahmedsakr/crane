@@ -78,7 +78,7 @@ function ctxFor(task: Partial<Task>, extra: Partial<RunContext> = {}) {
   const ctx: RunContext = {
     task: {
       id: "t-x", kind: "maintenance", title: "X", brief: "Do the thing", autonomy: "observe", report: null,
-      prerequisites: [], prerequisitesWaivedAt: null, acceptance: [], ...task,
+      prerequisites: [], prerequisitesWaivedAt: null, acceptance: [], lookouts: [], ...task,
     } as Task,
     repo: null,
     cwd: tmpdir(),

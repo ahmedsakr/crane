@@ -1021,6 +1021,59 @@ a.row:hover .row-title {
 .gates-fields small {
   font-size: 12px;
 }
+/* ── also look for: toggles that ride along with a task ─── */
+.lookouts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  margin-top: 12px;
+  font-size: 13px;
+}
+.lookouts-label {
+  color: var(--ink-2);
+}
+.lookouts-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.lookouts-note {
+  flex-basis: 100%;
+  font-size: 12px;
+}
+.toggle-chip {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.toggle-chip[aria-pressed="false"]:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: var(--graphite);
+}
+.toggle-chip[aria-pressed="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--surface);
+}
+.toggle-chip[aria-pressed="true"]::before {
+  content: "✓ ";
+}
+.toggle-chip:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.toggle-chip:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 .gate-list {
   list-style: none;
   margin: 12px 0 0;

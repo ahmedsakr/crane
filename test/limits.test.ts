@@ -81,6 +81,7 @@ const task = (autonomy: Task["autonomy"] = "observe"): Task => ({
   prerequisites: [],
   prerequisitesWaivedAt: null,
   acceptance: [],
+  lookouts: [],
   report: null,
   costUsd: 0,
   createdAt: "",

@@ -132,7 +132,7 @@ export function createApp(store: Store) {
     return c.json(actions.retry(c.req.param("id"), { driver: body.driver }), 201);
   });
   api.post("/tasks/:id/follow-up", async (c) => {
-    const { finding, ...opts } = await optionalJsonObject<TaskRunOptions & TaskGates & { finding: number }>(c.req.raw);
+    const { finding, ...opts } = await optionalJsonObject<TaskRunOptions & TaskGates & Pick<NewTask, "lookouts"> & { finding: number }>(c.req.raw);
     return c.json(actions.followUp(c.req.param("id"), finding, opts), 201);
   });
 

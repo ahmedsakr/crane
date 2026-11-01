@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
-import { api, AUTONOMY_LABEL, KIND_LABEL, choosableDrivers, type Autonomy, type TaskDraft, type TaskKind, type Repo } from "../lib/api";
+import { api, AUTONOMY_LABEL, KIND_LABEL, choosableDrivers, type Autonomy, type Lookout, type TaskDraft, type TaskKind, type Repo } from "../lib/api";
 import { placeMenu, type MenuPlace } from "../lib/placement";
 import { useDrivers } from "../lib/hooks";
 import { useToast } from "./bits";
 import { GateFields, NO_GATES, parseGates } from "./GateFields";
+import { LookoutFields } from "./LookoutFields";
 
 const AUTONOMY_HINT: Record<Autonomy, string> = {
   observe: "Reads and reports back. Never changes a file.",
@@ -150,6 +151,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [gates, setGates] = useState(NO_GATES);
+  const [lookouts, setLookouts] = useState<Lookout[]>([]);
   const nav = useNavigate();
   const toast = useToast();
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -206,6 +208,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
         autonomy: final.autonomy,
         driver,
         ...parseGates(gates),
+        lookouts,
       });
       onClose();
       nav(`/tasks/${m.id}`);
@@ -296,6 +299,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
                   />
                 )}
               </div>
+              <LookoutFields value={lookouts} onChange={setLookouts} disabled={busy} />
               <GateFields value={gates} onChange={setGates} disabled={busy} />
             </div>
           )}

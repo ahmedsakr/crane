@@ -126,6 +126,7 @@ const client = store.createTask({
   repoId: api.id,
   autonomy: "propose",
   acceptance: ["Callers import @payments/client, not ../client", "npm run build emits packages/client/dist"],
+  lookouts: ["refactoring", "test_gaps"],
 });
 store.updateTask(client.id, {
   status: "needs_review",
@@ -133,8 +134,21 @@ store.updateTask(client.id, {
   startedAt: new Date(now - 50 * 60_000).toISOString(),
   finishedAt: new Date(now - 12 * 60_000).toISOString(),
   report: {
-    summary: "Moved the client into packages/client and pointed every caller at it. The workspace build target isn't set up yet, so the package doesn't build on its own.",
-    findings: [],
+    summary: "Moved the client into packages/client and pointed every caller at it. The workspace build target isn't set up yet, so the package doesn't build on its own. Looking out for refactoring and test gaps turned up two follow-ups.",
+    findings: [
+      {
+        title: "Fold the two retry loops into the client's backoff helper",
+        detail: "src/webhooks/retry.ts and src/checkout/charge.ts each carry their own copy of the exponential backoff loop. Both could call `withBackoff` from @payments/client.",
+        impact: "medium",
+        effort: "small",
+      },
+      {
+        title: "Test the client's timeout path",
+        detail: "No test covers a request that times out, so the retry-on-timeout branch in packages/client/src/index.ts is unexercised.",
+        impact: "medium",
+        effort: "small",
+      },
+    ],
     changedFiles: ["packages/client/src/index.ts", "src/webhooks/retry.ts", "src/checkout/charge.ts"],
     acceptance: [
       { criterion: "Callers import @payments/client, not ../client", met: true, evidence: "rg '../client' src returns nothing; 14 imports of @payments/client" },

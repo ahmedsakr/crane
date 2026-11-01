@@ -1,4 +1,4 @@
-import { STATUS_LABEL, type PrerequisiteState, type Task, type Repo } from "@crane/contracts";
+import { LOOKOUT, STATUS_LABEL, type PrerequisiteState, type Task, type Repo } from "@crane/contracts";
 import { REPORT_FENCE, type AgentJob, type ResolveConflictsJob, type RunContext, type SiblingTask } from "@crane/agent-protocol";
 
 const KIND_BRIEF: Record<Task["kind"], string> = {
@@ -186,6 +186,29 @@ function acceptanceBrief(task: Task): string {
   ].join("\n\n");
 }
 
+/**
+ * Opportunities the operator asked the agent to keep an eye out for. They
+ * ride along with the task without widening it: what the agent spots comes
+ * back as findings, which the operator can turn into follow-ups.
+ */
+function lookoutsBrief(task: Task): string {
+  if (!task.lookouts.length) return "";
+  const canChange = task.autonomy !== "observe";
+  return [
+    "## Also look for",
+    "While you work on this task, the operator also wants you to keep an eye out for these opportunities:",
+    task.lookouts.map((l) => `- ${LOOKOUT[l].brief}`).join("\n"),
+    [
+      "These don't widen the task: do the brief first, and keep your change focused on it.",
+      "Report each opportunity worth acting on as a finding, saying where it is, why it matters, and what change you'd make, so the operator can turn it into a follow-up.",
+      canChange
+        ? "Fix one inside this task only when it is small, low-risk, and in code your change already touches, such as a missing test for behaviour you changed, and say so in your summary. Leave anything larger as a finding."
+        : "",
+      "Favour a few well-grounded findings over a long list. If you looked and found nothing worth reporting, say so in your summary.",
+    ].filter(Boolean).join(" "),
+  ].join("\n\n");
+}
+
 /** What the factory knows about the task's surroundings when the run starts. */
 type TaskContext = Pick<RunContext, "siblingTasks" | "prerequisites">;
 
@@ -202,6 +225,7 @@ export function userPrompt(task: Task, job?: AgentJob, context: TaskContext = {}
     `# ${task.title}\n\n${task.brief}`,
     prerequisitesBrief(task, context.prerequisites),
     acceptanceBrief(task),
+    lookoutsBrief(task),
     siblingTasksBrief(context.siblingTasks),
   ].filter(Boolean).join("\n\n");
 }

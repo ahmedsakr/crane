@@ -5,6 +5,7 @@ import type {
   Autonomy,
   BlockedTool,
   DriverInfo,
+  Lookout,
   PostmortemSettings,
   MaintenanceRole,
   MaintenanceRoleInfo,
@@ -25,6 +26,7 @@ import type {
 
 export type {
   TaskGates,
+  Lookout,
   Agent,
   AgentRun,
   Analytics,
@@ -50,6 +52,8 @@ export {
   ACTIVE_STATUSES,
   AUTONOMY_LABEL,
   KIND_LABEL,
+  LOOKOUT,
+  LOOKOUTS,
   MAINTENANCE_ROLE,
   MAINTENANCE_ROLES,
   RUN_KIND_LABEL,
@@ -59,10 +63,16 @@ export {
   diffFiles,
   driverLabel,
   lastMergeOutcome,
+  lookoutsLabel,
+  prerequisiteMet,
+  UNSHIPPED_STATUSES,
   ruleLabel,
   settingsLabel,
   unmetAcceptance,
 } from "@crane/contracts";
+
+/** What the Make this change form schedules a follow-up with. */
+export type FollowUpOptions = TaskRunOptions & TaskGates & { lookouts?: Lookout[] };
 
 async function req<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -97,7 +107,7 @@ export const api = {
   cancel: (id: string) => post<Task>(`/tasks/${id}/cancel`),
   /** Run it again as a new task, on the same agent unless `driver` names another. */
   retry: (id: string, driver?: string) => post<Task>(`/tasks/${id}/retry`, driver ? { driver } : {}),
-  followUp: (id: string, finding: number, opts: TaskRunOptions & TaskGates = {}) => post<Task>(`/tasks/${id}/follow-up`, { finding, ...opts }),
+  followUp: (id: string, finding: number, opts: FollowUpOptions = {}) => post<Task>(`/tasks/${id}/follow-up`, { finding, ...opts }),
   repos: () => req<Repo[]>("/repos"),
   addRepo: (path: string, name?: string) => post<Repo>("/repos", { path, name }),
   removeRepo: (id: string) => req<{ ok: true }>(`/repos/${id}`, { method: "DELETE" }),
