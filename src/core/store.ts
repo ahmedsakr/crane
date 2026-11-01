@@ -480,6 +480,15 @@ export class Store {
     return (this.db.prepare(sql).all(...params) as Row[]).map(toTask);
   }
 
+  /** Tasks in one of these statuses that still have a worktree on record. */
+  tasksWithWorktrees(statuses: TaskStatus[]): Task[] {
+    if (!statuses.length) return [];
+    const rows = this.db
+      .prepare(`SELECT * FROM tasks WHERE worktree IS NOT NULL AND status IN (${statuses.map(() => "?").join(",")})`)
+      .all(...statuses) as Row[];
+    return rows.map(toTask);
+  }
+
   updateTask(id: string, patch: Partial<Omit<Task, "id">>) {
     const cols: Record<string, string> = {
       status: "status",
