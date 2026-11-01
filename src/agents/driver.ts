@@ -23,6 +23,12 @@ export interface RunContext {
    * rejecting. A run that fails still costs money, so report it then too.
    */
   onUsage?: (usage: RunUsage) => void;
+  /**
+   * Commands Crane runs itself once the agent finishes (the repo's configured
+   * checks). The agent is told about them, so a check its environment refuses
+   * is left to Crane rather than reported as a gap.
+   */
+  checks?: string[];
   /** Extra permission rules the operator allowed for this repo. Crane's deny list still wins. */
   allowedTools?: string[];
   /** Stop the agent after this many turns. */

@@ -168,6 +168,7 @@ test("driver: reports each blocked call once, with the rules that would allow it
     maxTurns: 7,
     model: "opus",
     effort: "high",
+    checks: ["npm test"],
   });
   assert.deepEqual(costs, [0.25]);
   const blocked = events.filter((e) => e.type === "blocked");
@@ -182,6 +183,7 @@ test("driver: reports each blocked call once, with the rules that would allow it
   assert.equal(args[args.indexOf("--effort") + 1], "high");
   assert.ok(args[args.indexOf("--allowedTools") + 1]!.split(",").includes("Bash(docker compose:*)"));
   assert.ok(args[args.indexOf("--disallowedTools") + 1]!.split(",").includes("Bash(git push:*)"));
+  assert.match(args[args.indexOf("--append-system-prompt") + 1]!, /Crane runs these checks itself, in this directory, .*`npm test`/);
 });
 
 test("driver: an overloaded API is a transient failure that keeps its cost and session", async () => {

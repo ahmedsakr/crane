@@ -139,6 +139,34 @@ test("prompts: a sandboxed agent is told which checks its sandbox refuses, and t
   }
 });
 
+test("prompts: an agent is told which checks Crane runs after it, so a blocked one isn't raised as a finding", () => {
+  const { ctx } = ctxFor({ autonomy: "propose" });
+  const conflict = { kind: "resolve_conflicts", base: "origin/main", files: ["a.ts"] } as const;
+  const checks = ["npm run typecheck", "npm test"];
+  for (const sandboxed of [true, false]) {
+    for (const prompt of [
+      systemPrompt(ctx.task, null, undefined, { agentCommits: !sandboxed, sandboxed, checks }),
+      systemPrompt(ctx.task, null, conflict, { agentCommits: !sandboxed, sandboxed, checks }),
+    ]) {
+      assert.match(prompt, /After you finish, Crane runs these checks itself/);
+      assert.ok(prompt.includes("`npm run typecheck`, `npm test`"), prompt);
+      assert.match(prompt, /left to Crane's check, rather than raising a finding about it or calling your validation incomplete/);
+      assert.equal(/outside your sandbox/.test(prompt), sandboxed, "only a sandboxed agent hears about its sandbox");
+      // It qualifies the general validation rule, so it comes after it.
+      assert.ok(prompt.indexOf("After you finish, Crane runs") > prompt.indexOf("Report validation accurately"));
+      // The sandbox guidance stays as it is.
+      assert.equal(/list the blocked check in your report as not run/.test(prompt), sandboxed);
+    }
+  }
+  for (const prompt of [
+    systemPrompt(ctx.task, null),
+    systemPrompt(ctx.task, null, undefined, { sandboxed: true, checks: [] }),
+    systemPrompt(ctx.task, null, conflict, { sandboxed: true }),
+  ]) {
+    assert.doesNotMatch(prompt, /Crane runs these checks/, "no checks configured, nothing promised");
+  }
+});
+
 test("codex: runs exec in a read-only sandbox to investigate, and turns its events into the task's", async () => {
   const { bin, log } = fakeCodex("ok");
   const { ctx, notes, tools, sessions, usage } = ctxFor({ autonomy: "observe" });
@@ -167,7 +195,7 @@ test("codex: runs exec in a read-only sandbox to investigate, and turns its even
 
 test("codex: work that changes code gets a workspace sandbox with no network, and is told Crane commits", async () => {
   const { bin, log } = fakeCodex("ok");
-  await new CodexDriver(bin, "gpt-test").run(ctxFor({ autonomy: "propose" }).ctx);
+  await new CodexDriver(bin, "gpt-test").run(ctxFor({ autonomy: "propose" }, { checks: ["npm test"] }).ctx);
   const [call] = calls(log);
   const at = (flag: string) => call!.args[call!.args.indexOf(flag) + 1];
   assert.equal(at("--sandbox"), "workspace-write");
@@ -177,6 +205,8 @@ test("codex: work that changes code gets a workspace sandbox with no network, an
   assert.ok(call!.stdin.includes("Crane commits them"), call!.stdin);
   assert.ok(!call!.stdin.includes("Commit your work"));
   assert.ok(call!.stdin.includes("Your sandbox has no network"), "it knows which checks will be refused");
+  assert.ok(call!.stdin.includes("Crane runs these checks itself, outside your sandbox"), "and which ones Crane runs for it");
+  assert.ok(call!.stdin.includes("`npm test`"));
 });
 
 test("codex: the operator's model and effort win over its env model, and leave the sandbox alone", async () => {
@@ -253,15 +283,18 @@ function named(name: string, available = true) {
   const sim = new SimulatedDriver(5);
   const ran: { task: string; resume?: string }[] = [];
   const tuned: { model?: string; effort?: string }[] = [];
-  const d: AgentDriver & { ran: typeof ran; tuned: typeof tuned } = {
+  const checked: { task: string; checks?: string[] }[] = [];
+  const d: AgentDriver & { ran: typeof ran; tuned: typeof tuned; checked: typeof checked } = {
     name,
     label: name,
     ran,
     tuned,
+    checked,
     available: async () => available,
     run: (ctx: RunContext): Promise<RunResult> => {
       ran.push({ task: ctx.task.id, resume: ctx.resumeSession });
       tuned.push({ model: ctx.model, effort: ctx.effort });
+      checked.push({ task: ctx.task.id, checks: ctx.checks });
       return sim.run(ctx);
     },
   };
@@ -358,6 +391,20 @@ test("factory: each run uses the model and effort saved for its agent, read fres
   const later = actions.createTask({ ...base, title: "Later" });
   await until(() => finished(store, later.id), "the later task to finish");
   assert.deepEqual(claude.tuned.at(-1), { model: "opus", effort: "max" });
+});
+
+test("factory: a run that changes code is told the checks Crane runs after it; an investigate-only run isn't", async (t) => {
+  const { store, actions, repo } = await setup();
+  const agent = named("claude-code");
+  const base = { kind: "maintenance" as const, brief: "", repoId: repo.id };
+  const propose = actions.createTask({ ...base, title: "Change", autonomy: "propose" });
+  const observe = actions.createTask({ ...base, title: "Look", autonomy: "observe" });
+  startFactory(t, store, agent);
+  await until(() => finished(store, propose.id) && finished(store, observe.id), "both tasks to finish");
+  const checksFor = (id: string) => agent.checked.find((c) => c.task === id)?.checks;
+  assert.deepEqual(checksFor(propose.id), ["true"], "the repo's configured checks reach the driver");
+  assert.equal(checksFor(observe.id), undefined, "Crane runs no checks after an investigate-only run");
+  assert.ok(store.getTask(propose.id)!.report!.validation!.some((v) => v.command === "true"), "and Crane did run them");
 });
 
 test("driver settings: validated per agent, cleared with default, and shown in the catalog", async () => {
