@@ -914,7 +914,7 @@ a.row:hover .row-title {
   font-size: 16px;
   letter-spacing: -0.02em;
 }
-.pre-approval-copy span {
+.pre-approval-copy > span {
   font-size: 14px;
   color: var(--graphite);
 }
@@ -988,6 +988,77 @@ a.row:hover .row-title {
 .follow-up-form .tuning-actions {
   margin-top: 12px;
   flex-wrap: wrap;
+}
+.gates {
+  margin-top: 12px;
+  font-size: 13px;
+}
+.gates summary {
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.gates-fields {
+  display: grid;
+  gap: 12px;
+  margin-top: 10px;
+}
+/* Restates .input, which the instruct sheet's own textarea rule would otherwise strip. */
+.gates-fields textarea.input {
+  height: auto;
+  min-height: 72px;
+  padding: 8px 14px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--surface);
+  resize: vertical;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.gates-fields textarea.input:focus {
+  outline: 2px solid var(--ink);
+  outline-offset: -1px;
+}
+.gates-fields small {
+  font-size: 12px;
+}
+.gate-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+.gate-list li {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.gate-list .mono {
+  font-size: 13px;
+}
+.acceptance-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.acceptance-item:last-child {
+  border-bottom: 0;
+}
+.acceptance-item p {
+  margin: 0;
+  font-size: 14px;
+}
+.acceptance-item .evidence {
+  grid-column: 2;
+  color: var(--graphite);
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 @media (max-width: 560px) {
   .finding {

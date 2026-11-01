@@ -48,6 +48,15 @@ Choose **Approve only** (`crane approve <id> --no-merge`) to keep the branch and
 
 To skip the wait, **Pre-approve** a task from its page while it's queued or running (`crane pre-approve <id> [--message <note>]`). When its run finishes and the repository checks pass, it goes straight to the merge queue instead of to review, and merges exactly as above. A failed run or check still fails the task, a merge that can't land still comes back to you, and a task with no branch waits for review. **Undo pre-approval** (`crane pre-approve <id> --undo`) works until the run hands the task over. Investigate-only tasks can't be pre-approved, and **Run again** doesn't carry a pre-approval over to the new task.
 
+### Prerequisites and acceptance criteria
+
+When work depends on another task, or only counts as done when something observable holds, say so as gates rather than in the brief. Open **Prerequisites and acceptance criteria** on the instruct sheet or under **Make this change**, or pass `--after <id>` and `--accept "<criterion>"` (each repeatable) to `crane do` and `crane follow-up`.
+
+- **Prerequisites** are task ids in the same repo. Crane holds the task in the queue until each one has landed: merged, or finished with no branch left to merge. An approved task whose branch was kept hasn't landed. The task page and `crane show` list what it's waiting for. To start it anyway, **Waive prerequisites** (`crane waive <id> -m "<why>"`). That approves a reduced scope: the agent is told the prerequisites' changes may be missing, and to report what still depends on them as unfinished.
+- **Acceptance criteria** are given to the agent as conditions to check, and it reports each one as met or not, with evidence. A pre-approved task merges on its own only when its report shows every criterion met. Otherwise it comes to you for review even though its checks passed, and approving it accepts the reduced scope. A run of any freedom level that leaves a criterion unmet waits for your review.
+
+**Run again** keeps both gates but not a waiver.
+
 A task's worktree is removed once nothing needs it: after it merges, when you approve only or decline it, and when it fails or is cancelled. If a failed or cancelled task left changes uncommitted, Crane commits them to the task's branch first, so the branch keeps the work. Worktrees left behind by a crash are found and removed too.
 
 After a successful merge, Crane queues a read-only **Post-mortem** task in the same repository. It reviews the original brief, final report, and recorded activity, prioritizing blocked commands and errors, and recommends ways to reduce friction for future tasks. Large histories are bounded and omissions are marked; this is recorded activity rather than the agent's full private conversation. Findings appear through the usual task report and review flow in both the CLI and dashboard. The review uses a fresh session, consumes a normal crew slot and agent usage, and can be cancelled like any other task. It never changes code or permissions automatically, and it does not run for failed merges or **Approve only**.
@@ -126,7 +135,8 @@ Start a run with the button on their card (**Review security**, **Reduce duplica
 | `crane pre-approve <id>` | Approve a queued or running task ahead of time, so it merges once its checks pass (`--undo` to take it back) |
 | `crane merge <id>` | Merge and push a task you approved only, or one that finished on its own branch |
 | `crane diff <id>` | See what a task changed on its branch |
-| `crane follow-up <id> <n> [--agent <agent>] [--model <model>] [--effort <level>]` | Turn finding *n* into a task with optional agent, model, and effort choices |
+| `crane follow-up <id> <n> [--agent <agent>] [--model <model>] [--effort <level>] [--after <id>] [--accept "<criterion>"]` | Turn finding *n* into a task with optional agent, model, and effort choices, prerequisites, and acceptance criteria |
+| `crane waive <id>` | Start a queued task without the prerequisites that haven't landed, approving a reduced scope |
 | `crane cancel <id>` / `crane retry <id>` | Stop work, or run it again (`--agent codex` to switch agents) |
 | `crane blocked` | Commands agents were blocked from, added up across tasks |
 | `crane allow "<command>" -r <repo>` / `crane keep-blocked …` | Let agents in that repo run it from now on, or keep it blocked and stop asking. `crane disallow` takes an allowed command back. |

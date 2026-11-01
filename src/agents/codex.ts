@@ -115,8 +115,8 @@ export class CodexDriver implements AgentDriver {
     const args = codexArgs({ cwd, readOnly, resume, model: model ?? undefined, effort: ctx.effort });
     // Codex has no separate system prompt flag, so Crane's brief leads the first message.
     const prompt = resume
-      ? resumePrompt(ctx.siblingTasks)
-      : `${systemPrompt(task, repo, job, { agentCommits: false, sandboxed: true, checks: ctx.checks })}\n\n---\n\n${userPrompt(task, job, ctx.siblingTasks)}`;
+      ? resumePrompt(ctx)
+      : `${systemPrompt(task, repo, job, { agentCommits: false, sandboxed: true, checks: ctx.checks })}\n\n---\n\n${userPrompt(task, job, ctx)}`;
     const rel = (p: unknown) => {
       const s = typeof p === "string" ? p : "";
       return isAbsolute(s) && s.startsWith(cwd) ? relative(cwd, s) || s : s;

@@ -87,6 +87,17 @@ export interface Report {
   changedFiles: string[];
   /** Agent paths are relative to the worktree; Crane replaces them with retained attachment names. */
   screenshots?: Screenshot[];
+  /** The agent's account of each of the task's acceptance criteria. See `unmetAcceptance`. */
+  acceptance?: AcceptanceResult[];
+}
+
+/** One acceptance criterion, as the agent reported it. */
+export interface AcceptanceResult {
+  /** The criterion's text, as the task gave it. */
+  criterion: string;
+  met: boolean;
+  /** What the agent observed: a command and its output, a file, a test. */
+  evidence: string;
 }
 
 export interface Screenshot {
@@ -143,6 +154,21 @@ export interface Task {
    * instead of waiting for them. Null means it waits for review as usual.
    */
   preApprovedAt: string | null;
+  /**
+   * Tasks that must land first (see `prerequisiteMet`). Crane doesn't start
+   * this one until they have, unless the operator waives them.
+   */
+  prerequisites: string[];
+  /**
+   * When the operator waived the prerequisites that hadn't landed, approving a
+   * reduced scope so the task could start without them. Null if never waived.
+   */
+  prerequisitesWaivedAt: string | null;
+  /**
+   * Observable conditions the work must meet. A pre-approved task merges on
+   * its own only when its report shows every one of them met.
+   */
+  acceptance: string[];
   report: Report | null;
   costUsd: number;
   createdAt: string;
@@ -243,6 +269,44 @@ export interface NewTask extends TaskRunOptions {
   autonomy: Autonomy;
   /** The crew member who must work it. Leave out for whoever is free next. */
   assignee?: string | null;
+  /** Ids of tasks in the same repo that must land before this one starts. */
+  prerequisites?: string[];
+  /** Observable conditions the work must meet before it can merge without review. */
+  acceptance?: string[];
+}
+
+/** What a follow-up can add to the run options: the gates it must pass. */
+export type TaskGates = Pick<NewTask, "prerequisites" | "acceptance">;
+
+/**
+ * Whether a prerequisite has landed: merged into the default branch, or
+ * finished without a branch, so there's nothing of it left to merge.
+ * Approved or done with a branch kept isn't landed yet.
+ */
+export const prerequisiteMet = (t: Pick<Task, "status" | "branch">): boolean =>
+  t.status === "merged" || ((t.status === "done" || t.status === "approved") && !t.branch);
+
+/** A prerequisite as a task's page and CLI show it. */
+export interface PrerequisiteState extends Pick<Task, "id" | "title" | "status"> {
+  met: boolean;
+}
+
+const normalCriterion = (c: string) => c.trim().replace(/\s+/g, " ").toLowerCase();
+
+/** What the report says about one acceptance criterion, matched by its text. */
+export function acceptanceFor(report: Pick<Report, "acceptance"> | null, criterion: string): AcceptanceResult | undefined {
+  const want = normalCriterion(criterion);
+  const said = (report?.acceptance ?? []).filter((r) => normalCriterion(r.criterion) === want);
+  // Reported twice: an unmet entry wins, so a contradiction never reads as met.
+  return said.find((r) => !r.met) ?? said[0];
+}
+
+/**
+ * The task's acceptance criteria its report doesn't show as met: reported
+ * unmet, or not reported at all. Empty when there are no criteria.
+ */
+export function unmetAcceptance(task: Pick<Task, "acceptance" | "report">): string[] {
+  return task.acceptance.filter((c) => acceptanceFor(task.report, c)?.met !== true);
 }
 
 /** Kinds of maintenance a crew member can be dedicated to. */
@@ -438,6 +502,8 @@ export interface TaskDetail {
   runs: AgentRun[];
   /** Commands this task was blocked from that still wait on a decision, counted across the repo. */
   blocked: BlockedTool[];
+  /** The task's prerequisites, in the order it lists them, and whether each has landed. */
+  prerequisites: PrerequisiteState[];
 }
 
 /** Crane's reading of a plain-language instruction: `POST /api/instruct/draft`. */

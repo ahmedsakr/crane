@@ -4,7 +4,7 @@ import { getMimeType } from "hono/utils/mime";
 import { readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import type { Store } from "../core/store.js";
-import { lastMergeOutcome, type TaskStatus, type NewTask, type TaskDetail, type TaskDraft, type TaskRunOptions } from "@crane/contracts";
+import { lastMergeOutcome, type TaskStatus, type NewTask, type TaskDetail, type TaskDraft, type TaskGates, type TaskRunOptions } from "@crane/contracts";
 import { OperatorActions } from "../factory/actions.js";
 import { draftTask } from "../factory/instruct.js";
 import { diffForTask } from "../factory/git.js";
@@ -46,7 +46,10 @@ export function createApp(store: Store) {
     const agent = agentId ? store.listAgents().find((a) => a.id === agentId) ?? null : null;
     // Commands this task was refused that are still waiting on a decision, counted across the repo's tasks.
     const blocked = store.blockedTools({ taskId: m.id, ...(m.repoId ? { repoId: m.repoId } : {}) });
-    const detail: TaskDetail = { task: m, repo, agent, events: store.listEvents(m.id), runs: store.listRuns(m.id), blocked };
+    const detail: TaskDetail = {
+      task: m, repo, agent, events: store.listEvents(m.id), runs: store.listRuns(m.id), blocked,
+      prerequisites: store.prerequisiteStates(m),
+    };
     return c.json(detail);
   });
 
@@ -114,6 +117,10 @@ export function createApp(store: Store) {
     return c.json(actions.preApprove(c.req.param("id"), note));
   });
   api.delete("/tasks/:id/pre-approve", (c) => c.json(actions.undoPreApproval(c.req.param("id"))));
+  api.post("/tasks/:id/waive-prerequisites", async (c) => {
+    const { note } = await optionalJsonObject<{ note?: string }>(c.req.raw);
+    return c.json(actions.waivePrerequisites(c.req.param("id"), note));
+  });
   api.post("/tasks/:id/merge", async (c) => c.json(await actions.merge(c.req.param("id"))));
   api.post("/tasks/:id/reject", async (c) => {
     const { note } = await optionalJsonObject<{ note?: string }>(c.req.raw);
@@ -125,7 +132,7 @@ export function createApp(store: Store) {
     return c.json(actions.retry(c.req.param("id"), { driver: body.driver }), 201);
   });
   api.post("/tasks/:id/follow-up", async (c) => {
-    const { finding, ...opts } = await optionalJsonObject<TaskRunOptions & { finding: number }>(c.req.raw);
+    const { finding, ...opts } = await optionalJsonObject<TaskRunOptions & TaskGates & { finding: number }>(c.req.raw);
     return c.json(actions.followUp(c.req.param("id"), finding, opts), 201);
   });
 

@@ -11,6 +11,7 @@ import {
   MAINTENANCE_ROLE,
   MAINTENANCE_ROLES,
   RUN_KIND_LABEL,
+  acceptanceFor,
   choosableDrivers,
   driverLabel,
   lastMergeOutcome,
@@ -40,6 +41,11 @@ const actions = new OperatorActions(store);
 await actions.ensureFactoryRepo();
 
 const repoName = (id: string | null) => (id ? store.getRepo(id)?.name : undefined);
+
+/** For options given more than once: `--after t-1 --after t-2`. */
+const collect = (value: string, previous: string[]) => [...previous, value];
+const AFTER_HELP = "wait for this task to land first; repeat for more";
+const ACCEPT_HELP = "an observable condition the work must meet; repeat for more";
 
 function factoryLine(): string {
   const running = factoryIsRunning(store);
@@ -109,8 +115,12 @@ program
   .option("-k, --kind <kind>", "maintenance | repo_feature | factory_feature")
   .option("-a, --autonomy <level>", "observe | propose | act")
   .option("--agent <agent>", `which agent works it: ${DRIVER_NAMES.join(" | ")} (default: the factory's default)`)
+  .option("--after <id>", AFTER_HELP, collect, [])
+  .option("--accept <criterion>", ACCEPT_HELP, collect, [])
   .option("-y, --yes", "skip the confirmation step")
-  .action(async (words: string[], opts: { repo?: string; kind?: TaskKind; autonomy?: Autonomy; agent?: string; yes?: boolean }) => {
+  .action(async (words: string[], opts: {
+    repo?: string; kind?: TaskKind; autonomy?: Autonomy; agent?: string; yes?: boolean; after: string[]; accept: string[];
+  }) => {
     p.intro(`${ui.accent("▟")} ${pc.bold("New task")}`);
     let text = words.join(" ").trim();
     if (!text) {
@@ -171,6 +181,8 @@ program
       `${ui.dim("Type     ")} ${KIND_LABEL[draft.kind]}  ${ui.dim(draft.why.kind)}`,
       `${ui.dim("Freedom  ")} ${AUTONOMY_LABEL[draft.autonomy]}  ${ui.dim(draft.why.autonomy)}`,
       ...(driver || choosable.length > 1 ? [agentLine()] : []),
+      ...(opts.after.length ? [`${ui.dim("After    ")} ${opts.after.join(", ")}  ${ui.dim("Starts once they land")}`] : []),
+      ...opts.accept.map((c, i) => `${ui.dim(i ? "         " : "Accept   ")} ${c}`),
     ].join("\n");
     p.note(summary, "Here's what I understood");
 
@@ -221,9 +233,10 @@ program
     }
 
     try {
-      const m = actions.createTask({ ...draft, driver });
+      const m = actions.createTask({ ...draft, driver, prerequisites: opts.after, acceptance: opts.accept });
+      const waiting = store.unmetPrerequisites(m).map((t) => t.id);
       p.outro(
-        `${pc.green("✓")} Task started  ${ui.dim(m.id)}\n   ${ui.dim("follow along:")} crane watch ${m.id}${
+        `${pc.green("✓")} ${waiting.length ? `Task queued. It starts once ${waiting.join(", ")} land${waiting.length === 1 ? "s" : ""}` : "Task started"}  ${ui.dim(m.id)}\n   ${ui.dim("follow along:")} crane watch ${m.id}${
           factoryIsRunning(store) ? "" : `\n   ${ui.accent("!")} The factory is off. Run ${pc.bold("crane serve")} to start the agents.`
         }`,
       );
@@ -310,6 +323,27 @@ program
     console.log(`  ${ui.statusText(m.status)}${ui.dim(forMember + on + cost + preApproved)}`);
     if (settingsLabel(m)) console.log(ui.dim(`  Model settings: ${settingsLabel(m)}`));
 
+    const prerequisites = store.prerequisiteStates(m);
+    const waiting = store.unmetPrerequisites(m);
+    if (prerequisites.length) {
+      const title = m.prerequisitesWaivedAt
+        ? "Prerequisites, waived"
+        : waiting.length && m.status === "queued" ? ui.accent("Waiting for prerequisites") : "Prerequisites";
+      console.log(ui.section(title, prerequisites.length));
+      for (const t of prerequisites) {
+        console.log(`  ${t.met ? pc.green("✓") : ui.dim("○")} ${t.id}  ${t.title}  ${t.met ? ui.dim("landed") : ui.statusText(t.status)}`);
+      }
+    }
+    if (m.acceptance.length) {
+      console.log(ui.section("Acceptance criteria", m.acceptance.length));
+      m.acceptance.forEach((c, i) => {
+        const said = m.report ? acceptanceFor(m.report, c) : undefined;
+        const mark = !m.report ? ui.dim(String(i + 1)) : said?.met ? pc.green("✓") : pc.red("✕");
+        console.log(`  ${mark}  ${c}${m.report && !said ? ui.dim("  not reported") : ""}`);
+        if (said?.evidence) console.log(ui.wrap(said.evidence, 5));
+      });
+    }
+
     if (m.report) {
       console.log(ui.section("Summary"));
       console.log(ui.wrap(m.report.summary, 2));
@@ -375,6 +409,9 @@ program
       if (m.branch) next.push([`crane diff ${m.id}`, "see the changes"]);
       if (m.report?.findings.length && m.autonomy === "observe") next.push([`crane follow-up ${m.id} 1`, "act on finding 1"]);
     } else if (m.status === "running" || m.status === "queued") {
+      if (m.status === "queued" && waiting.length) {
+        next.push([`crane waive ${m.id} -m "…"`, `start it without ${waiting.map((t) => t.id).join(", ")}, accepting a reduced scope`]);
+      }
       next.push([`crane watch ${m.id}`, "follow along live"], [`crane cancel ${m.id}`, "stop it"]);
       if (m.autonomy !== "observe") {
         next.push(m.preApprovedAt
@@ -509,6 +546,12 @@ function mergeQueued(id: string) {
 
 act("decline", "Decline a task and discard its branch", (id, n) => actions.reject(id, n), "Declined");
 act("cancel", "Stop a queued or running task", (id) => actions.cancel(id), "Cancelled");
+act(
+  "waive",
+  "Waive a queued task's prerequisites that haven't landed, approving a reduced scope so it starts without them",
+  (id, n) => actions.waivePrerequisites(id, n),
+  "Waived prerequisites. It starts with the next free agent",
+);
 
 program
   .command("retry")
@@ -532,10 +575,15 @@ program
   .option("--agent <agent>", `run it on an agent: ${DRIVER_NAMES.join(" | ")} | default`)
   .option("--model <model>", "model for this follow-up only; requires a chosen agent")
   .option("--effort <level>", "model effort for this follow-up only; requires a chosen agent")
-  .action((id: string, n: string, opts: { agent?: string; model?: string; effort?: string }) => {
+  .option("--after <id>", AFTER_HELP, collect, [])
+  .option("--accept <criterion>", ACCEPT_HELP, collect, [])
+  .action((id: string, n: string, opts: { agent?: string; model?: string; effort?: string; after: string[]; accept: string[] }) => {
     try {
-      const m = actions.followUp(id, Number(n) - 1, { driver: opts.agent, model: opts.model, effort: opts.effort });
-      ui.ok(`Started ${m.id}  ${ui.dim(m.title)}`);
+      const m = actions.followUp(id, Number(n) - 1, {
+        driver: opts.agent, model: opts.model, effort: opts.effort, prerequisites: opts.after, acceptance: opts.accept,
+      });
+      const waiting = store.unmetPrerequisites(m).map((t) => t.id);
+      ui.ok(`${waiting.length ? `Queued ${m.id}. It starts once ${waiting.join(", ")} land${waiting.length === 1 ? "s" : ""}` : `Started ${m.id}`}  ${ui.dim(m.title)}`);
     } catch (err) {
       ui.fail((err as Error).message);
     }

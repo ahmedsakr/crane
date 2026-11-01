@@ -6,6 +6,9 @@ export type {
   Repo,
   Finding,
   Report,
+  AcceptanceResult,
+  PrerequisiteState,
+  TaskGates,
   Screenshot,
   ValidationRun,
   Task,
@@ -58,5 +61,8 @@ export {
   AUTONOMY_LABEL,
   STATUS_LABEL,
   lastMergeOutcome,
+  acceptanceFor,
+  prerequisiteMet,
+  unmetAcceptance,
 } from "./types.js";
 export { ruleLabel } from "./rules.js";

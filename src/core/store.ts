@@ -9,8 +9,11 @@ import {
   SHIPPED_STATUSES,
   UNSHIPPED_STATUSES,
   isMaintenanceRole,
+  prerequisiteMet,
   ruleLabel,
+  unmetAcceptance,
   type MaintenanceRole,
+  type PrerequisiteState,
 } from "@crane/contracts";
 import { postmortemBrief } from "./postmortem.js";
 import type {
@@ -63,6 +66,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   driver_settings TEXT,
   assignee TEXT,
   pre_approved_at TEXT,
+  prerequisites TEXT,
+  prerequisites_waived_at TEXT,
+  acceptance TEXT,
   report TEXT,
   cost_usd REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
@@ -202,6 +208,9 @@ const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
   ["effort", "TEXT"],
   ["driver_settings", "TEXT"],
   ["pre_approved_at", "TEXT"],
+  ["prerequisites", "TEXT"],
+  ["prerequisites_waived_at", "TEXT"],
+  ["acceptance", "TEXT"],
 ];
 
 /** Add any missing columns to an older database. Safe if two processes open it at once. */
@@ -248,6 +257,9 @@ function toTask(r: Row): Task {
     driverSettings: r.driver_settings ? JSON.parse(r.driver_settings as string) as DriverSettings : null,
     assignee: (r.assignee as string) ?? null,
     preApprovedAt: (r.pre_approved_at as string) ?? null,
+    prerequisites: r.prerequisites ? JSON.parse(r.prerequisites as string) as string[] : [],
+    prerequisitesWaivedAt: (r.prerequisites_waived_at as string) ?? null,
+    acceptance: r.acceptance ? JSON.parse(r.acceptance as string) as string[] : [],
     report: r.report ? (JSON.parse(r.report as string) as Report) : null,
     costUsd: (r.cost_usd as number) ?? 0,
     createdAt: r.created_at as string,
@@ -484,16 +496,51 @@ export class Store {
   createTask(input: NewTask & { driverSettings?: DriverSettings | null }): Task {
     const id = shortId("t");
     const ts = now();
+    const list = (xs: string[] | undefined) => (xs?.length ? JSON.stringify(xs) : null);
     this.db
       .prepare(
-        `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, driver_settings, status, created_at)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
+        `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, driver_settings,
+           prerequisites, acceptance, status, created_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
       )
       .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null,
         input.model ?? null, input.effort ?? null, input.assignee ?? null,
-        input.driverSettings ? JSON.stringify(input.driverSettings) : null, ts);
+        input.driverSettings ? JSON.stringify(input.driverSettings) : null,
+        list(input.prerequisites), list(input.acceptance), ts);
     this.addEvent(id, "status", "Queued", { status: "queued" });
-    return this.getTask(id)!;
+    const task = this.getTask(id)!;
+    const waiting = this.unmetPrerequisites(task);
+    if (waiting.length) {
+      this.addEvent(id, "note", `Waits for ${waiting.map((t) => t.id).join(", ")} to land before it starts`, {
+        prerequisites: waiting.map((t) => t.id),
+      });
+    }
+    return task;
+  }
+
+  /** The task's prerequisites in the order it lists them, and whether each has landed. */
+  prerequisiteStates(task: Pick<Task, "prerequisites">): PrerequisiteState[] {
+    return task.prerequisites.map((id) => {
+      const t = this.getTask(id);
+      // A prerequisite that's gone can never land; it holds the task until the operator waives it.
+      return t ? { id: t.id, title: t.title, status: t.status, met: prerequisiteMet(t) } : { id, title: "Unknown task", status: "failed", met: false };
+    });
+  }
+
+  /** Prerequisites still holding the task back: not landed, and not waived by the operator. */
+  unmetPrerequisites(task: Pick<Task, "prerequisites" | "prerequisitesWaivedAt">): PrerequisiteState[] {
+    return task.prerequisitesWaivedAt ? [] : this.prerequisiteStates(task).filter((p) => !p.met);
+  }
+
+  /**
+   * Let a queued task start without the prerequisites that haven't landed. One
+   * conditional write, so it can't apply after the task has been picked up or
+   * cancelled. Returns whether it applied.
+   */
+  waivePrerequisites(id: string): boolean {
+    return this.db
+      .prepare("UPDATE tasks SET prerequisites_waived_at = ? WHERE id = ? AND status = 'queued' AND prerequisites_waived_at IS NULL")
+      .run(now(), id).changes > 0;
   }
 
   getTask(id: string): Task | null {
@@ -603,6 +650,14 @@ export class Store {
     return this.db.transaction(() => {
       const task = this.getTask(id);
       if (!task || task.status === "cancelled") return null;
+      // Passing checks don't show the asked-for scope is done; only the acceptance criteria do.
+      const unmet = unmetAcceptance(task);
+      if (task.preApprovedAt && task.branch && task.autonomy !== "observe" && unmet.length) {
+        this.setStatus(id, "needs_review",
+          `Pre-approved, but the report doesn't show ${unmet.length === 1 ? "an acceptance criterion" : `${unmet.length} acceptance criteria`} met. Ready for your review`,
+          { acceptanceUnmet: unmet });
+        return "needs_review" as const;
+      }
       if (task.preApprovedAt && task.branch && task.autonomy !== "observe") {
         const main = (task.repoId && this.getRepo(task.repoId)?.defaultBranch) || "main";
         // Free for any agent to claim, and queued by when the work finished.
@@ -617,19 +672,22 @@ export class Store {
 
   /**
    * Atomically take the oldest queued task this agent may work: one assigned
-   * to it, or one assigned to nobody unless `onlyAssigned`. Safe if two factories race.
+   * to it, or one assigned to nobody unless `onlyAssigned`. Skips tasks whose
+   * prerequisites haven't landed, unless the operator waived them. Safe if two
+   * factories race.
    */
   claimNextTask(agentId: string, opts: { onlyAssigned?: boolean } = {}): Task | null {
     const mine = opts.onlyAssigned ? "assignee = ?" : "(assignee IS NULL OR assignee = ?)";
     const tx = this.db.transaction(() => {
-      const r = this.db
-        .prepare(`SELECT id FROM tasks WHERE status = 'queued' AND ${mine} ORDER BY created_at ASC LIMIT 1`)
-        .get(agentId) as Row | undefined;
-      if (!r) return null;
+      const rows = this.db
+        .prepare(`SELECT * FROM tasks WHERE status = 'queued' AND ${mine} ORDER BY created_at ASC`)
+        .all(agentId) as Row[];
+      const next = rows.map(toTask).find((t) => !this.unmetPrerequisites(t).length);
+      if (!next) return null;
       const changed = this.db
         .prepare("UPDATE tasks SET status = 'running', agent_id = ?, started_at = ? WHERE id = ? AND status = 'queued'")
-        .run(agentId, now(), r.id).changes;
-      return changed ? (r.id as string) : null;
+        .run(agentId, now(), next.id).changes;
+      return changed ? next.id : null;
     });
     const id = tx();
     if (!id) return null;

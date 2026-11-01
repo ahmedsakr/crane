@@ -164,7 +164,10 @@ say({ type: "result", subtype: "success", total_cost_usd: 0.25, result: "Done.\\
 test("claude code: resumes with --resume, and starts fresh if the old session can't be loaded", async () => {
   const { bin, log } = fakeClaude();
   const driver = new ClaudeCodeDriver(bin);
-  const task = { id: "t-x", kind: "maintenance", title: "X", brief: "", autonomy: "observe", report: null } as unknown as Task;
+  const task = {
+    id: "t-x", kind: "maintenance", title: "X", brief: "", autonomy: "observe", report: null,
+    prerequisites: [], prerequisitesWaivedAt: null, acceptance: [],
+  } as unknown as Task;
   const notes: string[] = [];
   const sessions: string[] = [];
   const costs: number[] = [];

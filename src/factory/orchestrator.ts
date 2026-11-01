@@ -1,5 +1,5 @@
 import { crewSettingKey, type Store } from "../core/store.js";
-import { driverLabel, isDriverName, type EventType, type Overview, type RunUsage, type Task, type TaskStatus } from "@crane/contracts";
+import { driverLabel, isDriverName, unmetAcceptance, type EventType, type Overview, type RunUsage, type Task, type TaskStatus } from "@crane/contracts";
 import { AgentRunError, combinedCost, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -178,6 +178,7 @@ export class Factory {
       ...ctx,
       resumeSession,
       siblingTasks: ctx.repo && !ctx.job ? await siblingTasksFor(this.store, ctx.task, ctx.repo) : undefined,
+      prerequisites: !ctx.job && ctx.task.prerequisites.length ? this.store.prerequisiteStates(ctx.task) : undefined,
     });
     try {
       return await run();
@@ -597,9 +598,11 @@ export class Factory {
       // No cost here: every run, including earlier interrupted ones, already added its own via the runs ledger.
       this.store.updateTask(task.id, { report: result.report });
 
-      // Hold for the operator whenever there's something for them to decide.
+      // Hold for the operator whenever there's something for them to decide, including unfinished scope.
       const needsOperator =
-        task.autonomy === "propose" || (task.autonomy === "observe" && result.report.findings.length > 0);
+        task.autonomy === "propose" ||
+        (task.autonomy === "observe" && result.report.findings.length > 0) ||
+        unmetAcceptance({ acceptance: task.acceptance, report: result.report }).length > 0;
       // A pre-approved task skips review and goes to the merge queue. Its checks passed above.
       const next = this.store.finishWork(task.id, needsOperator ? "needs_review" : "done");
       if (!next) return;

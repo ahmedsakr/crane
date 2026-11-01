@@ -118,9 +118,43 @@ store.createTask({ kind: "maintenance", title: "Investigate the flaky webhook re
 store.createTask({ kind: "repo_feature", title: "Add a dark mode toggle to the storefront header", brief: "Add a dark mode toggle to the storefront header", repoId: web.id, autonomy: "propose" });
 store.createTask({ kind: "maintenance", title: "Find unused exports across the storefront", brief: "Find unused exports across the storefront", repoId: web.id, autonomy: "observe" });
 
+// A package split that came back with part of its scope unmet, and the follow-up waiting for it to land.
+const client = store.createTask({
+  kind: "maintenance",
+  title: "Extract the payments client into its own package",
+  brief: "Move src/client into a packages/client workspace package, and point callers at it.",
+  repoId: api.id,
+  autonomy: "propose",
+  acceptance: ["Callers import @payments/client, not ../client", "npm run build emits packages/client/dist"],
+});
+store.updateTask(client.id, {
+  status: "needs_review",
+  branch: `crane/extract-the-payments-client-${client.id.slice(2)}`,
+  startedAt: new Date(now - 50 * 60_000).toISOString(),
+  finishedAt: new Date(now - 12 * 60_000).toISOString(),
+  report: {
+    summary: "Moved the client into packages/client and pointed every caller at it. The workspace build target isn't set up yet, so the package doesn't build on its own.",
+    findings: [],
+    changedFiles: ["packages/client/src/index.ts", "src/webhooks/retry.ts", "src/checkout/charge.ts"],
+    acceptance: [
+      { criterion: "Callers import @payments/client, not ../client", met: true, evidence: "rg '../client' src returns nothing; 14 imports of @payments/client" },
+      { criterion: "npm run build emits packages/client/dist", met: false, evidence: "The root build doesn't include the workspace yet. That needs the shared build setup." },
+    ],
+  },
+});
+store.createTask({
+  kind: "maintenance",
+  title: "Move webhook handlers onto the payments client package",
+  brief: "Once the client package lands, move the webhook handlers onto its public API.",
+  repoId: api.id,
+  autonomy: "propose",
+  prerequisites: [client.id],
+  acceptance: ["src/webhooks imports only from @payments/client's entry point", "The webhook retry tests pass"],
+});
+
 // One crew member dedicated to security reviews of Crane, waiting for the operator to start one.
 store.setSetting("crew_role_a-hoist", "security");
 store.setSetting("crew_active_a-hoist", "true");
 
-console.log(`Seeded ${n} historical tasks and 3 queued ones into ${home}`);
+console.log(`Seeded ${n} historical tasks, 4 queued ones (one waiting on a prerequisite), and 1 for review into ${home}`);
 store.close();

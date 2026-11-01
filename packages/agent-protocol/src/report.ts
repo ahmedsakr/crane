@@ -1,4 +1,4 @@
-import type { Finding, Report, Screenshot } from "@crane/contracts";
+import type { AcceptanceResult, Finding, Report, Screenshot } from "@crane/contracts";
 
 /** The fence tag agents put on the JSON block that ends their final message. Prompts ask for it; parseReport reads it. */
 export const REPORT_FENCE = "crane-report";
@@ -41,6 +41,10 @@ export function parseReport(finalText: string): Report {
         ...(Array.isArray(raw.screenshots) ? { screenshots: raw.screenshots
           .filter((s): s is Screenshot => !!s && typeof s === "object" && typeof s.path === "string" && typeof s.caption === "string")
           .map(s => ({ path: s.path, caption: s.caption.slice(0, 300) })) } : {}),
+        ...(Array.isArray(raw.acceptance) ? { acceptance: raw.acceptance
+          .filter((a): a is Record<string, unknown> => !!a && typeof a === "object" && typeof a.criterion === "string")
+          // Only a literal true counts as met; anything vaguer leaves it for the operator.
+          .map((a): AcceptanceResult => ({ criterion: a.criterion as string, met: a.met === true, evidence: String(a.evidence ?? "").slice(0, 2000) })) } : {}),
       };
     } catch {
       // fall through to the plain-text report

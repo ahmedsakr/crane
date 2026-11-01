@@ -19,6 +19,7 @@ import {
   type DriverName,
   type DriverSettings,
   type TaskRunOptions,
+  type TaskGates,
   type PostmortemSettings,
 } from "@crane/contracts";
 import { inferDefaultBranch, isGitRepo, removeWorktree, repoRoot } from "./git.js";
@@ -83,6 +84,18 @@ function checkDriverSettings(driver: DriverName, input: Partial<DriverSettings>)
   return settings;
 }
 
+const MAX_GATES = 20;
+
+/** Acceptance criteria the operator gave, one per entry, trimmed. Blank entries are dropped. */
+function checkAcceptance(input: unknown): string[] {
+  if (input === undefined || input === null) return [];
+  if (!Array.isArray(input) || input.some((c) => typeof c !== "string")) throw new Error("Acceptance criteria must be a list of text");
+  const criteria = [...new Set(input.map((c: string) => c.trim().replace(/\s+/g, " ")).filter(Boolean))];
+  if (criteria.length > MAX_GATES) throw new Error(`Give at most ${MAX_GATES} acceptance criteria`);
+  if (criteria.some((c) => c.length > 500)) throw new Error("Keep each acceptance criterion under 500 characters");
+  return criteria;
+}
+
 function checkTaskRunOptions(input: TaskRunOptions): TaskRunOptions {
   const driver = checkDriver(input.driver);
   // Untuned tasks may follow the default agent, which can change before pickup.
@@ -124,10 +137,59 @@ export class OperatorActions {
     if (input.assignee && !this.store.listAgents().some((a) => a.id === input.assignee)) {
       throw new Error(`No crew member ${input.assignee}`);
     }
-    const task = this.store.createTask({ ...input, ...checkTaskRunOptions(input), assignee: input.assignee || null, driverSettings: null });
+    const task = this.store.createTask({
+      ...input,
+      ...checkTaskRunOptions(input),
+      ...this.checkGates(input, input.repoId),
+      assignee: input.assignee || null,
+      driverSettings: null,
+    });
     // Remembered so the next instruction that doesn't name a repo defaults to this one.
     if (task.repoId) this.store.setSetting("last_repo", task.repoId);
     return task;
+  }
+
+  /**
+   * Prerequisites and acceptance criteria for a new task, checked. Each
+   * prerequisite must be an existing task in the same repo, since only its
+   * landing there puts its changes in this task's checkout.
+   */
+  private checkGates(input: TaskGates, repoId: string | null): Required<TaskGates> {
+    const acceptance = checkAcceptance(input.acceptance);
+    const given: unknown = input.prerequisites ?? [];
+    if (!Array.isArray(given) || given.some((id) => typeof id !== "string")) throw new Error("Prerequisites must be a list of task ids");
+    const prerequisites: string[] = [];
+    for (const raw of given as string[]) {
+      const id = raw.trim();
+      if (!id) continue;
+      const t = this.store.getTask(id);
+      if (!t) throw new Error(`No task ${id} to wait for`);
+      if (t.repoId !== repoId) throw new Error(`Task ${t.id} is in another repo, so its changes would never reach this one`);
+      if (!prerequisites.includes(t.id)) prerequisites.push(t.id);
+    }
+    if (prerequisites.length > MAX_GATES) throw new Error(`Give at most ${MAX_GATES} prerequisites`);
+    return { prerequisites, acceptance };
+  }
+
+  /**
+   * Let a queued task start without waiting for its prerequisites to land. This
+   * is the operator approving a reduced scope: the agent is told their changes
+   * may be missing, and works from what's on the default branch.
+   */
+  waivePrerequisites(id: string, note?: string): Task {
+    const m = this.need(id);
+    if (note !== undefined && typeof note !== "string") throw new Error("Note must be text");
+    const waiting = this.store.unmetPrerequisites(m);
+    if (!waiting.length) {
+      throw new Error(m.prerequisitesWaivedAt ? `Task ${m.id}'s prerequisites are already waived` : `Task ${m.id} isn't waiting for any prerequisites`);
+    }
+    if (!this.store.waivePrerequisites(m.id)) throw new Error(`Task ${m.id} isn't queued, so there's nothing to start early`);
+    const ids = waiting.map((t) => t.id).join(", ");
+    this.store.addEvent(m.id, "operator", note ? `Waived prerequisites ${ids}: ${note}` : `Waived prerequisites ${ids}`, {
+      waived: waiting.map((t) => t.id),
+      ...(note ? { note } : {}),
+    });
+    return this.need(id);
   }
 
   private need(id: string): Task {
@@ -228,7 +290,9 @@ export class OperatorActions {
     // A maintenance run goes back to the member it was started for.
     const next = this.store.createTask({ kind: m.kind, title: m.title, brief: m.brief, repoId: m.repoId, autonomy: m.autonomy,
       driver, model: driver === m.driver ? m.model : null, effort: driver === m.driver ? m.effort : null, assignee: m.assignee,
-      driverSettings: driver === m.driver ? m.driverSettings : null });
+      driverSettings: driver === m.driver ? m.driverSettings : null,
+      // The same gates, but not a waiver: that approved the scope of the earlier run only.
+      prerequisites: m.prerequisites, acceptance: m.acceptance });
     const on = opts.driver !== undefined ? ` on ${driver ? driverLabel(driver) : "the default agent"}` : "";
     this.store.addEvent(m.id, "operator", `Retried as ${next.id}${on}`, { taskId: next.id });
     return next;
@@ -345,8 +409,11 @@ export class OperatorActions {
     return task;
   }
 
-  /** Turn one finding from a report into its own task that is allowed to make the change. */
-  followUp(id: string, findingIndex: number, opts: TaskRunOptions = {}): Task {
+  /**
+   * Turn one finding from a report into its own task that is allowed to make
+   * the change, optionally waiting on prerequisites and held to acceptance criteria.
+   */
+  followUp(id: string, findingIndex: number, opts: TaskRunOptions & TaskGates = {}): Task {
     const m = this.need(id);
     if (!Number.isInteger(findingIndex) || findingIndex < 0) throw new Error("Choose a finding by its number");
     const f = m.report?.findings[findingIndex];
@@ -357,6 +424,7 @@ export class OperatorActions {
       model: opts.model === undefined ? (driver === m.driver ? m.model : null) : opts.model,
       effort: opts.effort === undefined ? (driver === m.driver ? m.effort : null) : opts.effort,
     });
+    const gates = this.checkGates(opts, m.repoId);
     const next = this.store.createTask({
       kind: m.kind,
       title: f.title,
@@ -364,6 +432,7 @@ export class OperatorActions {
       repoId: m.repoId,
       autonomy: "propose",
       ...settings,
+      ...gates,
     });
     this.store.addEvent(m.id, "operator", `Started follow-up ${next.id}: ${f.title}`, { taskId: next.id });
     return next;
