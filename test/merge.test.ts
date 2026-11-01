@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { landTask as land, MergeError, type MergeRequest } from "../src/factory/merge.js";
 const landTask = (req: MergeRequest) => land({ checks: ["true"], ...req });
 import { keepBothSides } from "../src/agents/simulated.js";
-import { installDependencies } from "../src/factory/deps.js";
+import { installDependencies } from "@crane/worktree-deps";
 import type { Repo, Task } from "@crane/contracts";
 
 const ID = ["-c", "user.name=Test", "-c", "user.email=test@localhost", "-c", "commit.gpgsign=false"];

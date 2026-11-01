@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { AGENT_PROTOCOL_SOURCES, createFactoryBuildCheck, webBuildOutdated } from "../src/core/webbuild.ts";
+import { AGENT_PROTOCOL_SOURCES, WORKTREE_DEPS_SOURCES, createFactoryBuildCheck, webBuildOutdated } from "../src/core/webbuild.ts";
 
 function checkout() {
   const root = mkdtempSync(join(tmpdir(), "crane-webbuild-"));
@@ -128,8 +128,8 @@ test("a running factory notices shared contract changes", () => {
   }
 });
 
-test("agent protocol inputs stale the factory without staling the dashboard", () => {
-  for (const file of AGENT_PROTOCOL_SOURCES) {
+test("backend package inputs stale the factory without staling the dashboard", () => {
+  for (const file of [...AGENT_PROTOCOL_SOURCES, ...WORKTREE_DEPS_SOURCES]) {
     const c = checkout();
     try {
       c.at("src/components/Sheet.tsx", 100);

@@ -4,7 +4,8 @@ import { AgentRunError, combinedCost, type AgentDriver, type RunContext, type Ru
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createWorktree, finalizeWorktree, putAwayWorktree, removeWorktree } from "./git.js";
-import { elapsed, installDependencies } from "./deps.js";
+import { installDependencies } from "@crane/worktree-deps";
+import { elapsed } from "./elapsed.js";
 import { deleteMergedBranch, landTask, MergeError } from "./merge.js";
 import { runChecks } from "./checks.js";
 import { DashboardBuilder } from "./dashboard.js";

@@ -99,7 +99,7 @@ test("store: tasks are claimed once, oldest first", () => {
 });
 
 test("worktree: picks the install command from the lockfile", async () => {
-  const { installCommandFor } = await import("../src/factory/deps.js");
+  const { installCommandFor } = await import("../packages/worktree-deps/src/deps.js");
   const { writeFileSync, mkdirSync } = await import("node:fs");
   const dir = mkdtempSync(join(tmpdir(), "crane-install-"));
   assert.equal(installCommandFor(dir), null, "no package.json, nothing to install");
@@ -113,7 +113,8 @@ test("worktree: picks the install command from the lockfile", async () => {
 });
 
 test("worktree: copies dependencies from the checkout only when they match the lockfile", async () => {
-  const { copyDependencies, installDependencies } = await import("../src/factory/deps.js");
+  const { copyDependencies } = await import("../packages/worktree-deps/src/deps.js");
+  const { installDependencies } = await import("@crane/worktree-deps");
   const { writeFileSync, mkdirSync, symlinkSync, readlinkSync, readFileSync, existsSync } = await import("node:fs");
   const lock = (extra = {}) =>
     JSON.stringify({
@@ -193,7 +194,7 @@ test("worktree: copies dependencies from the checkout only when they match the l
 });
 
 test("worktree: npm's record of what's installed must agree with the lockfile", async () => {
-  const { npmInstallMatches } = await import("../src/factory/deps.js");
+  const { npmInstallMatches } = await import("../packages/worktree-deps/src/deps.js");
   const lock = { packages: { "": {}, "node_modules/a": { version: "1" }, "node_modules/b": { version: "1", optional: true } } };
   assert.ok(npmInstallMatches(lock, { packages: { "node_modules/a": { version: "1" } } }));
   assert.ok(!npmInstallMatches(lock, { packages: {} }), "a pinned package is missing");

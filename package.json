@@ -15,23 +15,26 @@
   "workspaces": [
     "web",
     "packages/contracts",
-    "packages/agent-protocol"
+    "packages/agent-protocol",
+    "packages/worktree-deps"
   ],
-  "bundledDependencies": ["@crane/contracts", "@crane/agent-protocol"],
+  "bundledDependencies": ["@crane/contracts", "@crane/agent-protocol", "@crane/worktree-deps"],
   "engines": {
     "node": ">=20.19"
   },
   "scripts": {
     "predev": "npm run build:packages",
-    "dev": "concurrently -k -n contracts,protocol,factory,web -c blue,magenta,yellow,cyan \"npm:dev:contracts\" \"npm:dev:agent-protocol\" \"npm:dev:server\" \"npm:dev:web\"",
+    "dev": "concurrently -k -n contracts,protocol,deps,factory,web -c blue,magenta,green,yellow,cyan \"npm:dev:contracts\" \"npm:dev:agent-protocol\" \"npm:dev:worktree-deps\" \"npm:dev:server\" \"npm:dev:web\"",
     "dev:contracts": "npm run dev -w @crane/contracts",
     "dev:agent-protocol": "npm run dev -w @crane/agent-protocol",
+    "dev:worktree-deps": "npm run dev -w @crane/worktree-deps",
     "predev:server": "npm run build:packages",
     "dev:server": "tsx watch src/cli/index.ts serve --port 4471",
     "dev:web": "npm run dev -w web",
     "build:contracts": "npm run build -w @crane/contracts",
     "build:agent-protocol": "npm run build -w @crane/agent-protocol",
-    "build:packages": "npm run build:contracts && npm run build:agent-protocol",
+    "build:worktree-deps": "npm run build -w @crane/worktree-deps",
+    "build:packages": "npm run build:contracts && npm run build:agent-protocol && npm run build:worktree-deps",
     "build": "npm run build:packages && tsc -p tsconfig.json && npm run build -w web",
     "prepack": "npm run build",
     "typecheck": "npm run build:packages && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm run typecheck -w web",
@@ -45,6 +48,7 @@
     "@clack/prompts": "^1.8.1",
     "@crane/agent-protocol": "0.1.0",
     "@crane/contracts": "0.1.0",
+    "@crane/worktree-deps": "0.1.0",
     "@hono/node-server": "^2.1.5",
     "better-sqlite3": "^12.11.1",
     "commander": "^14.0.3",
