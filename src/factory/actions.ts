@@ -88,6 +88,26 @@ function checkDriverSettings(driver: DriverName, input: Partial<DriverSettings>)
 
 const MAX_GATES = 20;
 
+/** Require an unambiguous future instant; save UTC so SQLite can compare timestamps. */
+export function checkScheduledAt(input: unknown): string | null {
+  if (input === undefined || input === null) return null;
+  const match = typeof input === "string"
+    ? /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/.exec(input)
+    : null;
+  if (!match) throw new Error("Start time must be an ISO 8601 timestamp with a timezone, like 2030-06-15T09:00:00-04:00");
+  const [, year, month, day, hour, minute, second] = match;
+  const days = new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate();
+  const time = Date.parse(input as string);
+  if (!Number.isFinite(time) || Number(month) < 1 || Number(month) > 12 || Number(day) < 1 || Number(day) > days
+    || Number(hour) > 23 || Number(minute) > 59 || Number(second ?? 0) > 59) {
+    throw new Error("Start time must be a valid date and time");
+  }
+  if (time <= Date.now()) throw new Error("Choose a start time in the future");
+  const utc = new Date(time).toISOString();
+  if (utc.length !== 24) throw new Error("Start time must have a four-digit UTC year");
+  return utc;
+}
+
 /** Acceptance criteria the operator gave, one per entry, trimmed. Blank entries are dropped. */
 function checkAcceptance(input: unknown): string[] {
   if (input === undefined || input === null) return [];
@@ -157,12 +177,21 @@ export class OperatorActions {
       ...checkTaskRunOptions(input),
       ...this.checkGates(input, input.repoId),
       lookouts: checkLookouts(input.lookouts),
+      scheduledAt: checkScheduledAt(input.scheduledAt),
       assignee: input.assignee || null,
       driverSettings: null,
     });
     // Remembered so the next instruction that doesn't name a repo defaults to this one.
     if (task.repoId) this.store.setSetting("last_repo", task.repoId);
     return task;
+  }
+
+  /** Reschedule queued work, or clear its time without waiving prerequisites. */
+  schedule(id: string, scheduledAt: unknown): Task {
+    const task = this.need(id);
+    const time = checkScheduledAt(scheduledAt);
+    if (!this.store.setTaskSchedule(task.id, time)) throw new Error(`Task ${task.id} isn't queued, so its start time can't change`);
+    return this.need(task.id);
   }
 
   /**

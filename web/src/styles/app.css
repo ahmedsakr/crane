@@ -1002,6 +1002,13 @@ a.row:hover .row-title {
   gap: 12px;
   margin-top: 10px;
 }
+.schedule-fields .input {
+  min-width: 0;
+  max-width: 100%;
+}
+.schedule-fields small {
+  grid-column: 1 / -1;
+}
 /* Restates .input, which the instruct sheet's own textarea rule would otherwise strip. */
 .gates-fields textarea.input {
   height: auto;

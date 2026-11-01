@@ -52,6 +52,7 @@ export {
   LOOKOUTS,
   LOOKOUT,
   isLookout,
+  isScheduled,
   lookoutsLabel,
   RUN_KIND_LABEL,
   UNSHIPPED_STATUSES,

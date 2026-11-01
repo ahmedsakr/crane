@@ -85,6 +85,7 @@ const task = (autonomy: Task["autonomy"] = "observe"): Task => ({
   report: null,
   costUsd: 0,
   createdAt: "",
+  scheduledAt: null,
   startedAt: null,
   finishedAt: null,
 });

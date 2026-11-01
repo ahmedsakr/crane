@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
+import { ScheduleFields } from "./ScheduleFields";
+import { parseStartTime } from "../lib/schedule";
 import { api, AUTONOMY_LABEL, KIND_LABEL, choosableDrivers, type Autonomy, type Lookout, type TaskDraft, type TaskKind, type Repo } from "../lib/api";
 import { placeMenu, type MenuPlace } from "../lib/placement";
 import { useDrivers } from "../lib/hooks";
@@ -152,6 +154,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
   const [busy, setBusy] = useState(false);
   const [gates, setGates] = useState(NO_GATES);
   const [lookouts, setLookouts] = useState<Lookout[]>([]);
+  const [startTime, setStartTime] = useState<string | null>(null);
   const nav = useNavigate();
   const toast = useToast();
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -209,10 +212,11 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
         driver,
         ...parseGates(gates),
         lookouts,
+        scheduledAt: parseStartTime(startTime),
       });
       onClose();
       nav(`/tasks/${m.id}`);
-      toast({ text: m.prerequisites?.length ? "Task queued" : "Task started" });
+      toast({ text: m.scheduledAt ? "Task scheduled" : "Task queued" });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -300,6 +304,10 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
                 )}
               </div>
               <LookoutFields value={lookouts} onChange={setLookouts} disabled={busy} />
+              <details className="gates">
+                <summary>Start time <span className="muted">· {startTime === null ? "Now" : "Later"}</span></summary>
+                <ScheduleFields value={startTime} onChange={setStartTime} disabled={busy} />
+              </details>
               <GateFields value={gates} onChange={setGates} disabled={busy} />
             </div>
           )}
@@ -313,7 +321,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
                 Cancel
               </button>
               <button type="submit" className="btn btn-primary" disabled={!final || busy}>
-                Start task <span className="kbd">⌘↵</span>
+                {startTime === null ? "Start task" : "Schedule task"} <span className="kbd">⌘↵</span>
               </button>
             </span>
           </div>

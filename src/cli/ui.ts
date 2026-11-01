@@ -1,6 +1,6 @@
 import pc from "picocolors";
 import type { Agent, BlockedTool, Task, TaskEvent, TaskStatus } from "@crane/contracts";
-import { KIND_LABEL, STATUS_LABEL } from "@crane/contracts";
+import { isScheduled, KIND_LABEL, STATUS_LABEL } from "@crane/contracts";
 
 /** Crane yellow: the one accent colour, used sparingly (brand mark, the thing that needs you). */
 const yellow = (s: string) => (pc.isColorSupported ? `\x1b[38;2;242;184;7m${s}\x1b[39m` : s);
@@ -51,7 +51,7 @@ export function truncate(s: string, n: number): string {
 
 /** One line per task: dot, id, title, and a quiet right-hand column. */
 export function taskLine(m: Task, repoName?: string): string {
-  const right = [repoName, ago(m.finishedAt ?? m.startedAt ?? m.createdAt)].filter(Boolean).join(" · ");
+  const right = [repoName, isScheduled(m) ? `Scheduled ${new Date(m.scheduledAt!).toLocaleString()}` : ago(m.finishedAt ?? m.startedAt ?? m.createdAt)].filter(Boolean).join(" · ");
   const room = width() - 4 - m.id.length - right.length - 4;
   return `  ${statusDot(m.status)} ${dim(m.id)}  ${truncate(m.title, Math.max(16, room)).padEnd(Math.max(16, room))}  ${dim(right)}`;
 }
