@@ -3,6 +3,8 @@
   "compilerOptions": {
     "rootDir": ".",
     "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
     "allowImportingTsExtensions": true
   },
   "include": ["test", "scripts"]

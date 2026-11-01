@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { dependencyInputs, landTask as land, MergeError, type MergeRequest } from "../src/factory/merge.js";
 const landTask = (req: MergeRequest) => land({ checks: ["true"], ...req });
 import { keepBothSides } from "../src/agents/simulated.js";
@@ -131,6 +131,33 @@ test("merge: lands the branch on origin and the clean checkout with one merge co
   assert.equal(sh(checkout, "rev-list", "--parents", "-n1", "HEAD").split(" ").length, 3, "a real merge commit");
   assert.equal(readFileSync(join(checkout, "feature.txt"), "utf8"), "feature\n");
   assert.equal(readFileSync(join(checkout, "other.txt"), "utf8"), "other\n");
+});
+
+test("merge: dependency changes leave a shared task note to install in the operator's checkout", async () => {
+  for (const file of ["package.json", "package-lock.json", "packages/new/package.json", "packages/new/package-lock.json", "notes.md"]) {
+    for (const dirty of [false, true]) {
+      const { checkout, repo, task, wt } = setup({ remote: false });
+      mkdirSync(dirname(join(wt, file)), { recursive: true });
+      commitFile(wt, file, "{}\n", "task change");
+      if (dirty) writeFileSync(join(checkout, "notes.md"), "operator's edit\n");
+      const notes: { type: string; message: string; data?: Record<string, unknown> }[] = [];
+      const result = await landTask({ repo, task, workdir: wt,
+        emit: (type, message, data) => { notes.push({ type, message, data }); }, resolveConflicts: noResolve });
+      const reminders = notes.filter(note => /run npm install/.test(note.message));
+      if (file === "notes.md") {
+        assert.deepEqual(reminders, [], "ordinary source changes need no install notice");
+      } else {
+        assert.equal(reminders.length, 1);
+        assert.equal(reminders[0]!.type, "note", "CLI and web read the same task notes");
+        assert.ok(reminders[0]!.message.includes(checkout));
+        assert.ok(reminders[0]!.message.includes(file));
+        assert.deepEqual(reminders[0]!.data, { dependencyFiles: [file] });
+      }
+      assert.equal(result.checkoutBehind, dirty ? checkout : null);
+      assert.ok(!existsSync(join(checkout, "node_modules")), "Crane never installs in the operator's checkout");
+      if (dirty) assert.equal(readFileSync(join(checkout, "notes.md"), "utf8"), "operator's edit\n");
+    }
+  }
 });
 
 test("merge: conflicts go to the resolver and the resolution lands", async () => {
