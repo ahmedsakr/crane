@@ -12,12 +12,12 @@ import {
   driverLabel,
   settingsLabel,
   lastMergeOutcome,
+  lookoutsLabel,
   unmetAcceptance,
   type AgentRun,
+  type FollowUpOptions,
   type TaskDetail,
   type TaskEvent,
-  type TaskGates,
-  type TaskRunOptions,
 } from "../lib/api";
 import { useDrivers, useEventStream, usePoll, useTick } from "../lib/hooks";
 import { ago, clock, compact, duration, plural, usd } from "../lib/format";
@@ -200,7 +200,7 @@ export function TaskPage() {
     }
   };
 
-  const followUp = (i: number, opts: TaskRunOptions & TaskGates) =>
+  const followUp = (i: number, opts: FollowUpOptions) =>
     run("f" + i, () => api.followUp(m.id, i, opts), "Follow-up queued", (r) => nav(`/tasks/${(r as { id: string }).id}`));
 
   return (
@@ -419,14 +419,12 @@ export function TaskPage() {
                         <span className="chip">{f.effort} effort</span>
                       </div>
                     </div>
-                    {m.autonomy === "observe" && (
-                      <div>
-                        <button className="btn btn-quiet btn-sm" disabled={!!busy} aria-expanded={finding === i} onClick={() => setFinding(finding === i ? null : i)}>
-                          Make this change
-                        </button>
-                      </div>
-                    )}
-                    {m.autonomy === "observe" && finding === i && (
+                    <div>
+                      <button className="btn btn-quiet btn-sm" disabled={!!busy} aria-expanded={finding === i} onClick={() => setFinding(finding === i ? null : i)}>
+                        Make this change
+                      </button>
+                    </div>
+                    {finding === i && (
                       drivers?.length ? <FollowUpForm key={`${m.id}-${i}`} task={m} drivers={drivers} busy={!!busy}
                         onSubmit={opts => followUp(i, opts)} onClose={() => setFinding(null)} />
                         : <p className="follow-up-form muted">{drivers ? "Couldn't load agents. Reload to try again." : "Loading agents…"}</p>
@@ -483,6 +481,10 @@ export function TaskPage() {
               {settingsLabel(m) && <>
                 <dt>Model settings</dt>
                 <dd>{settingsLabel(m)}</dd>
+              </>}
+              {lookoutsLabel(m.lookouts) && <>
+                <dt>Also looks for</dt>
+                <dd>{lookoutsLabel(m.lookouts)}</dd>
               </>}
               <dt>Started</dt>
               <dd>{m.startedAt ? ago(m.startedAt) : "Not yet"}</dd>

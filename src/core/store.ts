@@ -8,6 +8,7 @@ import {
   FINISHED_STATUSES,
   SHIPPED_STATUSES,
   UNSHIPPED_STATUSES,
+  isLookout,
   isMaintenanceRole,
   prerequisiteMet,
   ruleLabel,
@@ -69,6 +70,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   prerequisites TEXT,
   prerequisites_waived_at TEXT,
   acceptance TEXT,
+  lookouts TEXT,
   report TEXT,
   cost_usd REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
@@ -211,6 +213,7 @@ const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
   ["prerequisites", "TEXT"],
   ["prerequisites_waived_at", "TEXT"],
   ["acceptance", "TEXT"],
+  ["lookouts", "TEXT"],
 ];
 
 /** Add any missing columns to an older database. Safe if two processes open it at once. */
@@ -260,6 +263,8 @@ function toTask(r: Row): Task {
     prerequisites: r.prerequisites ? JSON.parse(r.prerequisites as string) as string[] : [],
     prerequisitesWaivedAt: (r.prerequisites_waived_at as string) ?? null,
     acceptance: r.acceptance ? JSON.parse(r.acceptance as string) as string[] : [],
+    // A lookout this build doesn't know (written by a newer one) is dropped rather than shown raw.
+    lookouts: r.lookouts ? (JSON.parse(r.lookouts as string) as unknown[]).filter(isLookout) : [],
     report: r.report ? (JSON.parse(r.report as string) as Report) : null,
     costUsd: (r.cost_usd as number) ?? 0,
     createdAt: r.created_at as string,
@@ -500,13 +505,13 @@ export class Store {
     this.db
       .prepare(
         `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, driver_settings,
-           prerequisites, acceptance, status, created_at)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
+           prerequisites, acceptance, lookouts, status, created_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
       )
       .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null,
         input.model ?? null, input.effort ?? null, input.assignee ?? null,
         input.driverSettings ? JSON.stringify(input.driverSettings) : null,
-        list(input.prerequisites), list(input.acceptance), ts);
+        list(input.prerequisites), list(input.acceptance), list(input.lookouts), ts);
     this.addEvent(id, "status", "Queued", { status: "queued" });
     const task = this.getTask(id)!;
     const waiting = this.unmetPrerequisites(task);
