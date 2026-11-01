@@ -19,11 +19,10 @@ function pick<T extends string>(value: unknown, allowed: readonly T[], fallback:
  * Crane records itself, so an agent that supplies it is ignored.
  */
 export function parseReport(finalText: string): Report {
-  const fence = new RegExp("```" + REPORT_FENCE + "\\s*\\n([\\s\\S]*?)```", "m");
-  const match = finalText.match(fence);
-  if (match?.[1]) {
+  const block = reportBlock(finalText);
+  if (block) {
     try {
-      const raw = JSON.parse(match[1]) as Record<string, unknown>;
+      const raw = block.raw as Record<string, unknown>;
       const findings: Finding[] = Array.isArray(raw.findings)
         ? raw.findings
             .filter((f): f is Record<string, unknown> => !!f && typeof f === "object")
@@ -35,7 +34,7 @@ export function parseReport(finalText: string): Report {
             }))
         : [];
       return {
-        summary: String(raw.summary ?? "").trim() || firstParagraph(finalText.replace(fence, "")),
+        summary: String(raw.summary ?? "").trim() || firstParagraph(block.rest),
         findings,
         changedFiles: Array.isArray(raw.changedFiles) ? raw.changedFiles.map(String) : [],
         ...(Array.isArray(raw.screenshots) ? { screenshots: raw.screenshots
@@ -51,6 +50,25 @@ export function parseReport(finalText: string): Report {
     }
   }
   return { summary: firstParagraph(finalText) || "The agent finished without a summary.", findings: [], changedFiles: [] };
+}
+
+/**
+ * The JSON inside the `crane-report` block, and the message without it. A
+ * finding's Markdown can hold its own code fences, so the block ends at the
+ * first closing fence that leaves valid JSON, not simply the first fence.
+ */
+function reportBlock(text: string): { raw: unknown; rest: string } | null {
+  const open = new RegExp("```" + REPORT_FENCE + "\\s*\\n").exec(text);
+  if (!open) return null;
+  const start = open.index + open[0].length;
+  for (let end = text.indexOf("```", start); end !== -1; end = text.indexOf("```", end + 3)) {
+    try {
+      return { raw: JSON.parse(text.slice(start, end)), rest: text.slice(0, open.index) + text.slice(end + 3) };
+    } catch {
+      // That fence was inside a JSON string, or the JSON is broken. Try the next one.
+    }
+  }
+  return null;
 }
 
 function firstParagraph(text: string): string {
