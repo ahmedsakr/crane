@@ -51,9 +51,15 @@ function checkRole(name: string | null | undefined): MaintenanceRole | null {
   return key;
 }
 
+/** Null, blank text and "default" clear a driver setting. */
+function normalizeDriverSetting(value: string | null): string {
+  const text = value?.trim() ?? "";
+  return text === "default" ? "" : text;
+}
+
 /**
  * Everything an operator can do, shared by the web UI and the CLI so both
- * behave identically. Each action records an `operator` event on the task.
+ * behave identically. Task decisions record an `operator` event on the task.
  */
 export class OperatorActions {
   constructor(private store: Store) {}
@@ -175,17 +181,16 @@ export class OperatorActions {
     const driver = checkDriver(name) as DriverName | null;
     if (!driver) throw new Error("Choose which agent to set up");
     if (!isTunable(driver)) throw new Error(`${driverLabel(driver)} doesn't call a model, so there's no model or effort to set`);
-    const cleared = (v: string | null) => v === null || v.trim() === "" || v.trim() === "default";
     if (input.model !== undefined) {
       if (input.model !== null && typeof input.model !== "string") throw new Error("Model must be text");
-      const model = cleared(input.model) ? "" : input.model!.trim();
+      const model = normalizeDriverSetting(input.model);
       // Passed to the agent's CLI as one argument. Keep it to what model names look like, and never a flag.
       if (model && !MODEL_NAME.test(model)) throw new Error(`“${model}” doesn't look like a model name`);
       this.store.setSetting(driverModelKey(driver), model);
     }
     if (input.effort !== undefined) {
       if (input.effort !== null && typeof input.effort !== "string") throw new Error("Effort must be text");
-      const effort = cleared(input.effort) ? "" : input.effort!.trim().toLowerCase();
+      const effort = normalizeDriverSetting(input.effort).toLowerCase();
       const levels = EFFORT_LEVELS[driver];
       if (effort && !levels.includes(effort)) {
         throw new Error(`${driverLabel(driver)} takes effort ${levels.join(", ")}, or default`);

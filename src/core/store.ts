@@ -823,7 +823,7 @@ export class Store {
     this.db.prepare("UPDATE agents SET tasks_completed = tasks_completed + 1 WHERE id = ?").run(id);
   }
 
-  /** Remove agents beyond the configured crew size. */
+  /** Remove agents outside the current crew, keeping any that are still working. */
   pruneAgents(keepIds: string[]) {
     if (!keepIds.length) return;
     this.db
