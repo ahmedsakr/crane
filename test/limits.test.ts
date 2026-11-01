@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/core/store.js";
 import { ClaudeCodeDriver, describeBlocked, toolsFor } from "../src/agents/claude-code.js";
-import { ALWAYS_DENIED } from "../src/agent-policy/index.js";
+import { ALWAYS_DENIED } from "@crane/agent-policy";
 import { AgentRunError, isTransientFailure, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
 import { OperatorActions, toRule } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";

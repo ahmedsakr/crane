@@ -6,7 +6,7 @@ presentation helpers used by Crane's dashboard, server, CLI, store, and drivers.
 Import from `@crane/contracts`. The explicit exports in `src/index.ts` are the
 public API; implementation files are hidden by the package exports map. Backend
 permission handling imports `parseRule` from `@crane/contracts/rules` to reuse
-the grammar. Rule matching, suggestions, and enforcement stay in the backend.
+the grammar. Rule matching, suggestions, and enforcement stay in `@crane/agent-policy`.
 
 No Node modules, SQLite, React, factory implementation, or external runtime
 dependencies belong here. Boundary tests and a separate TypeScript config

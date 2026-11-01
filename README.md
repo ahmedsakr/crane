@@ -190,6 +190,10 @@ src/
   server/    HTTP API + server-sent events
   cli/       the `crane` command
 web/         the dashboard (React + Vite)
+packages/
+  contracts/       shared types, labels, helpers, and rule grammar
+  agent-protocol/  factory/driver interface, reports, and combined costs
+  agent-policy/    deny list and shared permission-rule handling
 ```
 
 Every process opens the same SQLite database in WAL mode. That's why the CLI works whether or not the factory is running, and why live views just tail the events table.
@@ -201,6 +205,16 @@ npm run dev        # factory on :4471 with simulated or real agents, UI with hot
 npm run typecheck
 npm test
 ```
+
+The private workspaces compile to ESM and declarations before build, typecheck,
+tests, dev, and the source CLI. `npm run build:packages` builds contracts first,
+then agent protocol and agent policy; run it before invoking source scripts
+directly. `npm run dev` watches all three packages. Import policy helpers from
+`@crane/agent-policy`; its only runtime dependency is `@crane/contracts/rules`,
+and its command splitter stays internal. The root npm tarball bundles all three
+packages for installed CLI use without separate registry releases. Changes to
+protocol or policy inputs mark the running factory as outdated; rebuild and
+restart it to load them.
 
 For Codex's restricted agent sandbox, use the documented
 [sandbox test selection](docs/testing.md#sandbox-test-selection) and leave known

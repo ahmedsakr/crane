@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { git } from "../core/git.js";
 import type { AgentDriver, RunContext, RunResult } from "@crane/agent-protocol";
 import type { Finding, TaskKind } from "@crane/contracts";
-import { suggestRules } from "../agent-policy/index.js";
+import { suggestRules } from "@crane/agent-policy";
 
 /**
  * A stand-in driver that walks through a believable sequence of steps without

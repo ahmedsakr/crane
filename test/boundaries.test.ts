@@ -3,13 +3,18 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import ts from "typescript";
-import { AGENT_PROTOCOL_SOURCES } from "../src/core/webbuild.ts";
+import { AGENT_POLICY_SOURCES, AGENT_PROTOCOL_SOURCES } from "../src/core/webbuild.ts";
 
 const src = join(import.meta.dirname, "..", "src");
 const webSrc = join(import.meta.dirname, "..", "web", "src");
 const protocolRoot = join(import.meta.dirname, "..", "packages", "agent-protocol");
 const protocolSrc = join(protocolRoot, "src");
 const protocolSources = (readdirSync(protocolSrc, { recursive: true }) as string[])
+  .map((f) => f.split("\\").join("/"))
+  .filter((f) => f.endsWith(".ts"));
+const policyRoot = join(import.meta.dirname, "..", "packages", "agent-policy");
+const policySrc = join(policyRoot, "src");
+const policySources = (readdirSync(policySrc, { recursive: true }) as string[])
   .map((f) => f.split("\\").join("/"))
   .filter((f) => f.endsWith(".ts"));
 
@@ -95,38 +100,59 @@ test("boundaries: production callers use the agent protocol package", () => {
 });
 
 test("boundaries: the agent policy depends on the rule grammar and nothing else", () => {
-  // No factory, Store, drivers, prompts, subprocesses or Node modules: see src/agent-policy/index.ts.
-  const files = sources.filter((f) => f.startsWith("agent-policy/"));
-  assert.ok(files.includes("agent-policy/index.ts"), "expected to find the agent policy");
-  for (const file of files) {
-    const text = readFileSync(join(src, file), "utf8");
+  // No factory, Store, drivers, prompts, subprocesses or Node modules.
+  assert.ok(policySources.includes("index.ts"), "expected to find the agent policy");
+  for (const file of policySources) {
+    const text = readFileSync(join(policySrc, file), "utf8");
     assert.ok(!/\b(import|require)\s*\(/.test(text), `${file} loads a module dynamically`);
     for (const m of text.matchAll(/^\s*(import|export)\s+(type\s+)?(?:[^;"]*?\bfrom\s*)?"([^"]+)"/gm)) {
       const spec = m[3]!;
-      const target = spec.startsWith(".") ? resolveSpec(file, spec) : spec;
-      if (target.startsWith("agent-policy/")) continue;
-      assert.equal(target, "@crane/contracts/rules", `${file} imports "${spec}"`);
+      if (spec.startsWith(".")) {
+        const target = resolve(policySrc, dirname(file), spec.replace(/\.js$/, ".ts"));
+        assert.ok(policySources.some((f) => join(policySrc, f) === target), `${file} imports outside the package: ${spec}`);
+      } else {
+        assert.equal(spec, "@crane/contracts/rules", `${file} imports "${spec}"`);
+      }
     }
   }
 });
 
-test("boundaries: the agent policy is reached only through its entry point", () => {
-  // So making it a package means swapping one specifier. The old paths are re-exports for older branches only.
+test("boundaries: production callers use the agent policy package", () => {
+  // The old paths are re-exports for older branches only.
   const oldPaths = new Set(["agents/policy", "core/permissions"]);
-  for (const file of sources.filter((f) => !f.startsWith("agent-policy/"))) {
-    const bad = importsOf(file).filter((i) => (i.startsWith("agent-policy/") && i !== "agent-policy/index") || oldPaths.has(i));
+  for (const file of sources) {
+    const bad = importsOf(file).filter((i) => i.startsWith("agent-policy/") || oldPaths.has(i));
     assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
   }
 });
 
 test("boundaries: old policy paths re-export the agent policy", async () => {
-  const policy = await import("../src/agent-policy/index.ts");
+  const policy = await import("@crane/agent-policy");
+  const legacy = await import("../src/agent-policy/index.ts");
   const oldPolicy = await import("../src/agents/policy.ts");
   const oldPermissions = await import("../src/core/permissions.ts");
+  assert.deepEqual(legacy, policy);
   assert.equal(oldPolicy.ALWAYS_DENIED, policy.ALWAYS_DENIED);
   assert.equal(oldPermissions.isAllowed, policy.isAllowed);
   assert.equal(oldPermissions.overlapsDenied, policy.overlapsDenied);
   assert.equal(oldPermissions.suggestRules, policy.suggestRules);
+});
+
+test("boundaries: the private policy has one browser-safe ESM entry and tracks every backend build input", async () => {
+  const manifest = JSON.parse(readFileSync(join(policyRoot, "package.json"), "utf8"));
+  assert.equal(manifest.private, true);
+  assert.equal(manifest.type, "module");
+  assert.deepEqual(manifest.exports, { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } });
+  assert.deepEqual(manifest.files, ["dist/"]);
+  assert.deepEqual(manifest.dependencies, { "@crane/contracts": "0.1.0" });
+  const config = JSON.parse(readFileSync(join(policyRoot, "tsconfig.json"), "utf8"));
+  assert.deepEqual(config.compilerOptions.types, []);
+  assert.deepEqual(config.compilerOptions.lib, ["ES2022"]);
+  const inputs = [...policySources.map((f) => join("src", f)), "package.json", "tsconfig.json"];
+  assert.deepEqual([...AGENT_POLICY_SOURCES].sort(), inputs.map((f) => join("packages", "agent-policy", f)).sort());
+  for (const path of ["@crane/agent-policy/src/permissions.js", "@crane/agent-policy/dist/permissions.js", "@crane/agent-policy/permissions", "@crane/agent-policy/denied"]) {
+    await assert.rejects(import(path), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
+  }
 });
 
 test("boundaries: the private protocol has one ESM export and tracks every backend build input", async () => {

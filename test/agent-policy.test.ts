@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ALWAYS_DENIED, isAllowed, overlapsDenied, suggestRules } from "../src/agent-policy/index.js";
-import { splitCommand } from "../src/agent-policy/permissions.js";
+import { ALWAYS_DENIED, isAllowed, overlapsDenied, suggestRules } from "@crane/agent-policy";
+import { splitCommand } from "../packages/agent-policy/src/permissions.ts";
 import { ruleLabel } from "@crane/contracts";
 
 test("permissions: splits pipelines and chains, but not redirections", () => {
@@ -51,6 +51,6 @@ test("permissions: rules that touch Crane's deny list are recognised", () => {
 
 test("permissions: the public API is the deny list, matching, overlap and suggestions", async () => {
   // Command splitting and rule prefixes stay internal unless a production caller needs them.
-  const api = await import("../src/agent-policy/index.ts");
+  const api = await import("@crane/agent-policy");
   assert.deepEqual(Object.keys(api).sort(), ["ALWAYS_DENIED", "isAllowed", "overlapsDenied", "suggestRules"]);
 });
