@@ -164,6 +164,8 @@ export class OperatorActions {
   }
 
   createTask(input: NewTask): Task {
+    if (input.preApprove !== undefined && typeof input.preApprove !== "boolean") throw new Error("Pre-approval must be a boolean");
+    if (input.preApprove && input.autonomy === "observe") throw new Error("This task is investigate-only, so it has nothing to merge");
     if (input.kind !== "factory_feature" && !input.repoId) throw new Error("Choose a repo for this task");
     if (input.kind === "factory_feature" && !input.repoId) {
       input.repoId = this.store.listRepos().find((r) => r.isFactory)?.id ?? null;

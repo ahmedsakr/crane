@@ -52,6 +52,8 @@ To skip the wait, **Pre-approve** a task from its page while it's queued or runn
 
 To start a task later, open **Start time** on the instruct sheet, choose **Later**, and pick a date and time in your browser's timezone. In the CLI, use `crane do "…" --at 2030-06-15T09:00:00-04:00` (an ISO timestamp with `Z` or an explicit timezone offset). Tasks stay queued until that time, then become eligible for the next free agent; prerequisites, crew assignment, and factory pause still apply. Keep the factory running for timely pickup. If it was off at the scheduled time, the task becomes eligible when it starts again. Schedules survive restarts.
 
+You can also pre-approve at creation: open **Merge when it passes** next to **Start time** and turn on **Pre-approve this task**, or add `--pre-approve` to `crane do`. This works for immediate and scheduled tasks that change code, is off by default, and leaves prerequisites and acceptance criteria in force. The CLI confirmation menu also lets you choose whether it merges when it passes.
+
 The task page shows the start time and lets you change it or **Start now**. CLI equivalents are `crane schedule <id> <timestamp>` and `crane schedule <id> now`. Clearing a start time does not waive prerequisites. You can cancel scheduled work like any queued task. **Run again** creates a fresh task eligible immediately, without carrying over the original start time.
 
 ### Prerequisites and acceptance criteria

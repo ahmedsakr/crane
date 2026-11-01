@@ -41,6 +41,27 @@ function setup() {
   return { store, actions, repo, make };
 }
 
+test("scheduling: creation can pre-approve future work without bypassing time or prerequisites", (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: NOW });
+  const { store, actions, make } = setup();
+  try {
+    const prerequisite = make();
+    store.setStatus(prerequisite.id, "needs_review");
+    const task = make({ autonomy: "propose", scheduledAt: DUE, preApprove: true, prerequisites: [prerequisite.id] });
+    assert.equal(task.preApprovedAt, NOW.toISOString());
+    assert.equal(store.claimNextTask("a-jib"), null);
+    t.mock.timers.setTime(Date.parse(DUE));
+    assert.equal(store.claimNextTask("a-jib"), null, "pre-approval does not waive prerequisites");
+    store.setStatus(prerequisite.id, "done");
+    assert.equal(store.claimNextTask("a-jib")?.id, task.id);
+    store.updateTask(task.id, { branch: `crane/${task.id}` });
+    assert.equal(store.finishWork(task.id, "needs_review"), "merging");
+    const retry = actions.retry(task.id);
+    assert.equal(retry.preApprovedAt, null);
+    assert.equal(retry.scheduledAt, null);
+  } finally { store.close(); }
+});
+
 test("scheduling: accepts explicit timezones, normalizes to UTC, rejects invalid or past times", (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: NOW });
   assert.equal(checkScheduledAt(undefined), null);
@@ -151,10 +172,12 @@ test("scheduling: persists across store reopen, catches up overdue tasks, and mi
     store.close();
     store = new Store(file);
     assert.deepEqual(store.getTask(old.id), old, "migration defaults old tasks to immediate");
-    const future = store.createTask({ ...input, scheduledAt: DUE });
+    const future = store.createTask({ ...input, autonomy: "propose", scheduledAt: DUE, preApprove: true });
     store.close();
     store = new Store(file);
     assert.equal(store.getTask(future.id)!.scheduledAt, DUE);
+    assert.equal(store.getTask(future.id)!.preApprovedAt, NOW.toISOString());
+    assert.ok(store.listEvents(future.id).some((e) => e.message === "Pre-approved"));
     assert.equal(store.claimNextTask("a-jib")?.id, old.id);
     assert.equal(store.claimNextTask("a-boom"), null);
     store.close();
