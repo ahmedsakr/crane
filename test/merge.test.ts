@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { landTask as land, MergeError, type MergeRequest } from "../src/factory/merge.js";
+import { dependencyInputs, landTask as land, MergeError, type MergeRequest } from "../src/factory/merge.js";
 const landTask = (req: MergeRequest) => land({ checks: ["true"], ...req });
 import { keepBothSides } from "../src/agents/simulated.js";
 import { installDependencies } from "@crane/worktree-deps";
@@ -195,6 +195,59 @@ test("merge: a newly introduced workspace is available to conflict agents and me
     assert.equal(resolved, conflict);
     assert.ok(result.commit, "the merge landed after its workspace check passed");
   }
+});
+
+test("merge: dependency inputs are manifests, lockfiles and package manager settings at any depth", () => {
+  assert.deepEqual(
+    dependencyInputs(["notes.md", "package.json", "packages/a/package.json", "package-lock.json", "web/yarn.lock", ".npmrc", "src/package.ts"]),
+    ["package.json", "packages/a/package.json", "package-lock.json", "web/yarn.lock", ".npmrc"],
+  );
+});
+
+test("merge: conflicted manifests defer dependency preparation until the resolution, and checks see the resolved install", async () => {
+  const { checkout, repo, task, wt } = setup({ remote: false });
+  commitFile(checkout, ".gitignore", "node_modules/\n", "ignore dependencies");
+  const manifest = { name: "fixture", version: "1.0.0", private: true, workspaces: ["packages/*"] };
+  const lock = (root: object, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ name: "fixture", lockfileVersion: 3, packages: { "": root, ...extra } });
+  commitFile(checkout, "package.json", JSON.stringify(manifest), "manifest");
+  commitFile(checkout, "package-lock.json", lock(manifest), "lock");
+  sh(wt, "merge", "--ff-only", "main");
+  await installDependencies(wt);
+
+  // The task and main both change the manifest and lockfile; main also adds a workspace.
+  const taskManifest = { ...manifest, description: "from the task" };
+  commitFile(wt, "package.json", JSON.stringify(taskManifest), "task manifest");
+  commitFile(wt, "package-lock.json", lock(taskManifest), "task lock");
+  const workspace = { name: "@fixture/contracts", version: "1.0.0" };
+  mkdirSync(join(checkout, "packages/contracts"), { recursive: true });
+  commitFile(checkout, "packages/contracts/package.json", JSON.stringify(workspace), "workspace");
+  const mainManifest = { ...manifest, license: "MIT" };
+  const links = { "packages/contracts": workspace, "node_modules/@fixture/contracts": { link: true, resolved: "packages/contracts" } };
+  commitFile(checkout, "package.json", JSON.stringify(mainManifest), "main manifest");
+  commitFile(checkout, "package-lock.json", lock(mainManifest, links), "main lock");
+
+  const notes: string[] = [];
+  let asked: { files: string[]; deferred?: string[] } | null = null;
+  const result = await landTask({
+    repo, task, workdir: wt,
+    emit: (_t, m) => void notes.push(m),
+    checks: ["test -f node_modules/@fixture/contracts/package.json"],
+    resolveConflicts: async ({ cwd, files, deferredDependencies }) => {
+      asked = { files, deferred: deferredDependencies };
+      assert.ok(!notes.some((n) => /Installing dependencies|Couldn't prepare/.test(n)), "no install was attempted from conflicted files");
+      const resolved = { ...manifest, description: "from the task", license: "MIT" };
+      writeFileSync(join(cwd, "package.json"), JSON.stringify(resolved));
+      writeFileSync(join(cwd, "package-lock.json"), lock(resolved, links));
+    },
+  });
+
+  assert.deepEqual(asked, { files: ["package-lock.json", "package.json"], deferred: ["package-lock.json", "package.json"] });
+  const deferredAt = notes.findIndex((n) => /^Deferred dependency preparation: package-lock\.json, package\.json are conflicted/.test(n));
+  const installedAt = notes.findIndex((n) => /^Installed dependencies \(npm ci/.test(n));
+  assert.ok(deferredAt >= 0, "the operator is told preparation was deferred");
+  assert.ok(installedAt > deferredAt, "Crane installed from the resolved files before merge checks");
+  assert.ok(result.commit, "the merge landed after its workspace check passed");
 });
 
 test("merge: unresolved conflicts stop before anything is pushed", async () => {

@@ -59,6 +59,12 @@ export interface ResolveConflictsJob {
   /** What the task branch is being merged into, e.g. `origin/main`. */
   base: string;
   files: string[];
+  /**
+   * Conflicted dependency manifests and lockfiles. When present, Crane didn't
+   * prepare dependencies before the agent started, so the worktree's installed
+   * dependencies predate the merge.
+   */
+  deferredDependencies?: string[];
 }
 
 export type AgentJob = ResolveConflictsJob;

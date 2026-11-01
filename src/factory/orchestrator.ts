@@ -436,7 +436,7 @@ export class Factory {
           this.store.updateTask(task.id, { report: { ...report, validation: [...(report.validation ?? []), run] } });
           emit("note", `Merge check ${run.status}: ${run.command ?? "configuration"}`, { validation: run });
         },
-        resolveConflicts: async ({ cwd, base, files }) => {
+        resolveConflicts: async ({ cwd, base, files, deferredDependencies }) => {
           const current = this.store.getTask(task.id)!;
           const r = await this.runAgent(agent.id, this.driverFor(current, agent.id), {
             task: current,
@@ -444,7 +444,7 @@ export class Factory {
             cwd,
             signal: ac.signal,
             emit,
-            job: { kind: "resolve_conflicts", base, files },
+            job: { kind: "resolve_conflicts", base, files, ...(deferredDependencies ? { deferredDependencies } : {}) },
             // landTask runs these as merge checks once the conflicts are resolved.
             checks: this.store.repoChecks(repo.id),
           });

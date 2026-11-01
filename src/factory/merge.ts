@@ -2,7 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { EventType, Repo, Task } from "@crane/contracts";
 import { runChecks } from "./checks.js";
 import { installDependencies } from "@crane/worktree-deps";
@@ -47,7 +47,7 @@ export interface MergeRequest {
    * Called while a merge is stopped on conflicts in `cwd`. Should leave every
    * file resolved (markers removed); staging and committing is optional.
    */
-  resolveConflicts: (ctx: { cwd: string; base: string; files: string[] }) => Promise<void>;
+  resolveConflicts: (ctx: { cwd: string; base: string; files: string[]; deferredDependencies?: string[] }) => Promise<void>;
   /** How many times to start over when the remote moves under us. */
   maxAttempts?: number;
 }
@@ -195,6 +195,23 @@ export async function filesWithMarkers(cwd: string, files: string[]): Promise<st
   return left;
 }
 
+/** Files that decide what a dependency install does: manifests, lockfiles, package manager settings. */
+const DEPENDENCY_INPUTS = new Set([
+  "package.json",
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "yarn.lock",
+  ".npmrc",
+  ".yarnrc.yml",
+]);
+
+/** The conflicted files a dependency install would read. */
+export function dependencyInputs(files: string[]): string[] {
+  return files.filter((f) => DEPENDENCY_INPUTS.has(basename(f)));
+}
+
 /** Build the merge commit on top of `base` in the workdir. Returns its sha. */
 async function buildMerge(req: MergeRequest, base: { sha: string; label: string }): Promise<string> {
   const { workdir: cwd, task, emit } = req;
@@ -219,15 +236,25 @@ async function buildMerge(req: MergeRequest, base: { sha: string; label: string 
       }. Asking an agent to resolve ${files.length === 1 ? "it" : "them"}.`,
       { conflicts: files },
     );
+    const deferred = dependencyInputs(files);
     try {
-      try {
-        await prepareDependencies(req);
-      } catch (err) {
-        if (req.signal?.aborted) throw err;
-        // Conflicted manifests may not be installable until the agent resolves them.
-        emit("note", `Couldn't prepare dependencies before conflict resolution: ${why(err)}. Will retry before merge checks.`);
+      if (deferred.length) {
+        // A conflicted manifest or lockfile can't be installed from, so don't try.
+        // landTask prepares dependencies from the resolved files before merge checks.
+        emit(
+          "note",
+          `Deferred dependency preparation: ${deferred.join(", ")} ${deferred.length === 1 ? "is" : "are"} conflicted. Crane installs dependencies from the resolved files before merge checks.`,
+          { dependencies: "deferred", files: deferred },
+        );
+      } else {
+        try {
+          await prepareDependencies(req);
+        } catch (err) {
+          if (req.signal?.aborted) throw err;
+          emit("note", `Couldn't prepare dependencies before conflict resolution: ${why(err)}. Will retry before merge checks.`);
+        }
       }
-      await req.resolveConflicts({ cwd, base: base.label, files });
+      await req.resolveConflicts({ cwd, base: base.label, files, ...(deferred.length ? { deferredDependencies: deferred } : {}) });
     } catch (resolveErr) {
       await succeeds(cwd, ["merge", "--abort"]);
       throw resolveErr;
@@ -319,6 +346,9 @@ export async function landTask(req: MergeRequest): Promise<MergeResult> {
     }
     if (signal?.aborted) throw new Error("Stopped");
 
+    // Every time, including after a deferred preparation or a resolver's own
+    // install: merge checks run only against dependencies Crane prepared for the
+    // merge commit's manifests (it reinstalls whenever they changed).
     await prepareDependencies(req);
     await runChecks(workdir, req.checks ?? [], "merge", req.recordValidation ?? (() => {}), signal);
     if (signal?.aborted) throw new Error("Stopped");

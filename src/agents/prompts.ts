@@ -126,6 +126,7 @@ function conflictSystemPrompt(
       "- Do not commit, and do not run git merge, checkout, reset, rebase, or push. Crane checks your resolution, commits it, and pushes.",
       "- If you can't resolve a conflict with confidence, leave its markers in place and explain why in your report. Crane will hand the task back to the operator instead of merging.",
     ].join("\n"),
+    deferredDependenciesBrief(job.deferredDependencies),
     "Narrate briefly as you go: one short sentence before each significant step, so the operator can follow along.",
     BLOCKED_BRIEF,
     sandbox,
@@ -137,6 +138,24 @@ function conflictSystemPrompt(
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+/**
+ * Conflicted manifests or lockfiles can't be installed from, so Crane skipped
+ * dependency preparation. The resolver must install from the resolved files
+ * before any check that needs them, and never count checks run against the
+ * old install as validation of the merge.
+ */
+function deferredDependenciesBrief(files: readonly string[] | undefined): string {
+  if (!files?.length) return "";
+  const list = files.map((f) => `\`${f}\``).join(", ");
+  return [
+    "Dependencies:",
+    `- ${list} ${files.length === 1 ? "is" : "are"} among the conflicts, so Crane didn't install dependencies before starting you. Whatever is installed in this worktree predates the merge and may be missing or stale.`,
+    "- Resolve those files first. Then, before running anything that needs installed packages (a typecheck, tests, a build), install from the resolved lockfile with its clean install: `npm ci --no-audit --no-fund` for package-lock.json, `pnpm install --frozen-lockfile` for pnpm-lock.yaml, `yarn install --frozen-lockfile` for yarn.lock.",
+    "- If that install says the lockfile and the package.json files disagree, regenerate the lockfile with the package manager (for npm, `npm install --package-lock-only --no-audit --no-fund`) rather than editing it by hand, then install again.",
+    "- If the install fails or is blocked, don't treat checks run against the old dependencies as validation of the merge. Say in your report that they're left to Crane's merge checks, which run after Crane installs dependencies from the resolved files.",
+  ].join("\n");
 }
 
 function siblingTasksBrief(tasks?: readonly SiblingTask[]): string {

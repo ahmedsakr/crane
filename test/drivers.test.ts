@@ -106,6 +106,22 @@ test("prompts: file-edit guidance reaches fresh, conflict and resumed sessions",
   assert.match(systemPrompt(ctxFor({ autonomy: "observe" }).ctx.task, null), /Do not modify, create, or delete files/);
 });
 
+test("prompts: a conflict in dependency files makes installing from the resolution a prerequisite for validation", () => {
+  const { ctx } = ctxFor({ autonomy: "propose" });
+  const plain = systemPrompt(ctx.task, null, { kind: "resolve_conflicts", base: "origin/main", files: ["a.ts"] });
+  assert.doesNotMatch(plain, /didn't install dependencies/);
+  const deferred = systemPrompt(ctx.task, null, {
+    kind: "resolve_conflicts",
+    base: "origin/main",
+    files: ["a.ts", "package.json", "package-lock.json"],
+    deferredDependencies: ["package.json", "package-lock.json"],
+  });
+  assert.match(deferred, /`package\.json`, `package-lock\.json` are among the conflicts, so Crane didn't install dependencies/);
+  assert.match(deferred, /Resolve those files first\. Then, before running anything that needs installed packages/);
+  assert.match(deferred, /npm ci --no-audit --no-fund/);
+  assert.match(deferred, /don't treat checks run against the old dependencies as validation/);
+});
+
 test("prompts: fresh, conflict and resumed sessions preserve refusals and validation gaps", () => {
   const { ctx } = ctxFor({ autonomy: "propose" });
   for (const agentCommits of [true, false]) {
