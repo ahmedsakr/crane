@@ -1,5 +1,5 @@
-import type { Task, Repo } from "@crane/contracts";
-import { REPORT_FENCE, type AgentJob, type ResolveConflictsJob, type SiblingTask } from "../agent-protocol/index.js";
+import { STATUS_LABEL, type PrerequisiteState, type Task, type Repo } from "@crane/contracts";
+import { REPORT_FENCE, type AgentJob, type ResolveConflictsJob, type RunContext, type SiblingTask } from "../agent-protocol/index.js";
 
 const KIND_BRIEF: Record<Task["kind"], string> = {
   maintenance:
@@ -98,7 +98,7 @@ export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob, opts
     checks,
     FILE_EDIT_BRIEF,
     task.autonomy !== "observe" ? SCREENSHOT_BRIEF : "",
-    reportInstructions(),
+    reportInstructions(task),
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -155,7 +155,41 @@ function siblingTasksBrief(tasks?: readonly SiblingTask[]): string {
   ].filter(Boolean).join("\n\n");
 }
 
-export function userPrompt(task: Task, job?: AgentJob, siblingTasks?: readonly SiblingTask[]): string {
+/**
+ * The task's prerequisites, as execution gates rather than background: Crane
+ * held the task until they landed, or the operator explicitly waived them.
+ */
+function prerequisitesBrief(task: Task, states?: readonly PrerequisiteState[]): string {
+  if (!task.prerequisites.length) return "";
+  const byId = new Map(states?.map((s) => [s.id, s]));
+  const list = task.prerequisites.map((id) => {
+    const s = byId.get(id);
+    return s ? `- ${s.id}: ${s.title} (${STATUS_LABEL[s.status]}${s.met ? ", landed" : ", not landed"})` : `- ${id}`;
+  }).join("\n");
+  const unmet = states?.some((s) => !s.met) ?? false;
+  return [
+    "## Prerequisites",
+    task.prerequisitesWaivedAt && unmet
+      ? "The operator waived the prerequisites that hadn't landed and approved a reduced scope, so this task started without them. Their changes may be missing from your checkout. Work from what is on the default branch now, and don't recreate a missing prerequisite's work inside this task. Do the parts of the brief that don't depend on it, and report each part that still does as unfinished scope in your summary and as a finding."
+      : "Crane started this task only after these tasks landed on the default branch, so their changes are in your checkout. Build on them rather than redoing them. If one turns out to be missing anyway, stop and report the unmet prerequisite and the unfinished scope; do not substitute a smaller or different scope.",
+    list,
+  ].join("\n\n");
+}
+
+/** Observable criteria the agent must check and report on, one by one. */
+function acceptanceBrief(task: Task): string {
+  if (!task.acceptance.length) return "";
+  return [
+    "## Acceptance criteria",
+    "The operator accepts this task only when each of these holds. Check each one yourself and report it in your report's `acceptance` array: copy the criterion's text exactly, set `met`, and give the evidence you observed (a command and its output, a file, a test). Passing typecheck, tests, or other generic checks does not by itself show a criterion is met. If one isn't met, or you couldn't check it, report `met: false` and say why; don't narrow or reword it to make it pass. A pre-approved task merges on its own only when every criterion is reported met; otherwise it waits for the operator.",
+    task.acceptance.map((c, i) => `${i + 1}. ${c}`).join("\n"),
+  ].join("\n\n");
+}
+
+/** What the factory knows about the task's surroundings when the run starts. */
+type TaskContext = Pick<RunContext, "siblingTasks" | "prerequisites">;
+
+export function userPrompt(task: Task, job?: AgentJob, context: TaskContext = {}): string {
   if (job?.kind === "resolve_conflicts") {
     const summary = task.report?.summary ? `\n\nWhat the task did: ${task.report.summary}` : "";
     return [
@@ -164,14 +198,20 @@ export function userPrompt(task: Task, job?: AgentJob, siblingTasks?: readonly S
       `## The original task\n\n${task.brief}${summary}`,
     ].join("\n\n");
   }
-  return [`# ${task.title}\n\n${task.brief}`, siblingTasksBrief(siblingTasks)].filter(Boolean).join("\n\n");
+  return [
+    `# ${task.title}\n\n${task.brief}`,
+    prerequisitesBrief(task, context.prerequisites),
+    acceptanceBrief(task),
+    siblingTasksBrief(context.siblingTasks),
+  ].filter(Boolean).join("\n\n");
 }
 
 /**
  * What an agent is told when it picks its own session back up: after the
  * factory restarted, or after Crane retried it past a temporary API error.
  */
-export function resumePrompt(siblingTasks?: readonly SiblingTask[]): string {
+export function resumePrompt(context: TaskContext = {}): string {
+  const siblingTasks = context.siblingTasks;
   return [
     "You were stopped mid-step while working on this task, because Crane restarted or the API had a temporary error, and Crane has resumed this session. Your work so far is still in this directory.",
     "Pick up where you left off without redoing finished work. If you were in the middle of a command or an edit, check whether it finished (`git status`, `git diff`) before moving on. Only re-run a command if it was not denied and repeating it is safe.",
@@ -184,7 +224,10 @@ export function resumePrompt(siblingTasks?: readonly SiblingTask[]): string {
   ].filter(Boolean).join("\n\n");
 }
 
-function reportInstructions(): string {
+function reportInstructions(task?: Task): string {
+  const acceptance = task?.acceptance.length
+    ? { acceptance: [{ criterion: "The criterion's text, copied exactly", met: false, evidence: "What you ran or read, and what it showed" }] }
+    : {};
   return [
     `When you are finished, end your final message with a fenced code block tagged \`${REPORT_FENCE}\` containing JSON with this shape:`,
     "```" + REPORT_FENCE,
@@ -201,6 +244,7 @@ function reportInstructions(): string {
         ],
         changedFiles: ["path/relative/to/repo"],
         screenshots: [{ path: ".crane/screenshots/updated-view.png", caption: "Updated view at 1280 × 800" }],
+        ...acceptance,
       },
       null,
       2,

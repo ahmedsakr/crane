@@ -1,17 +1,19 @@
 import { useId, useState } from "react";
-import { driverLabel, type DriverInfo, type Task, type TaskRunOptions } from "../lib/api";
+import { driverLabel, type DriverInfo, type Task, type TaskGates, type TaskRunOptions } from "../lib/api";
+import { GateFields, NO_GATES, parseGates } from "./GateFields";
 
 /** Opened from a finding so scheduling choices stay next to the work they apply to. */
 export function FollowUpForm({ task, drivers, busy, onSubmit, onClose }: {
   task: Task;
   drivers: DriverInfo[];
   busy: boolean;
-  onSubmit: (opts: TaskRunOptions) => void;
+  onSubmit: (opts: TaskRunOptions & TaskGates) => void;
   onClose: () => void;
 }) {
   const [driver, setDriver] = useState(task.driver ?? "");
   const [model, setModel] = useState(task.model ?? "");
   const [effort, setEffort] = useState(task.effort ?? "");
+  const [gates, setGates] = useState(NO_GATES);
   const listId = useId();
   const defaultAgent = drivers.find(d => d.isDefault);
   const selected = driver ? drivers.find(d => d.name === driver) : defaultAgent;
@@ -26,6 +28,7 @@ export function FollowUpForm({ task, drivers, busy, onSubmit, onClose }: {
         driver: tunable && (model.trim() || effort) ? selected!.name : driver || null,
         model: tunable ? model.trim() || null : null,
         effort: tunable ? effort || null : null,
+        ...parseGates(gates),
       });
     }}>
       <div className="tuning">
@@ -61,6 +64,7 @@ export function FollowUpForm({ task, drivers, busy, onSubmit, onClose }: {
           </label>
         </>}
       </div>
+      <GateFields value={gates} onChange={setGates} disabled={busy} />
       <p>Applies to this follow-up only. Changes wait for your review.</p>
       <div className="tuning-actions">
         <button className="btn btn-primary btn-sm" type="submit" disabled={busy || !selected?.available}>

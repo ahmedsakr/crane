@@ -85,7 +85,7 @@ test("task context: fresh and resumed prompts expose prerequisite state and pres
     { id: "t-review", title: "Contracts", status: "needs_review", branch: "crane/contracts", hasCommits: true },
     { id: "t-unknown", title: "Unknown", status: "queued", branch: null, hasCommits: null },
   ];
-  for (const prompt of [userPrompt(current, undefined, siblings), resumePrompt(siblings)]) {
+  for (const prompt of [userPrompt(current, undefined, { siblingTasks: siblings }), resumePrompt({ siblingTasks: siblings })]) {
     const rows = prompt.split("\n").filter((line) => line.startsWith('{"id":')).map((line) => JSON.parse(line));
     assert.deepEqual(rows.map((row) => row.commitsNotOnDefaultBranch), ["no", "yes", "unknown"]);
     assert.equal(rows[0].title, siblings[0]!.title, "multiline titles stay inside their data row");
@@ -96,10 +96,10 @@ test("task context: fresh and resumed prompts expose prerequisite state and pres
     assert.match(prompt, /report the unmet prerequisite and unfinished scope explicitly/);
     assert.match(prompt, /do not silently reduce the requested scope/);
   }
-  assert.ok(userPrompt(current, undefined, siblings).startsWith(`# ${current.title}\n\n${current.brief}`));
+  assert.ok(userPrompt(current, undefined, { siblingTasks: siblings }).startsWith(`# ${current.title}\n\n${current.brief}`));
   assert.equal(userPrompt(current), `# ${current.title}\n\n${current.brief}`);
   assert.doesNotMatch(resumePrompt(), /Other recent tasks in this repository/);
-  assert.match(resumePrompt([]), /No other pending or unmerged tasks were found/, "clear a resumed session's old snapshot");
+  assert.match(resumePrompt({ siblingTasks: [] }), /No other pending or unmerged tasks were found/, "clear a resumed session's old snapshot");
 });
 
 test("task context: factory supplies snapshots for fresh and resumed work runs", async (t) => {

@@ -1,4 +1,4 @@
-import type { EventType, Task, Report, Repo, RunUsage } from "@crane/contracts";
+import type { EventType, PrerequisiteState, Task, Report, Repo, RunUsage } from "@crane/contracts";
 
 /** A sibling task's state when the agent starts; never includes another worktree's path. */
 export interface SiblingTask extends Pick<Task, "id" | "title" | "status" | "branch"> {
@@ -37,6 +37,8 @@ export interface RunContext {
   checks?: string[];
   /** Other pending or unmerged tasks in this repo, supplied by the factory. */
   siblingTasks?: readonly SiblingTask[];
+  /** Where each of `task.prerequisites` stood when the run started, supplied by the factory. */
+  prerequisites?: readonly PrerequisiteState[];
   /** Extra permission rules the operator allowed for this repo. Crane's deny list still wins. */
   allowedTools?: string[];
   /** Stop the agent after this many turns. */

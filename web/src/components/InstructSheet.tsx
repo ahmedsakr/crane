@@ -5,6 +5,7 @@ import { api, AUTONOMY_LABEL, KIND_LABEL, choosableDrivers, type Autonomy, type 
 import { placeMenu, type MenuPlace } from "../lib/placement";
 import { useDrivers } from "../lib/hooks";
 import { useToast } from "./bits";
+import { GateFields, NO_GATES, parseGates } from "./GateFields";
 
 const AUTONOMY_HINT: Record<Autonomy, string> = {
   observe: "Reads and reports back. Never changes a file.",
@@ -148,6 +149,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
   const defaultAgent = drivers?.find((d) => d.isDefault);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [gates, setGates] = useState(NO_GATES);
   const nav = useNavigate();
   const toast = useToast();
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -203,10 +205,11 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
         repoId: final.repoId,
         autonomy: final.autonomy,
         driver,
+        ...parseGates(gates),
       });
       onClose();
       nav(`/tasks/${m.id}`);
-      toast({ text: "Task started" });
+      toast({ text: m.prerequisites?.length ? "Task queued" : "Task started" });
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -293,6 +296,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
                   />
                 )}
               </div>
+              <GateFields value={gates} onChange={setGates} disabled={busy} />
             </div>
           )}
 

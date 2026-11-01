@@ -18,10 +18,12 @@ import type {
   Repo,
   TaskDetail,
   TaskDraft,
+  TaskGates,
   TaskRunOptions,
 } from "@crane/contracts";
 
 export type {
+  TaskGates,
   Agent,
   AgentRun,
   Analytics,
@@ -50,11 +52,13 @@ export {
   MAINTENANCE_ROLES,
   RUN_KIND_LABEL,
   STATUS_LABEL,
+  acceptanceFor,
   choosableDrivers,
   driverLabel,
   lastMergeOutcome,
   ruleLabel,
   settingsLabel,
+  unmetAcceptance,
 } from "@crane/contracts";
 
 async function req<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
@@ -84,11 +88,13 @@ export const api = {
   /** Approve a queued or running task ahead of time, so it merges once its checks pass. */
   preApprove: (id: string, note?: string) => post<Task>(`/tasks/${id}/pre-approve`, { note }),
   undoPreApproval: (id: string) => req<Task>(`/tasks/${id}/pre-approve`, { method: "DELETE" }),
+  /** Start a queued task without the prerequisites that haven't landed, approving a reduced scope. */
+  waivePrerequisites: (id: string, note?: string) => post<Task>(`/tasks/${id}/waive-prerequisites`, { note }),
   reject: (id: string, note?: string) => post<Task>(`/tasks/${id}/reject`, { note }),
   cancel: (id: string) => post<Task>(`/tasks/${id}/cancel`),
   /** Run it again as a new task, on the same agent unless `driver` names another. */
   retry: (id: string, driver?: string) => post<Task>(`/tasks/${id}/retry`, driver ? { driver } : {}),
-  followUp: (id: string, finding: number, opts: TaskRunOptions = {}) => post<Task>(`/tasks/${id}/follow-up`, { finding, ...opts }),
+  followUp: (id: string, finding: number, opts: TaskRunOptions & TaskGates = {}) => post<Task>(`/tasks/${id}/follow-up`, { finding, ...opts }),
   repos: () => req<Repo[]>("/repos"),
   addRepo: (path: string, name?: string) => post<Repo>("/repos", { path, name }),
   removeRepo: (id: string) => req<{ ok: true }>(`/repos/${id}`, { method: "DELETE" }),

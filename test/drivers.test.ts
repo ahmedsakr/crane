@@ -76,7 +76,10 @@ function ctxFor(task: Partial<Task>, extra: Partial<RunContext> = {}) {
   const sessions: string[] = [];
   const usage: RunUsage[] = [];
   const ctx: RunContext = {
-    task: { id: "t-x", kind: "maintenance", title: "X", brief: "Do the thing", autonomy: "observe", report: null, ...task } as Task,
+    task: {
+      id: "t-x", kind: "maintenance", title: "X", brief: "Do the thing", autonomy: "observe", report: null,
+      prerequisites: [], prerequisitesWaivedAt: null, acceptance: [], ...task,
+    } as Task,
     repo: null,
     cwd: tmpdir(),
     signal: new AbortController().signal,

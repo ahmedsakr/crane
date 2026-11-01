@@ -6,13 +6,17 @@ import {
   AUTONOMY_LABEL,
   KIND_LABEL,
   RUN_KIND_LABEL,
+  STATUS_LABEL,
+  acceptanceFor,
   choosableDrivers,
   driverLabel,
   settingsLabel,
   lastMergeOutcome,
+  unmetAcceptance,
   type AgentRun,
   type TaskDetail,
   type TaskEvent,
+  type TaskGates,
   type TaskRunOptions,
 } from "../lib/api";
 import { useDrivers, useEventStream, usePoll, useTick } from "../lib/hooks";
@@ -173,6 +177,13 @@ export function TaskPage() {
   const otherAgents = choosableDrivers(drivers ?? []).filter((d) => d.name !== usedDriver);
   // Only before review: once it's there, Approve is the decision.
   const canPreApprove = ["queued", "running"].includes(m.status) && m.autonomy !== "observe" && !!repo;
+  // Prerequisites still holding a queued task back. Waiving them is the operator approving a reduced scope.
+  // A backend older than this page sends no gates; read them as empty until it restarts.
+  const prerequisites = data.prerequisites ?? [];
+  const acceptance = m.acceptance ?? [];
+  const waitingOn = m.status === "queued" && !m.prerequisitesWaivedAt ? prerequisites.filter((p) => !p.met) : [];
+  const unmet = report ? unmetAcceptance({ acceptance, report }) : [];
+  const acceptanceGate = acceptance.length ? " and its report shows every acceptance criterion met" : "";
 
   const run = async (label: string, fn: () => Promise<unknown>, done: string, after?: (r: unknown) => void) => {
     setBusy(label);
@@ -189,7 +200,7 @@ export function TaskPage() {
     }
   };
 
-  const followUp = (i: number, opts: TaskRunOptions) =>
+  const followUp = (i: number, opts: TaskRunOptions & TaskGates) =>
     run("f" + i, () => api.followUp(m.id, i, opts), "Follow-up queued", (r) => nav(`/tasks/${(r as { id: string }).id}`));
 
   return (
@@ -214,6 +225,8 @@ export function TaskPage() {
                   {merge?.error ? `Couldn't merge into ${main}` : m.branch ? "Changes are ready for review" : "The report is ready"}
                 </strong>
                 <span>
+                  {unmet.length > 0 &&
+                    `The report doesn't show ${unmet.length === 1 ? "an acceptance criterion" : `${unmet.length} acceptance criteria`} met, so approving accepts a reduced scope. `}
                   {merge?.error
                     ? `${merge.error.replace(/\.$/, "")}. Try again, approve only to merge it yourself, or decline.`
                     : m.branch
@@ -251,19 +264,46 @@ export function TaskPage() {
             <p className="summary muted">{agent?.name ?? "An agent"} is working on this. Updates appear below as they happen.</p>
           ) : m.status === "queued" ? (
             <p className="summary muted">
-              {m.assignee && agent
-                ? agent.active ? `Waiting for ${agent.name}, who picks it up when free.` : `Waiting for ${agent.name}, who is on-call. Activate them on the Crew page.`
-                : "Waiting for a free agent."}
+              {waitingOn.length
+                ? `Waiting for ${waitingOn.map((p) => p.id).join(", ")} to land.`
+                : m.assignee && agent
+                  ? agent.active ? `Waiting for ${agent.name}, who picks it up when free.` : `Waiting for ${agent.name}, who is on-call. Activate them on the Crew page.`
+                  : "Waiting for a free agent."}
             </p>
           ) : null}
+          {waitingOn.length > 0 && (
+            <div className="card card-pad pre-approval">
+              <div className="pre-approval-copy">
+                <strong>Waiting for prerequisites</strong>
+                <span>
+                  {waitingOn.length === 1
+                    ? `It starts once this lands on ${main}. Waive it to start now without its changes, approving a reduced scope.`
+                    : `It starts once these land on ${main}. Waive them to start now without their changes, approving a reduced scope.`}
+                </span>
+                <ul className="gate-list">
+                  {waitingOn.map((p) => (
+                    <li key={p.id}>
+                      <Link className="mono" to={`/tasks/${p.id}`}>{p.id}</Link>
+                      <span>{p.title}</span>
+                      <StatusChip status={p.status} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <button className="btn btn-quiet btn-sm" disabled={!!busy}
+                onClick={() => run("waive", () => api.waivePrerequisites(m.id), "Waived prerequisites. It starts with the next free agent.")}>
+                Waive prerequisites
+              </button>
+            </div>
+          )}
           {canPreApprove && (
             <div className="card card-pad pre-approval">
               <div className="pre-approval-copy">
                 <strong>{m.preApprovedAt ? "Pre-approved" : "Merge when it passes"}</strong>
                 <span>
                   {m.preApprovedAt
-                    ? `Once its checks pass, Crane merges it into ${main} without waiting for your review. If a check fails, nothing merges.`
-                    : `Pre-approve it and Crane merges it into ${main} once its checks pass, without waiting for your review.`}
+                    ? `Once its checks pass${acceptanceGate}, Crane merges it into ${main} without waiting for your review. Otherwise nothing merges.`
+                    : `Pre-approve it and Crane merges it into ${main} once its checks pass${acceptanceGate}, without waiting for your review.`}
                 </span>
               </div>
               {m.preApprovedAt ? (
@@ -278,6 +318,30 @@ export function TaskPage() {
                 </button>
               )}
             </div>
+          )}
+          {acceptance.length > 0 && (
+            <section className="section" aria-labelledby="acceptance">
+              <div className="section-head">
+                <h2 className="section-title" id="acceptance">
+                  Acceptance criteria{" "}
+                  <span className="count">{report ? `${acceptance.length - unmet.length} of ${acceptance.length} met` : acceptance.length}</span>
+                </h2>
+              </div>
+              <div className="card card-pad" style={{ paddingBlock: 0 }}>
+                {acceptance.map((c, i) => {
+                  const said = report ? acceptanceFor(report, c) : undefined;
+                  return (
+                    <div className="acceptance-item" key={i}>
+                      {!report ? <span className="chip">{i + 1}</span>
+                        : said?.met ? <span className="chip chip-ok">Met</span>
+                          : <span className="chip chip-bad">{said ? "Not met" : "Not reported"}</span>}
+                      <p>{c}</p>
+                      {said?.evidence && <p className="evidence">{said.evidence}</p>}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
           )}
           {!!report?.screenshots?.length && (
             <section className="section" aria-labelledby="screenshots">
@@ -434,6 +498,20 @@ export function TaskPage() {
                 <>
                   <dt>Branch</dt>
                   <dd className="mono">{m.branch}</dd>
+                </>
+              )}
+              {prerequisites.length > 0 && (
+                <>
+                  <dt>Prerequisites</dt>
+                  <dd>
+                    {prerequisites.map((p, i) => (
+                      <span key={p.id}>
+                        {i > 0 && ", "}
+                        <Link className="mono" to={`/tasks/${p.id}`} title={`${p.title} · ${p.met ? "landed" : STATUS_LABEL[p.status]}`}>{p.id}</Link>
+                      </span>
+                    ))}
+                    {m.prerequisitesWaivedAt && <span className="muted"> · waived</span>}
+                  </dd>
                 </>
               )}
             </dl>
