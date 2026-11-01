@@ -457,12 +457,6 @@ export class Factory {
           emit("note", `Merge check ${run.status}: ${run.command ?? "configuration"}`, { validation: run });
         },
         resolveConflicts: async ({ cwd, base, files }) => {
-          try {
-            const note = await installDependencies(cwd, { from: repo.path, signal: ac.signal });
-            if (note) emit("note", note);
-          } catch {
-            // Not fatal: resolving conflicts rarely needs a build.
-          }
           const current = this.store.getTask(task.id)!;
           const r = await this.runAgent(agent.id, this.driverFor(current, agent.id), {
             task: current,

@@ -5,6 +5,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { EventType, Repo, Task } from "@crane/contracts";
 import { runChecks } from "./checks.js";
+import { installDependencies } from "./deps.js";
 import type { ValidationRun } from "@crane/contracts";
 
 const run = promisify(execFile);
@@ -219,6 +220,13 @@ async function buildMerge(req: MergeRequest, base: { sha: string; label: string 
       { conflicts: files },
     );
     try {
+      try {
+        await prepareDependencies(req);
+      } catch (err) {
+        if (req.signal?.aborted) throw err;
+        // Conflicted manifests may not be installable until the agent resolves them.
+        emit("note", `Couldn't prepare dependencies before conflict resolution: ${why(err)}. Will retry before merge checks.`);
+      }
       await req.resolveConflicts({ cwd, base: base.label, files });
     } catch (resolveErr) {
       await succeeds(cwd, ["merge", "--abort"]);
@@ -245,6 +253,11 @@ async function buildMerge(req: MergeRequest, base: { sha: string; label: string 
     emit("note", `Resolved the conflicts with ${base.label}`);
     return head;
   }
+}
+
+async function prepareDependencies(req: MergeRequest): Promise<void> {
+  const note = await installDependencies(req.workdir, { from: req.repo.path, signal: req.signal });
+  if (note) req.emit("note", note);
 }
 
 async function push(repo: Repo, remote: string, commit: string): Promise<"ok" | "moved"> {
@@ -302,6 +315,7 @@ export async function landTask(req: MergeRequest): Promise<MergeResult> {
     }
     if (signal?.aborted) throw new Error("Stopped");
 
+    await prepareDependencies(req);
     await runChecks(workdir, req.checks ?? [], "merge", req.recordValidation ?? (() => {}), signal);
     if (signal?.aborted) throw new Error("Stopped");
     if (remote) {
