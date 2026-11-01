@@ -202,6 +202,10 @@ npm run typecheck
 npm test
 ```
 
+For Codex's restricted agent sandbox, use the documented
+[sandbox test selection](docs/testing.md#sandbox-test-selection) and leave known
+incompatible suites to Crane's full external review and merge checks.
+
 ## License
 
 MIT
