@@ -155,6 +155,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
   const [gates, setGates] = useState(NO_GATES);
   const [lookouts, setLookouts] = useState<Lookout[]>([]);
   const [startTime, setStartTime] = useState<string | null>(null);
+  const [preApprove, setPreApprove] = useState(false);
   const nav = useNavigate();
   const toast = useToast();
   const areaRef = useRef<HTMLTextAreaElement>(null);
@@ -186,6 +187,9 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
       }
     : null;
   if (final && final.repoId && repoById.get(final.repoId)?.isFactory) final.kind = "factory_feature";
+  useEffect(() => {
+    if (final?.autonomy === "observe") setPreApprove(false);
+  }, [final?.autonomy]);
 
   const examples = (() => {
     const target = repos.find((r) => !r.isFactory)?.name ?? "my-app";
@@ -213,6 +217,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
         ...parseGates(gates),
         lookouts,
         scheduledAt: parseStartTime(startTime),
+        preApprove: final.autonomy !== "observe" && preApprove,
       });
       onClose();
       nav(`/tasks/${m.id}`);
@@ -308,6 +313,18 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
                 <summary>Start time <span className="muted">· {startTime === null ? "Now" : "Later"}</span></summary>
                 <ScheduleFields value={startTime} onChange={setStartTime} disabled={busy} />
               </details>
+              {final.autonomy !== "observe" && (
+                <details className="gates">
+                  <summary>Merge when it passes <span className="muted">· {preApprove ? "On" : "Off"}</span></summary>
+                  <div className="gates-fields">
+                    <label>
+                      <input type="checkbox" checked={preApprove} onChange={(e) => setPreApprove(e.target.checked)} disabled={busy} />
+                      {" "}Pre-approve this task
+                    </label>
+                    <small>Crane merges it once its run, acceptance criteria, and checks pass. You can undo pre-approval before the run finishes.</small>
+                  </div>
+                </details>
+              )}
               <GateFields value={gates} onChange={setGates} disabled={busy} />
             </div>
           )}

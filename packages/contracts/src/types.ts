@@ -291,6 +291,8 @@ export interface NewTask extends TaskRunOptions {
   autonomy: Autonomy;
   /** Earliest pickup time: a future ISO 8601 timestamp with a timezone, or null for now. */
   scheduledAt?: string | null;
+  /** Merge once the run and checks pass, without waiting for review. */
+  preApprove?: boolean;
   /** The crew member who must work it. Leave out for whoever is free next. */
   assignee?: string | null;
   /** Ids of tasks in the same repo that must land before this one starts. */

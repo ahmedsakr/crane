@@ -503,31 +503,34 @@ export class Store {
 
   // ── tasks ─────────────────────────────────────────────────
   createTask(input: NewTask & { driverSettings?: DriverSettings | null }): Task {
-    const id = shortId("t");
-    const ts = now();
-    const scheduledAt = input.scheduledAt == null ? null : new Date(input.scheduledAt).toISOString();
-    const list = (xs: string[] | undefined) => (xs?.length ? JSON.stringify(xs) : null);
-    this.db
-      .prepare(
-        `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, driver_settings,
-           prerequisites, acceptance, lookouts, status, created_at, scheduled_at)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)`,
-      )
-      .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null,
-        input.model ?? null, input.effort ?? null, input.assignee ?? null,
-        input.driverSettings ? JSON.stringify(input.driverSettings) : null,
-        list(input.prerequisites), list(input.acceptance), list(input.lookouts), ts, scheduledAt);
-    this.addEvent(id, "status", scheduledAt ? `Scheduled for ${scheduledAt}` : "Queued", {
-      status: "queued", ...(scheduledAt ? { scheduledAt } : {}),
-    });
-    const task = this.getTask(id)!;
-    const waiting = this.unmetPrerequisites(task);
-    if (waiting.length) {
-      this.addEvent(id, "note", `Waits for ${waiting.map((t) => t.id).join(", ")} to land before it starts`, {
-        prerequisites: waiting.map((t) => t.id),
+    return this.db.transaction(() => {
+      const id = shortId("t");
+      const ts = now();
+      const scheduledAt = input.scheduledAt == null ? null : new Date(input.scheduledAt).toISOString();
+      const list = (xs: string[] | undefined) => (xs?.length ? JSON.stringify(xs) : null);
+      this.db
+        .prepare(
+          `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, driver_settings,
+             prerequisites, acceptance, lookouts, status, created_at, scheduled_at, pre_approved_at)
+           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
+        )
+        .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null,
+          input.model ?? null, input.effort ?? null, input.assignee ?? null,
+          input.driverSettings ? JSON.stringify(input.driverSettings) : null,
+          list(input.prerequisites), list(input.acceptance), list(input.lookouts), ts, scheduledAt, input.preApprove ? ts : null);
+      this.addEvent(id, "status", scheduledAt ? `Scheduled for ${scheduledAt}` : "Queued", {
+        status: "queued", ...(scheduledAt ? { scheduledAt } : {}),
       });
-    }
-    return task;
+      if (input.preApprove) this.addEvent(id, "operator", "Pre-approved", { preApproved: true });
+      const task = this.getTask(id)!;
+      const waiting = this.unmetPrerequisites(task);
+      if (waiting.length) {
+        this.addEvent(id, "note", `Waits for ${waiting.map((t) => t.id).join(", ")} to land before it starts`, {
+          prerequisites: waiting.map((t) => t.id),
+        });
+      }
+      return task;
+    }).immediate();
   }
 
   /** Change pickup time only while queued, and record the decision with the write. */

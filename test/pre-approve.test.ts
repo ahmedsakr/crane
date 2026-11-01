@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Store } from "../src/core/store.js";
 import { OperatorActions } from "../src/factory/actions.js";
 import { createApp } from "../src/server/app.js";
-import type { Autonomy } from "@crane/contracts";
+import type { Autonomy, NewTask } from "@crane/contracts";
 
 function setup() {
   const store = new Store(":memory:");
@@ -13,6 +13,68 @@ function setup() {
     store.createTask({ kind: "maintenance", title: `Task ${autonomy}`, brief: "", repoId: repo.id, autonomy });
   return { store, actions, repo, make };
 }
+
+test("pre-approve: creation records the decision, defaults off, and retries require fresh approval", () => {
+  const { store, actions, repo } = setup();
+  const input: NewTask = { kind: "maintenance", title: "Change", brief: "", repoId: repo.id, autonomy: "propose" };
+  try {
+    for (const autonomy of ["propose", "act"] as const) {
+      const task = actions.createTask({ ...input, autonomy, preApprove: true });
+      assert.equal(task.preApprovedAt, task.createdAt);
+      assert.deepEqual(store.listEvents(task.id).filter((e) => e.type === "operator").map((e) => [e.message, e.data]),
+        [["Pre-approved", { preApproved: true }]]);
+      const retry = actions.retry(task.id);
+      assert.equal(retry.preApprovedAt, null);
+      assert.equal(store.listEvents(retry.id).some((e) => e.data?.preApproved), false);
+      assert.equal(actions.undoPreApproval(task.id).preApprovedAt, null);
+    }
+    for (const preApprove of [undefined, false]) {
+      const task = actions.createTask({ ...input, preApprove });
+      assert.equal(task.preApprovedAt, null);
+      assert.equal(store.listEvents(task.id).some((e) => e.type === "operator"), false);
+    }
+    const before = store.listTasks();
+    assert.throws(() => actions.createTask({ ...input, autonomy: "observe", preApprove: true }), /investigate-only/);
+    for (const preApprove of [null, "true", 1, {}, []]) {
+      assert.throws(() => actions.createTask({ ...input, preApprove: preApprove as boolean }), /boolean/);
+    }
+    assert.deepEqual(store.listTasks(), before, "invalid requests create no task");
+  } finally { store.close(); }
+});
+
+test("pre-approve: creation rolls back the task when its decision event cannot be written", () => {
+  const { store, actions, repo } = setup();
+  try {
+    store.db.exec(`CREATE TRIGGER reject_pre_approval BEFORE INSERT ON events
+      WHEN NEW.message = 'Pre-approved' BEGIN SELECT RAISE(ABORT, 'event failed'); END`);
+    assert.throws(() => actions.createTask({ kind: "maintenance", title: "Change", brief: "", repoId: repo.id,
+      autonomy: "propose", preApprove: true }), /event failed/);
+    assert.deepEqual(store.listTasks(), []);
+    assert.equal((store.db.prepare("SELECT COUNT(*) AS n FROM events").get() as { n: number }).n, 0);
+  } finally { store.close(); }
+});
+
+test("pre-approve: API creation accepts booleans and rejects investigate-only and malformed choices", async () => {
+  const { store, repo } = setup();
+  const app = createApp(store);
+  const post = (extra: object) => app.request("/api/tasks", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ kind: "maintenance", title: "Change", brief: "", repoId: repo.id, autonomy: "propose", ...extra }),
+  });
+  try {
+    for (const preApprove of [null, "true", 1, {}, []]) assert.equal((await post({ preApprove })).status, 400);
+    assert.equal((await post({ autonomy: "observe", preApprove: true })).status, 400);
+    assert.deepEqual(store.listTasks(), []);
+    const approved = await post({ preApprove: true });
+    assert.equal(approved.status, 201);
+    assert.ok((await approved.json()).preApprovedAt);
+    for (const extra of [{}, { preApprove: false }, { autonomy: "observe", preApprove: false }]) {
+      const response = await post(extra);
+      assert.equal(response.status, 201);
+      assert.equal((await response.json()).preApprovedAt, null);
+    }
+  } finally { store.close(); }
+});
 
 test("pre-approve: only queued or running tasks that change code, once, and it can be undone", () => {
   const { store, actions, make } = setup();
