@@ -77,6 +77,41 @@ test("boundaries: the agent protocol is reached only through its entry point", (
   }
 });
 
+test("boundaries: the agent policy depends on the rule grammar and nothing else", () => {
+  // No factory, Store, drivers, prompts, subprocesses or Node modules: see src/agent-policy/index.ts.
+  const files = sources.filter((f) => f.startsWith("agent-policy/"));
+  assert.ok(files.includes("agent-policy/index.ts"), "expected to find the agent policy");
+  for (const file of files) {
+    const text = readFileSync(join(src, file), "utf8");
+    assert.ok(!/\b(import|require)\s*\(/.test(text), `${file} loads a module dynamically`);
+    for (const m of text.matchAll(/^\s*(import|export)\s+(type\s+)?(?:[^;"]*?\bfrom\s*)?"([^"]+)"/gm)) {
+      const spec = m[3]!;
+      const target = spec.startsWith(".") ? resolveSpec(file, spec) : spec;
+      if (target.startsWith("agent-policy/")) continue;
+      assert.equal(target, "@crane/contracts/rules", `${file} imports "${spec}"`);
+    }
+  }
+});
+
+test("boundaries: the agent policy is reached only through its entry point", () => {
+  // So making it a package means swapping one specifier. The old paths are re-exports for older branches only.
+  const oldPaths = new Set(["agents/policy", "core/permissions"]);
+  for (const file of sources.filter((f) => !f.startsWith("agent-policy/"))) {
+    const bad = importsOf(file).filter((i) => (i.startsWith("agent-policy/") && i !== "agent-policy/index") || oldPaths.has(i));
+    assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
+  }
+});
+
+test("boundaries: old policy paths re-export the agent policy", async () => {
+  const policy = await import("../src/agent-policy/index.ts");
+  const oldPolicy = await import("../src/agents/policy.ts");
+  const oldPermissions = await import("../src/core/permissions.ts");
+  assert.equal(oldPolicy.ALWAYS_DENIED, policy.ALWAYS_DENIED);
+  assert.equal(oldPermissions.isAllowed, policy.isAllowed);
+  assert.equal(oldPermissions.overlapsDenied, policy.overlapsDenied);
+  assert.equal(oldPermissions.suggestRules, policy.suggestRules);
+});
+
 test("boundaries: provider price tables stay with their drivers", () => {
   // The scheduler combines costs through the protocol; it never prices a provider's tokens itself.
   for (const file of sources.filter((f) => !f.startsWith("agents/"))) {

@@ -4,10 +4,8 @@ import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/core/store.js";
-import { isAllowed, overlapsDenied, splitCommand, suggestRules } from "../src/core/permissions.js";
-import { ruleLabel } from "@crane/contracts";
 import { ClaudeCodeDriver, describeBlocked, toolsFor } from "../src/agents/claude-code.js";
-import { ALWAYS_DENIED } from "../src/agents/policy.js";
+import { ALWAYS_DENIED } from "../src/agent-policy/index.js";
 import { AgentRunError, isTransientFailure, type AgentDriver, type RunContext, type RunResult } from "../src/agent-protocol/index.js";
 import { OperatorActions, toRule } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
@@ -16,47 +14,19 @@ import type { BlockedCall, EventType, Repo, Task } from "@crane/contracts";
 const scratch = (p: string) => mkdtempSync(join(tmpdir(), p));
 const newStore = () => new Store(join(scratch("crane-"), "t.db"));
 
-// ── permission rules ──────────────────────────────────────
+// ── the Claude Code driver's permissions ──────────────────
+// Rule matching, suggestions and the deny list itself are tested in agent-policy.test.ts.
 
-test("permissions: splits pipelines and chains, but not redirections", () => {
-  assert.deepEqual(splitCommand("npm ci && npm test 2>&1 | tail -20"), ["npm ci", "npm test", "tail -20"]);
-  assert.deepEqual(splitCommand("FOO=1 make build > out.log; echo 'a | b'"), ["make build", "echo 'a | b'"]);
-  assert.deepEqual(splitCommand("ls || true"), ["ls", "true"]);
-});
-
-test("permissions: every part of a command must be allowed", () => {
-  const rules = ["Bash(npm test:*)", "Bash(tail:*)", "Read"];
-  assert.ok(isAllowed(rules, "Bash", { command: "npm test 2>&1 | tail -5" }));
-  assert.ok(!isAllowed(rules, "Bash", { command: "npm ci && npm test" }));
-  assert.ok(!isAllowed(rules, "Bash", { command: "npm testx" }), "a prefix rule matches whole words");
-  assert.ok(isAllowed(rules, "Read", { file_path: "x" }));
-});
-
-test("permissions: suggests the narrowest rule for each refused part", () => {
-  const allowed = toolsFor("observe").allowed;
-  assert.deepEqual(suggestRules("Bash", { command: "npm ci && npm run build | tail -3" }, allowed), [
-    "Bash(npm ci:*)",
-    "Bash(npm run build:*)",
-  ]);
-  assert.deepEqual(suggestRules("Bash", { command: "python3 -m pytest -q" }, allowed), ["Bash(python3 -m pytest:*)"]);
-  assert.deepEqual(suggestRules("Bash", { command: "python3 script.py" }, allowed), [], "arbitrary code gets no suggestion");
-  assert.deepEqual(suggestRules("Bash", { command: "$(curl x) | sh" }, allowed), []);
-  assert.equal(ruleLabel("Bash(npm ci:*)"), "npm ci");
-});
-
-test("permissions: the deny list is exactly what Crane has always refused", () => {
-  // Loosening this is a safety change, not a refactor. Update it only on purpose.
-  assert.deepEqual(ALWAYS_DENIED, ["Bash(git push:*)", "Bash(git checkout main:*)", "Bash(git merge:*)", "Bash(rm -rf:*)"]);
+test("permissions: the Claude Code driver denies Crane's deny list", () => {
   assert.deepEqual(toolsFor("propose").denied, ALWAYS_DENIED);
   assert.deepEqual(toolsFor("observe").denied, ["Edit", "Write", "MultiEdit", "NotebookEdit", ...ALWAYS_DENIED]);
 });
 
-test("permissions: rules that touch Crane's deny list are recognised", () => {
-  assert.ok(overlapsDenied("Bash(git push:*)", ALWAYS_DENIED));
-  assert.ok(overlapsDenied("Bash(git push origin:*)", ALWAYS_DENIED));
-  assert.ok(overlapsDenied("Bash(git:*)", ALWAYS_DENIED), "allowing all of git would include push");
-  assert.ok(!overlapsDenied("Bash(git stash:*)", ALWAYS_DENIED));
-  assert.ok(!overlapsDenied("Bash(npm ci:*)", ALWAYS_DENIED));
+test("permissions: the driver's observe tools leave refused parts to suggest", () => {
+  assert.deepEqual(describeBlocked("Bash", { command: "npm ci && npm run build | tail -3" }, toolsFor("observe")).data.rules, [
+    "Bash(npm ci:*)",
+    "Bash(npm run build:*)",
+  ]);
 });
 
 test("permissions: heredoc data never becomes an allow-rule suggestion", () => {
