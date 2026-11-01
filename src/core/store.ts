@@ -118,6 +118,22 @@ CREATE INDEX IF NOT EXISTS runs_finished ON runs(finished_at);
 
 type Row = Record<string, unknown>;
 
+/** Task fields updateTask can persist, mapped to their database columns. */
+const TASK_UPDATE_COLUMNS = {
+  status: "status",
+  agentId: "agent_id",
+  branch: "branch",
+  worktree: "worktree",
+  sessionId: "session_id",
+  report: "report",
+  costUsd: "cost_usd",
+  startedAt: "started_at",
+  finishedAt: "finished_at",
+  title: "title",
+} satisfies Partial<Record<keyof Task, string>>;
+
+type TaskPatch = Partial<Pick<Task, keyof typeof TASK_UPDATE_COLUMNS>>;
+
 const hasTable = (db: Database.Database, name: string) =>
   !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
 
@@ -511,19 +527,8 @@ export class Store {
     return rows.map(toTask);
   }
 
-  updateTask(id: string, patch: Partial<Omit<Task, "id">>) {
-    const cols: Record<string, string> = {
-      status: "status",
-      agentId: "agent_id",
-      branch: "branch",
-      worktree: "worktree",
-      sessionId: "session_id",
-      report: "report",
-      costUsd: "cost_usd",
-      startedAt: "started_at",
-      finishedAt: "finished_at",
-      title: "title",
-    };
+  updateTask(id: string, patch: TaskPatch) {
+    const cols: Readonly<Record<string, string>> = TASK_UPDATE_COLUMNS;
     const sets: string[] = [];
     const params: unknown[] = [];
     for (const [k, v] of Object.entries(patch)) {
@@ -538,7 +543,7 @@ export class Store {
   }
 
   setStatus(id: string, status: TaskStatus, message?: string, data?: Record<string, unknown>) {
-    const patch: Partial<Task> = { status };
+    const patch: TaskPatch = { status };
     if (status === "running") patch.startedAt = now();
     // Waiting on the operator counts as finished: the agent's part is over.
     if (status === "needs_review" || FINISHED_STATUSES.includes(status)) patch.finishedAt = now();
