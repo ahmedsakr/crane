@@ -600,10 +600,11 @@ export class Factory {
       // Hold for the operator whenever there's something for them to decide.
       const needsOperator =
         task.autonomy === "propose" || (task.autonomy === "observe" && result.report.findings.length > 0);
-      if (this.store.getTask(task.id)?.status === "cancelled") return;
-      this.store.setStatus(task.id, needsOperator ? "needs_review" : "done", needsOperator ? "Ready for your review" : "Done");
+      // A pre-approved task skips review and goes to the merge queue. Its checks passed above.
+      const next = this.store.finishWork(task.id, needsOperator ? "needs_review" : "done");
+      if (!next) return;
       this.store.bumpAgentCompleted(agent.id);
-      this.log(`${agent.name} finished ${task.id}`);
+      this.log(`${agent.name} finished ${task.id}${next === "merging" ? ", pre-approved, so it's queued to merge" : ""}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       // What a failed run cost is already on the task, via the runs ledger.

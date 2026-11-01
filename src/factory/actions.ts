@@ -154,6 +154,34 @@ export class OperatorActions {
     return this.need(id);
   }
 
+  /**
+   * Approve a queued or running task ahead of time. When its run finishes and
+   * its checks pass, it goes straight to the merge queue instead of waiting for
+   * review. A failed run or check fails the task as usual, and a merge that
+   * can't land comes back for review. `undoPreApproval` takes it back.
+   */
+  preApprove(id: string, note?: string): Task {
+    const m = this.need(id);
+    if (note !== undefined && typeof note !== "string") throw new Error("Note must be text");
+    if (m.autonomy === "observe") throw new Error(`Task ${m.id} is investigate-only, so it has nothing to merge`);
+    if (m.status === "needs_review") throw new Error(`Task ${m.id} is already waiting for review. Approve it instead`);
+    if (m.preApprovedAt) throw new Error(`Task ${m.id} is already pre-approved`);
+    if (!this.store.setPreApproval(m.id, true)) throw new Error(`Task ${m.id} isn't queued or running, so it can't be pre-approved`);
+    this.store.addEvent(m.id, "operator", note ? `Pre-approved: ${note}` : "Pre-approved", { preApproved: true });
+    return this.need(id);
+  }
+
+  /** Take back a pre-approval, so the task waits for review when it finishes. */
+  undoPreApproval(id: string): Task {
+    const m = this.need(id);
+    if (!m.preApprovedAt) throw new Error(`Task ${m.id} isn't pre-approved`);
+    if (!this.store.setPreApproval(m.id, false)) {
+      throw new Error(`Task ${m.id} has already finished its run, so its pre-approval can't be undone`);
+    }
+    this.store.addEvent(m.id, "operator", "Undid pre-approval. It waits for your review", { preApproved: false });
+    return this.need(id);
+  }
+
   /** Merge a task's branch into the default branch and push it. For tasks already approved or done. */
   async merge(id: string): Promise<Task> {
     const m = this.need(id);

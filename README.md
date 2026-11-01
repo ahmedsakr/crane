@@ -46,6 +46,8 @@ Crane never merges into your default branch or pushes on its own. For UI changes
 
 Choose **Approve only** (`crane approve <id> --no-merge`) to keep the branch and merge it yourself.
 
+To skip the wait, **Pre-approve** a task from its page while it's queued or running (`crane pre-approve <id> [--message <note>]`). When its run finishes and the repository checks pass, it goes straight to the merge queue instead of to review, and merges exactly as above. A failed run or check still fails the task, a merge that can't land still comes back to you, and a task with no branch waits for review. **Undo pre-approval** (`crane pre-approve <id> --undo`) works until the run hands the task over. Investigate-only tasks can't be pre-approved, and **Run again** doesn't carry a pre-approval over to the new task.
+
 A task's worktree is removed once nothing needs it: after it merges, when you approve only or decline it, and when it fails or is cancelled. If a failed or cancelled task left changes uncommitted, Crane commits them to the task's branch first, so the branch keeps the work. Worktrees left behind by a crash are found and removed too.
 
 After a successful merge, Crane queues a read-only **Post-mortem** task in the same repository. It reviews the original brief, final report, and recorded activity, prioritizing blocked commands and errors, and recommends ways to reduce friction for future tasks. Large histories are bounded and omissions are marked; this is recorded activity rather than the agent's full private conversation. Findings appear through the usual task report and review flow in both the CLI and dashboard. The review uses a fresh session, consumes a normal crew slot and agent usage, and can be cancelled like any other task. It never changes code or permissions automatically, and it does not run for failed merges or **Approve only**.
@@ -58,7 +60,7 @@ Tasks that build or change UI are instructed to capture and inspect screenshots,
 
 Passing typecheck, tests, or review and merge checks does not complete visual validation. If capture or inspection is outstanding, the agent must hand off the changed routes, UI states, exact screenshot commands, and required sizes in its report summary. In Codex's sandbox, local servers and browsers are known to be unavailable: defer capture directly without attempting it or seeking a workaround.
 
-Before **Approve and merge**, **Approve only**, or a later **Merge**, the operator completes this checklist or records an explicit waiver. This is an operator review requirement; Crane's automated gates do not enforce it.
+Before **Approve and merge**, **Approve only**, or a later **Merge**, the operator completes this checklist or records an explicit waiver. This is an operator review requirement; Crane's automated gates do not enforce it. **Pre-approve** happens before there's a candidate to inspect, so don't pre-approve tasks that change UI unless you mean to waive visual review; record that waiver in the pre-approval note.
 
 - [ ] In an approved environment, use an isolated checkout of the candidate branch and record its commit. Build that candidate's UI (`npm run build -w web` for Crane), then run the repository's existing screenshot tool against every changed view and relevant state. Crane's tool boots a demo serving that checkout's `web/dist`; if using `--url` instead, verify the server serves the candidate build and has the needed review data.
 - [ ] Capture and open the images at wide **1280x800**, short **1280x600**, and phone **390x844** sizes (plus any sizes required by the task). Inspect clipping, overflow, layout, and the changed behavior; taking a screenshot alone is not inspection.
@@ -121,6 +123,7 @@ Start a run with the button on their card (**Review security**, **Reduce duplica
 | `crane show <id>` | Summary, findings, changed files, and recent activity |
 | `crane watch [id]` | Follow a task, or the whole factory, live |
 | `crane approve <id>` / `crane decline <id>` | Decide on work that's waiting for you. Approving merges and pushes it (`--no-merge` to approve only). |
+| `crane pre-approve <id>` | Approve a queued or running task ahead of time, so it merges once its checks pass (`--undo` to take it back) |
 | `crane merge <id>` | Merge and push a task you approved only, or one that finished on its own branch |
 | `crane diff <id>` | See what a task changed on its branch |
 | `crane follow-up <id> <n> [--agent <agent>] [--model <model>] [--effort <level>]` | Turn finding *n* into a task with optional agent, model, and effort choices |

@@ -171,6 +171,8 @@ export function TaskPage() {
   const usedDriver = ranOn ?? m.driver;
   const runsOn = usedDriver ? driverLabel(usedDriver) : null;
   const otherAgents = choosableDrivers(drivers ?? []).filter((d) => d.name !== usedDriver);
+  // Only before review: once it's there, Approve is the decision.
+  const canPreApprove = ["queued", "running"].includes(m.status) && m.autonomy !== "observe" && !!repo;
 
   const run = async (label: string, fn: () => Promise<unknown>, done: string, after?: (r: unknown) => void) => {
     setBusy(label);
@@ -201,6 +203,7 @@ export function TaskPage() {
             <StatusChip status={m.status} />
             <span className="chip">{KIND_LABEL[m.kind]}</span>
             {repo && <span className="chip">{repo.name}</span>}
+            {canPreApprove && m.preApprovedAt && <span className="chip chip-ok">Pre-approved</span>}
           </div>
           <h1 className="detail-title">{m.title}</h1>
 
@@ -253,6 +256,29 @@ export function TaskPage() {
                 : "Waiting for a free agent."}
             </p>
           ) : null}
+          {canPreApprove && (
+            <div className="card card-pad pre-approval">
+              <div className="pre-approval-copy">
+                <strong>{m.preApprovedAt ? "Pre-approved" : "Merge when it passes"}</strong>
+                <span>
+                  {m.preApprovedAt
+                    ? `Once its checks pass, Crane merges it into ${main} without waiting for your review. If a check fails, nothing merges.`
+                    : `Pre-approve it and Crane merges it into ${main} once its checks pass, without waiting for your review.`}
+                </span>
+              </div>
+              {m.preApprovedAt ? (
+                <button className="btn btn-quiet btn-sm" disabled={!!busy}
+                  onClick={() => run("pre-approve", () => api.undoPreApproval(m.id), "Undid pre-approval. It waits for your review.")}>
+                  Undo pre-approval
+                </button>
+              ) : (
+                <button className="btn btn-primary btn-sm" disabled={!!busy}
+                  onClick={() => run("pre-approve", () => api.preApprove(m.id), `Pre-approved. It merges into ${main} once its checks pass.`)}>
+                  Pre-approve
+                </button>
+              )}
+            </div>
+          )}
           {!!report?.screenshots?.length && (
             <section className="section" aria-labelledby="screenshots">
               <div className="section-head">
