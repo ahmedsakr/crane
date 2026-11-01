@@ -30,6 +30,10 @@ Crane should feel like a calm brokerage app for software work: you glance at it,
 
 The Home hero is a solid crane-yellow slab with a big number (tasks shipped in the range) and an ink line of cumulative output, with agent activity as faint "volume" bars beneath. Scrubbing the chart rewrites the number for that moment, like a stock chart. The slab turns graphite when the factory is paused or off, so its state reads at a glance.
 
+## The site
+
+Below the decisions on Home, "On site" shows the work in motion: a tower crane carries each task, as a crate, between six pads (Queued, Working, Needs you, Merging, Shipped, Didn't ship) as its status changes. It is ambient, not a control. Crates take their colour from their pad (blue for working, yellow only for Needs you, green for shipped, red for didn't ship), a legend names the pads, pointing at a crate shows the task, and tapping opens it. Like the slab, the crane goes graphite when the factory is off. It draws only while something moves, and lands every move at once for reduced motion. The model lives in `web/src/lib/site.ts`; the drawing in `web/src/components/site-view.ts`.
+
 ## CLI
 
 Same vocabulary, same hierarchy. `▟ crane` is the mark. Yellow marks what needs you; cyan marks live work; everything else is default or dim. Every screen ends with one to three suggested next commands (`›`).

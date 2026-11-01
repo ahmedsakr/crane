@@ -3,6 +3,7 @@ import { useApp } from "../lib/app-context";
 import { api, type Task } from "../lib/api";
 import { ago, plural } from "../lib/format";
 import { useTick } from "../lib/hooks";
+import { Site } from "../components/Site";
 import { Slab } from "../components/Slab";
 import { BlockedItem, Empty, TaskRow, useToast } from "../components/bits";
 
@@ -95,6 +96,17 @@ export function Home() {
                 <BlockedItem key={`${b.repoId}:${b.rule}`} b={b} showTask onDone={refresh} />
               ))}
             </div>
+          </section>
+        )}
+
+        {!nothing && (
+          <section className="section" aria-labelledby="on-site">
+            <div className="section-head">
+              <h2 className="section-title" id="on-site">
+                On site
+              </h2>
+            </div>
+            <Site o={o} />
           </section>
         )}
 
