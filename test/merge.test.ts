@@ -50,6 +50,8 @@ function setup(opts: { remote?: boolean } = {}) {
     branch: "crane/add-line-t1",
     worktree: join(root, "wt"),
     sessionId: null,
+    driver: null,
+    assignee: null,
     report: null,
     costUsd: 0,
     createdAt: "",
@@ -343,6 +345,6 @@ test("actions: approve merges by default, approve only keeps the branch, merge p
   // A failed merge comes back to the operator with the reason.
   store.setStatus(a.id, "needs_review", "Couldn't merge", { merge: { error: "boom" } });
   assert.equal(lastMergeOutcome(store.listEvents(a.id))?.error, "boom");
-  assert.equal(store.overview({ running: false, paused: false, driver: "x" }).counts.merging, 1);
+  assert.equal(store.overview({ running: false, paused: false, driver: "x", factoryOutdated: false, uiOutdated: false, uiBuild: null, uiCommit: null }).counts.merging, 1);
   store.close();
 });

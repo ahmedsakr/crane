@@ -168,7 +168,7 @@ test("keeps only the newest few builds", async () => {
 
 test("the builder builds only the newest of the merges that land while it's busy", async () => {
   const s = setup();
-  const shas = [s.commit("<p>1</p>"), s.commit("<p>2</p>"), s.commit("<p>3</p>")];
+  const shas = [s.commit("<p>1</p>"), s.commit("<p>2</p>"), s.commit("<p>3</p>")] as const;
   const built: string[] = [];
   const notes: [string, string][] = [];
   let release!: () => void;
@@ -192,7 +192,7 @@ test("the builder builds only the newest of the merges that land while it's busy
   await builder.idle();
 
   assert.deepEqual(built, ["<p>1</p>", "<p>3</p>"]);
-  assert.deepEqual(dashboardBuilds(s.builds)[0].sha, shas[2]);
+  assert.deepEqual(dashboardBuilds(s.builds)[0]?.sha, shas[2]);
   assert.deepEqual(notes.filter(([id]) => id === "t-3").map(([, m]) => m), [
     `Building the dashboard from ${shas[2].slice(0, 7)}`,
     `The dashboard now shows ${shas[2].slice(0, 7)}. Reload it to see the latest UI`,

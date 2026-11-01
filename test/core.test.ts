@@ -242,7 +242,7 @@ test("store: a database from before the rename keeps its missions as tasks", () 
   const next = store.createTask({ kind: "maintenance", title: "New", brief: "", repoId: "r-abcd", autonomy: "observe" });
   assert.equal(store.listTasks().length, 2);
   assert.equal(store.listEvents(next.id).length, 1);
-  assert.equal(store.overview({ running: false, paused: false, driver: "simulated" }).counts.needs_review, 1);
+  assert.equal(store.overview({ running: false, paused: false, driver: "simulated", factoryOutdated: false, uiOutdated: false, uiBuild: null, uiCommit: null }).counts.needs_review, 1);
   store.close();
 
   // Opening it again is a no-op.

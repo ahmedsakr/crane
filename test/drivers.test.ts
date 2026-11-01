@@ -10,7 +10,7 @@ import { Factory } from "../src/factory/orchestrator.js";
 import { resolveDefaultDriver } from "../src/factory/drivers.js";
 import { SimulatedDriver } from "../src/agents/simulated.js";
 import { CodexDriver, codexArgs, unwrapShell, usageFromTurn } from "../src/agents/codex.js";
-import type { AgentDriver, RunContext, RunResult } from "../src/agents/driver.js";
+import type { AgentDriver, ResolveConflictsJob, RunContext, RunResult } from "../src/agents/driver.js";
 import type { RunUsage, Task } from "../src/core/types.js";
 import { resumePrompt, systemPrompt } from "../src/agents/prompts.js";
 
@@ -123,7 +123,7 @@ test("prompts: fresh, conflict and resumed sessions preserve refusals and valida
 
 test("prompts: a sandboxed agent is told which checks its sandbox refuses, and to report them, not work around them", () => {
   const { ctx } = ctxFor({ autonomy: "propose" });
-  const conflict = { kind: "resolve_conflicts", base: "origin/main", files: ["a.ts"] } as const;
+  const conflict = { kind: "resolve_conflicts", base: "origin/main", files: ["a.ts"] } satisfies ResolveConflictsJob;
   for (const prompt of [
     systemPrompt(ctx.task, null, undefined, { agentCommits: false, sandboxed: true }),
     systemPrompt(ctx.task, null, conflict, { agentCommits: false, sandboxed: true }),
@@ -141,7 +141,7 @@ test("prompts: a sandboxed agent is told which checks its sandbox refuses, and t
 
 test("prompts: an agent is told which checks Crane runs after it, so a blocked one isn't raised as a finding", () => {
   const { ctx } = ctxFor({ autonomy: "propose" });
-  const conflict = { kind: "resolve_conflicts", base: "origin/main", files: ["a.ts"] } as const;
+  const conflict = { kind: "resolve_conflicts", base: "origin/main", files: ["a.ts"] } satisfies ResolveConflictsJob;
   const checks = ["npm run typecheck", "npm test"];
   for (const sandboxed of [true, false]) {
     for (const prompt of [

@@ -5,7 +5,7 @@ Crane is an autonomous software factory steered by a human operator. Agents run 
 ## Commands
 
 - `npm run dev`: factory on :4471 + UI with hot reload on :5173
-- `npm run typecheck`: backend and web
+- `npm run typecheck`: backend, tests, scripts, and web
 - `npm test`: node:test suites in `test/`
 - `npm run build`: compiles `src/` to `dist/` and builds `web/dist/`
 - `npx tsx src/cli/index.ts <cmd>`: run the CLI from source
