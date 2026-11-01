@@ -4,7 +4,7 @@ import { getMimeType } from "hono/utils/mime";
 import { readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import type { Store } from "../core/store.js";
-import { lastMergeOutcome, type TaskStatus, type NewTask, type TaskDetail, type TaskDraft, type TaskGates, type TaskRunOptions } from "@crane/contracts";
+import { lastMergeOutcome, type TaskStatus, type NewTask, type TaskDetail, type TaskDiff, type TaskDraft, type TaskGates, type TaskRunOptions } from "@crane/contracts";
 import { OperatorActions } from "../factory/actions.js";
 import { draftTask } from "../factory/instruct.js";
 import { diffForTask } from "../factory/git.js";
@@ -72,9 +72,9 @@ export function createApp(store: Store) {
   api.get("/tasks/:id/diff", async (c) => {
     const m = store.getTask(c.req.param("id"));
     const repo = m?.repoId ? store.getRepo(m.repoId) : null;
-    if (!m || !repo) return c.json({ diff: "" });
+    if (!m || !repo) return c.json({ diff: "", live: false } satisfies TaskDiff);
     const merged = m.status === "merged" ? lastMergeOutcome(store.listEvents(m.id))?.commit : null;
-    return c.json({ diff: await diffForTask(repo, m, merged) });
+    return c.json(await diffForTask(repo, m, merged));
   });
 
   /** Live events for one task, or for the whole factory when id is "all". */

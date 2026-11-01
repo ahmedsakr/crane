@@ -412,7 +412,9 @@ program
       if (m.status === "queued" && waiting.length) {
         next.push([`crane waive ${m.id} -m "…"`, `start it without ${waiting.map((t) => t.id).join(", ")}, accepting a reduced scope`]);
       }
-      next.push([`crane watch ${m.id}`, "follow along live"], [`crane cancel ${m.id}`, "stop it"]);
+      next.push([`crane watch ${m.id}`, "follow along live"]);
+      if (m.status === "running" && m.branch) next.push([`crane diff ${m.id}`, "see the changes so far"]);
+      next.push([`crane cancel ${m.id}`, "stop it"]);
       if (m.autonomy !== "observe") {
         next.push(m.preApprovedAt
           ? [`crane pre-approve ${m.id} --undo`, "wait for your review instead of merging"]
@@ -591,15 +593,16 @@ program
 
 program
   .command("diff")
-  .description("Show the changes a task made on its branch")
+  .description("Show the changes a task made on its branch, or has made so far while it runs")
   .argument("<id>")
   .action(async (id: string) => {
     const m = store.getTask(id) ?? ui.fail(`No task ${id}`);
     const repo = m.repoId ? store.getRepo(m.repoId) : null;
     if (!repo || !m.branch) ui.fail("This task didn't change any code.");
     const merged = m.status === "merged" ? lastMergeOutcome(store.listEvents(m.id))?.commit : null;
-    const diff = await diffForTask(repo, m, merged);
-    if (!diff) return console.log(ui.dim("No changes."));
+    const { diff, live } = await diffForTask(repo, m, merged);
+    if (live) console.log(ui.dim("Changes so far, uncommitted work included. It's still running.\n"));
+    if (!diff) return console.log(ui.dim(live ? "No changes yet." : "No changes."));
     for (const line of diff.split("\n")) {
       console.log(
         line.startsWith("+") && !line.startsWith("+++")

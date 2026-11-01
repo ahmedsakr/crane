@@ -3,7 +3,7 @@ import { isAbsolute, join, relative } from "node:path";
 import { git } from "../core/git.js";
 import { worktreesDir } from "../core/paths.js";
 import { slugify } from "../core/ids.js";
-import type { Task, Repo } from "@crane/contracts";
+import type { Task, Repo, TaskDiff } from "@crane/contracts";
 
 export async function isGitRepo(path: string): Promise<boolean> {
   try {
@@ -78,17 +78,49 @@ export async function finalizeWorktree(repo: Repo, task: Task, path: string): Pr
 }
 
 /**
- * What the task changed. Once merged, that's what its merge commit brought in,
- * since the branch itself may be gone.
+ * What the task changed. While it runs, that's its worktree as it stands, uncommitted
+ * work included, so the operator can follow along. Once merged, it's what the merge
+ * commit brought in, since the branch itself may be gone. Otherwise it's the branch.
  */
-export async function diffForTask(repo: Repo, task: Task, mergeCommit?: string | null): Promise<string> {
-  try {
-    if (mergeCommit) return await git(repo.path, "diff", `${mergeCommit}^1`, mergeCommit);
-    if (!task.branch) return "";
-    return await git(repo.path, "diff", `${repo.defaultBranch}...${task.branch}`);
-  } catch {
-    return "";
+export async function diffForTask(repo: Repo, task: Task, mergeCommit?: string | null): Promise<TaskDiff> {
+  if (task.status === "running" && task.worktree && insideWorktrees(task.worktree) && existsSync(task.worktree)) {
+    try {
+      return { diff: await worktreeDiff(repo, task.worktree), live: true };
+    } catch {
+      // Fall back to what's committed on the branch.
+    }
   }
+  try {
+    if (mergeCommit) return { diff: await git(repo.path, "diff", `${mergeCommit}^1`, mergeCommit), live: false };
+    if (!task.branch) return { diff: "", live: false };
+    return { diff: await git(repo.path, "diff", `${repo.defaultBranch}...${task.branch}`), live: false };
+  } catch {
+    return { diff: "", live: false };
+  }
+}
+
+/** New files past this many are counted, not shown, so a stray build folder can't flood the page. */
+export const MAX_NEW_FILES = 100;
+
+/**
+ * Everything a worktree changed since it left the default branch: its commits, its
+ * uncommitted edits, and files it created but hasn't added. Read-only, and it never takes
+ * git's index lock, so it can't trip up an agent committing in the same worktree.
+ */
+async function worktreeDiff(repo: Repo, path: string): Promise<string> {
+  const read = (...args: string[]) => git(path, "--no-optional-locks", ...args);
+  const base = await read("merge-base", repo.defaultBranch, "HEAD").catch(() => "HEAD");
+  const parts = [await read("diff", base)];
+  const added = (await read("ls-files", "--others", "--exclude-standard", "-z")).split("\0").filter(Boolean);
+  for (const file of added.slice(0, MAX_NEW_FILES)) {
+    // Exit code 1 is how `diff --no-index` says the files differ, which they always do here.
+    const out = await read("diff", "--no-index", "--", "/dev/null", file).catch((err: { code?: number; stdout?: string }) =>
+      err.code === 1 && typeof err.stdout === "string" ? err.stdout.trim() : "",
+    );
+    parts.push(out);
+  }
+  if (added.length > MAX_NEW_FILES) parts.push(`${added.length - MAX_NEW_FILES} more new files not shown`);
+  return parts.filter(Boolean).join("\n");
 }
 
 const real = (p: string) => {
@@ -98,6 +130,12 @@ const real = (p: string) => {
     return p;
   }
 };
+
+/** Whether `path` is inside Crane's worktrees folder, and so never the operator's checkout. */
+function insideWorktrees(path: string): boolean {
+  const rel = relative(real(worktreesDir()), real(path));
+  return !!rel && !rel.startsWith("..") && !isAbsolute(rel);
+}
 
 /** Whether git lists `path` as one of `repo`'s worktrees. */
 async function isWorktreeOf(repo: Repo, path: string): Promise<boolean> {
@@ -121,8 +159,7 @@ export type PutAway = { removed: true; saved: boolean } | { removed: false; reas
  * so is anything outside Crane's worktrees folder, such as the operator's checkout.
  */
 export async function putAwayWorktree(repo: Repo, task: Task, path: string, opts: { saveWork: boolean }): Promise<PutAway> {
-  const rel = relative(real(worktreesDir()), real(path));
-  if (!rel || rel.startsWith("..") || isAbsolute(rel)) return { removed: false, reason: "it isn't in Crane's worktrees folder" };
+  if (!insideWorktrees(path)) return { removed: false, reason: "it isn't in Crane's worktrees folder" };
   if (!existsSync(path)) {
     await succeeds(repo.path, "worktree", "prune");
     return { removed: true, saved: false };

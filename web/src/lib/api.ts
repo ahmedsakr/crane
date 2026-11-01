@@ -17,6 +17,7 @@ import type {
   Overview,
   Repo,
   TaskDetail,
+  TaskDiff,
   TaskDraft,
   TaskGates,
   TaskRunOptions,
@@ -41,6 +42,7 @@ export type {
   Overview,
   Repo,
   TaskDetail,
+  TaskDiff,
   TaskDraft,
   TaskRunOptions,
 };
@@ -54,6 +56,7 @@ export {
   STATUS_LABEL,
   acceptanceFor,
   choosableDrivers,
+  diffFiles,
   driverLabel,
   lastMergeOutcome,
   ruleLabel,
@@ -79,7 +82,7 @@ export const api = {
   analytics: (days: number) => req<Analytics>(`/analytics?days=${days}`),
   tasks: (status?: string) => req<Task[]>(`/tasks${status ? `?status=${status}` : ""}`),
   task: (id: string) => req<TaskDetail>(`/tasks/${id}`),
-  diff: (id: string) => req<{ diff: string }>(`/tasks/${id}/diff`),
+  diff: (id: string) => req<TaskDiff>(`/tasks/${id}/diff`),
   draft: (text: string) => post<TaskDraft>("/instruct/draft", { text }),
   createTask: (m: NewTask) => post<Task>("/tasks", m),
   /** Approve, and merge and push the branch unless `merge` is false ("Approve only"). */

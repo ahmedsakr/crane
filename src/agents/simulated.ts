@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { git } from "../core/git.js";
 import type { AgentDriver, RunContext, RunResult } from "@crane/agent-protocol";
 import type { Finding, TaskKind } from "@crane/contracts";
@@ -31,8 +31,15 @@ export class SimulatedDriver implements AgentDriver {
       emit("note", "Picking up where it left off before the restart.", { simulated: true });
       steps = steps.slice(Math.floor(steps.length / 2));
     }
-    for (const [type, message] of steps) {
+    const note = join(ctx.cwd, ".crane-simulated", `${task.id}.md`);
+    for (const [i, [type, message]] of steps.entries()) {
       await sleep(this.stepMs * (0.6 + Math.random() * 0.8), signal);
+      // Halfway, leave uncommitted work behind, so following changes as they happen can be tried offline.
+      if (task.autonomy !== "observe" && i === Math.floor(steps.length / 2)) {
+        await mkdir(dirname(note), { recursive: true });
+        await writeFile(note, `# ${task.title}\n\nSimulated change, in progress.\n`);
+        emit("tool", `Wrote .crane-simulated/${task.id}.md`, { simulated: true });
+      }
       if (type === "blocked") {
         // Shaped like the Claude Code driver's, so the decision flow can be tried offline.
         const rules = suggestRules("Bash", { command: message }, ["Bash(tail:*)", "Bash(head:*)", "Bash(grep:*)"]);
@@ -42,9 +49,9 @@ export class SimulatedDriver implements AgentDriver {
     await sleep(this.stepMs, signal);
     // When allowed to change code, leave a real (harmless) change so the review and diff flow is exercised.
     if (task.autonomy !== "observe") {
-      await mkdir(join(ctx.cwd, ".crane-simulated"), { recursive: true });
+      await mkdir(dirname(note), { recursive: true });
       await writeFile(
-        join(ctx.cwd, ".crane-simulated", `${task.id}.md`),
+        note,
         `# ${task.title}\n\nSimulated change. A real agent would edit:\n\n${script.changedFiles.map((f) => `- ${f}`).join("\n")}\n`,
       );
       emit("tool", `Wrote .crane-simulated/${task.id}.md`, { simulated: true });
