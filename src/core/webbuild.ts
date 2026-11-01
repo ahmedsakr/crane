@@ -9,7 +9,7 @@ const SOURCES = ["src", "index.html", "vite.config.ts", "package.json"];
  * Shared package inputs, relative to the root. Both builds depend on these.
  * Keep the source list in sync with packages/contracts/src (checked in tests).
  */
-export const SHARED_SOURCES = ["src/index.ts", "src/types.ts", "src/diff.ts", "src/rules.ts", "package.json", "tsconfig.json"]
+export const SHARED_SOURCES = ["src/index.ts", "src/types.ts", "src/diff.ts", "src/rules.ts", "src/crew-schedules.ts", "package.json", "tsconfig.json"]
   .map((f) => join("packages", "contracts", f));
 
 /** Backend-only package inputs; the dashboard doesn't bundle the agent protocol. */

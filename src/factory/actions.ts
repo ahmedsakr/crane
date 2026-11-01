@@ -1,4 +1,6 @@
 import { resolve } from "node:path";
+import { shortId } from "../core/ids.js";
+import { nextCrewFire, validateCrewSchedule, crewScheduleLabel, type CrewScheduleInput, type CrewSchedule } from "@crane/contracts";
 import { crewSettingKey, type Store } from "../core/store.js";
 import {
   DRIVER_NAMES,
@@ -424,18 +426,23 @@ export class OperatorActions {
   }
 
   /**
-   * Start a crew member's maintenance run on Crane's own repo. The task is
+   * Start a crew member's maintenance run (Crane's repo by default). The task is
    * assigned to that member, so only they pick it up, at their role's freedom.
    */
-  async runRole(id: string): Promise<Task> {
+  async runRole(id: string, opts: { repoId?: string; preApprove?: boolean; scheduleId?: string } = {}): Promise<Task> {
+    const repo = opts.repoId ? this.store.getRepo(opts.repoId) : await this.ensureFactoryRepo();
+    if (!repo) throw new Error(opts.repoId ? `No repo ${opts.repoId}` : "Crane's own repo isn't connected, so there's nothing to maintain");
+    return this.store.db.transaction(() => this.createRoleRun(id, repo, opts)).immediate();
+  }
+
+  private createRoleRun(id: string, repo: Repo, opts: { preApprove?: boolean; scheduleId?: string }): Task {
     const member = this.store.listAgents().find((a) => a.id === id);
     if (!member) throw new Error(`No crew member ${id}`);
     if (!member.role) throw new Error(`${member.name} has no maintenance role. Give them one first`);
     if (!member.active) throw new Error(`${member.name} is on-call. Activate them first, so the run doesn't wait in the queue`);
-    const repo = await this.ensureFactoryRepo();
-    if (!repo) throw new Error("Crane's own repo isn't connected, so there's nothing to maintain");
+    if (opts.scheduleId && (this.store.isPaused() || member.state === "paused")) throw new Error(`${member.name} is paused`);
     const open = this.store
-      .listTasks({ status: ["queued", "running"], repoId: repo.id })
+      .listTasks({ status: ["queued", "running", "needs_review", "merging"], limit: -1 })
       .find((t) => t.assignee === member.id);
     if (open) throw new Error(`${member.name} already has a run under way: ${open.id} · ${open.title}`);
 
@@ -452,7 +459,60 @@ export class OperatorActions {
       agentId: member.id,
       role: member.role,
     });
-    return task;
+    if (opts.scheduleId) {
+      const schedule = this.store.listCrewSchedules(id).find((s) => s.id === opts.scheduleId);
+      if (!schedule) throw new Error("No such crew schedule");
+      this.store.db.prepare("UPDATE tasks SET schedule_id = ? WHERE id = ?").run(schedule.id, task.id);
+      this.store.addEvent(task.id, "operator", `Started by ${member.name}'s ${crewScheduleLabel(schedule)} schedule`, { scheduleId: schedule.id });
+    }
+    return opts.preApprove ? this.preApprove(task.id) : this.store.getTask(task.id)!;
+  }
+
+  listCrewSchedules(agentId?: string): CrewSchedule[] {
+    if (agentId && !this.store.listAgents().some((a) => a.id === agentId)) throw new Error(`No crew member ${agentId}`);
+    return this.store.listCrewSchedules(agentId);
+  }
+
+  saveCrewSchedule(agentId: string, input: CrewScheduleInput, id?: string): CrewSchedule {
+    validateCrewSchedule(input);
+    const member = this.store.listAgents().find((a) => a.id === agentId);
+    if (!member) throw new Error(`No crew member ${agentId}`);
+    if (!member.role && input.enabled) throw new Error(`${member.name} has no maintenance role. Give them one first`);
+    const repo = this.store.getRepo(input.repoId);
+    if (!repo) throw new Error(`No repo ${input.repoId}`);
+    if (id && !this.listCrewSchedules(agentId).some((s) => s.id === id)) throw new Error("No such crew schedule");
+    if (input.enabled && input.preApprove && member.role && MAINTENANCE_ROLE[member.role].autonomy === "observe") throw new Error("Investigate-only runs cannot be pre-approved");
+    return this.store.saveCrewSchedule(id ?? shortId("cs"), agentId, { ...input, repoId: repo.id }, nextCrewFire(input, Date.now()));
+  }
+
+  removeCrewSchedule(agentId: string, id: string): void {
+    if (!this.listCrewSchedules(agentId).some((s) => s.id === id)) throw new Error("No such crew schedule");
+    this.store.removeCrewSchedule(id);
+  }
+
+  /** Catch up once. Claim, creation and outcome commit together, including across processes. */
+  fireCrewSchedules(at = Date.now()): void {
+    const firedAt = new Date(at).toISOString();
+    for (const due of this.store.listCrewSchedules().filter((s) => s.enabled && s.nextFireAt <= firedAt)) {
+      this.store.db.transaction(() => {
+        // Read policy again under the write lock: an edit or pause may have
+        // happened since the due list was read by this process.
+        const s = this.store.listCrewSchedules().find((s) => s.id === due.id);
+        if (!s || !s.enabled || s.nextFireAt > firedAt) return;
+        if (!this.store.claimCrewSchedule(s, nextCrewFire(s, at), firedAt)) return;
+        try {
+          // A savepoint rolls back task creation too if pre-approval fails.
+          const task = this.store.db.transaction(() => {
+            const repo = this.store.getRepo(s.repoId);
+            if (!repo) throw new Error("Repo is no longer connected");
+            return this.createRoleRun(s.agentId, repo, { preApprove: s.preApprove, scheduleId: s.id });
+          })();
+          this.store.crewScheduleOutcome(s.id, `Queued ${task.id}`);
+        } catch (err) {
+          this.store.crewScheduleOutcome(s.id, `Skipped: ${(err as Error).message}`);
+        }
+      }).immediate();
+    }
   }
 
   /**

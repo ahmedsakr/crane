@@ -18,6 +18,7 @@ import {
 import { ago, plural } from "../lib/format";
 import { useDrivers, useTick } from "../lib/hooks";
 import { Chevron, Empty, useToast } from "../components/bits";
+import { CrewSchedules } from "../components/CrewSchedules";
 
 /** What an agent runs on, with the editor one tap away. */
 function TuningSummary({ driver: d, onEdit }: { driver: DriverInfo; onEdit: () => void }) {
@@ -324,6 +325,7 @@ function MemberRow({
   configure,
   run,
   children,
+  schedules,
 }: {
   m: Member;
   open: boolean;
@@ -332,6 +334,7 @@ function MemberRow({
   configure: (input: CrewInput) => void;
   run: () => void;
   children: ReactNode;
+  schedules: ReactNode;
 }) {
   const { a, role, doing, waiting } = m;
   const pending = doing ?? waiting;
@@ -375,6 +378,7 @@ function MemberRow({
           </button>
         </span>
       </div>
+      {schedules}
       {open && children}
     </li>
   );
@@ -426,6 +430,7 @@ export function Crew() {
 
   const row = (m: Member) => (
     <MemberRow key={m.a.id} m={m} open={open === m.a.id} onToggle={() => setOpen(open === m.a.id ? null : m.a.id)}
+      schedules={<CrewSchedules member={m.a} repos={o.repos} />}
       saving={!!saving} configure={(input) => configure(m.a, input)} run={() => run(m.a.id)}>
       <MemberSettings m={m} drivers={drivers} factoryDriver={driver} saving={!!saving} configure={(input) => configure(m.a, input)} />
     </MemberRow>

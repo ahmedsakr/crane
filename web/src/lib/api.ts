@@ -1,4 +1,6 @@
 import type {
+  CrewSchedule,
+  CrewScheduleInput,
   Agent,
   AgentRun,
   Analytics,
@@ -125,6 +127,10 @@ export const api = {
   /** Start a crew member's maintenance run. Only that member picks it up. */
   runRole: (id: string) => post<Task>(`/agents/${id}/run`),
   agents: () => req<Agent[]>("/agents"),
+  crewSchedules: (id: string) => req<CrewSchedule[]>(`/agents/${id}/schedules`),
+  saveCrewSchedule: (id: string, input: CrewScheduleInput, scheduleId?: string) =>
+    post<CrewSchedule>(`/agents/${id}/schedules${scheduleId ? `/${scheduleId}` : ""}`, input),
+  removeCrewSchedule: (id: string, scheduleId: string) => req<{ ok: true }>(`/agents/${id}/schedules/${scheduleId}`, { method: "DELETE" }),
   drivers: () => req<DriverInfo[]>("/drivers"),
   setDefaultDriver: (driver: string) => post<DriverInfo[]>("/factory/driver", { driver }),
   configureDriver: (driver: string, input: { model?: string | null; effort?: string | null }) =>

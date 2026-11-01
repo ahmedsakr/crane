@@ -264,6 +264,7 @@ export function TaskPage() {
             </div>
           )}
 
+          {m.scheduleId && <p className="muted">{events.find((e) => e.data?.scheduleId === m.scheduleId)?.message ?? `Started by crew schedule ${m.scheduleId}`}</p>}
           {report ? (
             <p className="summary">{report.summary}</p>
           ) : m.status === "running" ? (

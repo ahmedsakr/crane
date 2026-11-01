@@ -2201,3 +2201,9 @@ button.file-row:focus-visible {
   color: var(--graphite);
   overflow-wrap: anywhere;
 }
+.crew-schedules { padding: 0 0 12px; font-size: 13px; }
+.crew-schedule-editor { margin-top: 12px; padding: 14px; border: 1px solid var(--hairline); border-radius: 14px; overflow-wrap: anywhere; }
+.crew-schedule-item { padding: 12px 0; border-bottom: 1px solid var(--hairline); margin-bottom: 12px; }
+.crew-schedule-actions, .crew-schedule-days { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.crew-schedule-fields { border: 0; padding: 0; margin: 12px 0 0; display: grid; gap: 12px; min-width: 0; }
+.crew-schedule-fields .input { width: 100%; min-width: 0; box-sizing: border-box; }
