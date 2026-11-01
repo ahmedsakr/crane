@@ -1,5 +1,5 @@
 import type { Task, Repo } from "@crane/contracts";
-import { REPORT_FENCE, type AgentJob, type ResolveConflictsJob } from "../agent-protocol/index.js";
+import { REPORT_FENCE, type AgentJob, type ResolveConflictsJob, type SiblingTask } from "../agent-protocol/index.js";
 
 const KIND_BRIEF: Record<Task["kind"], string> = {
   maintenance:
@@ -139,7 +139,23 @@ function conflictSystemPrompt(
     .join("\n\n");
 }
 
-export function userPrompt(task: Task, job?: AgentJob): string {
+function siblingTasksBrief(tasks?: readonly SiblingTask[]): string {
+  if (!tasks) return "";
+  return [
+    "## Other recent tasks in this repository",
+    "This is a snapshot at the start of this run, not a live view. It lists up to 200 recent pending or unmerged tasks. Commits listed here are on their branches, not necessarily available in your checkout. Do not enter or inspect other tasks' worktrees. If your task requires setup from one of these tasks that is missing here, report the unmet prerequisite and unfinished scope explicitly; do not silently reduce the requested scope.",
+    tasks.length ? "" : "No other pending or unmerged tasks were found.",
+    ...tasks.map((t) => JSON.stringify({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      branch: t.branch,
+      commitsNotOnDefaultBranch: t.hasCommits === null ? "unknown" : t.hasCommits ? "yes" : "no",
+    })),
+  ].filter(Boolean).join("\n\n");
+}
+
+export function userPrompt(task: Task, job?: AgentJob, siblingTasks?: readonly SiblingTask[]): string {
   if (job?.kind === "resolve_conflicts") {
     const summary = task.report?.summary ? `\n\nWhat the task did: ${task.report.summary}` : "";
     return [
@@ -148,14 +164,14 @@ export function userPrompt(task: Task, job?: AgentJob): string {
       `## The original task\n\n${task.brief}${summary}`,
     ].join("\n\n");
   }
-  return `# ${task.title}\n\n${task.brief}`;
+  return [`# ${task.title}\n\n${task.brief}`, siblingTasksBrief(siblingTasks)].filter(Boolean).join("\n\n");
 }
 
 /**
  * What an agent is told when it picks its own session back up: after the
  * factory restarted, or after Crane retried it past a temporary API error.
  */
-export function resumePrompt(): string {
+export function resumePrompt(siblingTasks?: readonly SiblingTask[]): string {
   return [
     "You were stopped mid-step while working on this task, because Crane restarted or the API had a temporary error, and Crane has resumed this session. Your work so far is still in this directory.",
     "Pick up where you left off without redoing finished work. If you were in the middle of a command or an edit, check whether it finished (`git status`, `git diff`) before moving on. Only re-run a command if it was not denied and repeating it is safe.",
@@ -163,8 +179,9 @@ export function resumePrompt(): string {
     VALIDATION_BRIEF,
     FILE_EDIT_BRIEF,
     SCREENSHOT_BRIEF,
+    siblingTasksBrief(siblingTasks),
     `When you are finished, end your final message with the \`${REPORT_FENCE}\` block, as before.`,
-  ].join("\n\n");
+  ].filter(Boolean).join("\n\n");
 }
 
 function reportInstructions(): string {

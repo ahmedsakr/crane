@@ -11,6 +11,7 @@ import { DashboardBuilder } from "./dashboard.js";
 import { DEFAULT_DRIVER_KEY, driverSettings, isAvailable } from "./drivers.js";
 import { worktreesDir } from "../core/paths.js";
 import { retainScreenshots } from "../core/screenshots.js";
+import { siblingTasksFor } from "./task-context.js";
 import { factoryBuildOutdated, servedDashboard } from "../core/webbuild.js";
 
 const CREW = ["Jib", "Boom", "Hoist", "Trolley", "Rigger", "Winch", "Gantry", "Mast"];
@@ -173,8 +174,13 @@ export class Factory {
    * is one, so the agent picks up where it stopped instead of starting over.
    */
   private async runWithRetry(driver: AgentDriver, ctx: RunContext): Promise<RunResult> {
+    const run = async (resumeSession = ctx.resumeSession) => driver.run({
+      ...ctx,
+      resumeSession,
+      siblingTasks: ctx.repo && !ctx.job ? await siblingTasksFor(this.store, ctx.task, ctx.repo) : undefined,
+    });
     try {
-      return await driver.run(ctx);
+      return await run();
     } catch (err) {
       if (ctx.signal.aborted || !(err instanceof AgentRunError) || !err.transient) throw err;
       // Jitter, so a crew that all hit the same overload doesn't come back at once.
@@ -182,7 +188,7 @@ export class Factory {
       const reason = err.message.split("\n")[0]!.slice(0, 200).replace(/\.$/, "");
       ctx.emit("note", `${reason}. Trying once more in ${Math.max(1, Math.round(wait / 1000))}s`, { retry: true });
       await sleep(wait, ctx.signal);
-      return driver.run({ ...ctx, resumeSession: err.sessionId ?? ctx.resumeSession });
+      return run(err.sessionId ?? ctx.resumeSession);
     }
   }
 
