@@ -184,7 +184,7 @@ export class ClaudeCodeDriver implements AgentDriver {
       "stream-json",
       "--verbose",
       "--append-system-prompt",
-      systemPrompt(task, repo, job),
+      systemPrompt(task, repo, job, { checks: ctx.checks }),
       "--permission-mode",
       autonomy === "observe" ? "default" : "acceptEdits",
       "--allowedTools",

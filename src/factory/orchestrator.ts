@@ -401,6 +401,8 @@ export class Factory {
             signal: ac.signal,
             emit,
             job: { kind: "resolve_conflicts", base, files },
+            // landTask runs these as merge checks once the conflicts are resolved.
+            checks: this.store.repoChecks(repo.id),
           });
           for (const f of r.report.findings) emit("finding", f.title, { impact: f.impact, effort: f.effort });
         },
@@ -489,6 +491,8 @@ export class Factory {
         emit,
         resumeSession: resumable ? task.sessionId! : undefined,
         onSession: (sessionId) => this.store.updateTask(task.id, { sessionId }),
+        // Run below as review checks. Investigate-only runs get none.
+        checks: task.autonomy !== "observe" ? this.store.repoChecks(repo.id) : undefined,
       });
 
       if (task.autonomy !== "observe") {

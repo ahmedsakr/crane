@@ -52,17 +52,34 @@ const SANDBOXED_AUTONOMY_BRIEF: Record<Task["autonomy"], string> = {
   act: "You may change files. You are working in an isolated git worktree on your own branch. Leave your changes in the working tree: Crane commits them to the branch when you finish. Your sandbox can't write to git, so don't try to commit, and never push.",
 };
 
+/**
+ * The repo's configured checks, which Crane runs itself once the agent
+ * finishes (a review check after work, a merge check after resolving
+ * conflicts). Without this, an agent whose environment refuses one of them
+ * reports a high-impact finding and "validation incomplete" for a check that
+ * Crane runs and records anyway.
+ */
+function checksBrief(checks: readonly string[] | undefined, sandboxed: boolean): string {
+  if (!checks?.length) return "";
+  const where = sandboxed ? "outside your sandbox" : "in this directory";
+  const list = checks.map((c) => `\`${c}\``).join(", ");
+  return `After you finish, Crane runs these checks itself, ${where}, and records their results on the task: ${list}. Run them yourself where you can, and fix what your change breaks. If one is blocked or refused in your environment, say in your report that it's left to Crane's check, rather than raising a finding about it or calling your validation incomplete.`;
+}
+
 export interface PromptOptions {
   /** The agent can run `git commit` and `git add` itself. False for sandboxed agents. */
   agentCommits?: boolean;
   /** The agent runs in a sandbox with no network, which also refuses some local socket calls (Codex). */
   sandboxed?: boolean;
+  /** Checks Crane runs after the agent finishes (`RunContext.checks`). */
+  checks?: readonly string[];
 }
 
 export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob, opts: PromptOptions = {}): string {
   const commits = opts.agentCommits ?? true;
   const sandbox = opts.sandboxed ? SANDBOX_BRIEF : "";
-  if (job?.kind === "resolve_conflicts") return conflictSystemPrompt(repo, job, commits, sandbox);
+  const checks = checksBrief(opts.checks, !!opts.sandboxed);
+  if (job?.kind === "resolve_conflicts") return conflictSystemPrompt(repo, job, commits, sandbox, checks);
   return [
     "You are an agent in Crane, an autonomous software factory steered by a human operator.",
     KIND_BRIEF[task.kind],
@@ -72,6 +89,7 @@ export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob, opts
     BLOCKED_BRIEF,
     sandbox,
     VALIDATION_BRIEF,
+    checks,
     FILE_EDIT_BRIEF,
     reportInstructions(),
   ]
@@ -79,7 +97,13 @@ export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob, opts
     .join("\n\n");
 }
 
-function conflictSystemPrompt(repo: Repo | null, job: ResolveConflictsJob, agentCommits: boolean, sandbox: string): string {
+function conflictSystemPrompt(
+  repo: Repo | null,
+  job: ResolveConflictsJob,
+  agentCommits: boolean,
+  sandbox: string,
+  checks: string,
+): string {
   const main = repo?.defaultBranch ?? "the default branch";
   return [
     "You are an agent in Crane, an autonomous software factory steered by a human operator.",
@@ -99,6 +123,7 @@ function conflictSystemPrompt(repo: Repo | null, job: ResolveConflictsJob, agent
     BLOCKED_BRIEF,
     sandbox,
     VALIDATION_BRIEF,
+    checks,
     FILE_EDIT_BRIEF,
     reportInstructions(),
   ]
