@@ -190,6 +190,43 @@ test("driver: reports each blocked call once, with the rules that would allow it
   assert.match(args[args.indexOf("--append-system-prompt") + 1]!, /Crane runs these checks itself, in this directory, .*`npm test`/);
 });
 
+test("driver: reports refusals in Claude Code's current wording as they happen", async () => {
+  const refusal = (id: string, content: string) => ({
+    type: "user",
+    message: { content: [{ type: "tool_result", tool_use_id: id, is_error: true, content }] },
+  });
+  const fake = fakeClaude([
+    { type: "system", subtype: "init", session_id: "s-2", model: "m" },
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "tu1", name: "Bash", input: { command: "npx tsc" } }] } },
+    refusal("tu1", "This command requires approval"),
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "tu2", name: "Bash", input: { command: "ls && npm ci" } }] } },
+    refusal("tu2", "This Bash command contains multiple operations. The following part requires approval: npm ci"),
+    { type: "assistant", message: { content: [{ type: "tool_use", id: "tu3", name: "Bash", input: { command: "gh pr merge" } }] } },
+    // A failing command whose own output mentions approval is not a refusal.
+    refusal("tu3", "Exit code 1\nPull request requires approval from a reviewer"),
+    // No permission_denials, so only live detection can report these.
+    {
+      type: "result",
+      subtype: "success",
+      result: 'Done.\n\n```crane-report\n{"summary":"ok","findings":[],"changedFiles":[]}\n```',
+      total_cost_usd: 0.1,
+      session_id: "s-2",
+    },
+  ]);
+  const { events, emit } = collect();
+  await new ClaudeCodeDriver(fake.bin).run({
+    task: task(),
+    repo,
+    cwd: scratch("crane-cwd-"),
+    signal: new AbortController().signal,
+    emit,
+  });
+  assert.deepEqual(
+    events.filter((e) => e.type === "blocked").map((e) => e.message),
+    ["Blocked: npx tsc", "Blocked: ls && npm ci"],
+  );
+});
+
 test("driver: an overloaded API is a transient failure that keeps its cost and session", async () => {
   const fake = fakeClaude([
     { type: "system", subtype: "init", session_id: "s-9" },

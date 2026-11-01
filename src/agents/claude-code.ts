@@ -91,8 +91,14 @@ export function describeBlocked(
   };
 }
 
-/** Claude Code's wording when the permission system refuses a tool call. */
-const DENIAL_TEXT = /Claude requested permissions? to |haven't granted it yet|^\s*Permission to (use|read|write|edit) .* has been denied/i;
+/**
+ * Claude Code's wording when the permission system refuses a tool call. Older
+ * releases say "Claude requested permissions to … haven't granted it yet" or
+ * "Permission to … has been denied"; current ones say "This command requires
+ * approval" or "… The following part requires approval: …".
+ */
+const DENIAL_TEXT =
+  /Claude requested permissions? to |haven't granted it yet|^\s*Permission to (use|read|write|edit) .* has been denied|\b(command|part) requires approval\b/i;
 
 /** Summarise a tool call in a few words for the activity feed. */
 function describeTool(name: string, input: Record<string, unknown>): string {
