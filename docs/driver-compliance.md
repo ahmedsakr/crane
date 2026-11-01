@@ -55,9 +55,15 @@ no permission to retry it.
 
 ## Refusal evidence checks
 
+In an environment that permits piped child stdio,
 `node --import tsx test/limits.test.ts` exercises Claude Code's stream recording
-with a stand-in CLI (requires an environment that permits piped child stdio).
-Its pure permission tests also cover the representative NAV/OPEN command.
+with a stand-in CLI. Its pure permission tests also cover the representative
+NAV/OPEN command. In Codex's restricted sandbox, defer this complete mixed
+suite, along with drivers and restart, directly to Crane's unchanged external
+`npm test` checks; do not run it directly to diagnose a known subprocess
+limitation. Use the supported [sandbox test selection](testing.md#sandbox-test-selection)
+for local checks. Passing those checks does not complete this behavioral
+evaluation.
 
 New Claude Code blocked events retain `toolUseId` and `refusal.source`, identifying
 the driver record that supplied the evidence. A live `tool_result` retains up to
