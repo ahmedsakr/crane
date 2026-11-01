@@ -28,7 +28,7 @@ import { inferDefaultBranch, isGitRepo, removeWorktree, repoRoot } from "./git.j
 import { DEFAULT_DRIVER_KEY, driverCatalog, driverEffortKey, driverModelKey, isAvailable, sharedDrivers } from "./drivers.js";
 import { factoryRoot } from "../core/paths.js";
 import { parseRule } from "@crane/contracts/rules";
-import { ALWAYS_DENIED, overlapsDenied } from "../agent-policy/index.js";
+import { ALWAYS_DENIED, overlapsDenied } from "@crane/agent-policy";
 
 /**
  * Accept what an operator would type: a rule (`Bash(npm ci:*)`, `WebFetch`)
