@@ -271,7 +271,7 @@ export const MAINTENANCE_ROLE: Record<MaintenanceRole, MaintenanceRoleInfo> = {
     action: "Review packaging",
     summary: "Module boundaries, and parts that could be shared as packages.",
     autonomy: "observe",
-    brief: `Review packaging and modularity, so parts of this codebase are easier to share and reuse. Map the module boundaries and dependencies between them, find parts that could stand alone as packages or libraries, and note what holds them back (circular imports, leaked internals, missing entry points or exports, build setup). Recommend concrete steps in order. ${ROLE_SCOPE}`,
+    brief: `Review packaging and modularity, so parts of this codebase are easier to share and reuse. Map the module boundaries and dependencies between them, find parts that could stand alone as packages or libraries, and note what holds them back (circular imports, leaked internals, missing entry points or exports, build setup). Actively propose new packages to create for better modularity, including internal workspace packages, even where the code does not yet form a standalone module. Ground each proposal in the codebase's needs: describe its responsibility, public API, intended consumers, dependency boundaries, and how it would reduce coupling or enable reuse. Weigh those benefits against the added build and maintenance cost, and avoid speculative packages with no clear consumer. Recommend concrete steps in order, including how to introduce each worthwhile package and move existing callers to it. ${ROLE_SCOPE}`,
   },
   best_practices: {
     label: "Best practices",
