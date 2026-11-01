@@ -4,7 +4,7 @@ import { AgentRunError, combinedCost, type AgentDriver, type RunContext, type Ru
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createWorktree, finalizeWorktree, putAwayWorktree, removeWorktree } from "./git.js";
-import { installDependencies } from "./deps.js";
+import { elapsed, installDependencies } from "./deps.js";
 import { deleteMergedBranch, landTask, MergeError } from "./merge.js";
 import { runChecks } from "./checks.js";
 import { DashboardBuilder } from "./dashboard.js";
@@ -542,13 +542,19 @@ export class Factory {
         cwd = wt.path;
         this.store.updateTask(task.id, { branch: wt.branch, worktree: wt.path });
         emit("note", `${task.worktree ? "Back on" : "Working on"} branch ${wt.branch}`, { branch: wt.branch });
+        const started = Date.now();
         try {
-          const note = await installDependencies(wt.path, { from: repo.path, signal: ac.signal });
+          const note = await installDependencies(wt.path, {
+            from: repo.path,
+            signal: ac.signal,
+            onProgress: (progress) => emit("note", progress),
+          });
           if (note) emit("note", note);
         } catch (err) {
           if (ac.signal.aborted) throw err;
           // Not fatal: the agent can still read code and may be able to install itself.
-          emit("note", `Couldn't install dependencies: ${(err as Error).message.split("\n")[0]}`);
+          const after = elapsed(Date.now() - started);
+          emit("note", `Couldn't install dependencies after ${after}: ${(err as Error).message.split("\n")[0]}`);
         }
       }
 
