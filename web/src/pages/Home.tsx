@@ -1,5 +1,5 @@
 import { Link, useNavigate } from "react-router-dom";
-import { useApp } from "../App";
+import { useApp } from "../lib/app-context";
 import { api, type Task } from "../lib/api";
 import { ago, plural } from "../lib/format";
 import { useTick } from "../lib/hooks";

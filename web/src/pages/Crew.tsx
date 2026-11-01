@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { useApp } from "../App";
+import { useApp } from "../lib/app-context";
 import {
   api,
   AUTONOMY_LABEL,
