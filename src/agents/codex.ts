@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { relative, isAbsolute } from "node:path";
-import { combinedCost, parseReport, type AgentDriver, type RunContext, type RunResult } from "../agent-protocol/index.js";
+import { combinedCost, parseReport, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
 import type { RunUsage } from "@crane/contracts";
 import { codexCost } from "./codex-pricing.js";

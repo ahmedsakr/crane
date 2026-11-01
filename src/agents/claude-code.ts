@@ -7,7 +7,7 @@ import {
   type AgentDriver,
   type RunContext,
   type RunResult,
-} from "../agent-protocol/index.js";
+} from "@crane/agent-protocol";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
 import { ALWAYS_DENIED, overlapsDenied, suggestRules } from "../agent-policy/index.js";
 import type { Autonomy, BlockedCall, RunUsage } from "@crane/contracts";

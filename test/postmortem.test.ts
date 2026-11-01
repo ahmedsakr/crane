@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { OperatorActions } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
-import type { AgentDriver, RunContext } from "../src/agent-protocol/index.js";
+import type { AgentDriver, RunContext } from "@crane/agent-protocol";
 
 test("a successful merge queues exactly one independent read-only post-mortem", () => {
   const store = new Store(":memory:");

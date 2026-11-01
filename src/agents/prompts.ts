@@ -1,5 +1,5 @@
 import type { Task, Repo } from "@crane/contracts";
-import { REPORT_FENCE, type AgentJob, type ResolveConflictsJob, type SiblingTask } from "../agent-protocol/index.js";
+import { REPORT_FENCE, type AgentJob, type ResolveConflictsJob, type SiblingTask } from "@crane/agent-protocol";
 
 const KIND_BRIEF: Record<Task["kind"], string> = {
   maintenance:

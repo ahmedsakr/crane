@@ -12,6 +12,11 @@ const SOURCES = ["src", "index.html", "vite.config.ts", "package.json"];
 export const SHARED_SOURCES = ["src/index.ts", "src/types.ts", "src/rules.ts", "package.json", "tsconfig.json"]
   .map((f) => join("packages", "contracts", f));
 
+/** Backend-only package inputs; the dashboard doesn't bundle the agent protocol. */
+export const AGENT_PROTOCOL_SOURCES = [
+  "src/index.ts", "src/driver.ts", "src/report.ts", "src/usage.ts", "package.json", "tsconfig.json",
+].map((f) => join("packages", "agent-protocol", f));
+
 function newestMtime(path: string): number {
   if (!existsSync(path)) return 0;
   const st = statSync(path);
@@ -57,6 +62,7 @@ export function createFactoryBuildCheck(root: string, compiled: boolean): (now?:
     const value = Math.max(
       newestMtime(join(root, "src")),
       ...SHARED_SOURCES.map((s) => newestMtime(join(root, s))),
+      ...AGENT_PROTOCOL_SOURCES.map((s) => newestMtime(join(root, s))),
     ) > loadedAt;
     cached = { at: now, value };
     return value;

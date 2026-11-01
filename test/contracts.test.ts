@@ -10,6 +10,7 @@ import { ruleLabel } from "@crane/contracts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const contracts = join(root, "packages", "contracts");
+const agentProtocol = join(root, "packages", "agent-protocol");
 const web = join(root, "web");
 const within = (dir: string, path: string) => path === dir || path.startsWith(dir + sep);
 
@@ -43,17 +44,19 @@ function walk(dir: string): string[] {
   });
 }
 
-const workspace = (file: string) => within(contracts, file) ? contracts : within(web, file) ? web : root;
+const workspace = (file: string) => [contracts, agentProtocol, web].find((dir) => within(dir, file)) ?? root;
 
 test("application workspaces use package entry points, never each other's source paths", () => {
   const escapes: string[] = [];
   // Repository tests may import the implementation under test (including web helpers).
-  const files = ["src", "scripts", "web", "packages/contracts"].flatMap((d) => walk(join(root, d)));
+  const files = ["src", "scripts", "web", "packages/contracts", "packages/agent-protocol"].flatMap((d) => walk(join(root, d)));
   for (const file of files) {
     for (const spec of specifiers(file)) {
       if (spec.startsWith(".") || isAbsolute(spec)) {
         if (workspace(file) !== workspace(resolve(dirname(file), spec))) escapes.push(`${relative(root, file)} → ${spec}`);
       } else if (spec.startsWith("@crane/contracts/") && spec !== "@crane/contracts/rules") {
+        escapes.push(`${relative(root, file)} → ${spec}`);
+      } else if (spec.startsWith("@crane/agent-protocol/")) {
         escapes.push(`${relative(root, file)} → ${spec}`);
       }
     }

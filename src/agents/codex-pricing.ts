@@ -16,8 +16,8 @@ export function codexCost(model: string | null, input: number, cached: number, o
 }
 
 /**
- * @deprecated Provider-neutral, so it moved to `src/agent-protocol`. Re-exported
+ * @deprecated Provider-neutral, so it moved to `@crane/agent-protocol`. Re-exported
  * here so branches written against the old path still build; remove once none
  * import it. The factory must not import this module (`test/boundaries.test.ts`).
  */
-export { combinedCost } from "../agent-protocol/index.js";
+export { combinedCost } from "@crane/agent-protocol";

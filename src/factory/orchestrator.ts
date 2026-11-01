@@ -1,6 +1,6 @@
 import { crewSettingKey, type Store } from "../core/store.js";
 import { driverLabel, isDriverName, type EventType, type Overview, type RunUsage, type Task, type TaskStatus } from "@crane/contracts";
-import { AgentRunError, combinedCost, type AgentDriver, type RunContext, type RunResult } from "../agent-protocol/index.js";
+import { AgentRunError, combinedCost, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createWorktree, finalizeWorktree, putAwayWorktree, removeWorktree } from "./git.js";
