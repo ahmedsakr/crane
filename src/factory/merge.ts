@@ -352,6 +352,10 @@ export async function landTask(req: MergeRequest): Promise<MergeResult> {
     await prepareDependencies(req);
     await runChecks(workdir, req.checks ?? [], "merge", req.recordValidation ?? (() => {}), signal);
     if (signal?.aborted) throw new Error("Stopped");
+    const changedManifests = commit
+      ? (await g(workdir, ["diff", "--name-only", "--no-renames", "-z", base.sha, head])).split("\0")
+        .filter(file => ["package.json", "package-lock.json"].includes(basename(file)))
+      : [];
     if (remote) {
       if ((await push(repo, remote, head)) === "moved") {
         emit("note", `${remote}/${repo.defaultBranch} moved while merging. Starting over from the new tip.`);
@@ -360,6 +364,10 @@ export async function landTask(req: MergeRequest): Promise<MergeResult> {
       emit("note", `Pushed to ${remote}/${repo.defaultBranch}`, { commit: head });
     }
     const checkoutBehind = await moveLocalDefault(repo, workdir, head);
+    if (changedManifests.length) {
+      emit("note", `This merge changed ${changedManifests.join(", ")}. After updating your checkout at ${checkoutBehind ?? repo.path} to ${repo.defaultBranch}, run npm install there before building or running it. Crane does not install dependencies in your checkout.`,
+        { dependencyFiles: changedManifests });
+    }
     return { commit, head, pushedTo: remote, checkoutBehind };
   }
   throw new MergeError(`${remote}/${repo.defaultBranch} kept moving. Tried ${attempts} times.`);

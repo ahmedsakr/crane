@@ -37,7 +37,7 @@
     "build:agent-protocol": "npm run build -w @crane/agent-protocol",
     "build:agent-policy": "npm run build -w @crane/agent-policy",
     "build:worktree-deps": "npm run build -w @crane/worktree-deps",
-    "build:packages": "npm run build:contracts && npm run build:agent-protocol && npm run build:agent-policy && npm run build:worktree-deps",
+    "build:packages": "node scripts/check-workspace-links.mjs && npm run build:contracts && npm run build:agent-protocol && npm run build:agent-policy && npm run build:worktree-deps",
     "build": "npm run build:packages && tsc -p tsconfig.json && npm run build -w web",
     "prepack": "npm run build",
     "typecheck": "npm run build:packages && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm run typecheck -w web",
