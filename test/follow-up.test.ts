@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { Store } from "../src/core/store.js";
 import { OperatorActions } from "../src/factory/actions.js";
 import { createApp } from "../src/server/app.js";
-import { driverEffortKey, driverModelKey } from "../src/factory/drivers.js";
+import { driverEffortKey, driverModelKey } from "../src/factory/settings.js";
 
 function setup(path = ":memory:") {
   const store = new Store(path);

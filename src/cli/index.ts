@@ -30,13 +30,8 @@ import {
 } from "@crane/contracts";
 import { OperatorActions, checkLookouts, checkScheduledAt, toRule } from "../factory/actions.js";
 import { draftTask } from "../factory/instruct.js";
-import {
-  DEFAULT_MAX_TURNS,
-  DEFAULT_TIME_LIMIT_MIN,
-  factoryDriverName,
-  factoryIsRunning,
-  factoryState,
-} from "../factory/orchestrator.js";
+import { factoryDriverName, factoryIsRunning, factoryState } from "../factory/state.js";
+import { DEFAULT_MAX_TURNS, DEFAULT_TIME_LIMIT_MIN } from "../factory/settings.js";
 import { diffForTask } from "../factory/git.js";
 import { DEFAULT_PORT } from "../core/paths.js";
 import { screenshotPath } from "../core/screenshots.js";

@@ -25,7 +25,8 @@ import {
   type PostmortemSettings,
 } from "@crane/contracts";
 import { inferDefaultBranch, isGitRepo, removeWorktree, repoRoot } from "./git.js";
-import { DEFAULT_DRIVER_KEY, driverCatalog, driverEffortKey, driverModelKey, isAvailable, sharedDrivers } from "./drivers.js";
+import { driverCatalog, isAvailable, sharedDrivers } from "./drivers.js";
+import { DEFAULT_DRIVER_KEY, driverEffortKey, driverModelKey } from "./settings.js";
 import { factoryRoot } from "../core/paths.js";
 import { parseRule } from "@crane/contracts/rules";
 import { ALWAYS_DENIED, overlapsDenied } from "../agent-policy/index.js";
