@@ -11,7 +11,7 @@ import { resolveDefaultDriver } from "../src/factory/drivers.js";
 import { SimulatedDriver } from "../src/agents/simulated.js";
 import { CodexDriver, codexArgs, unwrapShell, usageFromTurn } from "../src/agents/codex.js";
 import type { AgentDriver, ResolveConflictsJob, RunContext, RunResult } from "../src/agent-protocol/index.js";
-import type { RunUsage, Task } from "../src/core/types.js";
+import type { RunUsage, Task } from "@crane/contracts";
 import { resumePrompt, systemPrompt } from "../src/agents/prompts.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));

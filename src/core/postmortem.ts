@@ -1,4 +1,4 @@
-import type { Task, TaskEvent, ValidationRun } from "./types.js";
+import type { Task, TaskEvent, ValidationRun } from "@crane/contracts";
 
 /** node:test summary counts, from the TAP (`# pass 106`) or spec (`ℹ pass 106`) reporter. */
 const CHECK_SUMMARY_LINE = /^\s*(?:#|ℹ)\s*(?:tests|suites|pass|fail|cancelled|skipped|todo)\s+\d+\s*$/;

@@ -1,4 +1,4 @@
-import type { Autonomy, TaskKind, Repo, TaskDraft } from "../core/types.js";
+import type { Autonomy, TaskKind, Repo, TaskDraft } from "@crane/contracts";
 
 const MAINTENANCE = [
   "fix",

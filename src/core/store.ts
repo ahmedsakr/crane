@@ -9,9 +9,9 @@ import {
   SHIPPED_STATUSES,
   UNSHIPPED_STATUSES,
   isMaintenanceRole,
+  ruleLabel,
   type MaintenanceRole,
-} from "./types.js";
-import { ruleLabel } from "./permissions.js";
+} from "@crane/contracts";
 import { postmortemBrief } from "./postmortem.js";
 import type {
   Agent,
@@ -32,7 +32,7 @@ import type {
   Overview,
   Report,
   Repo,
-} from "./types.js";
+} from "@crane/contracts";
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS repos (

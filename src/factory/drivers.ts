@@ -11,7 +11,7 @@ import {
   type DriverInfo,
   type DriverName,
   type DriverSettings,
-} from "../core/types.js";
+} from "@crane/contracts";
 
 /** The setting that holds the operator's default agent. */
 export const DEFAULT_DRIVER_KEY = "factory_driver";

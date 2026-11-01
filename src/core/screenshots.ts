@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { extname, isAbsolute, join, resolve, sep } from "node:path";
 import { craneHome } from "./paths.js";
-import type { Screenshot } from "./types.js";
+import type { Screenshot } from "@crane/contracts";
 
 const MAX_IMAGES = 12;
 const MAX_BYTES = 10 * 1024 * 1024;

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { draftTask } from "../src/factory/instruct.js";
 import { parseReport } from "../src/agent-protocol/index.js";
 import { Store } from "../src/core/store.js";
-import type { Repo } from "../src/core/types.js";
+import type { Repo } from "@crane/contracts";
 
 const repo = (name: string, isFactory = false): Repo => ({
   id: `r-${name}`,

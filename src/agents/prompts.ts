@@ -1,4 +1,4 @@
-import type { Task, Repo } from "../core/types.js";
+import type { Task, Repo } from "@crane/contracts";
 import { REPORT_FENCE, type AgentJob, type ResolveConflictsJob } from "../agent-protocol/index.js";
 
 const KIND_BRIEF: Record<Task["kind"], string> = {

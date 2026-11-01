@@ -14,7 +14,7 @@ import {
 } from "../src/factory/dashboard.ts";
 import { Store } from "../src/core/store.ts";
 import { createApp } from "../src/server/app.ts";
-import type { Repo } from "../src/core/types.ts";
+import type { Repo } from "@crane/contracts";
 
 const ID = ["-c", "user.name=Test", "-c", "user.email=test@localhost", "-c", "commit.gpgsign=false"];
 const sh = (cwd: string, ...args: string[]) =>

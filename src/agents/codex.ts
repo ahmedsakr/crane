@@ -3,7 +3,7 @@ import { createInterface } from "node:readline";
 import { relative, isAbsolute } from "node:path";
 import { combinedCost, parseReport, type AgentDriver, type RunContext, type RunResult } from "../agent-protocol/index.js";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
-import type { RunUsage } from "../core/types.js";
+import type { RunUsage } from "@crane/contracts";
 import { codexCost } from "./codex-pricing.js";
 
 /** Codex exited before it got going again on an earlier session. */

@@ -11,7 +11,7 @@ import { Factory } from "../src/factory/orchestrator.js";
 import { SimulatedDriver } from "../src/agents/simulated.js";
 import { ClaudeCodeDriver } from "../src/agents/claude-code.js";
 import type { RunContext, RunResult } from "../src/agent-protocol/index.js";
-import type { Task } from "../src/core/types.js";
+import type { Task } from "@crane/contracts";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
 

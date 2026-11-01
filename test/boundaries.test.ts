@@ -63,7 +63,7 @@ test("boundaries: the agent protocol depends on contract types and nothing else"
       const spec = m[3]!;
       const target = spec.startsWith(".") ? resolveSpec(file, spec) : spec;
       if (target.startsWith("agent-protocol/")) continue;
-      assert.equal(target, "core/contracts", `${file} imports "${spec}"`);
+      assert.equal(target, "@crane/contracts", `${file} imports "${spec}"`);
       assert.ok(m[1] === "import" && m[2], `${file} must import contracts with \`import type\`, so nothing runs at load`);
     }
   }

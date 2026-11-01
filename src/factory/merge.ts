@@ -3,9 +3,9 @@ import { promisify } from "node:util";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { EventType, Repo, Task } from "../core/types.js";
+import type { EventType, Repo, Task } from "@crane/contracts";
 import { runChecks } from "./checks.js";
-import type { ValidationRun } from "../core/types.js";
+import type { ValidationRun } from "@crane/contracts";
 
 const run = promisify(execFile);
 

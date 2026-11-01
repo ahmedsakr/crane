@@ -5,11 +5,11 @@
  * and how run costs combine.
  *
  * This is the source of `@crane/agent-protocol`. It becomes its own package
- * once contract types can be imported as a package rather than from root
- * source. Until then it lives here so it compiles with the backend, and
+ * when it gets a separate build target. It imports contract types through
+ * `@crane/contracts` and still compiles with the backend, and
  * `test/boundaries.test.ts` holds it to the package's rules:
  *
- * - It imports contract types (`core/contracts`) and nothing else: no
+ * - It imports contract types (`@crane/contracts`) and nothing else: no
  *   concrete drivers, provider price tables, prompts, safety policy,
  *   subprocesses, Store or factory code.
  * - Everything else imports it through this file only, so becoming a package

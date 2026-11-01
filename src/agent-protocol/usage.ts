@@ -1,4 +1,4 @@
-import type { RunUsage } from "../core/contracts.js";
+import type { RunUsage } from "@crane/contracts";
 
 /** Preserve known subtotals while propagating missing prices through retries and turns. */
 export function combinedCost(a: RunUsage, b: RunUsage): Pick<RunUsage, "costUsd" | "costStatus"> {

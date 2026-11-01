@@ -1,5 +1,5 @@
 import { crewSettingKey, type Store } from "../core/store.js";
-import { driverLabel, isDriverName, type EventType, type Overview, type RunUsage, type Task, type TaskStatus } from "../core/types.js";
+import { driverLabel, isDriverName, type EventType, type Overview, type RunUsage, type Task, type TaskStatus } from "@crane/contracts";
 import { AgentRunError, combinedCost, type AgentDriver, type RunContext, type RunResult } from "../agent-protocol/index.js";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";

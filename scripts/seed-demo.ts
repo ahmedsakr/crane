@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { Store } from "../src/core/store.js";
 import { craneHome } from "../src/core/paths.js";
 import { OperatorActions } from "../src/factory/actions.js";
-import type { TaskKind, Autonomy } from "../src/core/types.js";
+import type { TaskKind, Autonomy } from "@crane/contracts";
 
 if (!process.env.CRANE_HOME) {
   console.error("Set CRANE_HOME to a scratch directory first. This script writes sample data.");
