@@ -1,5 +1,5 @@
 import { crewSettingKey, type Store } from "../core/store.js";
-import { driverLabel, isDriverName, unmetAcceptance, type EventType, type Overview, type RunUsage, type Task, type TaskStatus } from "@crane/contracts";
+import { driverLabel, isDriverName, unmetAcceptance, type EventType, type RunUsage, type Task, type TaskStatus } from "@crane/contracts";
 import { AgentRunError, combinedCost, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -8,14 +8,13 @@ import { elapsed, installDependencies } from "./deps.js";
 import { deleteMergedBranch, landTask, MergeError } from "./merge.js";
 import { runChecks } from "./checks.js";
 import { DashboardBuilder } from "./dashboard.js";
-import { DEFAULT_DRIVER_KEY, driverSettings, isAvailable } from "./drivers.js";
+import { driverSettings, isAvailable } from "./drivers.js";
+import { DEFAULT_DRIVER_KEY, DEFAULT_MAX_TURNS, DEFAULT_TIME_LIMIT_MIN, HEARTBEAT_KEY } from "./settings.js";
 import { worktreesDir } from "../core/paths.js";
 import { retainScreenshots } from "../core/screenshots.js";
 import { siblingTasksFor } from "./task-context.js";
-import { factoryBuildOutdated, servedDashboard } from "../core/webbuild.js";
 
 const CREW = ["Jib", "Boom", "Hoist", "Trolley", "Rigger", "Winch", "Gantry", "Mast"];
-const HEARTBEAT_KEY = "factory_heartbeat";
 
 type CrewMember = { id: string; name: string };
 
@@ -53,9 +52,6 @@ const SAVE_WORK_STATUSES: TaskStatus[] = ["failed", "cancelled"];
 /** How often to look for worktrees to put away, besides right after a task stops. */
 const SWEEP_MS = 60_000;
 
-export const DEFAULT_MAX_TURNS = 200;
-export const DEFAULT_TIME_LIMIT_MIN = 90;
-
 const envNumber = (name: string): number | undefined => {
   const v = process.env[name];
   return v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : undefined;
@@ -88,30 +84,6 @@ function sleep(ms: number, signal: AbortSignal) {
 }
 
 const minutes = (n: number) => (n === 1 ? "1 minute" : `${n} minutes`);
-
-/** True if a factory process has checked in within the last few seconds. */
-export function factoryIsRunning(store: Store): boolean {
-  const beat = store.getSetting(HEARTBEAT_KEY);
-  return !!beat && Date.now() - Number(beat) < 6000;
-}
-
-export function factoryDriverName(store: Store): string {
-  return store.getSetting(DEFAULT_DRIVER_KEY) ?? "unknown";
-}
-
-/** The factory's state as the overview reports it: running, paused, its default agent, and the dashboard served. */
-export function factoryState(store: Store): Overview["factory"] {
-  const ui = servedDashboard();
-  return {
-    running: factoryIsRunning(store),
-    paused: store.isPaused(),
-    driver: factoryDriverName(store),
-    factoryOutdated: factoryBuildOutdated(),
-    uiOutdated: ui?.outdated ?? false,
-    uiBuild: ui?.id ?? null,
-    uiCommit: ui?.commit ?? null,
-  };
-}
 
 /**
  * The factory floor. Keeps a crew of agents busy: each idle agent claims the

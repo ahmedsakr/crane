@@ -8,7 +8,7 @@ import { lastMergeOutcome, type TaskStatus, type NewTask, type TaskDetail, type 
 import { OperatorActions } from "../factory/actions.js";
 import { draftTask } from "../factory/instruct.js";
 import { diffForTask } from "../factory/git.js";
-import { factoryState as readFactoryState } from "../factory/orchestrator.js";
+import { factoryState as readFactoryState } from "../factory/state.js";
 import { servedDashboard } from "../core/webbuild.js";
 import { readScreenshot } from "../core/screenshots.js";
 

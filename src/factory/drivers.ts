@@ -12,13 +12,7 @@ import {
   type DriverName,
   type DriverSettings,
 } from "@crane/contracts";
-
-/** The setting that holds the operator's default agent. */
-export const DEFAULT_DRIVER_KEY = "factory_driver";
-
-/** The settings that hold the model and effort the operator chose for one agent. */
-export const driverModelKey = (name: string) => `driver_model:${name}`;
-export const driverEffortKey = (name: string) => `driver_effort:${name}`;
+import { driverEffortKey, driverModelKey } from "./settings.js";
 
 /**
  * The model and effort an agent runs with. Null leaves it to the agent: its

@@ -63,6 +63,17 @@ test("boundaries: only the driver registry imports concrete agents", () => {
   }
 });
 
+test("boundaries: factory status queries don't load the scheduler or drivers", () => {
+  // Settings keys are a leaf; status reads only them and the served build. See src/factory/state.ts.
+  assert.deepEqual(importsOf("factory/settings.ts"), []);
+  assert.deepEqual(importsOf("factory/state.ts").sort(), ["core/webbuild", "factory/settings"]);
+  // Only `crane serve` composes a Factory; the API and the other CLI commands only ask about it.
+  for (const file of ["server/app.ts", "cli/index.ts"]) {
+    const bad = importsOf(file).filter((i) => i === "factory/orchestrator");
+    assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
+  }
+});
+
 test("boundaries: the agent protocol depends on contract types and nothing else", () => {
   // No concrete drivers, price tables, prompts, policy, subprocesses, Store or factory.
   assert.ok(protocolSources.includes("index.ts"), "expected to find the agent protocol");

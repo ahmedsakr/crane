@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Store } from "../src/core/store.js";
 import { createApp } from "../src/server/app.js";
 import { ALL_STATUSES } from "@crane/contracts";
-import { driverEffortKey, driverModelKey } from "../src/factory/drivers.js";
+import { driverEffortKey, driverModelKey } from "../src/factory/settings.js";
 
 test("api: invalid task decision bodies leave tasks and history unchanged", async () => {
   const store = new Store(":memory:");
