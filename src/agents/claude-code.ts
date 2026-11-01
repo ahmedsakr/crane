@@ -9,8 +9,7 @@ import {
   type RunResult,
 } from "../agent-protocol/index.js";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
-import { ALWAYS_DENIED } from "./policy.js";
-import { overlapsDenied, suggestRules } from "../core/permissions.js";
+import { ALWAYS_DENIED, overlapsDenied, suggestRules } from "../agent-policy/index.js";
 import type { Autonomy, BlockedCall, RunUsage } from "@crane/contracts";
 
 const READ_ONLY_TOOLS = [
