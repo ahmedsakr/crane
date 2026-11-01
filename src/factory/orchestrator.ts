@@ -408,8 +408,8 @@ export class Factory {
         onUsage,
         allowedTools: ctx.repo ? this.store.repoTools(ctx.repo.id).allowed : [],
         maxTurns: this.maxTurns || undefined,
-        model: taskSettings?.model ?? model ?? undefined,
-        effort: taskSettings?.effort ?? effort ?? undefined,
+        model: taskSettings?.model ?? taskSettings?.driverSettings?.model ?? model ?? undefined,
+        effort: taskSettings?.effort ?? taskSettings?.driverSettings?.effort ?? effort ?? undefined,
       });
       this.store.finishRun(runId, "succeeded", usage);
       return result;

@@ -53,6 +53,7 @@ function setup(opts: { remote?: boolean } = {}) {
     driver: null,
     model: null,
     effort: null,
+    driverSettings: null,
     assignee: null,
     report: null,
     costUsd: 0,

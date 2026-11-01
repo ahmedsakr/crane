@@ -31,6 +31,7 @@ export type {
   TaskDraft,
   DriverName,
   DriverSettings,
+  PostmortemSettings,
   DriverInfo,
   MergeOutcome,
 } from "./types.js";

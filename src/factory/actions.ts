@@ -19,6 +19,7 @@ import {
   type DriverName,
   type DriverSettings,
   type TaskRunOptions,
+  type PostmortemSettings,
 } from "@crane/contracts";
 import { currentBranch, isGitRepo, removeWorktree, repoRoot } from "./git.js";
 import { DEFAULT_DRIVER_KEY, driverCatalog, driverEffortKey, driverModelKey, isAvailable, sharedDrivers } from "./drivers.js";
@@ -124,7 +125,7 @@ export class OperatorActions {
     if (input.assignee && !this.store.listAgents().some((a) => a.id === input.assignee)) {
       throw new Error(`No crew member ${input.assignee}`);
     }
-    const task = this.store.createTask({ ...input, ...checkTaskRunOptions(input), assignee: input.assignee || null });
+    const task = this.store.createTask({ ...input, ...checkTaskRunOptions(input), assignee: input.assignee || null, driverSettings: null });
     // Remembered so the next instruction that doesn't name a repo defaults to this one.
     if (task.repoId) this.store.setSetting("last_repo", task.repoId);
     return task;
@@ -199,7 +200,8 @@ export class OperatorActions {
     const driver = opts.driver === undefined ? m.driver : checkDriver(opts.driver);
     // A maintenance run goes back to the member it was started for.
     const next = this.store.createTask({ kind: m.kind, title: m.title, brief: m.brief, repoId: m.repoId, autonomy: m.autonomy,
-      driver, model: driver === m.driver ? m.model : null, effort: driver === m.driver ? m.effort : null, assignee: m.assignee });
+      driver, model: driver === m.driver ? m.model : null, effort: driver === m.driver ? m.effort : null, assignee: m.assignee,
+      driverSettings: driver === m.driver ? m.driverSettings : null });
     const on = opts.driver !== undefined ? ` on ${driver ? driverLabel(driver) : "the default agent"}` : "";
     this.store.addEvent(m.id, "operator", `Retried as ${next.id}${on}`, { taskId: next.id });
     return next;
@@ -223,6 +225,33 @@ export class OperatorActions {
     if (model !== undefined) this.store.setSetting(driverModelKey(driver), model ?? "");
     if (effort !== undefined) this.store.setSetting(driverEffortKey(driver), effort ?? "");
     return this.drivers();
+  }
+
+  postmortemSettings(): PostmortemSettings {
+    return this.store.postmortemSettings();
+  }
+
+  /** Defaults are captured when a merge queues its read-only post-mortem. */
+  configurePostmortem(input: { driver?: string | null; model?: string | null; effort?: string | null }): PostmortemSettings {
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Expected post-mortem settings");
+    const saved = this.postmortemSettings();
+    const driver = input.driver === undefined ? saved.driver : (checkDriver(input.driver) as DriverName | null);
+    const changed = driver !== saved.driver;
+    const next = { driver, model: changed ? null : saved.model, effort: changed ? null : saved.effort };
+    if (driver && isTunable(driver)) {
+      const tuning = checkDriverSettings(driver, input);
+      if (tuning.model !== undefined) next.model = tuning.model || null;
+      if (tuning.effort !== undefined) next.effort = tuning.effort || null;
+    } else {
+      for (const value of [input.model, input.effort]) {
+        if (value !== undefined && value !== null && (typeof value !== "string" || normalizeDriverSetting(value))) {
+          throw new Error("Choose an agent that calls a model before setting post-mortem model or effort");
+        }
+      }
+      next.model = next.effort = null;
+    }
+    this.store.setPostmortemSettings(next);
+    return next;
   }
 
   /** Choose the agent new tasks run on, unless the operator picks another for a task. */

@@ -173,6 +173,8 @@ export function createApp(store: Store) {
     const { driver } = await c.req.json<{ driver: string }>();
     return c.json(await actions.setDefaultDriver(driver));
   });
+  api.get("/factory/postmortem", (c) => c.json(actions.postmortemSettings()));
+  api.post("/factory/postmortem", async (c) => c.json(actions.configurePostmortem(await c.req.json())));
 
   api.post("/factory/pause", (c) => {
     actions.pause();

@@ -688,6 +688,9 @@ const agents = program
         console.log(`    ${" ".repeat(12)} ${settingsLabel(d) ?? ui.dim("its default model and effort")}`);
       }
     }
+    const postmortem = actions.postmortemSettings();
+    console.log(ui.section("Post-mortems"));
+    console.log(`  ${postmortem.driver ? driverLabel(postmortem.driver) : "Merged task's agent"} · ${settingsLabel(postmortem) ?? "agent settings"}`);
     console.log("");
     const other = catalog.find((d) => d.available && !d.isDefault && d.name !== "simulated");
     const tunable = catalog.find((d) => d.isDefault && d.efforts.length) ?? catalog.find((d) => d.available && d.efforts.length);
@@ -795,6 +798,21 @@ agents
     } catch (err) {
       ui.fail((err as Error).message);
     }
+  });
+
+agents
+  .command("postmortem")
+  .description("Show or set defaults for all new post-mortems")
+  .option("--agent <agent>", "agent name, or default to keep the merged task's agent")
+  .option("--model <model>", "model name or alias, or default to follow the agent's settings")
+  .option("--effort <level>", "effort level for the chosen agent, or default to follow its settings")
+  .action((opts: { agent?: string; model?: string; effort?: string }) => {
+    try {
+      const change = opts.agent !== undefined || opts.model !== undefined || opts.effort !== undefined;
+      const s = change ? actions.configurePostmortem({ driver: opts.agent, model: opts.model, effort: opts.effort }) : actions.postmortemSettings();
+      console.log(`  Post-mortems: ${s.driver ? driverLabel(s.driver) : "merged task's agent"} · ${settingsLabel(s) ?? "agent settings"}`);
+      if (change) ui.ok("Defaults saved for newly queued post-mortems.");
+    } catch (err) { ui.fail((err as Error).message); }
   });
 
 // ── crane analytics: what the factory costs ─────────────────

@@ -32,6 +32,8 @@ import type {
   Overview,
   Report,
   Repo,
+  DriverSettings,
+  PostmortemSettings,
 } from "@crane/contracts";
 
 const SCHEMA = `
@@ -58,6 +60,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   driver TEXT,
   model TEXT,
   effort TEXT,
+  driver_settings TEXT,
   assignee TEXT,
   report TEXT,
   cost_usd REAL NOT NULL DEFAULT 0,
@@ -180,6 +183,7 @@ const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
   ["assignee", "TEXT"],
   ["model", "TEXT"],
   ["effort", "TEXT"],
+  ["driver_settings", "TEXT"],
 ];
 
 /** Add any missing columns to an older database. Safe if two processes open it at once. */
@@ -223,6 +227,7 @@ function toTask(r: Row): Task {
     driver: (r.driver as string) ?? null,
     model: (r.model as string) ?? null,
     effort: (r.effort as string) ?? null,
+    driverSettings: r.driver_settings ? JSON.parse(r.driver_settings as string) as DriverSettings : null,
     assignee: (r.assignee as string) ?? null,
     report: r.report ? (JSON.parse(r.report as string) as Report) : null,
     costUsd: (r.cost_usd as number) ?? 0,
@@ -326,6 +331,15 @@ export class Store {
     this.db
       .prepare("INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
       .run(key, value);
+  }
+
+  postmortemSettings(): PostmortemSettings {
+    const saved = this.getSetting("postmortem_settings");
+    return saved ? JSON.parse(saved) as PostmortemSettings : { driver: null, model: null, effort: null };
+  }
+
+  setPostmortemSettings(settings: PostmortemSettings) {
+    this.setSetting("postmortem_settings", JSON.stringify(settings));
   }
 
   isPaused(): boolean {
@@ -448,16 +462,17 @@ export class Store {
   }
 
   // ── tasks ─────────────────────────────────────────────────
-  createTask(input: NewTask): Task {
+  createTask(input: NewTask & { driverSettings?: DriverSettings | null }): Task {
     const id = shortId("t");
     const ts = now();
     this.db
       .prepare(
-        `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, status, created_at)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
+        `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, driver_settings, status, created_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
       )
       .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null,
-        input.model ?? null, input.effort ?? null, input.assignee ?? null, ts);
+        input.model ?? null, input.effort ?? null, input.assignee ?? null,
+        input.driverSettings ? JSON.stringify(input.driverSettings) : null, ts);
     this.addEvent(id, "status", "Queued", { status: "queued" });
     return this.getTask(id)!;
   }
@@ -540,13 +555,15 @@ export class Store {
       if (task.status !== "merging") throw new Error(`Task ${id} isn't merging`);
       this.updateTask(id, { worktree: null });
       this.setStatus(id, "merged", message, data);
+      const defaults = this.postmortemSettings();
       const review = this.createTask({
         kind: "maintenance",
         title: `Post-mortem: ${task.title}`,
         brief: postmortemBrief(this.getTask(id)!, this.listEvents(id)),
         repoId: task.repoId,
         autonomy: "observe",
-        driver: task.driver,
+        driver: defaults.driver ?? task.driver,
+        driverSettings: defaults.driver ? { model: defaults.model, effort: defaults.effort } : null,
       });
       this.addEvent(id, "note", "Queued a post-mortem to look for task friction", { postmortemTaskId: review.id });
       this.addEvent(review.id, "note", `Reviewing merged task ${id}`, { sourceTaskId: id });

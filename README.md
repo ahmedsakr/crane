@@ -78,6 +78,8 @@ Pick the default on the Crew page or with `crane agents use codex`. Pick another
 
 Each agent can run on a model and effort level you choose: **Change** under it in **Runs on** on the Crew page, or `crane agents set claude-code --model opus --effort high`. Claude Code takes `--effort` low, medium, high, xhigh, or max; Codex takes `model_reasoning_effort` minimal, low, medium, high, or xhigh. Use `default` (or clear the field) to go back to the agent's own. Changes apply from each agent's next run, including resumed ones, without a restart. The model a run actually used shows in its activity feed and in analytics.
 
+Set separate defaults for the read-only reviews queued after every merge under **Post-mortems** on the Crew page, or with `crane agents postmortem --agent claude-code --model sonnet --effort low`. Run `crane agents postmortem` to see them. These choices are saved when each post-mortem is queued; existing tasks keep their choices. Clear model or effort (or use `default`) to follow that agent's settings. `--agent default` clears the overrides and restores the merged task's agent. Changing agents clears the previous model and effort unless you supply replacements.
+
 If no agent is installed, Crane falls back to **simulated** agents. They walk through believable steps without calling a model, which is handy for trying the UI. It's always labelled as simulated.
 
 ### Maintenance roles
@@ -107,6 +109,7 @@ Start a run with the button on their card (**Review security**, **Reduce duplica
 | `crane repos` / `crane repos add <path>` | The codebases the factory works on, and the commands allowed in each |
 | `crane agents` / `crane agents use <agent>` | Who's on the crew, which agents are installed, and which one new tasks run on |
 | `crane agents set <agent> --model <model> --effort <level>` | Choose the model and effort an agent runs with (`default` for its own) |
+| `crane agents postmortem [--agent <agent>] [--model <model>] [--effort <level>]` | Show or set defaults for newly queued post-mortems |
 | `crane agents run <member>` | Start a member's maintenance run on Crane (`crane agents configure <member> --role <role>` to give them one) |
 | `crane analytics` | What the factory spent, by day, repo, type, and task (`--days 7`). `crane show <id> --events` lists a task's runs and their costs. |
 | `crane pause` / `crane resume` | Stop or restart picking up new tasks |

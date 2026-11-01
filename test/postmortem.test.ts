@@ -2,6 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/core/store.js";
 import { postmortemBrief } from "../src/core/postmortem.js";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { OperatorActions } from "../src/factory/actions.js";
+import { Factory } from "../src/factory/orchestrator.js";
+import type { AgentDriver, RunContext } from "../src/agent-protocol/index.js";
 
 test("a successful merge queues exactly one independent read-only post-mortem", () => {
   const store = new Store(":memory:");
@@ -20,6 +26,7 @@ test("a successful merge queues exactly one independent read-only post-mortem", 
     assert.equal(review.autonomy, "observe");
     assert.equal(review.repoId, repo.id);
     assert.equal(review.driver, "codex");
+    assert.equal(review.driverSettings, null);
     assert.equal(review.sessionId, null);
     assert.match(review.brief, /npm ci/);
     assert.match(review.brief, /Shipped/);
@@ -33,6 +40,93 @@ test("a successful merge queues exactly one independent read-only post-mortem", 
   } finally {
     store.close();
   }
+});
+
+test("post-mortem defaults survive reopening, are captured at queue time, and stay separate from normal tasks", () => {
+  const dir = mkdtempSync(join(tmpdir(), "crane-postmortem-"));
+  const file = join(dir, "crane.db");
+  let store = new Store(file);
+  try {
+    new OperatorActions(store).configurePostmortem({ driver: "claude-code", model: "sonnet", effort: "low" });
+    store.close();
+    store = new Store(file);
+    let actions = new OperatorActions(store);
+    assert.deepEqual(actions.postmortemSettings(), { driver: "claude-code", model: "sonnet", effort: "low" });
+    const repo = store.addRepo({ path: "/example" });
+    const task = actions.createTask({ kind: "repo_feature", title: "Feature", brief: "", repoId: repo.id, autonomy: "propose", driver: "codex" });
+    assert.equal(task.driverSettings, null);
+    store.setStatus(task.id, "merging");
+    const review = store.completeMerge(task.id, "Merged", {})!;
+    assert.equal(review.driver, "claude-code");
+    assert.deepEqual(review.driverSettings, { model: "sonnet", effort: "low" });
+    assert.equal(review.autonomy, "observe");
+    assert.equal(review.sessionId, null);
+    store.close();
+    store = new Store(file);
+    actions = new OperatorActions(store);
+    assert.deepEqual(store.getTask(review.id)!.driverSettings, review.driverSettings, "queued overrides survive a restart");
+    actions.configurePostmortem({ driver: "codex", effort: "minimal" });
+    assert.deepEqual(actions.postmortemSettings(), { driver: "codex", model: null, effort: "minimal" });
+    assert.deepEqual(store.getTask(review.id)!.driverSettings, review.driverSettings);
+    assert.equal(store.getTask(review.id)!.driver, "claude-code");
+    assert.deepEqual(actions.retry(review.id).driverSettings, review.driverSettings);
+    assert.equal(actions.retry(review.id, { driver: "codex" }).driverSettings, null);
+    assert.equal(actions.retry(review.id, { driver: "default" }).driverSettings, null);
+    actions.configurePostmortem({ driver: "default" });
+    const next = actions.createTask({ kind: "repo_feature", title: "Next", brief: "", repoId: repo.id, autonomy: "propose", driver: "codex" });
+    store.setStatus(next.id, "merging");
+    const inherited = store.completeMerge(next.id, "Merged", {})!;
+    assert.equal(inherited.driver, "codex");
+    assert.equal(inherited.driverSettings, null);
+    assert.equal(store.completeMerge(next.id, "Merged again", {}), null);
+  } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("opening an older database adds nullable task overrides without changing existing tasks", () => {
+  const dir = mkdtempSync(join(tmpdir(), "crane-postmortem-migrate-"));
+  const file = join(dir, "crane.db");
+  let store = new Store(file);
+  try {
+    const task = store.createTask({ kind: "maintenance", title: "Existing", brief: "", repoId: null, autonomy: "observe", driver: "codex" });
+    store.db.exec("ALTER TABLE tasks DROP COLUMN driver_settings");
+    store.close();
+    store = new Store(file);
+    assert.deepEqual(store.getTask(task.id), task);
+    assert.deepEqual(store.postmortemSettings(), { driver: null, model: null, effort: null });
+  } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("post-mortems run with their saved overrides while ordinary tasks use the agent's settings", async (t) => {
+  const store = new Store(":memory:");
+  const actions = new OperatorActions(store);
+  const repo = store.addRepo({ path: process.cwd() });
+  const seen: RunContext[] = [];
+  const drivers: AgentDriver[] = ["codex", "claude-code"].map((name) => ({
+    name, label: name, available: async () => true,
+    run: async (ctx) => { seen.push(ctx); return { report: { summary: "Reviewed", findings: [], changedFiles: [] } }; },
+  }));
+  actions.configurePostmortem({ driver: "claude-code", effort: "low" });
+  store.setSetting("driver_model:claude-code", "opus");
+  store.setSetting("driver_effort:claude-code", "max");
+  const base = { kind: "maintenance" as const, title: "Feature", brief: "", repoId: repo.id, autonomy: "observe" as const, driver: "codex" };
+  const source = store.createTask(base);
+  store.setStatus(source.id, "merging");
+  const review = store.completeMerge(source.id, "Merged", {})!;
+  const ordinary = actions.createTask({ ...base, driver: "claude-code" });
+  actions.configurePostmortem({ driver: "codex", effort: "minimal" });
+  const factory = new Factory(store, drivers, { crewSize: 1, tickMs: 10, buildDashboard: false });
+  t.after(async () => { await factory.stop(); store.close(); });
+  factory.start();
+  for (let i = 0; i < 500 && store.getTask(ordinary.id)!.status !== "done"; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(store.getTask(review.id)!.status, "done");
+  assert.equal(store.getTask(ordinary.id)!.status, "done");
+  assert.equal(store.listRuns(review.id)[0]!.driver, "claude-code");
+  const ctx = seen.find((c) => c.task.id === review.id)!;
+  assert.equal(ctx.model, "opus", "an unset override follows the agent's saved model");
+  assert.equal(ctx.effort, "low", "a queued override survives later preference changes");
+  assert.equal(ctx.task.autonomy, "observe");
+  assert.equal(ctx.resumeSession, undefined);
+  assert.equal(seen.find((c) => c.task.id === ordinary.id)!.effort, "max");
 });
 
 test("history is bounded and blocked evidence survives noisy tool activity", () => {
