@@ -4,7 +4,6 @@ import { constants, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { cp, lstat, mkdir, readFile, readdir, readlink, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { git } from "../core/git.js";
 
 const run = promisify(execFile);
 
@@ -36,6 +35,12 @@ export function installCommandFor(path: string): { cmd: string; args: string[] }
   return { cmd: lock.cmd, args: lock.args };
 }
 
+export interface InstallDependenciesOptions {
+  from?: string;
+  signal?: AbortSignal;
+  onProgress?: (note: string) => void;
+}
+
 /**
  * Get a worktree's dependencies in place so agents can build and test
  * without needing permission to install. Copies them from `from` (the repo's
@@ -51,7 +56,7 @@ export function installCommandFor(path: string): { cmd: string; args: string[] }
  */
 export async function installDependencies(
   path: string,
-  opts: { from?: string; signal?: AbortSignal; onProgress?: (note: string) => void } = {},
+  opts: InstallDependenciesOptions = {},
 ): Promise<string | null> {
   const lock = lockfileFor(path);
   if (!lock) return null;
@@ -94,7 +99,7 @@ export async function installDependencies(
 }
 
 /** A short, readable duration for the activity feed: "0.4s", "12s", "2m 41s". */
-export function elapsed(ms: number): string {
+function elapsed(ms: number): string {
   if (ms < 10_000) return `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
   const s = Math.round(ms / 1000);
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
@@ -277,7 +282,11 @@ export function npmInstallMatches(lock: NpmLock, hidden: NpmLock): boolean {
 async function packageDirs(path: string): Promise<string[]> {
   let files: string[] = [];
   try {
-    files = (await git(path, "ls-files", "-z", "--", "package.json", "*/package.json")).split("\0").filter(Boolean);
+    const { stdout } = await run("git", ["ls-files", "-z", "--", "package.json", "*/package.json"], {
+      cwd: path,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    files = stdout.trim().split("\0").filter(Boolean);
   } catch {
     // Not a git checkout: just the root.
   }

@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { EventType, Repo, Task } from "@crane/contracts";
 import { runChecks } from "./checks.js";
-import { installDependencies } from "./deps.js";
+import { installDependencies } from "@crane/worktree-deps";
 import type { ValidationRun } from "@crane/contracts";
 
 const run = promisify(execFile);

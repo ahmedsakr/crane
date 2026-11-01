@@ -4,7 +4,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { copyDependencies, elapsed, installDependencies, npmInstallMatches } from "../src/factory/deps.js";
+import { installDependencies, type InstallDependenciesOptions } from "@crane/worktree-deps";
+import { copyDependencies, npmInstallMatches } from "../packages/worktree-deps/src/deps.js";
+import { elapsed } from "../src/factory/elapsed.js";
 
 function fixture(t: { after(fn: () => void): void }) {
   const root = mkdtempSync(join(tmpdir(), "crane-deps-"));
@@ -117,7 +119,8 @@ test("dependencies: a skipped copy is explained before the install starts and on
   writeFileSync(join(to.root, "package-lock.json"), JSON.stringify(lock));
   await installDependencies(from.root);
   const progress: string[] = [];
-  const note = await installDependencies(to.root, { from: from.root, onProgress: (n) => progress.push(n) });
+  const options: InstallDependenciesOptions = { from: from.root, onProgress: (n) => progress.push(n) };
+  const note = await installDependencies(to.root, options);
   const reason = "didn't copy from your checkout: its package-lock.json differs from the worktree's";
   assert.deepEqual(progress, [`Installing dependencies (npm ci --no-audit --no-fund) · ${reason}`]);
   assert.match(note!, /^Installed dependencies \(npm ci --no-audit --no-fund\) in \d+(\.\d)?s · /);
@@ -140,6 +143,27 @@ test("dependencies: durations read naturally", () => {
   assert.equal(elapsed(420), "0.4s");
   assert.equal(elapsed(12_400), "12s");
   assert.equal(elapsed(161_000), "2m 41s");
+});
+
+test("dependencies: cancelling a copy cleans the destination without falling back to installation", async t => {
+  const from = fixture(t);
+  const to = fixture(t);
+  from.addWorkspace();
+  to.addWorkspace();
+  await installDependencies(from.root);
+  const controller = new AbortController();
+  const progress: string[] = [];
+  await assert.rejects(installDependencies(to.root, {
+    from: from.root,
+    signal: controller.signal,
+    onProgress(note) {
+      progress.push(note);
+      controller.abort();
+    },
+  }), { name: "AbortError" });
+  assert.deepEqual(progress, ["Copying dependencies from your checkout"]);
+  assert.ok(!existsSync(join(to.root, "node_modules")), "no partial copy or preparation marker remains");
+  assert.ok(existsSync(join(from.root, "node_modules/.crane-dependencies")), "the source preparation stays intact");
 });
 
 test("dependencies: npm install records must match workspace link destinations", () => {

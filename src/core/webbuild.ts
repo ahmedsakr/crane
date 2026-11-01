@@ -22,6 +22,11 @@ export const AGENT_POLICY_SOURCES = [
   "src/index.ts", "src/denied.ts", "src/permissions.ts", "package.json", "tsconfig.json",
 ].map((f) => join("packages", "agent-policy", f));
 
+/** Backend-only dependency preparation inputs; the dashboard doesn't bundle them. */
+export const WORKTREE_DEPS_SOURCES = [
+  "src/index.ts", "src/deps.ts", "package.json", "tsconfig.json",
+].map((f) => join("packages", "worktree-deps", f));
+
 function newestMtime(path: string): number {
   if (!existsSync(path)) return 0;
   const st = statSync(path);
@@ -69,6 +74,7 @@ export function createFactoryBuildCheck(root: string, compiled: boolean): (now?:
       ...SHARED_SOURCES.map((s) => newestMtime(join(root, s))),
       ...AGENT_PROTOCOL_SOURCES.map((s) => newestMtime(join(root, s))),
       ...AGENT_POLICY_SOURCES.map((s) => newestMtime(join(root, s))),
+      ...WORKTREE_DEPS_SOURCES.map((s) => newestMtime(join(root, s))),
     ) > loadedAt;
     cached = { at: now, value };
     return value;

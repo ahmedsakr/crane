@@ -6,7 +6,7 @@ import { join } from "node:path";
 import type { Repo } from "@crane/contracts";
 import { buildsDir, factoryRoot } from "../core/paths.js";
 import { BUILD_MANIFEST, dashboardBuilds, webBuildOutdated } from "../core/webbuild.js";
-import { installDependencies } from "./deps.js";
+import { installDependencies } from "@crane/worktree-deps";
 import { git } from "../core/git.js";
 
 const run = promisify(execFile);

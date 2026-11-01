@@ -12,6 +12,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const contracts = join(root, "packages", "contracts");
 const agentProtocol = join(root, "packages", "agent-protocol");
 const agentPolicy = join(root, "packages", "agent-policy");
+const worktreeDeps = join(root, "packages", "worktree-deps");
 const web = join(root, "web");
 const within = (dir: string, path: string) => path === dir || path.startsWith(dir + sep);
 
@@ -45,19 +46,19 @@ function walk(dir: string): string[] {
   });
 }
 
-const workspace = (file: string) => [contracts, agentProtocol, agentPolicy, web].find((dir) => within(dir, file)) ?? root;
+const workspace = (file: string) => [contracts, agentProtocol, agentPolicy, worktreeDeps, web].find((dir) => within(dir, file)) ?? root;
 
 test("application workspaces use package entry points, never each other's source paths", () => {
   const escapes: string[] = [];
   // Repository tests may import the implementation under test (including web helpers).
-  const files = ["src", "scripts", "web", "packages/contracts", "packages/agent-protocol", "packages/agent-policy"].flatMap((d) => walk(join(root, d)));
+  const files = ["src", "scripts", "web", "packages/contracts", "packages/agent-protocol", "packages/agent-policy", "packages/worktree-deps"].flatMap((d) => walk(join(root, d)));
   for (const file of files) {
     for (const spec of specifiers(file)) {
       if (spec.startsWith(".") || isAbsolute(spec)) {
         if (workspace(file) !== workspace(resolve(dirname(file), spec))) escapes.push(`${relative(root, file)} → ${spec}`);
       } else if (spec.startsWith("@crane/contracts/") && spec !== "@crane/contracts/rules") {
         escapes.push(`${relative(root, file)} → ${spec}`);
-      } else if (spec.startsWith("@crane/agent-protocol/") || spec.startsWith("@crane/agent-policy/")) {
+      } else if (spec.startsWith("@crane/agent-protocol/") || spec.startsWith("@crane/agent-policy/") || spec.startsWith("@crane/worktree-deps/")) {
         escapes.push(`${relative(root, file)} → ${spec}`);
       }
     }
