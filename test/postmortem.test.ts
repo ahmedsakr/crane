@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/core/store.js";
-import { postmortemBrief } from "../src/factory/postmortem.js";
+import { postmortemBrief } from "../src/core/postmortem.js";
 
 test("a successful merge queues exactly one independent read-only post-mortem", () => {
   const store = new Store(":memory:");

@@ -12,7 +12,7 @@ import {
   type MaintenanceRole,
 } from "./types.js";
 import { ruleLabel } from "./permissions.js";
-import { postmortemBrief } from "../factory/postmortem.js";
+import { postmortemBrief } from "./postmortem.js";
 import type {
   Agent,
   AgentRun,
