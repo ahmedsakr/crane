@@ -132,7 +132,8 @@ async function bootDemo(): Promise<string> {
     stdio: "ignore",
   });
   children.push(server);
-  const url = `http://localhost:${port}`;
+  // The factory listens on 127.0.0.1; "localhost" can resolve to ::1 first.
+  const url = `http://127.0.0.1:${port}`;
   await waitFor("the demo factory", () => fetch(`${url}/api/overview`).then((r) => r.ok));
   return url;
 }

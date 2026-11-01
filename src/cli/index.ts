@@ -35,7 +35,7 @@ import { draftTask } from "../factory/instruct.js";
 import { factoryDriverName, factoryIsRunning, factoryState } from "../factory/state.js";
 import { DEFAULT_MAX_TURNS, DEFAULT_TIME_LIMIT_MIN } from "../factory/settings.js";
 import { diffForTask } from "../factory/git.js";
-import { DEFAULT_PORT } from "../core/paths.js";
+import { DEFAULT_HOST, DEFAULT_PORT } from "../core/paths.js";
 import { screenshotPath } from "../core/screenshots.js";
 import * as ui from "./ui.js";
 
@@ -1089,6 +1089,11 @@ program
   .command("serve")
   .description("Start the factory: agents, API, and dashboard")
   .option("-p, --port <port>", "port for the dashboard", String(DEFAULT_PORT))
+  .option(
+    "--host <address>",
+    "address to listen on. The dashboard has no login, so only use 0.0.0.0 or a LAN address on a network you trust",
+    DEFAULT_HOST,
+  )
   .option("--agents <n>", "initial active crew size (saved member settings take priority)", process.env.CRANE_AGENTS ?? "2")
   .option(
     "--driver <driver>",
@@ -1098,7 +1103,7 @@ program
   .option("--no-build-dashboard", "don't build the dashboard from merged changes to Crane; serve web/dist as it is")
   .option("--max-turns <n>", `most turns one agent run may take, 0 for no limit (default ${DEFAULT_MAX_TURNS})`)
   .option("--time-limit <minutes>", `most minutes a task may run, 0 for no limit (default ${DEFAULT_TIME_LIMIT_MIN})`)
-  .action(async (opts: { port: string; agents: string; driver: string; buildDashboard: boolean; maxTurns?: string; timeLimit?: string }) => {
+  .action(async (opts: { port: string; host: string; agents: string; driver: string; buildDashboard: boolean; maxTurns?: string; timeLimit?: string }) => {
     const num = (v: string | undefined, flag: string) => {
       if (v === undefined) return undefined;
       const n = Number(v);
@@ -1108,6 +1113,7 @@ program
     const { serve } = await import("./serve.js");
     await serve(store, {
       port: Number(opts.port),
+      host: opts.host,
       agents: Number(opts.agents),
       driver: opts.driver,
       buildDashboard: opts.buildDashboard,

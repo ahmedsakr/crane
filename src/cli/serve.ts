@@ -1,17 +1,18 @@
 import { serve as honoServe } from "@hono/node-server";
 import pc from "picocolors";
 import type { Store } from "../core/store.js";
-import { createApp } from "../server/app.js";
+import { createApp, isLoopbackAddress } from "../server/app.js";
 import { Factory } from "../factory/orchestrator.js";
 import { factoryIsRunning } from "../factory/state.js";
 import { DEFAULT_DRIVER_KEY } from "../factory/settings.js";
 import { isAvailable, resolveDefaultDriver, sharedDrivers } from "../factory/drivers.js";
 import { factoryBuildOutdated, servedDashboard } from "../core/webbuild.js";
+import { DEFAULT_HOST } from "../core/paths.js";
 import * as ui from "./ui.js";
 
 export async function serve(
   store: Store,
-  opts: { port: number; agents: number; driver: string; buildDashboard?: boolean; maxTurns?: number; timeLimit?: number },
+  opts: { port: number; host?: string; agents: number; driver: string; buildDashboard?: boolean; maxTurns?: number; timeLimit?: number },
 ) {
   if (factoryIsRunning(store)) {
     ui.fail("A factory is already running against this Crane home. Stop it first, or set CRANE_HOME to run another.");
@@ -34,11 +35,18 @@ export async function serve(
   });
   factory.start();
 
-  const app = createApp(store);
-  const server = honoServe({ fetch: app.fetch, port: opts.port });
+  const hostname = opts.host ?? DEFAULT_HOST;
+  const exposed = !isLoopbackAddress(hostname);
+  const app = createApp(store, { exposed });
+  const server = honoServe({ fetch: app.fetch, port: opts.port, hostname });
 
   console.log(`\n${ui.brand()}  ${pc.green("◉")} Factory is running\n`);
   console.log(`  ${ui.dim("Dashboard")}  ${pc.bold(`http://localhost:${opts.port}`)}`);
+  if (exposed) {
+    console.log(
+      `  ${ui.accent("!")} ${ui.dim(`Listening on ${hostname}. Anyone who can reach it can approve and merge tasks; the dashboard has no login.`)}`,
+    );
+  }
   console.log(`  ${ui.dim("Agents   ")}  ${store.listAgents().filter((a) => a.active).length} active · factory default ${driver.label}`);
   const installed = (
     await Promise.all(others.filter((d) => d.name !== "simulated").map(async (d) => ((await isAvailable(d)) ? d.label : null)))
