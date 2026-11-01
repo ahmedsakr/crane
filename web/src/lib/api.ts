@@ -81,6 +81,9 @@ export const api = {
   /** Approve, and merge and push the branch unless `merge` is false ("Approve only"). */
   approve: (id: string, opts: { note?: string; merge?: boolean } = {}) => post<Task>(`/tasks/${id}/approve`, opts),
   merge: (id: string) => post<Task>(`/tasks/${id}/merge`),
+  /** Approve a queued or running task ahead of time, so it merges once its checks pass. */
+  preApprove: (id: string, note?: string) => post<Task>(`/tasks/${id}/pre-approve`, { note }),
+  undoPreApproval: (id: string) => req<Task>(`/tasks/${id}/pre-approve`, { method: "DELETE" }),
   reject: (id: string, note?: string) => post<Task>(`/tasks/${id}/reject`, { note }),
   cancel: (id: string) => post<Task>(`/tasks/${id}/cancel`),
   /** Run it again as a new task, on the same agent unless `driver` names another. */

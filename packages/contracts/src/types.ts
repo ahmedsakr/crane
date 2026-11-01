@@ -137,6 +137,12 @@ export interface Task {
    * Null means whoever is free next.
    */
   assignee: string | null;
+  /**
+   * When the operator pre-approved this task, before it reached review. Once
+   * its run finishes and its checks pass, it goes straight to the merge queue
+   * instead of waiting for them. Null means it waits for review as usual.
+   */
+  preApprovedAt: string | null;
   report: Report | null;
   costUsd: number;
   createdAt: string;

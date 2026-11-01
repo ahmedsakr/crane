@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   effort TEXT,
   driver_settings TEXT,
   assignee TEXT,
+  pre_approved_at TEXT,
   report TEXT,
   cost_usd REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
@@ -184,6 +185,7 @@ const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
   ["model", "TEXT"],
   ["effort", "TEXT"],
   ["driver_settings", "TEXT"],
+  ["pre_approved_at", "TEXT"],
 ];
 
 /** Add any missing columns to an older database. Safe if two processes open it at once. */
@@ -229,6 +231,7 @@ function toTask(r: Row): Task {
     effort: (r.effort as string) ?? null,
     driverSettings: r.driver_settings ? JSON.parse(r.driver_settings as string) as DriverSettings : null,
     assignee: (r.assignee as string) ?? null,
+    preApprovedAt: (r.pre_approved_at as string) ?? null,
     report: r.report ? (JSON.parse(r.report as string) as Report) : null,
     costUsd: (r.cost_usd as number) ?? 0,
     createdAt: r.created_at as string,
@@ -569,6 +572,42 @@ export class Store {
       this.addEvent(review.id, "note", `Reviewing merged task ${id}`, { sourceTaskId: id });
       return review;
     })();
+  }
+
+  /**
+   * Pre-approve a task, or take that back, while it's still queued or running.
+   * One conditional write, so it can't land after the run has already handed
+   * the task to review. Returns whether it applied.
+   */
+  setPreApproval(id: string, on: boolean): boolean {
+    return this.db
+      .prepare(
+        `UPDATE tasks SET pre_approved_at = ? WHERE id = ? AND status IN ('queued', 'running') AND autonomy != 'observe'`,
+      )
+      .run(on ? now() : null, id).changes > 0;
+  }
+
+  /**
+   * Hand a task over once its work run passed: to review (`needs_review`), as
+   * done, or, when the operator pre-approved it and it has a branch, straight to
+   * the merge queue. One transaction, so a pre-approval or cancel racing the end
+   * of the run either counts or doesn't. Returns the new status, or null if the
+   * task was cancelled meanwhile.
+   */
+  finishWork(id: string, outcome: "needs_review" | "done"): TaskStatus | null {
+    return this.db.transaction(() => {
+      const task = this.getTask(id);
+      if (!task || task.status === "cancelled") return null;
+      if (task.preApprovedAt && task.branch && task.autonomy !== "observe") {
+        const main = (task.repoId && this.getRepo(task.repoId)?.defaultBranch) || "main";
+        // Free for any agent to claim, and queued by when the work finished.
+        this.updateTask(id, { agentId: null, finishedAt: now() });
+        this.setStatus(id, "merging", `Checks passed. Waiting to merge into ${main}, as you pre-approved`, { preApproved: true });
+        return "merging" as const;
+      }
+      this.setStatus(id, outcome, outcome === "needs_review" ? "Ready for your review" : "Done");
+      return outcome;
+    }).immediate();
   }
 
   /**

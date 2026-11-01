@@ -896,6 +896,28 @@ a.row:hover .row-title {
   gap: 8px;
   flex-wrap: wrap;
 }
+.pre-approval {
+  margin-top: 22px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.pre-approval-copy {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.pre-approval-copy strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 16px;
+  letter-spacing: -0.02em;
+}
+.pre-approval-copy span {
+  font-size: 14px;
+  color: var(--graphite);
+}
 .task-screenshots {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));

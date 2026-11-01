@@ -306,7 +306,8 @@ program
     const on = agent && agent !== "unknown" ? ` · on ${driverLabel(agent)}` : "";
     const member = m.assignee ? store.listAgents().find((a) => a.id === m.assignee) : null;
     const forMember = member ? ` · for ${member.name}${m.status === "queued" && !member.active ? " (on-call)" : ""}` : "";
-    console.log(`  ${ui.statusText(m.status)}${ui.dim(forMember + on + cost)}`);
+    const preApproved = m.preApprovedAt && ["queued", "running"].includes(m.status) ? " · pre-approved" : "";
+    console.log(`  ${ui.statusText(m.status)}${ui.dim(forMember + on + cost + preApproved)}`);
     if (settingsLabel(m)) console.log(ui.dim(`  Model settings: ${settingsLabel(m)}`));
 
     if (m.report) {
@@ -375,6 +376,11 @@ program
       if (m.report?.findings.length && m.autonomy === "observe") next.push([`crane follow-up ${m.id} 1`, "act on finding 1"]);
     } else if (m.status === "running" || m.status === "queued") {
       next.push([`crane watch ${m.id}`, "follow along live"], [`crane cancel ${m.id}`, "stop it"]);
+      if (m.autonomy !== "observe") {
+        next.push(m.preApprovedAt
+          ? [`crane pre-approve ${m.id} --undo`, "wait for your review instead of merging"]
+          : [`crane pre-approve ${m.id}`, `merge into ${main} once its checks pass`]);
+      }
     } else if (m.status === "merging") {
       next.push([`crane watch ${m.id}`, "follow the merge"]);
     } else if (m.status === "failed" || m.status === "cancelled") {
@@ -465,6 +471,28 @@ program
   .action(async (id: string) => {
     try {
       mergeQueued((await actions.merge(id)).id);
+    } catch (err) {
+      ui.fail((err as Error).message);
+    }
+  });
+
+program
+  .command("pre-approve")
+  .description("Approve a queued or running task ahead of time, so it merges once its checks pass")
+  .argument("<id>")
+  .option("-m, --message <note>", "leave a note on the task")
+  .option("--undo", "take the pre-approval back, so it waits for your review")
+  .action((id: string, opts: { message?: string; undo?: boolean }) => {
+    try {
+      if (opts.undo) {
+        const m = actions.undoPreApproval(id);
+        ui.ok(`Undid pre-approval. It waits for your review  ${ui.dim(m.id)}`);
+        return;
+      }
+      const m = actions.preApprove(id, opts.message);
+      const main = (m.repoId && store.getRepo(m.repoId)?.defaultBranch) || "main";
+      ui.ok(`Pre-approved. Crane merges it into ${main} once its checks pass  ${ui.dim(m.id)}`);
+      console.log(ui.hint([`crane watch ${m.id}`, "follow along live"], [`crane pre-approve ${m.id} --undo`, "wait for review instead"]));
     } catch (err) {
       ui.fail((err as Error).message);
     }

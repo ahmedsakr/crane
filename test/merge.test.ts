@@ -56,6 +56,7 @@ function setup(opts: { remote?: boolean } = {}) {
     effort: null,
     driverSettings: null,
     assignee: null,
+    preApprovedAt: null,
     report: null,
     costUsd: 0,
     createdAt: "",
@@ -348,6 +349,60 @@ test("factory: a task goes from work to review to merged and pushed, through a c
     assert.equal(review.branch, null);
     assert.equal(review.worktree, null);
     assert.ok(review.report, "post-mortem uses the normal task report flow");
+  } finally {
+    await factory.stop();
+    store.close();
+  }
+});
+
+test("factory: a pre-approved task skips review and lands once its checks pass", async () => {
+  process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
+  const { Store } = await import("../src/core/store.js");
+  const { OperatorActions } = await import("../src/factory/actions.js");
+  const { Factory } = await import("../src/factory/orchestrator.js");
+  const { SimulatedDriver } = await import("../src/agents/simulated.js");
+
+  const root = mkdtempSync(join(tmpdir(), "crane-e2e-"));
+  const origin = join(root, "origin.git");
+  const checkout = join(root, "checkout");
+  sh(root, "init", "-q", "--bare", "-b", "main", origin);
+  sh(root, "clone", "-q", origin, checkout);
+  sh(checkout, "checkout", "-q", "-b", "main");
+  commitFile(checkout, "README.md", "hi\n", "start");
+  sh(checkout, "push", "-q", "-u", "origin", "main");
+
+  const store = new Store();
+  const actions = new OperatorActions(store);
+  const repo = await actions.connectRepo(checkout, "e2e");
+  store.setRepoChecks(repo.id, ["true"]);
+  const factory = new Factory(store, new SimulatedDriver(2), { crewSize: 1, tickMs: 20 });
+  const until = async (ok: () => boolean, what: string) => {
+    for (let i = 0; i < 500 && !ok(); i++) await new Promise((r) => setTimeout(r, 20));
+    assert.ok(ok(), `timed out waiting for ${what}`);
+  };
+
+  const start = sh(origin, "rev-parse", "main");
+  // A failing check fails the task as usual: pre-approval never skips the gate.
+  store.setRepoChecks(repo.id, ["false"]);
+  const failing = actions.createTask({ kind: "maintenance", title: "Fails its checks", brief: "", repoId: repo.id, autonomy: "propose" });
+  actions.preApprove(failing.id);
+  factory.start();
+  try {
+    await until(() => store.getTask(failing.id)?.status === "failed", "the failing task");
+    assert.equal(sh(origin, "rev-parse", "main"), start, "nothing pushed");
+
+    store.setRepoChecks(repo.id, ["true"]);
+    const t = actions.createTask({ kind: "maintenance", title: "Add a greeting", brief: "", repoId: repo.id, autonomy: "propose" });
+    actions.preApprove(t.id, "Trusted change");
+    await until(() => store.getTask(t.id)?.status === "merged", "pre-approved merge");
+    const events = store.listEvents(t.id);
+    const statuses = events.filter((e) => e.type === "status").map((e) => e.data?.status);
+    assert.ok(!statuses.includes("needs_review"), `never waited for review: ${statuses.join(", ")}`);
+    assert.ok(events.some((e) => e.type === "operator" && e.message === "Pre-approved: Trusted change"));
+    const done = store.getTask(t.id)!;
+    assert.deepEqual(done.report?.validation?.map(r => [r.phase, r.status]), [["review", "passed"], ["merge", "passed"]]);
+    assert.match(sh(origin, "show", `main:.crane-simulated/${t.id}.md`), /Add a greeting/);
+    await until(() => store.listAgents().every((a) => a.state === "idle"), "cleanup");
   } finally {
     await factory.stop();
     store.close();
