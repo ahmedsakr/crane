@@ -72,11 +72,12 @@ export function toolsFor(autonomy: Autonomy, repoAllowed: string[] = []): { allo
   return { allowed: [...new Set([...base, ...extra, ...repoAllowed])], denied };
 }
 
-/** What the activity feed says about a refused call, and the rules that would have allowed it. */
+/** Keep driver evidence separate from Crane's heuristic permission suggestions. */
 export function describeBlocked(
   tool: string,
   input: Record<string, unknown>,
   tools: { allowed: string[]; denied: string[] },
+  evidence: Pick<BlockedCall, "toolUseId" | "refusal"> = {},
 ): { message: string; data: BlockedCall } {
   const command = tool === "Bash" && typeof input.command === "string" ? input.command : undefined;
   let rules = suggestRules(tool, input, tools.allowed);
@@ -86,7 +87,11 @@ export function describeBlocked(
   const what = command ?? (target ? `${tool} ${target}` : tool);
   return {
     message: `Blocked: ${what.split("\n")[0]!.slice(0, 160)}`,
-    data: { tool, ...(command ? { command: command.slice(0, 2000) } : {}), rules },
+    data: {
+      tool, ...(command ? { command: command.slice(0, 2000) } : {}), rules,
+      ...evidence,
+      ...(evidence.refusal ? { refusal: { ...evidence.refusal, reason: evidence.refusal.reason?.slice(0, 4000) ?? null } } : {}),
+    },
   };
 }
 
@@ -227,10 +232,10 @@ export class ClaudeCodeDriver implements AgentDriver {
       // Tool calls by id, so a refusal can be reported with what was asked for.
       const calls = new Map<string, { name: string; input: Record<string, unknown> }>();
       const reported = new Set<string>();
-      const blocked = (id: string, name: string, input: Record<string, unknown>) => {
+      const blocked = (id: string, name: string, input: Record<string, unknown>, refusal: NonNullable<BlockedCall["refusal"]>) => {
         if (reported.has(id)) return;
         reported.add(id);
-        const { message, data } = describeBlocked(name, input, tools);
+        const { message, data } = describeBlocked(name, input, tools, { toolUseId: id, refusal });
         emit("blocked", message, { ...data });
       };
 
@@ -282,7 +287,9 @@ export class ClaudeCodeDriver implements AgentDriver {
             if (block.type !== "tool_result" || !block.is_error || !block.tool_use_id) continue;
             const text = typeof block.content === "string" ? block.content : JSON.stringify(block.content ?? "");
             const call = calls.get(block.tool_use_id);
-            if (call && DENIAL_TEXT.test(text)) blocked(block.tool_use_id, call.name, call.input);
+            if (call && DENIAL_TEXT.test(text)) blocked(block.tool_use_id, call.name, call.input, {
+              source: "claude-code.tool_result", reason: text,
+            });
           }
         } else if (msg.type === "result") {
           // Reported before we decide whether the run succeeded: a failed run still cost this.
@@ -291,7 +298,10 @@ export class ClaudeCodeDriver implements AgentDriver {
           finalText = typeof msg.result === "string" ? msg.result : lastText;
           const denials: Record<string, any>[] = Array.isArray(msg.permission_denials) ? msg.permission_denials : [];
           denials.forEach((d, i) => {
-            if (d?.tool_name) blocked(String(d.tool_use_id ?? `denial-${i}`), d.tool_name, d.tool_input ?? {});
+            // The summary identifies refused calls but supplies no decision reason.
+            if (d?.tool_name) blocked(String(d.tool_use_id ?? `denial-${i}`), d.tool_name, d.tool_input ?? {}, {
+              source: "claude-code.permission_denials", reason: null,
+            });
           });
           if (msg.subtype === "error_max_turns") {
             outOfTurns = true;

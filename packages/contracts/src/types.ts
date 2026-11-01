@@ -200,15 +200,29 @@ export interface TaskEvent {
   data: Record<string, unknown> | null;
 }
 
-/** What a `blocked` event carries: the refused call, and the rules that would have let it through. */
+/** What a `blocked` event carries: the refused call, evidence, and suggested rules. */
 export interface BlockedCall {
   tool: string;
+  /** Driver call id, for correlating live refusals with end-of-run records. */
+  toolUseId?: string;
+  /**
+   * Driver evidence, not a policy decision inferred from rule suggestions.
+   * Optional for older events and drivers without refusal evidence.
+   */
+  refusal?: {
+    source: "claude-code.tool_result" | "claude-code.permission_denials";
+    /** Driver-reported refusal text (bounded); null when no reason was supplied. */
+    reason: string | null;
+  };
   /** The Bash command, when the tool was Bash. */
   command?: string;
   /**
-   * Permission rules (e.g. `Bash(npm ci:*)`) that would have allowed the call.
+   * Suggested permission rules (e.g. `Bash(npm ci:*)`) for operator review.
    * Empty when it was refused on purpose (ALWAYS_DENIED, or a write in an
-   * investigate-only task) or Crane has nothing safe to suggest.
+   * investigate-only task) or Crane has nothing safe to suggest. These are
+   * heuristic suggestions, not the driver's decision reason or a guarantee
+   * that granting them will resolve a refusal. An empty list explains nothing
+   * about which policy refused the call.
    */
   rules: string[];
 }
