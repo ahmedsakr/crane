@@ -3,6 +3,83 @@ import assert from "node:assert/strict";
 import { Store } from "../src/core/store.js";
 import { createApp } from "../src/server/app.js";
 import { ALL_STATUSES } from "../src/core/types.js";
+import { driverEffortKey, driverModelKey } from "../src/factory/drivers.js";
+
+test("api: invalid task decision bodies leave tasks and history unchanged", async () => {
+  const store = new Store(":memory:");
+  try {
+    const repo = store.addRepo({ path: "/repo" });
+    const app = createApp(store);
+    for (const action of ["approve", "reject", "retry"]) {
+      const task = store.createTask({ kind: "maintenance", title: action, brief: "", repoId: repo.id, autonomy: "propose" });
+      store.updateTask(task.id, { status: "needs_review", branch: `crane/${task.id}` });
+      const before = store.getTask(task.id);
+      const events = store.listEvents(task.id);
+      const tasks = store.listTasks();
+      const bodies = ["{", '{"merge":false', "null", "[]", "true", "42", '"text"'];
+      if (action === "approve") {
+        bodies.push(...["false", 0, 1, null, [], {}].map(merge => JSON.stringify({ merge })));
+      }
+      if (action !== "retry") {
+        bodies.push(...[42, false, null, [], {}].map(note => JSON.stringify({ note })));
+      }
+      for (const body of bodies) {
+        const response = await app.request(`/api/tasks/${task.id}/${action}`, {
+          method: "POST", headers: { "content-type": "application/json" }, body,
+        });
+        const context = `${action}: ${body}`;
+        assert.equal(response.status, 400, context);
+        assert.deepEqual(store.getTask(task.id), before, context);
+        assert.deepEqual(store.listEvents(task.id), events, context);
+        assert.deepEqual(store.listTasks(), tasks, context);
+      }
+    }
+  } finally { store.close(); }
+});
+
+test("api: approval keeps empty-body defaults and honors approve only", async () => {
+  const store = new Store(":memory:");
+  try {
+    const repo = store.addRepo({ path: "/repo" });
+    const app = createApp(store);
+    for (const body of [undefined, "{}", '{"merge":true}', '{"merge":false,"note":"Reviewed"}']) {
+      const task = store.createTask({ kind: "maintenance", title: "Approve", brief: "", repoId: repo.id, autonomy: "propose" });
+      store.updateTask(task.id, { status: "needs_review", branch: `crane/${task.id}` });
+      const response = await app.request(`/api/tasks/${task.id}/approve`, { method: "POST", body });
+      assert.equal(response.status, 200);
+      assert.equal((await response.json()).status, body?.includes("false") ? "approved" : "merging");
+      if (body?.includes("Reviewed")) {
+        assert.ok(store.listEvents(task.id).some(e => e.type === "operator" && e.message === "Approved: Reviewed"));
+      }
+    }
+    for (const action of ["reject", "retry"]) {
+      const task = store.createTask({ kind: "maintenance", title: action, brief: "", repoId: repo.id, autonomy: "observe" });
+      store.updateTask(task.id, { status: "needs_review" });
+      const response = await app.request(`/api/tasks/${task.id}/${action}`, { method: "POST" });
+      assert.equal(response.status, action === "retry" ? 201 : 200);
+      assert.equal((await response.json()).status, action === "retry" ? "queued" : "rejected");
+    }
+  } finally { store.close(); }
+});
+
+test("api: invalid effort cannot partially save or clear the model", async () => {
+  const store = new Store(":memory:");
+  try {
+    store.setSetting(driverModelKey("codex"), "gpt-saved");
+    store.setSetting(driverEffortKey("codex"), "high");
+    const app = createApp(store);
+    for (const model of ["gpt-replacement", null, "default"]) {
+      for (const effort of ["invalid", 42]) {
+        const response = await app.request("/api/drivers/codex", {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model, effort }),
+        });
+        assert.equal(response.status, 400);
+        assert.equal(store.getSetting(driverModelKey("codex")), "gpt-saved");
+        assert.equal(store.getSetting(driverEffortKey("codex")), "high");
+      }
+    }
+  } finally { store.close(); }
+});
 
 test("api: invalid check settings cannot replace the operator's merge gates", async () => {
   const store = new Store(":memory:");

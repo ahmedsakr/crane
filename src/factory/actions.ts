@@ -109,6 +109,8 @@ export class OperatorActions {
   async approve(id: string, note?: string, opts: { merge?: boolean } = {}): Promise<Task> {
     const m = this.need(id);
     if (m.status !== "needs_review") throw new Error(`Task ${m.id} isn't waiting for review`);
+    if (note !== undefined && typeof note !== "string") throw new Error("Note must be text");
+    if (opts.merge !== undefined && typeof opts.merge !== "boolean") throw new Error("Merge must be a boolean");
     const merge = (opts.merge ?? true) && !!m.branch;
     this.store.addEvent(m.id, "operator", note ? `Approved: ${note}` : "Approved");
     if (merge) return this.queueMerge(m);
@@ -139,6 +141,7 @@ export class OperatorActions {
   async reject(id: string, note?: string): Promise<Task> {
     const m = this.need(id);
     if (m.status !== "needs_review") throw new Error(`Task ${m.id} isn't waiting for review`);
+    if (note !== undefined && typeof note !== "string") throw new Error("Note must be text");
     this.store.addEvent(m.id, "operator", note ? `Declined: ${note}` : "Declined");
     await this.cleanupWorktree(m, true);
     this.store.setStatus(m.id, "rejected", "Declined");
@@ -181,22 +184,25 @@ export class OperatorActions {
     const driver = checkDriver(name) as DriverName | null;
     if (!driver) throw new Error("Choose which agent to set up");
     if (!isTunable(driver)) throw new Error(`${driverLabel(driver)} doesn't call a model, so there's no model or effort to set`);
+    let model: string | undefined;
+    let effort: string | undefined;
     if (input.model !== undefined) {
       if (input.model !== null && typeof input.model !== "string") throw new Error("Model must be text");
-      const model = normalizeDriverSetting(input.model);
+      model = normalizeDriverSetting(input.model);
       // Passed to the agent's CLI as one argument. Keep it to what model names look like, and never a flag.
       if (model && !MODEL_NAME.test(model)) throw new Error(`“${model}” doesn't look like a model name`);
-      this.store.setSetting(driverModelKey(driver), model);
     }
     if (input.effort !== undefined) {
       if (input.effort !== null && typeof input.effort !== "string") throw new Error("Effort must be text");
-      const effort = normalizeDriverSetting(input.effort).toLowerCase();
+      effort = normalizeDriverSetting(input.effort).toLowerCase();
       const levels = EFFORT_LEVELS[driver];
       if (effort && !levels.includes(effort)) {
         throw new Error(`${driverLabel(driver)} takes effort ${levels.join(", ")}, or default`);
       }
-      this.store.setSetting(driverEffortKey(driver), effort);
     }
+    // Validate the whole request before changing either saved preference.
+    if (model !== undefined) this.store.setSetting(driverModelKey(driver), model);
+    if (effort !== undefined) this.store.setSetting(driverEffortKey(driver), effort);
     return this.drivers();
   }
 
