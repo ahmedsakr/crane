@@ -36,7 +36,7 @@ Each task also has an **autonomy level**, which sets how far an agent may go on 
 | **Change, then ask me** (`propose`) | Works on its own branch in an isolated git worktree, then waits for your review. |
 | **Change on a branch** (`act`) | Works on its own branch and finishes without waiting. |
 
-Crane never merges into your default branch or pushes on its own. When you **approve** a task that changed code, Crane merges its branch into the default branch for you and pushes it:
+Crane never merges into your default branch or pushes on its own. For UI changes, complete the [visual review checklist](#visual-review-before-approval) before approval or merge. When you **approve** a task that changed code, Crane merges its branch into the default branch for you and pushes it:
 
 - It builds one `Merge branch 'crane/…'` commit on top of the latest default branch, in Crane's own worktree.
 - If that conflicts, an agent resolves the conflicts. Crane checks that no conflict markers are left before it commits.
@@ -53,6 +53,27 @@ After a successful merge, Crane queues a read-only **Post-mortem** task in the s
 Reports come back as a summary plus **findings**. Turn any finding into its own task with one click (or `crane follow-up <id> <n>`).
 
 Tasks that build or change UI are instructed to capture and inspect screenshots, then attach them to their report. The task page shows previews you can open at full size; `crane show <id>` lists captions and local image paths. Crane retains the images separately from the branch, so they survive worktree cleanup. Agents report worktree-relative PNG, JPEG, or WebP paths in `screenshots: [{ "path": ".crane/screenshots/view.png", "caption": "Updated view at 1280 × 800" }]` (up to 12 images, 10 MiB each). If browser tools are unavailable or blocked, including in Codex's sandbox, the agent must explain the missing screenshots and remaining visual validation in its summary. Crane does not bypass those restrictions to capture them.
+
+### Visual review before approval
+
+Passing typecheck, tests, or review and merge checks does not complete visual validation. If capture or inspection is outstanding, the agent must hand off the changed routes, UI states, exact screenshot commands, and required sizes in its report summary. In Codex's sandbox, local servers and browsers are known to be unavailable: defer capture directly without attempting it or seeking a workaround.
+
+Before **Approve and merge**, **Approve only**, or a later **Merge**, the operator completes this checklist or records an explicit waiver. This is an operator review requirement; Crane's automated gates do not enforce it.
+
+- [ ] In an approved environment, use an isolated checkout of the candidate branch and record its commit. Build that candidate's UI (`npm run build -w web` for Crane), then run the repository's existing screenshot tool against every changed view and relevant state. Crane's tool boots a demo serving that checkout's `web/dist`; if using `--url` instead, verify the server serves the candidate build and has the needed review data.
+- [ ] Capture and open the images at wide **1280x800**, short **1280x600**, and phone **390x844** sizes (plus any sizes required by the task). Inspect clipping, overflow, layout, and the changed behavior; taking a screenshot alone is not inspection.
+- [ ] Record the candidate commit, reviewed routes and states, sizes, screenshot paths, and inspection result in the task's approval note or review record. If inspection is waived, explicitly record the operator's waiver, reason, and unreviewed views and sizes. Recheck affected views if the candidate changes, including during conflict resolution.
+
+For example, run these commands in the candidate checkout in the approved environment, replacing `/tasks` and adding interaction steps for the changed states:
+
+```bash
+npm run build -w web
+npm run screenshot -- /tasks --size 1280x800 --out .crane/screenshots/tasks-wide.png
+npm run screenshot -- /tasks --size 1280x600 --out .crane/screenshots/tasks-short.png
+npm run screenshot -- /tasks --size 390x844 --out .crane/screenshots/tasks-phone.png
+```
+
+For a task waiting for review, `crane approve <id> --message "Visual review complete: candidate <sha>; /tasks; 1280x800, 1280x600, 390x844; images <paths>; no clipping or overflow"` records the review in the task's activity when approving. To waive it, use a note such as `Visual review waived by operator: candidate <sha>; <reason>; unreviewed: <views and sizes>`. Keep screenshot files available at the recorded paths; an approval note does not upload or retain operator-created images automatically. An agent must leave the checklist pending until the operator records completion or a waiver.
 
 ## Quick start
 
