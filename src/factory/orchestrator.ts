@@ -10,7 +10,7 @@ import { runChecks } from "./checks.js";
 import { DashboardBuilder } from "./dashboard.js";
 import { DEFAULT_DRIVER_KEY, driverSettings, isAvailable } from "./drivers.js";
 import { worktreesDir } from "../core/paths.js";
-import { servedDashboard } from "../core/webbuild.js";
+import { factoryBuildOutdated, servedDashboard } from "../core/webbuild.js";
 
 const CREW = ["Jib", "Boom", "Hoist", "Trolley", "Rigger", "Winch", "Gantry", "Mast"];
 const HEARTBEAT_KEY = "factory_heartbeat";
@@ -94,6 +94,7 @@ export function factoryState(store: Store): Overview["factory"] {
     running: factoryIsRunning(store),
     paused: store.isPaused(),
     driver: factoryDriverName(store),
+    factoryOutdated: factoryBuildOutdated(),
     uiOutdated: ui?.outdated ?? false,
     uiBuild: ui?.id ?? null,
     uiCommit: ui?.commit ?? null,

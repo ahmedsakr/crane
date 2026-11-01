@@ -238,10 +238,13 @@ test("the server serves Crane's build, its assets, and pages that aren't files",
       assert.equal(await response.text(), path.startsWith("/assets/") ? "Not found" : "<p>crane build</p>");
     }
 
-    const o = (await (await get("/api/overview")).json()) as { factory: { uiBuild: string; uiCommit: string; uiOutdated: boolean } };
+    const o = (await (await get("/api/overview")).json()) as {
+      factory: { uiBuild: string; uiCommit: string; uiOutdated: boolean; factoryOutdated: boolean };
+    };
     assert.equal(o.factory.uiBuild, B);
     assert.equal(o.factory.uiCommit, B);
     assert.equal(o.factory.uiOutdated, false);
+    assert.equal(o.factory.factoryOutdated, false, "this API process runs from TypeScript source");
     store.close();
   } finally {
     if (prev === undefined) delete process.env.CRANE_HOME;
