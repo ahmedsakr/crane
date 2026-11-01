@@ -680,6 +680,13 @@ const agents = program
     const other = catalog.find((d) => d.available && !d.isDefault && d.name !== "simulated");
     const tunable = catalog.find((d) => d.isDefault && d.efforts.length) ?? catalog.find((d) => d.available && d.efforts.length);
     const next: [string, string][] = [];
+    // Queued work nobody is free to take: the same nudge the Crew page shows.
+    const waiting = store.listTasks({ status: ["queued"] }).filter((t) => !t.assignee).length;
+    const free = list.some((a) => a.active && !a.role && a.state === "idle");
+    const spare = list.find((a) => !a.active && !a.role && a.state !== "working");
+    if (waiting && !free && spare) {
+      next.push([`crane agents configure ${spare.name.toLowerCase()} --active`, `${waiting} ${waiting === 1 ? "task" : "tasks"} waiting and no one is free`]);
+    }
     const maintainer = list.find((a) => a.role && a.active);
     if (maintainer) next.push([`crane agents run ${maintainer.name.toLowerCase()}`, MAINTENANCE_ROLE[maintainer.role!].action.toLowerCase()]);
     if (other) next.push([`crane agents use ${other.name}`, `run new tasks on ${other.label}`]);

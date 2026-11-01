@@ -1323,6 +1323,144 @@ a.row:hover .row-title {
   outline-offset: -1px;
 }
 
+/* ── crew page ──────────────────────────────────────────── */
+.crew-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: var(--graphite);
+}
+.crew-summary strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.crew-section {
+  margin-top: 28px;
+}
+.crew-section-note {
+  font-size: 13px;
+}
+.crew-list {
+  padding: 0 18px;
+}
+.crew-row {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 0.9fr) minmax(0, 1.6fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--hairline);
+}
+.rows > li:last-child > .crew-row:not(.open) {
+  border-bottom: 0;
+}
+.crew-who {
+  min-width: 0;
+  display: grid;
+}
+.crew-who .row-meta {
+  white-space: normal;
+}
+.crew-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.crew-what {
+  min-width: 0;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crew-task {
+  font-weight: 600;
+}
+.crew-task:hover {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.crew-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.crew-toggle {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 0;
+  background: transparent;
+  color: var(--graphite);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+}
+.crew-toggle:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.crew-toggle .row-chev {
+  color: currentColor;
+  transform: rotate(90deg);
+  transition: transform 0.15s ease;
+}
+.crew-toggle[aria-expanded="true"] .row-chev {
+  transform: rotate(-90deg);
+}
+.crew-settings {
+  padding: 14px 0 16px 48px;
+  border-bottom: 1px solid var(--hairline);
+  display: grid;
+  gap: 14px;
+}
+.rows > li:last-child > .crew-settings {
+  border-bottom: 0;
+}
+.crew-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 16px;
+}
+.crew-fields .tuning-field {
+  flex: 1 1 220px;
+  align-content: start;
+}
+.crew-field-note {
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.crew-settings-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+@media (max-width: 560px) {
+  .crew-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    row-gap: 6px;
+  }
+  .crew-what {
+    grid-column: 2 / -1;
+    grid-row: 2;
+    white-space: normal;
+  }
+  .crew-what:empty {
+    display: none;
+  }
+  .crew-settings {
+    padding-left: 0;
+  }
+}
+
 /* An agent's model and effort, opened from its row on the Crew page. */
 .tuning-change {
   background: none;
