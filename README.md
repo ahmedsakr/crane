@@ -96,7 +96,7 @@ Start a run with the button on their card (**Review security**, **Reduce duplica
 | --- | --- |
 | `crane` | Status: what needs you, what's running, suggested next steps |
 | `crane do "…"` | Give the factory an instruction. It shows what it understood before starting. |
-| `crane tasks` | Open tasks (`--all` for everything) |
+| `crane tasks` | Open tasks (`--all` for everything, `--json` for full records including each task's branch and worktree) |
 | `crane show <id>` | Summary, findings, changed files, and recent activity |
 | `crane watch [id]` | Follow a task, or the whole factory, live |
 | `crane approve <id>` / `crane decline <id>` | Decide on work that's waiting for you. Approving merges and pushes it (`--no-merge` to approve only). |
