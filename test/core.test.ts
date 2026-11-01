@@ -5,7 +5,7 @@ import Database from "better-sqlite3";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { draftTask } from "../src/factory/instruct.js";
-import { parseReport } from "../src/agent-protocol/index.js";
+import { parseReport } from "@crane/agent-protocol";
 import { Store } from "../src/core/store.js";
 import type { Repo } from "@crane/contracts";
 

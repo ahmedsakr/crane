@@ -8,7 +8,7 @@ import { isAllowed, overlapsDenied, splitCommand, suggestRules } from "../src/co
 import { ruleLabel } from "@crane/contracts";
 import { ClaudeCodeDriver, describeBlocked, toolsFor } from "../src/agents/claude-code.js";
 import { ALWAYS_DENIED } from "../src/agents/policy.js";
-import { AgentRunError, isTransientFailure, type AgentDriver, type RunContext, type RunResult } from "../src/agent-protocol/index.js";
+import { AgentRunError, isTransientFailure, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
 import { OperatorActions, toRule } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import type { BlockedCall, EventType, Repo, Task } from "@crane/contracts";

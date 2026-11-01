@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { git } from "../core/git.js";
-import type { AgentDriver, RunContext, RunResult } from "../agent-protocol/index.js";
+import type { AgentDriver, RunContext, RunResult } from "@crane/agent-protocol";
 import type { Finding, TaskKind } from "@crane/contracts";
 import { suggestRules } from "../core/permissions.js";
 

@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { usageFromTurn } from "../src/agents/codex.js";
-import { combinedCost } from "../src/agent-protocol/index.js";
+import { combinedCost } from "@crane/agent-protocol";
 import { Store } from "../src/core/store.js";
 
 const tokens = { input_tokens: 1_000_000, cached_input_tokens: 400_000, output_tokens: 100_000 };

@@ -1,0 +1,20 @@
+{
+  "name": "@crane/agent-protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": ["dist/"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch"
+  },
+  "dependencies": {
+    "@crane/contracts": "0.1.0"
+  }
+}

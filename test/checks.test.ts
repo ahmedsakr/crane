@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/core/store.js";
-import { parseReport } from "../src/agent-protocol/index.js";
+import { parseReport } from "@crane/agent-protocol";
 
 test("checks: operator configuration overrides factory defaults and remains distinct from unconfigured", () => {
   const store = new Store(":memory:");

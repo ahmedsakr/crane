@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TaskStatus } from "@crane/contracts";
-import { AgentRunError, type AgentDriver, type RunContext, type SiblingTask } from "../src/agent-protocol/index.js";
+import { AgentRunError, type AgentDriver, type RunContext, type SiblingTask } from "@crane/agent-protocol";
 import { Store } from "../src/core/store.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import { siblingTasksFor } from "../src/factory/task-context.js";

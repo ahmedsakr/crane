@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseReport } from "../src/agent-protocol/index.js";
+import { parseReport } from "@crane/agent-protocol";
 
 test("report: malformed or missing JSON preserves the plain-text summary", () => {
   for (const suffix of ["", "```crane-report\n{broken}\n```", "```crane-report\nnull\n```", "```crane-report\n{\"summary\":\"unfinished\"}"]) {

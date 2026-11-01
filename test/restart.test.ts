@@ -10,7 +10,7 @@ import { OperatorActions } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import { SimulatedDriver } from "../src/agents/simulated.js";
 import { ClaudeCodeDriver } from "../src/agents/claude-code.js";
-import type { RunContext, RunResult } from "../src/agent-protocol/index.js";
+import type { RunContext, RunResult } from "@crane/agent-protocol";
 import type { Task } from "@crane/contracts";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));

@@ -1,10 +1,17 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import ts from "typescript";
+import { AGENT_PROTOCOL_SOURCES } from "../src/core/webbuild.ts";
 
 const src = join(import.meta.dirname, "..", "src");
 const webSrc = join(import.meta.dirname, "..", "web", "src");
+const protocolRoot = join(import.meta.dirname, "..", "packages", "agent-protocol");
+const protocolSrc = join(protocolRoot, "src");
+const protocolSources = (readdirSync(protocolSrc, { recursive: true }) as string[])
+  .map((f) => f.split("\\").join("/"))
+  .filter((f) => f.endsWith(".ts"));
 
 /** A relative specifier in `file`, resolved to a path under the same root like `factory/git`. */
 function resolveSpec(file: string, spec: string): string {
@@ -52,28 +59,53 @@ test("boundaries: only the driver registry imports concrete agents", () => {
 });
 
 test("boundaries: the agent protocol depends on contract types and nothing else", () => {
-  // No concrete drivers, price tables, prompts, policy, subprocesses, Store or factory: see src/agent-protocol/index.ts.
-  const files = sources.filter((f) => f.startsWith("agent-protocol/"));
-  assert.ok(files.includes("agent-protocol/index.ts"), "expected to find the agent protocol");
-  for (const file of files) {
-    const text = readFileSync(join(src, file), "utf8");
-    assert.ok(!/\b(import|require)\s*\(/.test(text), `${file} loads a module dynamically`);
-    // Every import and re-export statement, including bare and `node:` specifiers.
-    for (const m of text.matchAll(/^\s*(import|export)\s+(type\s+)?(?:[^;"]*?\bfrom\s*)?"([^"]+)"/gm)) {
-      const spec = m[3]!;
-      const target = spec.startsWith(".") ? resolveSpec(file, spec) : spec;
-      if (target.startsWith("agent-protocol/")) continue;
-      assert.equal(target, "@crane/contracts", `${file} imports "${spec}"`);
-      assert.ok(m[1] === "import" && m[2], `${file} must import contracts with \`import type\`, so nothing runs at load`);
-    }
+  // No concrete drivers, price tables, prompts, policy, subprocesses, Store or factory.
+  assert.ok(protocolSources.includes("index.ts"), "expected to find the agent protocol");
+  for (const file of protocolSources) {
+    const source = ts.createSourceFile(file, readFileSync(join(protocolSrc, file), "utf8"), ts.ScriptTarget.Latest, true);
+    const visit = (node: ts.Node) => {
+      assert.ok(!ts.isImportEqualsDeclaration(node) && !ts.isImportTypeNode(node), `${file} uses an alternate import form`);
+      if (ts.isCallExpression(node)) {
+        assert.ok(node.expression.kind !== ts.SyntaxKind.ImportKeyword &&
+          !(ts.isIdentifier(node.expression) && node.expression.text === "require"), `${file} loads a module dynamically`);
+      }
+      if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier) {
+        assert.ok(ts.isStringLiteral(node.moduleSpecifier));
+        const spec = node.moduleSpecifier.text;
+        if (spec.startsWith(".")) {
+          const target = resolve(protocolSrc, dirname(file), spec.replace(/\.js$/, ".ts"));
+          assert.ok(protocolSources.some((f) => join(protocolSrc, f) === target), `${file} imports outside the package: ${spec}`);
+        } else {
+          assert.equal(spec, "@crane/contracts", `${file} imports "${spec}"`);
+          assert.ok(ts.isImportDeclaration(node) && node.importClause?.isTypeOnly,
+            `${file} must import contracts with \`import type\`, so nothing runs at load`);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
   }
 });
 
-test("boundaries: the agent protocol is reached only through its entry point", () => {
-  // So making it a package means swapping one specifier.
-  for (const file of sources.filter((f) => !f.startsWith("agent-protocol/"))) {
-    const bad = importsOf(file).filter((i) => i.startsWith("agent-protocol/") && i !== "agent-protocol/index");
+test("boundaries: production callers use the agent protocol package", () => {
+  for (const file of sources) {
+    const bad = importsOf(file).filter((i) => i.startsWith("agent-protocol/"));
     assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
+  }
+});
+
+test("boundaries: the private protocol has one ESM export and tracks every backend build input", async () => {
+  const manifest = JSON.parse(readFileSync(join(protocolRoot, "package.json"), "utf8"));
+  assert.equal(manifest.private, true);
+  assert.equal(manifest.type, "module");
+  assert.deepEqual(manifest.exports, { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } });
+  assert.deepEqual(manifest.dependencies, { "@crane/contracts": "0.1.0" });
+  const inputs = [...protocolSources.map((f) => join("src", f)), "package.json", "tsconfig.json"];
+  assert.deepEqual([...AGENT_PROTOCOL_SOURCES].sort(), inputs.map((f) => join("packages", "agent-protocol", f)).sort());
+  const protocol = await import("@crane/agent-protocol");
+  assert.deepEqual(Object.keys(protocol).sort(), ["AgentRunError", "REPORT_FENCE", "combinedCost", "isTransientFailure", "parseReport"].sort());
+  for (const path of ["@crane/agent-protocol/src/driver.js", "@crane/agent-protocol/dist/driver.js", "@crane/agent-protocol/driver"]) {
+    await assert.rejects(import(path), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
   }
 });
 
@@ -87,11 +119,13 @@ test("boundaries: provider price tables stay with their drivers", () => {
 
 test("boundaries: old agent paths re-export the protocol's one AgentRunError", async () => {
   // Retry handling checks instanceof, so a second class at an old path would silently stop retries.
-  const protocol = await import("../src/agent-protocol/index.ts");
+  const protocol = await import("@crane/agent-protocol");
+  const legacy = await import("../src/agent-protocol/index.ts");
   const driver = await import("../src/agents/driver.ts");
   const report = await import("../src/agents/report.ts");
   const pricing = await import("../src/agents/codex-pricing.ts");
   assert.equal(driver.AgentRunError, protocol.AgentRunError);
+  assert.deepEqual(legacy, protocol);
   assert.equal(driver.isTransientFailure, protocol.isTransientFailure);
   assert.equal(report.parseReport, protocol.parseReport);
   assert.equal(report.REPORT_FENCE, protocol.REPORT_FENCE);

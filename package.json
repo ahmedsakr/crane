@@ -14,30 +14,36 @@
   ],
   "workspaces": [
     "web",
-    "packages/contracts"
+    "packages/contracts",
+    "packages/agent-protocol"
   ],
-  "bundledDependencies": ["@crane/contracts"],
+  "bundledDependencies": ["@crane/contracts", "@crane/agent-protocol"],
   "engines": {
     "node": ">=20.19"
   },
   "scripts": {
-    "dev": "concurrently -k -n contracts,factory,web -c blue,yellow,cyan \"npm:dev:contracts\" \"npm:dev:server\" \"npm:dev:web\"",
+    "predev": "npm run build:packages",
+    "dev": "concurrently -k -n contracts,protocol,factory,web -c blue,magenta,yellow,cyan \"npm:dev:contracts\" \"npm:dev:agent-protocol\" \"npm:dev:server\" \"npm:dev:web\"",
     "dev:contracts": "npm run dev -w @crane/contracts",
-    "predev:server": "npm run build:contracts",
+    "dev:agent-protocol": "npm run dev -w @crane/agent-protocol",
+    "predev:server": "npm run build:packages",
     "dev:server": "tsx watch src/cli/index.ts serve --port 4471",
     "dev:web": "npm run dev -w web",
     "build:contracts": "npm run build -w @crane/contracts",
-    "build": "npm run build:contracts && tsc -p tsconfig.json && npm run build -w web",
+    "build:agent-protocol": "npm run build -w @crane/agent-protocol",
+    "build:packages": "npm run build:contracts && npm run build:agent-protocol",
+    "build": "npm run build:packages && tsc -p tsconfig.json && npm run build -w web",
     "prepack": "npm run build",
-    "typecheck": "npm run build:contracts && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm run typecheck -w web",
-    "pretest": "npm run build:contracts",
+    "typecheck": "npm run build:packages && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm run typecheck -w web",
+    "pretest": "npm run build:packages",
     "test": "node --import tsx --test test/*.test.ts",
-    "precrane": "npm run build:contracts",
+    "precrane": "npm run build:packages",
     "crane": "tsx src/cli/index.ts",
     "screenshot": "node --import tsx scripts/screenshot.ts"
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",
+    "@crane/agent-protocol": "0.1.0",
     "@crane/contracts": "0.1.0",
     "@hono/node-server": "^2.1.5",
     "better-sqlite3": "^12.11.1",

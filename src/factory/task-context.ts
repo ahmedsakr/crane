@@ -1,5 +1,5 @@
 import type { Repo, Task } from "@crane/contracts";
-import type { SiblingTask } from "../agent-protocol/index.js";
+import type { SiblingTask } from "@crane/agent-protocol";
 import { git } from "../core/git.js";
 import type { Store } from "../core/store.js";
 
