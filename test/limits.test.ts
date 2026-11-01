@@ -48,6 +48,28 @@ test("permissions: repo rules are added, and the deny list stays", () => {
   for (const d of ALWAYS_DENIED) assert.ok(t.denied.includes(d));
 });
 
+test("permissions: compound screenshot refusals keep evidence even with no suggested rules", () => {
+  const command = 'npm run build && npm run screenshot -- "$NAV" --click "$OPEN" --out .crane/menu.png';
+  const reason = "This command requires approval";
+  const blocked = describeBlocked("Bash", { command }, toolsFor("propose"), {
+    toolUseId: "screenshot-1",
+    refusal: { source: "claude-code.tool_result", reason },
+  });
+  assert.deepEqual(blocked.data.rules, [], "suggestions cannot explain the driver's refusal");
+  assert.equal(blocked.data.command, command);
+  assert.equal(blocked.data.toolUseId, "screenshot-1");
+  assert.deepEqual(blocked.data.refusal, { source: "claude-code.tool_result", reason });
+
+  const summaryOnly = describeBlocked("Bash", { command }, toolsFor("propose"), {
+    refusal: { source: "claude-code.permission_denials", reason: null },
+  });
+  assert.equal(summaryOnly.data.refusal!.reason, null, "never guess that variables caused the refusal");
+  const longReason = describeBlocked("Bash", { command }, toolsFor("propose"), {
+    refusal: { source: "claude-code.tool_result", reason: reason.repeat(1000) },
+  });
+  assert.equal(longReason.data.refusal!.reason!.length, 4000);
+});
+
 test("transient: overload, rate limits and network errors, but not plan usage limits", () => {
   assert.ok(isTransientFailure('API Error: 529 {"type":"error","error":{"type":"overloaded_error"}}'));
   assert.ok(isTransientFailure("API Error: 429 rate_limit_error"));
@@ -158,6 +180,12 @@ test("driver: reports each blocked call once, with the rules that would allow it
   assert.equal(blocked[0]!.message, `Blocked: ${command}`);
   assert.deepEqual((blocked[0]!.data as unknown as BlockedCall).rules, ["Bash(npm ci:*)", "Bash(npm test:*)"]);
   assert.deepEqual((blocked[1]!.data as unknown as BlockedCall).rules, [], "git push is refused on purpose, so nothing is offered");
+  assert.equal(blocked[0]!.data!.toolUseId, "tu1");
+  assert.deepEqual(blocked[0]!.data!.refusal, {
+    source: "claude-code.tool_result",
+    reason: "Claude requested permissions to use Bash, but you haven't granted it yet.",
+  }, "the final summary must not replace live refusal evidence");
+  assert.deepEqual(blocked[1]!.data!.refusal, { source: "claude-code.permission_denials", reason: null });
 
   const args = fake.args();
   assert.equal(args[args.indexOf("--max-turns") + 1], "7");
@@ -203,6 +231,10 @@ test("driver: reports refusals in Claude Code's current wording as they happen",
     events.filter((e) => e.type === "blocked").map((e) => e.message),
     ["Blocked: npx tsc", "Blocked: ls && npm ci"],
   );
+  assert.deepEqual(events.filter((e) => e.type === "blocked")[1]!.data!.refusal, {
+    source: "claude-code.tool_result",
+    reason: "This Bash command contains multiple operations. The following part requires approval: npm ci",
+  });
 });
 
 test("driver: an overloaded API is a transient failure that keeps its cost and session", async () => {
