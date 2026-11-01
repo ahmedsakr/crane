@@ -10,6 +10,7 @@ import { runChecks } from "./checks.js";
 import { DashboardBuilder } from "./dashboard.js";
 import { DEFAULT_DRIVER_KEY, driverSettings, isAvailable } from "./drivers.js";
 import { worktreesDir } from "../core/paths.js";
+import { retainScreenshots } from "../core/screenshots.js";
 import { factoryBuildOutdated, servedDashboard } from "../core/webbuild.js";
 
 const CREW = ["Jib", "Boom", "Hoist", "Trolley", "Rigger", "Winch", "Gantry", "Mast"];
@@ -405,6 +406,11 @@ export class Factory {
             // landTask runs these as merge checks once the conflicts are resolved.
             checks: this.store.repoChecks(repo.id),
           });
+          if (r.report.screenshots?.length) {
+            const screenshots = retainScreenshots(task.id, cwd, r.report.screenshots, message => emit("note", message));
+            const report = this.store.getTask(task.id)?.report;
+            if (report && screenshots.length) this.store.updateTask(task.id, { report: { ...report, screenshots } });
+          }
           for (const f of r.report.findings) emit("finding", f.title, { impact: f.impact, effort: f.effort });
         },
       });
@@ -497,9 +503,17 @@ export class Factory {
       });
 
       if (task.autonomy !== "observe") {
+        result.report.validation = this.store.getTask(task.id)?.report?.validation ?? [];
+      }
+      if (result.report.screenshots) {
+        // Observe runs cannot create attachments in the operator's checkout.
+        result.report.screenshots = task.autonomy === "observe" ? []
+          : retainScreenshots(task.id, cwd, result.report.screenshots, message => emit("note", message));
+        this.store.updateTask(task.id, { report: result.report });
+      }
+      if (task.autonomy !== "observe") {
         const changed = await finalizeWorktree(repo, task, cwd);
         result.report.changedFiles = [...new Set([...changed, ...result.report.changedFiles])];
-        result.report.validation = this.store.getTask(task.id)?.report?.validation ?? [];
         this.store.updateTask(task.id, { report: result.report });
         await runChecks(cwd, this.store.repoChecks(repo.id), "review", (run) => {
           result.report.validation!.push(run);

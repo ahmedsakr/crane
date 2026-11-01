@@ -10,6 +10,7 @@ import { draftTask } from "../factory/instruct.js";
 import { diffForTask } from "../factory/git.js";
 import { factoryState as readFactoryState } from "../factory/orchestrator.js";
 import { servedDashboard } from "../core/webbuild.js";
+import { readScreenshot } from "../core/screenshots.js";
 
 /** Empty bodies use action defaults; malformed or non-object JSON must never trigger a decision. */
 async function optionalJsonObject<T extends object>(request: Request): Promise<T> {
@@ -50,6 +51,20 @@ export function createApp(store: Store) {
   });
 
   api.get("/analytics", (c) => c.json(store.analytics(Number(c.req.query("days") ?? 30))));
+
+  api.get("/tasks/:id/screenshots/:name", (c) => {
+    const task = store.getTask(c.req.param("id"));
+    const name = c.req.param("name");
+    if (!task?.report?.screenshots?.some(image => image.path === name)) return c.text("Not found", 404);
+    const image = readScreenshot(task.id, name);
+    if (!image) return c.text("Not found", 404);
+    return c.body(new Uint8Array(image.bytes), 200, {
+      "content-type": image.mime,
+      "x-content-type-options": "nosniff",
+      "cache-control": "no-store",
+      "content-security-policy": "default-src 'none'; sandbox",
+    });
+  });
 
   api.get("/tasks/:id/diff", async (c) => {
     const m = store.getTask(c.req.param("id"));
