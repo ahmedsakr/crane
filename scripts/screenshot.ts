@@ -11,6 +11,8 @@
  *   [path]            page to open, default "/"
  *   --url <origin>    use a running factory instead of booting a demo one
  *   --size <WxH>      viewport, default 1280x800
+ *   --media <f>=<v>   emulate a media feature for the whole run, like
+ *                     prefers-color-scheme=dark or prefers-reduced-motion=reduce (repeatable)
  *   --wait-for <sel>  wait until a selector exists
  *   --click <sel>     click the first match with a real mouse event
  *   --type <text>     type into the focused element
@@ -39,6 +41,7 @@ let origin: string | null = null;
 let size = "1280x800";
 let out = join(root, ".crane", "screenshot.png");
 const steps: Step[] = [];
+const media: { name: string; value: string }[] = [];
 for (let i = 0; i < args.length; i++) {
   const a = args[i]!;
   const next = () => {
@@ -48,6 +51,11 @@ for (let i = 0; i < args.length; i++) {
   };
   if (a === "--url") origin = next().replace(/\/$/, "");
   else if (a === "--size") size = next();
+  else if (a === "--media") {
+    const [name, value] = next().split("=");
+    if (!name || !value) fail(`--media should look like prefers-color-scheme=dark`);
+    media.push({ name, value });
+  }
   else if (a === "--out") out = resolve(next());
   else if (["--wait-for", "--click", "--type", "--key", "--scroll", "--sleep", "--eval", "--shot"].includes(a))
     steps.push({ op: a.slice(2), arg: next() });
@@ -216,6 +224,7 @@ async function main() {
   const page = (method: string, params: object = {}) => cdp.send(method, params, sessionId);
   await page("Page.enable");
   await page("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
+  if (media.length) await page("Emulation.setEmulatedMedia", { features: media });
 
   const evaluate = async (expression: string) => {
     const r = await page("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
