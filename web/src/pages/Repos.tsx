@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useApp } from "../App";
+import { useApp } from "../lib/app-context";
 import { api, ruleLabel } from "../lib/api";
 import { useToast } from "../components/bits";
 

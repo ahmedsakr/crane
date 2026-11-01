@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useApp } from "../App";
+import { useApp } from "../lib/app-context";
 import { api, driverLabel, KIND_LABEL, type Analytics as Data } from "../lib/api";
 import { compact, plural, usd } from "../lib/format";
 import { usePoll } from "../lib/hooks";

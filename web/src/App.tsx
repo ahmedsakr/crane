@@ -1,6 +1,7 @@
-import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Navigate, NavLink, Route, Routes, useParams } from "react-router-dom";
 import { api, type Overview } from "./lib/api";
+import { AppContext } from "./lib/app-context";
 import { usePoll } from "./lib/hooks";
 import { Mark, ToastProvider, useToast } from "./components/bits";
 import { InstructSheet } from "./components/InstructSheet";
@@ -11,19 +12,11 @@ import { Repos } from "./pages/Repos";
 import { Crew } from "./pages/Crew";
 import { Analytics } from "./pages/Analytics";
 
-interface AppCtx {
-  overview: Overview | null;
-  refresh: () => void;
-  instruct: (text?: string) => void;
-}
 /** Tasks used to be called missions. Keep old links and bookmarks working. */
 function LegacyTaskRedirect() {
   const { id } = useParams();
   return <Navigate to={id ? `/tasks/${id}` : "/tasks"} replace />;
 }
-
-const Ctx = createContext<AppCtx>({ overview: null, refresh: () => {}, instruct: () => {} });
-export const useApp = () => useContext(Ctx);
 
 function FactoryPill({ o, refresh }: { o: Overview | null; refresh: () => void }) {
   const toast = useToast();
@@ -93,7 +86,7 @@ function Shell() {
   const needs = overview?.counts.needs_review ?? 0;
 
   return (
-    <Ctx.Provider value={{ overview, refresh, instruct }}>
+    <AppContext.Provider value={{ overview, refresh, instruct }}>
       <header className="topbar">
         <div className="topbar-inner">
           <NavLink to="/" className="brand" aria-label="Crane home">
@@ -169,7 +162,7 @@ function Shell() {
           }}
         />
       )}
-    </Ctx.Provider>
+    </AppContext.Provider>
   );
 }
 

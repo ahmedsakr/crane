@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useApp } from "../App";
+import { useApp } from "../lib/app-context";
 import { api } from "../lib/api";
 import { usePoll, useTick } from "../lib/hooks";
 import { Empty, TaskRow } from "../components/bits";

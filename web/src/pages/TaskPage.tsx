@@ -16,7 +16,7 @@ import {
 import { useDrivers, useEventStream, usePoll, useTick } from "../lib/hooks";
 import { ago, clock, compact, duration, plural, usd } from "../lib/format";
 import { BlockedItem, StatusChip, useToast } from "../components/bits";
-import { useApp } from "../App";
+import { useApp } from "../lib/app-context";
 
 /** Group consecutive tool calls so the timeline reads as a story, with the mechanics one click away. */
 function groupEvents(events: TaskEvent[]) {
