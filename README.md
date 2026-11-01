@@ -144,7 +144,7 @@ Start a run with the button on their card (**Review security**, **Reduce duplica
 | `crane approve <id>` / `crane decline <id>` | Decide on work that's waiting for you. Approving merges and pushes it (`--no-merge` to approve only). |
 | `crane pre-approve <id>` | Approve a queued or running task ahead of time, so it merges once its checks pass (`--undo` to take it back) |
 | `crane merge <id>` | Merge and push a task you approved only, or one that finished on its own branch |
-| `crane diff <id>` | See what a task changed on its branch, or its changes so far, uncommitted work included, while it runs |
+| `crane diff <id>` | See what a task changed on its branch, or its changes so far, uncommitted work included, while it runs. `--files` lists the files with lines added and removed; `--file <path>` shows one file |
 | `crane follow-up <id> <n> [--agent <agent>] [--model <model>] [--effort <level>] [--after <id>] [--accept "<criterion>"] [--look-for <what>]` | Turn finding *n* into a task with optional agent, model, and effort choices, prerequisites, acceptance criteria, and what else to look out for |
 | `crane waive <id>` | Start a queued task without the prerequisites that haven't landed, approving a reduced scope |
 | `crane cancel <id>` / `crane retry <id>` | Stop work, or run it again (`--agent codex` to switch agents) |

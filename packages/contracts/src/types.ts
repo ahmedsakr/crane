@@ -586,29 +586,6 @@ export interface TaskDiff {
   live: boolean;
 }
 
-/** The files a unified git diff touches, in order, by their new name (or old name, for deletions). */
-export function diffFiles(diff: string): string[] {
-  const files: string[] = [];
-  let header = false;
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("diff --git ")) {
-      // "a/<path> b/<path>": the same path twice unless it was renamed, which later header lines name.
-      const rest = line.slice("diff --git ".length);
-      const n = (rest.length - 5) / 2;
-      const same = Number.isInteger(n) && rest.startsWith("a/") && rest.slice(2 + n, n + 5) === " b/" && rest.slice(2, 2 + n) === rest.slice(n + 5);
-      files.push(same ? rest.slice(2, 2 + n) : rest);
-      header = true;
-    } else if (line.startsWith("@@")) {
-      header = false;
-    } else if (header && files.length) {
-      // Git ends "+++" lines with a tab when the path has a space.
-      const name = line.startsWith("+++ b/") ? line.slice(6).replace(/\t$/, "") : line.startsWith("rename to ") ? line.slice(10) : null;
-      if (name) files[files.length - 1] = name;
-    }
-  }
-  return files;
-}
-
 /** Crane's reading of a plain-language instruction: `POST /api/instruct/draft`. */
 export interface TaskDraft {
   kind: TaskKind;

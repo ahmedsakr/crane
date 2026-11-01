@@ -16,7 +16,6 @@ import {
   isScheduled,
   unmetAcceptance,
   type AgentRun,
-  diffFiles,
   type FollowUpOptions,
   type TaskDetail,
   type TaskDiff,
@@ -28,6 +27,7 @@ import { BlockedItem, StatusChip, useToast } from "../components/bits";
 import { useApp } from "../lib/app-context";
 import { FollowUpForm } from "../components/FollowUpForm";
 import { TaskScheduleForm } from "../components/TaskScheduleForm";
+import { Changes } from "../components/Changes";
 
 /** Group consecutive tool calls so the timeline reads as a story, with the mechanics one click away. */
 function groupEvents(events: TaskEvent[]) {
@@ -136,39 +136,6 @@ function useTaskDiff(id: string, on: boolean, live: boolean) {
   return state.id === id ? state : { diff: null, error: null };
 }
 
-function Diff({ id }: { id: string }) {
-  const { diff, error } = useTaskDiff(id, true, false);
-  return <DiffView diff={diff} error={error} />;
-}
-
-function DiffView({ diff: d, error }: { diff: TaskDiff | null; error: string | null }) {
-  if (!d) return <p className="muted">{error ? `Couldn't load changes: ${error}` : "Loading changes…"}</p>;
-  const diff = d.diff;
-  if (!diff) return <p className="muted">{d.live ? "No changes yet." : "No changes on the branch."}</p>;
-  return (
-    <div className="diff" role="region" aria-label="Changes" tabIndex={0}>
-      {diff.split("\n").map((l, i) => (
-        <div
-          key={i}
-          className={
-            l.startsWith("diff ")
-              ? "file"
-              : l.startsWith("@@")
-                ? "hunk"
-                : l.startsWith("+") && !l.startsWith("+++")
-                  ? "add"
-                  : l.startsWith("-") && !l.startsWith("---")
-                    ? "del"
-                    : ""
-          }
-        >
-          {l || " "}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export function TaskPage() {
   const { id = "" } = useParams();
   const { refresh: refreshApp } = useApp();
@@ -184,7 +151,10 @@ export function TaskPage() {
 
   const lastId = data?.events.at(-1)?.id ?? 0;
   useEffect(() => setLive([]), [lastId]);
-  useEffect(() => setFinding(null), [id]);
+  useEffect(() => {
+    setFinding(null);
+    setShowDiff(false);
+  }, [id]);
   useEventStream(data && ACTIVE_STATUSES.includes(data.task.status) ? id : null, (e) =>
     setLive((l) => (l.some((x) => x.id === e.id) ? l : [...l, e])),
     lastId,
@@ -196,9 +166,9 @@ export function TaskPage() {
   }, [data, live]);
 
   // While an agent works on its branch, follow its changes as they happen, uncommitted work included.
+  // Otherwise read the branch's changes once they're asked for.
   const working = data?.task.status === "running" && !!data.task.branch;
-  const sofar = useTaskDiff(id, working, true);
-  const sofarFiles = useMemo(() => (sofar.diff ? diffFiles(sofar.diff.diff) : []), [sofar.diff]);
+  const changes = useTaskDiff(id, working || (showDiff && !!data?.task.branch), working);
 
   if (error) return <p className="muted" style={{ paddingTop: 40 }}>{error}</p>;
   if (!data) return <p className="muted" style={{ paddingTop: 40 }}>Loading…</p>;
@@ -492,57 +462,16 @@ export function TaskPage() {
             </section>
           )}
 
-          {working && sofar.diff && (
-            <section className="section" aria-labelledby="changes-so-far">
-              <div className="section-head">
-                <h2 className="section-title" id="changes-so-far">
-                  Changes so far {sofarFiles.length > 0 && <span className="count">{sofarFiles.length}</span>}
-                </h2>
-                {sofarFiles.length > 0 && (
-                  <button className="btn btn-ghost btn-sm" aria-expanded={showDiff} onClick={() => setShowDiff((s) => !s)}>
-                    {showDiff ? "Hide changes" : "Show changes"}
-                  </button>
-                )}
-              </div>
-              {sofarFiles.length > 0 ? (
-                <div className="card card-pad" style={{ paddingBlock: 6 }}>
-                  <ul className="files">
-                    {sofarFiles.map((f) => (
-                      <li key={f}>{f}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (
-                <p className="muted section-note">No changes yet.</p>
-              )}
-              {showDiff && sofarFiles.length > 0 && <DiffView diff={sofar.diff} error={sofar.error} />}
-              {sofar.diff.live && sofarFiles.length > 0 && (
-                <p className="muted section-note">Includes work it hasn't committed yet, and updates as it goes.</p>
-              )}
-            </section>
+          {working && changes.diff && (
+            <Changes title="Changes so far" diff={changes.diff} error={changes.error} canOpen open={showDiff} onOpenChange={setShowDiff}
+              empty="No changes yet."
+              note={changes.diff.live && <p className="muted section-note">Includes work it hasn't committed yet, and updates as it goes.</p>} />
           )}
 
           {!working && report && report.changedFiles.length > 0 && (
-            <section className="section">
-              <div className="section-head">
-                <h2 className="section-title">
-                  Changed files <span className="count">{report.changedFiles.length}</span>
-                </h2>
-                {m.branch && (
-                  <button className="btn btn-ghost btn-sm" aria-expanded={showDiff} onClick={() => setShowDiff((s) => !s)}>
-                    {showDiff ? "Hide changes" : "Show changes"}
-                  </button>
-                )}
-              </div>
-              <div className="card card-pad" style={{ paddingBlock: 6 }}>
-                <ul className="files">
-                  {report.changedFiles.map((f) => (
-                    <li key={f}>{f}</li>
-                  ))}
-                </ul>
-              </div>
-              {showDiff && <Diff id={m.id} />}
-            </section>
+            // A diff left over from while it ran isn't the branch's; list what the agent reported until the branch's loads.
+            <Changes title="Changed files" reported={report.changedFiles} diff={changes.diff?.live ? null : changes.diff} error={changes.error}
+              canOpen={!!m.branch} open={showDiff} onOpenChange={setShowDiff} empty="No changes on the branch." />
           )}
 
           <section className="section">

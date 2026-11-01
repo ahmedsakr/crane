@@ -69,9 +69,10 @@ export {
   AUTONOMY_LABEL,
   STATUS_LABEL,
   lastMergeOutcome,
-  diffFiles,
   acceptanceFor,
   prerequisiteMet,
   unmetAcceptance,
 } from "./types.js";
+export type { DiffLine, DiffHunk, DiffFile, ParsedDiff, SplitRow } from "./diff.js";
+export { parseDiff, diffFiles, splitRows } from "./diff.js";
 export { ruleLabel } from "./rules.js";
