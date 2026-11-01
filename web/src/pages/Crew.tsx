@@ -18,6 +18,8 @@ import {
 import { ago, plural } from "../lib/format";
 import { useDrivers, useTick } from "../lib/hooks";
 import { Chevron, Empty, useToast } from "../components/bits";
+import { ScheduleFields } from "../components/ScheduleFields";
+import { parseStartTime } from "../lib/schedule";
 
 /** What an agent runs on, with the editor one tap away. */
 function TuningSummary({ driver: d, onEdit }: { driver: DriverInfo; onEdit: () => void }) {
@@ -235,6 +237,47 @@ function PostmortemDefaults({ drivers }: { drivers: DriverInfo[] }) {
 
 type CrewInput = { active?: boolean; defaultDriver?: string | null; role?: MaintenanceRole | null };
 
+function RoleRunForm({ member, onClose }: { member: Agent; onClose: () => void }) {
+  const { overview, refresh } = useApp();
+  const toast = useToast();
+  const [repoId, setRepoId] = useState("");
+  const [start, setStart] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const repo = repoId || overview?.repos.find((r) => r.isFactory)?.id;
+  const pending = overview?.inFlight.find((t) => t.repoId === repo && t.assignee === member.id && ["queued", "running"].includes(t.status));
+  const submit = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      const task = await api.runRole(member.id, { repoId: repoId || undefined, scheduledAt: parseStartTime(start) });
+      toast({ text: `${task.scheduledAt ? "Scheduled" : "Queued"}: ${task.title}`, link: { to: `/tasks/${task.id}`, label: "Open" } });
+      refresh();
+      onClose();
+    } catch (e) { setError((e as Error).message); }
+    finally { setSaving(false); }
+  };
+  return (
+    <form className="crew-settings" id={`crew-settings-${member.id}`} aria-label={`Maintenance run for ${member.name}`} onSubmit={(e) => { e.preventDefault(); void submit(); }}>
+      <label className="tuning-field">
+        <span>Repository</span>
+        <select className="input" aria-label={`Run repository for ${member.name}`} value={repoId} disabled={saving}
+          onChange={(e) => { setRepoId(e.target.value); setError(null); }}>
+          <option value="">Crane's own repo (default)</option>
+          {overview?.repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select>
+      </label>
+      <ScheduleFields value={start} onChange={setStart} disabled={saving} />
+      {pending && <p className="muted">{member.name} already has a run in this repo: <Link to={`/tasks/${pending.id}`}>{pending.title}</Link>. Choose another repo to start another run.</p>}
+      {error && <p role="alert">{error}</p>}
+      <div className="tuning-actions">
+        <button className="btn btn-primary btn-sm" type="submit" disabled={saving || !!pending}>{start === null ? "Start run" : "Schedule run"}</button>
+        <button className="btn btn-ghost btn-sm" type="button" disabled={saving} onClick={onClose}>Cancel</button>
+      </div>
+    </form>
+  );
+}
+
 /** One member as the page shows it: what they're on, and what's waiting for them. */
 interface Member {
   a: Agent;
@@ -358,9 +401,8 @@ function MemberRow({
           ) : null}
         </span>
         <span className="crew-actions">
-          {/* Hidden while their own run is queued or underway: the row already shows it. */}
-          {role && a.active && pending?.assignee !== a.id && (
-            <button className="btn btn-quiet btn-sm" title={role.summary} disabled={saving} onClick={run}>
+          {role && a.active && (
+            <button className="btn btn-quiet btn-sm" title={role.summary} aria-label={`Start maintenance run for ${a.name}`} disabled={saving} onClick={run}>
               {role.action}
             </button>
           )}
@@ -385,20 +427,12 @@ export function Crew() {
   const toast = useToast();
   const [saving, setSaving] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [running, setRunning] = useState<string | null>(null);
   const configure = async (a: Agent, input: CrewInput) => {
     setSaving(a.id);
     try {
       await api.configureCrew(a.id, input);
       if (input.active !== undefined) toast({ text: input.active ? `${a.name} is active` : a.state === "working" ? `${a.name} goes on-call after this task` : `${a.name} is on-call` });
-      refresh();
-    } catch (e) { toast({ text: (e as Error).message }); }
-    finally { setSaving(null); }
-  };
-  const run = async (id: string) => {
-    setSaving(id);
-    try {
-      const t = await api.runRole(id);
-      toast({ text: `Queued: ${t.title}`, link: { to: `/tasks/${t.id}`, label: "Open" } });
       refresh();
     } catch (e) { toast({ text: (e as Error).message }); }
     finally { setSaving(null); }
@@ -425,9 +459,11 @@ export function Crew() {
   const short = o.factory.running && !o.factory.paused && queuedForAnyone > 0 && free.length === 0 && spare;
 
   const row = (m: Member) => (
-    <MemberRow key={m.a.id} m={m} open={open === m.a.id} onToggle={() => setOpen(open === m.a.id ? null : m.a.id)}
-      saving={!!saving} configure={(input) => configure(m.a, input)} run={() => run(m.a.id)}>
+    <MemberRow key={m.a.id} m={m} open={open === m.a.id || running === m.a.id} onToggle={() => { setRunning(null); setOpen(open === m.a.id || running === m.a.id ? null : m.a.id); }}
+      saving={!!saving} configure={(input) => configure(m.a, input)} run={() => { setOpen(null); setRunning(running === m.a.id ? null : m.a.id); }}>
+      {running === m.a.id && m.a.role && m.a.active ? <RoleRunForm member={m.a} onClose={() => setRunning(null)} /> :
       <MemberSettings m={m} drivers={drivers} factoryDriver={driver} saving={!!saving} configure={(input) => configure(m.a, input)} />
+      }
     </MemberRow>
   );
 

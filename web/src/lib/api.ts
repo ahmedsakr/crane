@@ -22,6 +22,7 @@ import type {
   TaskDraft,
   TaskGates,
   TaskRunOptions,
+  RoleRunOptions,
 } from "@crane/contracts";
 
 export type { DiffFile, DiffHunk, DiffLine } from "@crane/contracts";
@@ -123,7 +124,7 @@ export const api = {
   configureCrew: (id: string, input: { active?: boolean; defaultDriver?: string | null; role?: MaintenanceRole | null }) =>
     post<Agent>(`/agents/${id}`, input),
   /** Start a crew member's maintenance run. Only that member picks it up. */
-  runRole: (id: string) => post<Task>(`/agents/${id}/run`),
+  runRole: (id: string, opts: RoleRunOptions = {}) => post<Task>(`/agents/${id}/run`, opts),
   agents: () => req<Agent[]>("/agents"),
   drivers: () => req<DriverInfo[]>("/drivers"),
   setDefaultDriver: (driver: string) => post<DriverInfo[]>("/factory/driver", { driver }),

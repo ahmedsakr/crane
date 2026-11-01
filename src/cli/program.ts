@@ -927,12 +927,14 @@ agents
 
 agents
   .command("run <member>")
-  .description("Start a crew member's maintenance run on Crane's own repo")
-  .action(async (member: string) => {
+  .description("Start a crew member's maintenance run (defaults to Crane's repo)")
+  .option("--repo <repo>", "connected repo name or id")
+  .option("--at <timestamp>", "start after an ISO timestamp with a timezone")
+  .action(async (member: string, opts: { repo?: string; at?: string }) => {
     try {
       const a = crewMember(member);
-      const t = await actions.runRole(a.id);
-      ui.ok(`Queued for ${a.name}: ${t.title}  ${ui.dim(`${t.id} · ${AUTONOMY_LABEL[t.autonomy]}`)}`);
+      const t = await actions.runRole(a.id, { repoId: opts.repo, scheduledAt: opts.at });
+      ui.ok(`${t.scheduledAt ? `Scheduled for ${new Date(t.scheduledAt).toLocaleString()}` : "Queued"} for ${a.name}: ${t.title}  ${ui.dim(`${t.id} · ${AUTONOMY_LABEL[t.autonomy]}`)}`);
       console.log(ui.hint([`crane watch ${t.id}`, "follow along"], [`crane show ${t.id}`, "see the result"]) + "\n");
     } catch (err) { ui.fail((err as Error).message); }
   });

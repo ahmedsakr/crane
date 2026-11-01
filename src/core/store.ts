@@ -581,7 +581,7 @@ export class Store {
       .get(now()) as { n: number }).n;
   }
 
-  listTasks(opts: { status?: TaskStatus[]; repoId?: string; limit?: number } = {}): Task[] {
+  listTasks(opts: { status?: TaskStatus[]; repoId?: string; assignee?: string; limit?: number } = {}): Task[] {
     const where: string[] = [];
     const params: unknown[] = [];
     if (opts.status?.length) {
@@ -591,6 +591,10 @@ export class Store {
     if (opts.repoId) {
       where.push("repo_id = ?");
       params.push(opts.repoId);
+    }
+    if (opts.assignee) {
+      where.push("assignee = ?");
+      params.push(opts.assignee);
     }
     const sql = `SELECT * FROM tasks ${where.length ? "WHERE " + where.join(" AND ") : ""}
                  ORDER BY created_at DESC LIMIT ?`;
