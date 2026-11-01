@@ -16,6 +16,7 @@ import {
   type RepoTools,
   type DriverInfo,
   type DriverName,
+  type PostmortemSettings,
 } from "../core/types.js";
 import { currentBranch, isGitRepo, removeWorktree, repoRoot } from "./git.js";
 import { DEFAULT_DRIVER_KEY, driverCatalog, driverEffortKey, driverModelKey, isAvailable, sharedDrivers } from "./drivers.js";
@@ -57,6 +58,26 @@ function normalizeDriverSetting(value: string | null): string {
   return text === "default" ? "" : text;
 }
 
+/** Validate the whole request before saving any preference. */
+function checkTuning(driver: DriverName, input: { model?: string | null; effort?: string | null }) {
+  if (!isTunable(driver)) throw new Error(`${driverLabel(driver)} doesn't call a model, so there's no model or effort to set`);
+  let model: string | undefined;
+  let effort: string | undefined;
+  if (input.model !== undefined) {
+    if (input.model !== null && typeof input.model !== "string") throw new Error("Model must be text");
+    model = normalizeDriverSetting(input.model);
+    // Passed to the agent's CLI as one argument. Never accept a flag.
+    if (model && !MODEL_NAME.test(model)) throw new Error(`“${model}” doesn't look like a model name`);
+  }
+  if (input.effort !== undefined) {
+    if (input.effort !== null && typeof input.effort !== "string") throw new Error("Effort must be text");
+    effort = normalizeDriverSetting(input.effort).toLowerCase();
+    const levels = EFFORT_LEVELS[driver];
+    if (effort && !levels.includes(effort)) throw new Error(`${driverLabel(driver)} takes effort ${levels.join(", ")}, or default`);
+  }
+  return { model, effort };
+}
+
 /**
  * Everything an operator can do, shared by the web UI and the CLI so both
  * behave identically. Task decisions record an `operator` event on the task.
@@ -90,7 +111,7 @@ export class OperatorActions {
     if (input.assignee && !this.store.listAgents().some((a) => a.id === input.assignee)) {
       throw new Error(`No crew member ${input.assignee}`);
     }
-    const task = this.store.createTask({ ...input, driver: checkDriver(input.driver), assignee: input.assignee || null });
+    const task = this.store.createTask({ ...input, driver: checkDriver(input.driver), assignee: input.assignee || null, driverSettings: null });
     // Remembered so the next instruction that doesn't name a repo defaults to this one.
     if (task.repoId) this.store.setSetting("last_repo", task.repoId);
     return task;
@@ -164,7 +185,8 @@ export class OperatorActions {
     const m = this.need(id);
     const driver = opts.driver === undefined ? m.driver : checkDriver(opts.driver);
     // A maintenance run goes back to the member it was started for.
-    const next = this.store.createTask({ kind: m.kind, title: m.title, brief: m.brief, repoId: m.repoId, autonomy: m.autonomy, driver, assignee: m.assignee });
+    const next = this.store.createTask({ kind: m.kind, title: m.title, brief: m.brief, repoId: m.repoId, autonomy: m.autonomy, driver, assignee: m.assignee,
+      driverSettings: driver === m.driver ? m.driverSettings : null });
     const on = opts.driver !== undefined ? ` on ${driver ? driverLabel(driver) : "the default agent"}` : "";
     this.store.addEvent(m.id, "operator", `Retried as ${next.id}${on}`, { taskId: next.id });
     return next;
@@ -183,27 +205,38 @@ export class OperatorActions {
   async configureDriver(name: string, input: { model?: string | null; effort?: string | null }): Promise<DriverInfo[]> {
     const driver = checkDriver(name) as DriverName | null;
     if (!driver) throw new Error("Choose which agent to set up");
-    if (!isTunable(driver)) throw new Error(`${driverLabel(driver)} doesn't call a model, so there's no model or effort to set`);
-    let model: string | undefined;
-    let effort: string | undefined;
-    if (input.model !== undefined) {
-      if (input.model !== null && typeof input.model !== "string") throw new Error("Model must be text");
-      model = normalizeDriverSetting(input.model);
-      // Passed to the agent's CLI as one argument. Keep it to what model names look like, and never a flag.
-      if (model && !MODEL_NAME.test(model)) throw new Error(`“${model}” doesn't look like a model name`);
-    }
-    if (input.effort !== undefined) {
-      if (input.effort !== null && typeof input.effort !== "string") throw new Error("Effort must be text");
-      effort = normalizeDriverSetting(input.effort).toLowerCase();
-      const levels = EFFORT_LEVELS[driver];
-      if (effort && !levels.includes(effort)) {
-        throw new Error(`${driverLabel(driver)} takes effort ${levels.join(", ")}, or default`);
-      }
-    }
+    const { model, effort } = checkTuning(driver, input);
     // Validate the whole request before changing either saved preference.
     if (model !== undefined) this.store.setSetting(driverModelKey(driver), model);
     if (effort !== undefined) this.store.setSetting(driverEffortKey(driver), effort);
     return this.drivers();
+  }
+
+  postmortemSettings(): PostmortemSettings {
+    return this.store.postmortemSettings();
+  }
+
+  /** Defaults are captured when a merge queues its read-only post-mortem. */
+  configurePostmortem(input: { driver?: string | null; model?: string | null; effort?: string | null }): PostmortemSettings {
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Expected post-mortem settings");
+    const saved = this.postmortemSettings();
+    const driver = input.driver === undefined ? saved.driver : (checkDriver(input.driver) as DriverName | null);
+    const changed = driver !== saved.driver;
+    const next = { driver, model: changed ? null : saved.model, effort: changed ? null : saved.effort };
+    if (driver && isTunable(driver)) {
+      const tuning = checkTuning(driver, input);
+      if (tuning.model !== undefined) next.model = tuning.model || null;
+      if (tuning.effort !== undefined) next.effort = tuning.effort || null;
+    } else {
+      for (const value of [input.model, input.effort]) {
+        if (value !== undefined && value !== null && (typeof value !== "string" || normalizeDriverSetting(value))) {
+          throw new Error("Choose an agent that calls a model before setting post-mortem model or effort");
+        }
+      }
+      next.model = next.effort = null;
+    }
+    this.store.setPostmortemSettings(next);
+    return next;
   }
 
   /** Choose the agent new tasks run on, unless the operator picks another for a task. */

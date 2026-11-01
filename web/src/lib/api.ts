@@ -5,6 +5,7 @@ import type {
   Autonomy,
   BlockedTool,
   DriverInfo,
+  PostmortemSettings,
   MaintenanceRole,
   MaintenanceRoleInfo,
   RepoTools,
@@ -26,6 +27,7 @@ export type {
   Autonomy,
   BlockedTool,
   DriverInfo,
+  PostmortemSettings,
   MaintenanceRole,
   MaintenanceRoleInfo,
   RepoTools,
@@ -99,6 +101,8 @@ export const api = {
   setDefaultDriver: (driver: string) => post<DriverInfo[]>("/factory/driver", { driver }),
   configureDriver: (driver: string, input: { model?: string | null; effort?: string | null }) =>
     post<DriverInfo[]>(`/drivers/${driver}`, input),
+  postmortemSettings: () => req<PostmortemSettings>("/factory/postmortem"),
+  configurePostmortem: (input: PostmortemSettings) => post<PostmortemSettings>("/factory/postmortem", input),
   pause: () => post("/factory/pause"),
   resume: () => post("/factory/resume"),
 };

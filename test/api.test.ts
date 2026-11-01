@@ -81,6 +81,38 @@ test("api: invalid effort cannot partially save or clear the model", async () =>
   } finally { store.close(); }
 });
 
+test("api: post-mortem defaults validate atomically, reset, and stay separate from agent settings", async () => {
+  const store = new Store(":memory:");
+  try {
+    const app = createApp(store);
+    const read = async () => (await app.request("/api/factory/postmortem")).json();
+    const save = (body: unknown) => app.request("/api/factory/postmortem", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    assert.deepEqual(await read(), { driver: null, model: null, effort: null });
+    const chosen = { driver: "claude-code", model: "sonnet", effort: "max" };
+    assert.equal((await save(chosen)).status, 200);
+    assert.deepEqual(await read(), chosen);
+    for (const body of [null, [], true, 42, "text", { driver: "unknown" }, { driver: 42 },
+      { driver: "codex", model: "valid", effort: "max" }, { model: "--flag" }, { model: "x", effort: 42 },
+      { driver: "simulated", effort: "low" }, { driver: null, effort: "low" }]) {
+      assert.equal((await save(body)).status, 400, JSON.stringify(body));
+      assert.deepEqual(await read(), chosen, "a refused change saves nothing");
+    }
+    assert.equal(store.getSetting(driverModelKey("claude-code")), null);
+    assert.equal(store.getSetting(driverEffortKey("claude-code")), null);
+    assert.equal((await save({ model: " default ", effort: "HIGH" })).status, 200);
+    assert.deepEqual(await read(), { driver: "claude-code", model: null, effort: "high" });
+    assert.equal((await save({ driver: "codex", effort: "minimal" })).status, 200);
+    assert.deepEqual(await read(), { driver: "codex", model: null, effort: "minimal" });
+    assert.equal((await save({ effort: null })).status, 200);
+    assert.deepEqual(await read(), { driver: "codex", model: null, effort: null });
+    assert.equal((await save({ driver: "default" })).status, 200);
+    assert.deepEqual(await read(), { driver: null, model: null, effort: null });
+    assert.equal((await save({ driver: "simulated", model: null, effort: "default" })).status, 200);
+  } finally { store.close(); }
+});
+
 test("api: invalid check settings cannot replace the operator's merge gates", async () => {
   const store = new Store(":memory:");
   try {

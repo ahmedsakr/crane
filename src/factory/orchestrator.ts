@@ -400,7 +400,9 @@ export class Factory {
           };
     };
     // Read at the start of every run, so a change on the Crew page applies to the next one without a restart.
-    const { model, effort } = driverSettings((k) => this.store.getSetting(k), driver.name);
+    const defaults = driverSettings((k) => this.store.getSetting(k), driver.name);
+    const model = ctx.task.driverSettings?.model ?? defaults.model;
+    const effort = ctx.task.driverSettings?.effort ?? defaults.effort;
     try {
       const result = await this.runWithRetry(driver, {
         ...ctx,

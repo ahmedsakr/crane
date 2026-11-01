@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../lib/app-context";
 import {
@@ -12,6 +12,7 @@ import {
   type DriverInfo,
   type MaintenanceRole,
   type MaintenanceRoleInfo,
+  type PostmortemSettings,
   type Task,
 } from "../lib/api";
 import { ago, plural } from "../lib/format";
@@ -154,6 +155,80 @@ function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: Dr
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+/** Independent defaults for the read-only review queued after a merge. */
+function PostmortemDefaults({ drivers }: { drivers: DriverInfo[] }) {
+  const toast = useToast();
+  const [saved, setSaved] = useState<PostmortemSettings | null>(null);
+  const [draft, setDraft] = useState<PostmortemSettings | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const load = () => {
+    setError(null);
+    api.postmortemSettings().then(setSaved).catch((e: Error) => setError(e.message));
+  };
+  useEffect(() => { load(); }, []);
+  const selected = drivers.find((d) => d.name === draft?.driver);
+  const save = async () => {
+    if (!draft) return;
+    setSaving(true);
+    try {
+      setSaved(await api.configurePostmortem(draft));
+      setDraft(null);
+      toast({ text: "Defaults saved for newly queued post-mortems" });
+    } catch (e) { toast({ text: (e as Error).message }); }
+    finally { setSaving(false); }
+  };
+  return (
+    <section className="section">
+      <div className="section-head"><h2 className="section-title">Post-mortems</h2></div>
+      <p className="muted" style={{ maxWidth: "60ch", margin: "0 0 12px", fontSize: 14 }}>
+        After each merge, Crane queues a read-only review of task friction. These defaults apply when that review is queued.
+      </p>
+      <div className="card" style={{ padding: 18 }}>
+        {error ? <span role="alert">{error} <button className="tuning-change" onClick={load}>Retry</button></span> : !saved ? (
+          <span className="muted">Loading defaults…</span>
+        ) : draft ? (
+          <form className="tuning" onSubmit={(e) => { e.preventDefault(); void save(); }} aria-label="Post-mortem defaults">
+            <label className="tuning-field">
+              <span>Agent</span>
+              <select className="input" aria-label="Post-mortem agent" value={draft.driver ?? ""} disabled={saving}
+                onChange={(e) => setDraft({ driver: (e.target.value || null) as PostmortemSettings["driver"], model: null, effort: null })}>
+                <option value="">Merged task's agent</option>
+                {drivers.map((d) => <option key={d.name} value={d.name} disabled={!d.available}>{d.label}{!d.available ? " (not installed)" : ""}</option>)}
+              </select>
+            </label>
+            {!!selected?.efforts.length && <>
+              <label className="tuning-field">
+                <span>Model</span>
+                <input className="input" aria-label="Post-mortem model" list="postmortem-models" value={draft.model ?? ""}
+                  placeholder="Agent setting" disabled={saving} onChange={(e) => setDraft({ ...draft, model: e.target.value || null })} />
+                <datalist id="postmortem-models">{selected.models.map((m) => <option key={m} value={m} />)}</datalist>
+              </label>
+              <label className="tuning-field">
+                <span>Effort</span>
+                <select className="input" aria-label="Post-mortem effort" value={draft.effort ?? ""} disabled={saving}
+                  onChange={(e) => setDraft({ ...draft, effort: e.target.value || null })}>
+                  <option value="">Agent setting</option>
+                  {selected.efforts.map((effort) => <option key={effort} value={effort}>{effort}</option>)}
+                </select>
+              </label>
+            </>}
+            <span className="tuning-actions">
+              <button className="btn btn-primary btn-sm" type="submit" disabled={saving}>Save</button>
+              <button className="btn btn-ghost btn-sm" type="button" disabled={saving} onClick={() => setDraft(null)}>Cancel</button>
+            </span>
+          </form>
+        ) : <>
+          <span className="row-title">{saved.driver ? driverLabel(saved.driver) : "Merged task's agent"}</span>
+          <span className="row-meta" style={{ display: "block", whiteSpace: "normal", marginTop: 4 }}>
+            {settingsLabel(saved) ?? "Agent settings"} · <button className="tuning-change" aria-label="Change post-mortem defaults" onClick={() => setDraft(saved)}>Change</button>
+          </span>
+        </>}
+      </div>
     </section>
   );
 }
@@ -423,6 +498,7 @@ export function Crew() {
       )}
 
       {drivers && drivers.length > 0 && <RunsOn drivers={drivers} onChange={set} />}
+      {drivers && drivers.length > 0 && <PostmortemDefaults drivers={drivers} />}
     </>
   );
 }

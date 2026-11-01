@@ -126,6 +126,8 @@ export interface Task {
    * factory's default agent at the time it's picked up.
    */
   driver: string | null;
+  /** Saved overrides for an automatic post-mortem. Null follows the agent's settings. */
+  driverSettings: DriverSettings | null;
   /**
    * The crew member this task is for, e.g. `a-jib`, when the operator started
    * it from that member's maintenance role. Only that member picks it up.
@@ -476,6 +478,11 @@ export const isTunable = (name: DriverName): boolean => EFFORT_LEVELS[name].leng
 export interface DriverSettings {
   model: string | null;
   effort: string | null;
+}
+
+/** Defaults for newly queued post-mortems. A null driver keeps the merged task's choice. */
+export interface PostmortemSettings extends DriverSettings {
+  driver: DriverName | null;
 }
 
 /** One agent the operator can choose, and whether this machine can run it. */
