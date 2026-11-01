@@ -100,6 +100,9 @@ const task = (autonomy: Task["autonomy"] = "observe"): Task => ({
   agentId: null,
   branch: null,
   worktree: null,
+  sessionId: null,
+  driver: null,
+  assignee: null,
   report: null,
   costUsd: 0,
   createdAt: "",
@@ -352,7 +355,7 @@ test("blocked: repeats add up per repo, and a decision clears them", () => {
 
   actions.keepBlocked(a.id, "Bash(make lint:*)");
   assert.ok(!store.blockedTools({ repoId: a.id }).length);
-  assert.equal(store.overview({ running: false, paused: false, driver: "x", uiOutdated: false }).blocked.length, 0);
+  assert.equal(store.overview({ running: false, paused: false, driver: "x", factoryOutdated: false, uiOutdated: false, uiBuild: null, uiCommit: null }).blocked.length, 0);
 
   actions.disallowTool(a.id, "npm ci");
   assert.deepEqual(store.repoTools(a.id).allowed, []);

@@ -107,7 +107,7 @@ test("runs: costs recorded before the ledger existed are carried over", () => {
   );
   assert.equal(store.listRuns(free.id).length, 0);
   assert.equal(store.getTask(paid.id)?.costUsd, 2.5, "the task's total doesn't double");
-  assert.equal(store.overview({ running: false, paused: false, driver: "x", uiOutdated: false }).spendThisWeekUsd, 2.5);
+  assert.equal(store.overview({ running: false, paused: false, driver: "x", factoryOutdated: false, uiOutdated: false, uiBuild: null, uiCommit: null }).spendThisWeekUsd, 2.5);
   store.close();
 });
 
@@ -169,7 +169,7 @@ test("analytics: buckets spend by local day and compares with the span before", 
 test("analytics: attributes spend to each run's agent, including Codex estimates", () => {
   const store = tmpStore();
   assert.deepEqual(store.analytics().byAgent, []);
-  const t = store.createTask({ kind: "maintenance", title: "Switch agents", brief: "", autonomy: "observe", driver: "codex" });
+  const t = store.createTask({ kind: "maintenance", title: "Switch agents", brief: "", repoId: null, autonomy: "observe", driver: "codex" });
   const finish = (driver: string, cost: number, kind: "work" | "resolve_conflicts" = "work") => {
     const id = store.startRun({ taskId: t.id, kind, agentId: null, driver });
     store.finishRun(id, "failed", usage(cost));

@@ -18,7 +18,7 @@
     "dev:server": "tsx watch src/cli/index.ts serve --port 4471",
     "dev:web": "npm run dev -w web",
     "build": "tsc -p tsconfig.json && npm run build -w web",
-    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck -w web",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm run typecheck -w web",
     "test": "node --import tsx --test test/*.test.ts",
     "crane": "tsx src/cli/index.ts",
     "screenshot": "node --import tsx scripts/screenshot.ts"

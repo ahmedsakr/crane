@@ -44,7 +44,7 @@ test("Codex adds turn costs and preserves known amounts when another turn is unk
 test("run ledger persists estimates and flags unknown costs without treating real zeros as unknown", () => {
   const path = join(mkdtempSync(join(tmpdir(), "crane-codex-cost-")), "t.db");
   let store = new Store(path);
-  const task = store.createTask({ kind: "maintenance", title: "Cost", brief: "", autonomy: "observe" });
+  const task = store.createTask({ kind: "maintenance", title: "Cost", brief: "", repoId: null, autonomy: "observe" });
   const finish = (u: ReturnType<typeof usageFromTurn> | null) => {
     const id = store.startRun({ taskId: task.id, kind: "work", agentId: null, driver: "codex" });
     store.finishRun(id, "succeeded", u);
