@@ -11,6 +11,14 @@ import { diffForTask } from "../factory/git.js";
 import { factoryState as readFactoryState } from "../factory/orchestrator.js";
 import { servedDashboard } from "../core/webbuild.js";
 
+/** Empty bodies use action defaults; malformed or non-object JSON must never trigger a decision. */
+async function optionalJsonObject<T extends object>(request: Request): Promise<T> {
+  const text = await request.text();
+  const body: unknown = text === "" ? {} : JSON.parse(text);
+  if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Expected a JSON object");
+  return body as T;
+}
+
 export function createApp(store: Store) {
   const app = new Hono();
   const actions = new OperatorActions(store);
@@ -83,19 +91,17 @@ export function createApp(store: Store) {
   });
 
   api.post("/tasks/:id/approve", async (c) => {
-    const { note, merge } = await c.req
-      .json<{ note?: string; merge?: boolean }>()
-      .catch(() => ({ note: undefined, merge: undefined }));
+    const { note, merge } = await optionalJsonObject<{ note?: string; merge?: boolean }>(c.req.raw);
     return c.json(await actions.approve(c.req.param("id"), note, { merge }));
   });
   api.post("/tasks/:id/merge", async (c) => c.json(await actions.merge(c.req.param("id"))));
   api.post("/tasks/:id/reject", async (c) => {
-    const { note } = await c.req.json<{ note?: string }>().catch(() => ({ note: undefined }));
+    const { note } = await optionalJsonObject<{ note?: string }>(c.req.raw);
     return c.json(await actions.reject(c.req.param("id"), note));
   });
   api.post("/tasks/:id/cancel", (c) => c.json(actions.cancel(c.req.param("id"))));
   api.post("/tasks/:id/retry", async (c) => {
-    const body = await c.req.json<{ driver?: string | null }>().catch(() => ({}) as { driver?: string | null });
+    const body = await optionalJsonObject<{ driver?: string | null }>(c.req.raw);
     return c.json(actions.retry(c.req.param("id"), { driver: body.driver }), 201);
   });
   api.post("/tasks/:id/follow-up", async (c) => {
