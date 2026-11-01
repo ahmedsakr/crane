@@ -48,6 +48,12 @@ Choose **Approve only** (`crane approve <id> --no-merge`) to keep the branch and
 
 To skip the wait, **Pre-approve** a task from its page while it's queued or running (`crane pre-approve <id> [--message <note>]`). When its run finishes and the repository checks pass, it goes straight to the merge queue instead of to review, and merges exactly as above. A failed run or check still fails the task, a merge that can't land still comes back to you, and a task with no branch waits for review. **Undo pre-approval** (`crane pre-approve <id> --undo`) works until the run hands the task over. Investigate-only tasks can't be pre-approved, and **Run again** doesn't carry a pre-approval over to the new task.
 
+### Schedule tasks
+
+To start a task later, open **Start time** on the instruct sheet, choose **Later**, and pick a date and time in your browser's timezone. In the CLI, use `crane do "…" --at 2030-06-15T09:00:00-04:00` (an ISO timestamp with `Z` or an explicit timezone offset). Tasks stay queued until that time, then become eligible for the next free agent; prerequisites, crew assignment, and factory pause still apply. Keep the factory running for timely pickup. If it was off at the scheduled time, the task becomes eligible when it starts again. Schedules survive restarts.
+
+The task page shows the start time and lets you change it or **Start now**. CLI equivalents are `crane schedule <id> <timestamp>` and `crane schedule <id> now`. Clearing a start time does not waive prerequisites. You can cancel scheduled work like any queued task. **Run again** creates a fresh task eligible immediately, without carrying over the original start time.
+
 ### Prerequisites and acceptance criteria
 
 When work depends on another task, or only counts as done when something observable holds, say so as gates rather than in the brief. Open **Prerequisites and acceptance criteria** on the instruct sheet or under **Make this change**, or pass `--after <id>` and `--accept "<criterion>"` (each repeatable) to `crane do` and `crane follow-up`.

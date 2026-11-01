@@ -64,6 +64,7 @@ export {
   driverLabel,
   lastMergeOutcome,
   lookoutsLabel,
+  isScheduled,
   prerequisiteMet,
   UNSHIPPED_STATUSES,
   ruleLabel,
@@ -95,6 +96,7 @@ export const api = {
   diff: (id: string) => req<TaskDiff>(`/tasks/${id}/diff`),
   draft: (text: string) => post<TaskDraft>("/instruct/draft", { text }),
   createTask: (m: NewTask) => post<Task>("/tasks", m),
+  schedule: (id: string, scheduledAt: string | null) => post<Task>(`/tasks/${id}/schedule`, { scheduledAt }),
   /** Approve, and merge and push the branch unless `merge` is false ("Approve only"). */
   approve: (id: string, opts: { note?: string; merge?: boolean } = {}) => post<Task>(`/tasks/${id}/approve`, opts),
   merge: (id: string) => post<Task>(`/tasks/${id}/merge`),

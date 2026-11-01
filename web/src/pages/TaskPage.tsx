@@ -13,6 +13,7 @@ import {
   settingsLabel,
   lastMergeOutcome,
   lookoutsLabel,
+  isScheduled,
   unmetAcceptance,
   type AgentRun,
   diffFiles,
@@ -26,6 +27,7 @@ import { ago, clock, compact, duration, plural, usd } from "../lib/format";
 import { BlockedItem, StatusChip, useToast } from "../components/bits";
 import { useApp } from "../lib/app-context";
 import { FollowUpForm } from "../components/FollowUpForm";
+import { TaskScheduleForm } from "../components/TaskScheduleForm";
 
 /** Group consecutive tool calls so the timeline reads as a story, with the mechanics one click away. */
 function groupEvents(events: TaskEvent[]) {
@@ -298,21 +300,42 @@ export function TaskPage() {
             <p className="summary muted">{agent?.name ?? "An agent"} is working on this. Updates appear below as they happen.</p>
           ) : m.status === "queued" ? (
             <p className="summary muted">
-              {waitingOn.length
+              {isScheduled(m)
+                ? `Scheduled for ${new Date(m.scheduledAt!).toLocaleString()}. It starts when an agent is free after this time and prerequisites are met.`
+                : waitingOn.length
                 ? `Waiting for ${waitingOn.map((p) => p.id).join(", ")} to land.`
                 : m.assignee && agent
                   ? agent.active ? `Waiting for ${agent.name}, who picks it up when free.` : `Waiting for ${agent.name}, who is on-call. Activate them on the Crew page.`
                   : "Waiting for a free agent."}
             </p>
           ) : null}
+          {m.status === "queued" && (
+            <div className="card card-pad">
+              <h3 className="card-title">Start time</h3>
+              <p className="muted" style={{ fontSize: 14 }}>
+                {m.scheduledAt
+                  ? <><time dateTime={m.scheduledAt}>{new Date(m.scheduledAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "long" })}</time>{!isScheduled(m) && " · Start time reached; prerequisites and agent availability still apply."}</>
+                  : "Now, once an agent is free and prerequisites are met."}
+                {" The factory must be running and unpaused."}
+              </p>
+              {isScheduled(m) && (
+                <button className="btn btn-quiet btn-sm" disabled={!!busy}
+                  onClick={() => run("schedule", () => api.schedule(m.id, null), "Start time cleared. Prerequisites still apply.")}>
+                  Start now
+                </button>
+              )}
+              <TaskScheduleForm key={`${m.id}:${m.scheduledAt}`} scheduledAt={m.scheduledAt ?? null} busy={!!busy}
+                onSave={(time) => run("schedule", () => api.schedule(m.id, time), time ? "Start time saved" : "Start time cleared. Prerequisites still apply.")} />
+            </div>
+          )}
           {waitingOn.length > 0 && (
             <div className="card card-pad pre-approval">
               <div className="pre-approval-copy">
                 <strong>Waiting for prerequisites</strong>
                 <span>
                   {waitingOn.length === 1
-                    ? `It starts once this lands on ${main}. Waive it to start now without its changes, approving a reduced scope.`
-                    : `It starts once these land on ${main}. Waive them to start now without their changes, approving a reduced scope.`}
+                    ? `It waits for this to land on ${main}. Waive it to run without its changes, approving a reduced scope. Its start time still applies.`
+                    : `It waits for these to land on ${main}. Waive them to run without their changes, approving a reduced scope. Its start time still applies.`}
                 </span>
                 <ul className="gate-list">
                   {waitingOn.map((p) => (
@@ -325,7 +348,7 @@ export function TaskPage() {
                 </ul>
               </div>
               <button className="btn btn-quiet btn-sm" disabled={!!busy}
-                onClick={() => run("waive", () => api.waivePrerequisites(m.id), "Waived prerequisites. It starts with the next free agent.")}>
+                onClick={() => run("waive", () => api.waivePrerequisites(m.id), "Waived prerequisites. Its start time still applies.")}>
                 Waive prerequisites
               </button>
             </div>

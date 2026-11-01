@@ -420,7 +420,7 @@ export function Crew() {
   const free = active.filter((m) => m.a.active && m.a.state === "idle" && !m.role && !m.waiting);
 
   // Queued work nobody is free to take: offer the one tap that fixes it.
-  const queuedForAnyone = Math.max(0, o.counts.queued - o.inFlight.filter((m) => m.status === "queued" && m.assignee).length);
+  const queuedForAnyone = o.queuedForAnyone ?? 0;
   const spare = onCall.find((m) => !m.role);
   const short = o.factory.running && !o.factory.paused && queuedForAnyone > 0 && free.length === 0 && spare;
 

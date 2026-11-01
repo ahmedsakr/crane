@@ -112,6 +112,11 @@ export function createApp(store: Store) {
     const { note, merge } = await optionalJsonObject<{ note?: string; merge?: boolean }>(c.req.raw);
     return c.json(await actions.approve(c.req.param("id"), note, { merge }));
   });
+  api.post("/tasks/:id/schedule", async (c) => {
+    const body = await c.req.json<{ scheduledAt: string | null }>();
+    if (!body || typeof body !== "object" || !("scheduledAt" in body)) return c.json({ error: "Give scheduledAt, or null to start now" }, 400);
+    return c.json(actions.schedule(c.req.param("id"), body.scheduledAt));
+  });
   api.post("/tasks/:id/pre-approve", async (c) => {
     const { note } = await optionalJsonObject<{ note?: string }>(c.req.raw);
     return c.json(actions.preApprove(c.req.param("id"), note));

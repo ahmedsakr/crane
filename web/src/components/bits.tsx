@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { api, KIND_LABEL, STATUS_LABEL, type BlockedTool, type Task, type TaskStatus } from "../lib/api";
+import { api, isScheduled, KIND_LABEL, STATUS_LABEL, type BlockedTool, type Task, type TaskStatus } from "../lib/api";
 import { ago, plural } from "../lib/format";
 
 export function Dot({ status }: { status: TaskStatus | "on" | "paused" | "off" }) {
@@ -26,6 +26,11 @@ export function StatusChip({ status }: { status: TaskStatus }) {
 
 export function TaskRow({ m, repoName }: { m: Task; repoName?: string }) {
   const when = m.finishedAt ?? m.startedAt ?? m.createdAt;
+  const scheduled = isScheduled(m);
+  const state = scheduled
+    ? `Scheduled for ${new Date(m.scheduledAt!).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`
+    : m.status === "running" ? "Working now" : m.status === "merging" ? "Merging now" : STATUS_LABEL[m.status];
+  const meta = scheduled ? [state, repoName, KIND_LABEL[m.kind]] : [repoName, KIND_LABEL[m.kind], state];
   return (
     <li>
       <Link className="row" to={`/tasks/${m.id}`}>
@@ -34,10 +39,8 @@ export function TaskRow({ m, repoName }: { m: Task; repoName?: string }) {
           <span className="row-title" style={{ display: "block" }}>
             {m.title}
           </span>
-          <span className="row-meta" style={{ display: "block" }}>
-            {[repoName, KIND_LABEL[m.kind], m.status === "running" ? "Working now" : m.status === "merging" ? "Merging now" : STATUS_LABEL[m.status]]
-              .filter(Boolean)
-              .join(" · ")}
+          <span className="row-meta" style={{ display: "block", ...(scheduled ? { whiteSpace: "normal" } : {}) }}>
+            {meta.filter(Boolean).join(" · ")}
           </span>
         </span>
         <span className="row-right">{ago(when)}</span>

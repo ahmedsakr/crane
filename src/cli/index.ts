@@ -28,7 +28,7 @@ import {
   type TaskKind,
   type TaskStatus,
 } from "@crane/contracts";
-import { OperatorActions, checkLookouts, toRule } from "../factory/actions.js";
+import { OperatorActions, checkLookouts, checkScheduledAt, toRule } from "../factory/actions.js";
 import { draftTask } from "../factory/instruct.js";
 import {
   DEFAULT_MAX_TURNS,
@@ -130,15 +130,18 @@ program
   .option("-k, --kind <kind>", "maintenance | repo_feature | factory_feature")
   .option("-a, --autonomy <level>", "observe | propose | act")
   .option("--agent <agent>", `which agent works it: ${DRIVER_NAMES.join(" | ")} (default: the factory's default)`)
+  .option("--at <timestamp>", "start no earlier than this ISO timestamp with timezone, e.g. 2030-06-15T09:00:00-04:00")
   .option("--after <id>", AFTER_HELP, collect, [])
   .option("--accept <criterion>", ACCEPT_HELP, collect, [])
   .option("--look-for <what>", LOOK_FOR_HELP, collect, [])
   .option("-y, --yes", "skip the confirmation step")
   .action(async (words: string[], opts: {
     repo?: string; kind?: TaskKind; autonomy?: Autonomy; agent?: string; yes?: boolean; after: string[]; accept: string[];
-    lookFor: string[];
+    lookFor: string[]; at?: string;
   }) => {
     let lookouts = lookFor(opts.lookFor);
+    let scheduledAt: string | null;
+    try { scheduledAt = checkScheduledAt(opts.at); } catch (err) { return ui.fail((err as Error).message); }
     p.intro(`${ui.accent("▟")} ${pc.bold("New task")}`);
     let text = words.join(" ").trim();
     if (!text) {
@@ -199,6 +202,7 @@ program
       `${ui.dim("Type     ")} ${KIND_LABEL[draft.kind]}  ${ui.dim(draft.why.kind)}`,
       `${ui.dim("Freedom  ")} ${AUTONOMY_LABEL[draft.autonomy]}  ${ui.dim(draft.why.autonomy)}`,
       ...(driver || choosable.length > 1 ? [agentLine()] : []),
+      ...(scheduledAt ? [`${ui.dim("Start    ")} ${new Date(scheduledAt).toLocaleString()}  ${ui.dim("When an agent is free after this time")}`] : []),
       ...(opts.after.length ? [`${ui.dim("After    ")} ${opts.after.join(", ")}  ${ui.dim("Starts once they land")}`] : []),
       ...opts.accept.map((c, i) => `${ui.dim(i ? "         " : "Accept   ")} ${c}`),
       ...(lookouts.length ? [`${ui.dim("Look for ")} ${lookoutsLabel(lookouts)}  ${ui.dim("Reported as findings")}`] : []),
@@ -207,9 +211,10 @@ program
 
     if (!opts.yes) {
       const next = await p.select({
-        message: "Start it?",
+        message: scheduledAt ? "Schedule it?" : "Start it?",
         options: [
-          { value: "go", label: "Start task" },
+          { value: "go", label: scheduledAt ? "Schedule task" : "Start task" },
+          { value: "schedule", label: "Change the start time" },
           { value: "autonomy", label: "Change how much freedom it has" },
           { value: "kind", label: "Change the type" },
           ...(choosable.length > 1 ? [{ value: "agent", label: "Change the agent" }] : []),
@@ -218,6 +223,19 @@ program
         ],
       });
       if (p.isCancel(next) || next === "stop") return p.cancel("Nothing was created.");
+      if (next === "schedule") {
+        const at = await p.text({
+          message: "Start time (ISO timestamp with timezone, or now)",
+          placeholder: "2030-06-15T09:00:00-04:00",
+          initialValue: scheduledAt ?? "now",
+          validate: (v) => {
+            if (v?.trim() === "now") return;
+            try { checkScheduledAt(v?.trim() ?? ""); } catch (err) { return (err as Error).message; }
+          },
+        });
+        if (p.isCancel(at)) return p.cancel("Nothing was created.");
+        scheduledAt = at.trim() === "now" ? null : checkScheduledAt(at.trim());
+      }
       if (next === "agent") {
         const a = await p.select({
           message: "Which agent?",
@@ -263,10 +281,10 @@ program
     }
 
     try {
-      const m = actions.createTask({ ...draft, driver, prerequisites: opts.after, acceptance: opts.accept, lookouts });
+      const m = actions.createTask({ ...draft, driver, prerequisites: opts.after, acceptance: opts.accept, lookouts, scheduledAt });
       const waiting = store.unmetPrerequisites(m).map((t) => t.id);
       p.outro(
-        `${pc.green("✓")} ${waiting.length ? `Task queued. It starts once ${waiting.join(", ")} land${waiting.length === 1 ? "s" : ""}` : "Task started"}  ${ui.dim(m.id)}\n   ${ui.dim("follow along:")} crane watch ${m.id}${
+        `${pc.green("✓")} ${m.scheduledAt ? `Task scheduled for ${new Date(m.scheduledAt).toLocaleString()}. Prerequisites still apply` : waiting.length ? `Task queued. It starts once ${waiting.join(", ")} land${waiting.length === 1 ? "s" : ""}` : "Task queued"}  ${ui.dim(m.id)}\n   ${ui.dim("follow along:")} crane watch ${m.id}${
           factoryIsRunning(store) ? "" : `\n   ${ui.accent("!")} The factory is off. Run ${pc.bold("crane serve")} to start the agents.`
         }`,
       );
@@ -353,6 +371,7 @@ program
     console.log(`  ${ui.statusText(m.status)}${ui.dim(forMember + on + cost + preApproved)}`);
     if (settingsLabel(m)) console.log(ui.dim(`  Model settings: ${settingsLabel(m)}`));
     if (m.lookouts.length) console.log(ui.dim(`  Also looks for: ${lookoutsLabel(m.lookouts)}`));
+    if (m.scheduledAt) console.log(ui.dim(`  Start no earlier than: ${new Date(m.scheduledAt).toLocaleString()} (${m.scheduledAt})`));
 
     const prerequisites = store.prerequisiteStates(m);
     const waiting = store.unmetPrerequisites(m);
@@ -579,11 +598,22 @@ function mergeQueued(id: string) {
 
 act("decline", "Decline a task and discard its branch", (id, n) => actions.reject(id, n), "Declined");
 act("cancel", "Stop a queued or running task", (id) => actions.cancel(id), "Cancelled");
+program
+  .command("schedule")
+  .description("Change a queued task's start time; use now to clear it (prerequisites still apply)")
+  .argument("<id>")
+  .argument("<timestamp>", "ISO timestamp with timezone, or now")
+  .action((id: string, timestamp: string) => {
+    try {
+      const task = actions.schedule(id, timestamp === "now" ? null : timestamp);
+      ui.ok(task.scheduledAt ? `Scheduled for ${new Date(task.scheduledAt).toLocaleString()}  ${ui.dim(task.id)}` : `Start time cleared. Prerequisites still apply  ${ui.dim(task.id)}`);
+    } catch (err) { ui.fail((err as Error).message); }
+  });
 act(
   "waive",
   "Waive a queued task's prerequisites that haven't landed, approving a reduced scope so it starts without them",
   (id, n) => actions.waivePrerequisites(id, n),
-  "Waived prerequisites. It starts with the next free agent",
+  "Waived prerequisites. Its start time still applies",
 );
 
 program
@@ -823,7 +853,7 @@ const agents = program
     const tunable = catalog.find((d) => d.isDefault && d.efforts.length) ?? catalog.find((d) => d.available && d.efforts.length);
     const next: [string, string][] = [];
     // Queued work nobody is free to take: the same nudge the Crew page shows.
-    const waiting = store.listTasks({ status: ["queued"] }).filter((t) => !t.assignee).length;
+    const waiting = store.queuedForAnyone();
     const free = list.some((a) => a.active && !a.role && a.state === "idle");
     const spare = list.find((a) => !a.active && !a.role && a.state !== "working");
     if (waiting && !free && spare) {

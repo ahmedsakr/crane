@@ -178,6 +178,8 @@ export interface Task {
   report: Report | null;
   costUsd: number;
   createdAt: string;
+  /** Earliest pickup time, in UTC. Null means immediately eligible; prerequisites still apply. */
+  scheduledAt: string | null;
   startedAt: string | null;
   finishedAt: string | null;
 }
@@ -287,6 +289,8 @@ export interface NewTask extends TaskRunOptions {
   brief: string;
   repoId: string | null;
   autonomy: Autonomy;
+  /** Earliest pickup time: a future ISO 8601 timestamp with a timezone, or null for now. */
+  scheduledAt?: string | null;
   /** The crew member who must work it. Leave out for whoever is free next. */
   assignee?: string | null;
   /** Ids of tasks in the same repo that must land before this one starts. */
@@ -296,6 +300,10 @@ export interface NewTask extends TaskRunOptions {
   /** What else the agent should look out for while it works. */
   lookouts?: Lookout[];
 }
+
+/** A queued task still waiting for its start time. Due tasks read as queued again. */
+export const isScheduled = (task: Pick<Task, "status" | "scheduledAt">, now = Date.now()): boolean =>
+  task.status === "queued" && task.scheduledAt != null && Date.parse(task.scheduledAt) > now;
 
 /** What a follow-up can add to the run options: the gates it must pass. */
 export type TaskGates = Pick<NewTask, "prerequisites" | "acceptance">;
@@ -540,6 +548,8 @@ export interface Overview {
     uiCommit: string | null;
   };
   counts: Record<TaskStatus, number>;
+  /** Unassigned queued tasks whose start time has arrived; not capped by inFlight. */
+  queuedForAnyone: number;
   shippedThisWeek: number;
   shippedLastWeek: number;
   spendThisWeekUsd: number;

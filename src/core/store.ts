@@ -74,6 +74,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   report TEXT,
   cost_usd REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
+  scheduled_at TEXT,
   started_at TEXT,
   finished_at TEXT
 );
@@ -214,6 +215,7 @@ const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
   ["prerequisites_waived_at", "TEXT"],
   ["acceptance", "TEXT"],
   ["lookouts", "TEXT"],
+  ["scheduled_at", "TEXT"],
 ];
 
 /** Add any missing columns to an older database. Safe if two processes open it at once. */
@@ -229,6 +231,7 @@ function addMissingColumns(db: Database.Database) {
 }
 
 const now = () => new Date().toISOString();
+const TASK_DUE = "(scheduled_at IS NULL OR scheduled_at <= ?)";
 
 function toRepo(r: Row): Repo {
   return {
@@ -268,6 +271,7 @@ function toTask(r: Row): Task {
     report: r.report ? (JSON.parse(r.report as string) as Report) : null,
     costUsd: (r.cost_usd as number) ?? 0,
     createdAt: r.created_at as string,
+    scheduledAt: (r.scheduled_at as string) ?? null,
     startedAt: (r.started_at as string) ?? null,
     finishedAt: (r.finished_at as string) ?? null,
   };
@@ -501,18 +505,21 @@ export class Store {
   createTask(input: NewTask & { driverSettings?: DriverSettings | null }): Task {
     const id = shortId("t");
     const ts = now();
+    const scheduledAt = input.scheduledAt == null ? null : new Date(input.scheduledAt).toISOString();
     const list = (xs: string[] | undefined) => (xs?.length ? JSON.stringify(xs) : null);
     this.db
       .prepare(
         `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, driver_settings,
-           prerequisites, acceptance, lookouts, status, created_at)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?)`,
+           prerequisites, acceptance, lookouts, status, created_at, scheduled_at)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)`,
       )
       .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null,
         input.model ?? null, input.effort ?? null, input.assignee ?? null,
         input.driverSettings ? JSON.stringify(input.driverSettings) : null,
-        list(input.prerequisites), list(input.acceptance), list(input.lookouts), ts);
-    this.addEvent(id, "status", "Queued", { status: "queued" });
+        list(input.prerequisites), list(input.acceptance), list(input.lookouts), ts, scheduledAt);
+    this.addEvent(id, "status", scheduledAt ? `Scheduled for ${scheduledAt}` : "Queued", {
+      status: "queued", ...(scheduledAt ? { scheduledAt } : {}),
+    });
     const task = this.getTask(id)!;
     const waiting = this.unmetPrerequisites(task);
     if (waiting.length) {
@@ -521,6 +528,18 @@ export class Store {
       });
     }
     return task;
+  }
+
+  /** Change pickup time only while queued, and record the decision with the write. */
+  setTaskSchedule(id: string, scheduledAt: string | null): boolean {
+    scheduledAt = scheduledAt === null ? null : new Date(scheduledAt).toISOString();
+    return this.db.transaction(() => {
+      const changed = this.db.prepare("UPDATE tasks SET scheduled_at = ? WHERE id = ? AND status = 'queued'")
+        .run(scheduledAt, id).changes;
+      if (!changed) return false;
+      this.addEvent(id, "operator", scheduledAt ? `Scheduled for ${scheduledAt}` : "Cleared start time; ready once prerequisites are met", { scheduledAt });
+      return true;
+    }).immediate();
   }
 
   /** The task's prerequisites in the order it lists them, and whether each has landed. */
@@ -554,6 +573,12 @@ export class Store {
       .prepare("SELECT * FROM tasks WHERE id IN (?, ?, ?) ORDER BY id = ? DESC LIMIT 1")
       .get(id, `t-${id}`, `m-${id}`, id) as Row | undefined;
     return r ? toTask(r) : null;
+  }
+
+  /** Unassigned queued work that is no longer waiting for its start time. */
+  queuedForAnyone(): number {
+    return (this.db.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE status = 'queued' AND assignee IS NULL AND ${TASK_DUE}`)
+      .get(now()) as { n: number }).n;
   }
 
   listTasks(opts: { status?: TaskStatus[]; repoId?: string; limit?: number } = {}): Task[] {
@@ -678,15 +703,16 @@ export class Store {
   /**
    * Atomically take the oldest queued task this agent may work: one assigned
    * to it, or one assigned to nobody unless `onlyAssigned`. Skips tasks whose
-   * prerequisites haven't landed, unless the operator waived them. Safe if two
+   * start time hasn't arrived or prerequisites haven't landed (unless waived). Safe if two
    * factories race.
    */
   claimNextTask(agentId: string, opts: { onlyAssigned?: boolean } = {}): Task | null {
     const mine = opts.onlyAssigned ? "assignee = ?" : "(assignee IS NULL OR assignee = ?)";
     const tx = this.db.transaction(() => {
       const rows = this.db
-        .prepare(`SELECT * FROM tasks WHERE status = 'queued' AND ${mine} ORDER BY created_at ASC`)
-        .all(agentId) as Row[];
+        .prepare(`SELECT * FROM tasks WHERE status = 'queued' AND ${mine}
+          AND ${TASK_DUE} ORDER BY created_at ASC`)
+        .all(agentId, now()) as Row[];
       const next = rows.map(toTask).find((t) => !this.unmetPrerequisites(t).length);
       if (!next) return null;
       const changed = this.db
@@ -1030,6 +1056,7 @@ export class Store {
     return {
       factory,
       counts,
+      queuedForAnyone: this.queuedForAnyone(),
       shippedThisWeek: shipped(t0 - weekMs, t0 + 1),
       shippedLastWeek: shipped(t0 - 2 * weekMs, t0 - weekMs),
       spendThisWeekUsd: spend,
