@@ -33,6 +33,16 @@ test("boundaries: agents never reach into the factory", () => {
   }
 });
 
+test("boundaries: core depends on nothing above it", () => {
+  // Factory, server, CLI, and agents all build on core, so core importing any of them is a directory-level loop.
+  const core = sources.filter((f) => f.startsWith("core/"));
+  assert.ok(core.includes("core/store.ts"), "expected to find core sources");
+  for (const file of core) {
+    const bad = importsOf(file).filter((i) => /^(factory|server|cli|agents)\//.test(i));
+    assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
+  }
+});
+
 test("boundaries: only the driver registry imports concrete agents", () => {
   const concrete = new Set(["agents/claude-code", "agents/codex", "agents/simulated"]);
   for (const file of sources.filter((f) => f !== "factory/drivers.ts" && !concrete.has(f.replace(/\.ts$/, "")))) {
