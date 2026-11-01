@@ -62,6 +62,66 @@ test("api: approval keeps empty-body defaults and honors approve only", async ()
   } finally { store.close(); }
 });
 
+test("api: cross-origin and rebound requests change nothing", async () => {
+  const store = new Store(":memory:");
+  try {
+    const repo = store.addRepo({ path: "/repo" });
+    const task = store.createTask({ kind: "maintenance", title: "Approve", brief: "", repoId: repo.id, autonomy: "propose" });
+    store.updateTask(task.id, { status: "needs_review", branch: `crane/${task.id}` });
+    const app = createApp(store);
+    const snapshot = () => ({ task: store.getTask(task.id), events: store.listEvents(task.id), repos: store.listRepos(), tools: store.repoTools(repo.id) });
+    const before = snapshot();
+    const writes: [string, string][] = [
+      [`/api/tasks/${task.id}/approve`, ""],
+      [`/api/repos/${repo.id}/tools/allow`, JSON.stringify({ rule: "Bash(curl:*)" })],
+      ["/api/repos", JSON.stringify({ path: "/elsewhere" })],
+    ];
+    // What a page on another site can send without a preflight: a text/plain POST.
+    const forged: [string, Record<string, string>][] = [
+      ["evil origin", { origin: "https://evil.example" }],
+      ["other local port", { origin: "http://localhost:8080" }],
+      ["opaque origin", { origin: "null" }],
+      ["cross-site fetch metadata", { "sec-fetch-site": "cross-site" }],
+      ["same-site fetch metadata", { "sec-fetch-site": "same-site" }],
+    ];
+    for (const [path, body] of writes) {
+      for (const [label, headers] of forged) {
+        const response = await app.request(`http://localhost${path}`, {
+          method: "POST", headers: { "content-type": "text/plain", ...headers }, body,
+        });
+        assert.equal(response.status, 403, `${label}: ${path}`);
+      }
+      // DNS rebinding: the attacker's name resolves to us, so Origin and Host agree but Host isn't ours.
+      const rebound = await app.request(`http://evil.example:4471${path}`, {
+        method: "POST", headers: { "content-type": "text/plain", origin: "http://evil.example:4471" }, body,
+      });
+      assert.equal(rebound.status, 403, `rebound: ${path}`);
+    }
+    assert.equal((await app.request("http://evil.example:4471/api/overview")).status, 403, "rebound reads are refused too");
+    assert.deepEqual(snapshot(), before);
+
+    // The dashboard itself, the Vite proxy (which keeps the browser's Host), and non-browser clients still work.
+    assert.equal((await app.request("http://127.0.0.1:4471/api/overview")).status, 200);
+    const sameOrigin = await app.request(`http://localhost:5173/api/tasks/${task.id}/approve`, {
+      method: "POST", headers: { origin: "http://localhost:5173", "sec-fetch-site": "same-origin" }, body: '{"merge":false}',
+    });
+    assert.equal(sameOrigin.status, 200);
+    assert.equal(store.getTask(task.id)?.status, "approved");
+    const script = await app.request(`/api/repos/${repo.id}/tools/allow`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ rule: "Bash(make:*)" }),
+    });
+    assert.equal(script.status, 200);
+
+    // Exposed on purpose (crane serve --host 0.0.0.0): other hosts may reach it, but forged origins still can't write.
+    const exposed = createApp(store, { exposed: true });
+    assert.equal((await exposed.request("http://192.168.1.20:4471/api/overview")).status, 200);
+    const lan = await exposed.request(`http://192.168.1.20:4471/api/repos/${repo.id}/tools/keep-blocked`, {
+      method: "POST", headers: { origin: "https://evil.example" }, body: JSON.stringify({ rule: "Bash(curl:*)" }),
+    });
+    assert.equal(lan.status, 403);
+  } finally { store.close(); }
+});
+
 test("api: invalid effort cannot partially save or clear the model", async () => {
   const store = new Store(":memory:");
   try {
