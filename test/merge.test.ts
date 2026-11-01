@@ -239,6 +239,71 @@ test("merge: without a remote, moves local main when it isn't checked out", asyn
   assert.equal(sh(checkout, "rev-parse", "--abbrev-ref", "HEAD"), "operator-work", "operator's branch untouched");
 });
 
+test("merge: diverged local and origin main stop before anything is pushed or moved", async () => {
+  const { root, checkout, repo, task, wt } = setup();
+  commitFile(wt, "feature.txt", "feature\n", "add feature");
+  commitFile(checkout, "local.txt", "local\n", "only on local main");
+  landElsewhere(root, "other.txt", "other\n");
+  const originBefore = sh(join(root, "origin.git"), "rev-parse", "main");
+  const localBefore = sh(checkout, "rev-parse", "main");
+  const branchBefore = sh(checkout, "rev-parse", task.branch!);
+
+  await assert.rejects(
+    landTask({ repo, task, workdir: wt, emit, resolveConflicts: noResolve }),
+    (err: Error) => err instanceof MergeError && /have diverged/.test(err.message),
+  );
+  assert.equal(sh(join(root, "origin.git"), "rev-parse", "main"), originBefore, "origin untouched, never forced");
+  assert.equal(sh(checkout, "rev-parse", "main"), localBefore, "local main untouched");
+  assert.equal(sh(checkout, "rev-parse", task.branch!), branchBefore, "task branch untouched");
+});
+
+test("merge: local commits not on origin yet are pushed along with the task, and the operator is told", async () => {
+  const { root, checkout, repo, task, wt } = setup();
+  commitFile(wt, "feature.txt", "feature\n", "add feature");
+  commitFile(checkout, "local.txt", "local\n", "only on local main");
+  const notes: string[] = [];
+
+  const r = await landTask({ repo, task, workdir: wt, emit: (_t, m) => void notes.push(m), resolveConflicts: noResolve });
+
+  assert.ok(notes.includes("Your local main has 1 commit not on origin yet. They'll be pushed too."), notes.join("\n"));
+  const origin = join(root, "origin.git");
+  assert.equal(sh(origin, "rev-parse", "main"), r.commit);
+  assert.equal(sh(origin, "show", "main:local.txt"), "local");
+  assert.equal(sh(origin, "show", "main:feature.txt"), "feature");
+  assert.equal(sh(checkout, "rev-parse", "HEAD"), r.commit);
+});
+
+test("merge: a resolver that fails aborts the merge and pushes nothing", async () => {
+  const { root, checkout, repo, task, wt } = setup();
+  commitFile(wt, "notes.md", "# Notes\n\nfirst\nfrom the task\n", "task edit");
+  landElsewhere(root, "notes.md", "# Notes\n\nfirst\nfrom main\n");
+  const before = sh(join(root, "origin.git"), "rev-parse", "main");
+  const localBefore = sh(checkout, "rev-parse", "main");
+
+  await assert.rejects(
+    landTask({ repo, task, workdir: wt, emit, resolveConflicts: async () => { throw new Error("agent gave up"); } }),
+    /agent gave up/,
+  );
+  assert.equal(sh(join(root, "origin.git"), "rev-parse", "main"), before, "origin untouched");
+  assert.equal(sh(checkout, "rev-parse", "main"), localBefore, "local main untouched");
+  assert.equal(sh(wt, "status", "--porcelain", "--untracked-files=no"), "", "merge was aborted");
+  assert.throws(() => sh(wt, "rev-parse", "-q", "--verify", "MERGE_HEAD"), "no merge left in progress");
+});
+
+test("merge: uncommitted changes in Crane's worktree are never merged", async () => {
+  const { root, repo, task, wt } = setup();
+  commitFile(wt, "feature.txt", "feature\n", "add feature");
+  writeFileSync(join(wt, "notes.md"), "not committed\n");
+  const before = sh(join(root, "origin.git"), "rev-parse", "main");
+
+  await assert.rejects(
+    landTask({ repo, task, workdir: wt, emit, resolveConflicts: noResolve }),
+    (err: Error) => err instanceof MergeError && /uncommitted changes/.test(err.message),
+  );
+  assert.equal(sh(join(root, "origin.git"), "rev-parse", "main"), before);
+  assert.equal(readFileSync(join(wt, "notes.md"), "utf8"), "not committed\n", "the work is still there");
+});
+
 test("merge: running it again after it landed is a no-op", async () => {
   const { root, repo, task, wt } = setup();
   commitFile(wt, "feature.txt", "feature\n", "add feature");
