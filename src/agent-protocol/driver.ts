@@ -1,5 +1,11 @@
 import type { EventType, Task, Report, Repo, RunUsage } from "@crane/contracts";
 
+/** A sibling task's state when the agent starts; never includes another worktree's path. */
+export interface SiblingTask extends Pick<Task, "id" | "title" | "status" | "branch"> {
+  /** Commits on its branch that are not on the repo's default branch; null if Git couldn't tell. */
+  hasCommits: boolean | null;
+}
+
 export interface RunContext {
   task: Task;
   repo: Repo | null;
@@ -29,6 +35,8 @@ export interface RunContext {
    * is left to Crane rather than reported as a gap.
    */
   checks?: string[];
+  /** Other pending or unmerged tasks in this repo, supplied by the factory. */
+  siblingTasks?: readonly SiblingTask[];
   /** Extra permission rules the operator allowed for this repo. Crane's deny list still wins. */
   allowedTools?: string[];
   /** Stop the agent after this many turns. */

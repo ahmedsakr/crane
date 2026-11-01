@@ -27,6 +27,7 @@ export {
   type ResolveConflictsJob,
   type RunContext,
   type RunResult,
+  type SiblingTask,
 } from "./driver.js";
 export { REPORT_FENCE, parseReport } from "./report.js";
 export { combinedCost } from "./usage.js";
