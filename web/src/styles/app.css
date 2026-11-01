@@ -1124,45 +1124,214 @@ a.row:hover .row-title {
   padding: 0;
 }
 .files li {
-  padding: 8px 0;
   border-bottom: 1px solid var(--hairline);
-  font-family: var(--font-mono);
-  font-size: 13px;
 }
 .files li:last-child {
   border-bottom: 0;
 }
+.file-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  width: calc(100% + 20px);
+  margin-inline: -10px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  text-align: left;
+}
+button.file-row {
+  cursor: pointer;
+}
+button.file-row:hover {
+  background: var(--surface-2);
+}
+button.file-row:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.file-row[aria-current="true"] {
+  background: var(--surface-2);
+  box-shadow: inset 3px 0 0 var(--ink);
+  font-weight: 600;
+}
+.file-path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.file-stat {
+  flex: none;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.file-stat .plus {
+  color: var(--ok);
+}
+.file-stat .minus {
+  color: var(--bad);
+}
+
+/* one file's changes, inline or before and after */
+.diff-viewer {
+  margin-top: 12px;
+}
+.diff-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.diff-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+}
+.diff-nav .btn-sm {
+  padding: 0 11px;
+  font-size: 15px;
+}
+.diff-nav .btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.segmented-sm button {
+  padding: 5px 12px;
+  font-size: 12.5px;
+}
+.diff-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 10px 0 0;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-bottom: 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+}
+.diff-head + .section-note {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+}
+.diff-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
 .diff {
-  margin: 12px 0 0;
-  max-height: 520px;
+  --ln: 3ch;
+  max-height: min(70vh, 720px);
   overflow: auto;
   background: var(--surface-2);
   border: 1px solid var(--hairline);
-  border-radius: var(--r-sm);
-  padding: 12px 0;
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
   font-family: var(--font-mono);
   font-size: 12.5px;
   line-height: 1.6;
+  /* Show code as written: "=>" and "===" stay separate characters. */
+  font-variant-ligatures: none;
 }
-.diff div {
-  padding: 0 14px;
+.diff:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.diff-rows {
+  min-width: 100%;
+  padding-bottom: 6px;
+}
+.diff-inline .diff-rows {
+  width: max-content;
+}
+.diff .ln {
+  padding: 0 8px;
+  color: var(--graphite);
+  text-align: right;
+  user-select: none;
+  opacity: 0.75;
+}
+.diff .code {
+  padding: 0 14px 0 6px;
   white-space: pre;
+}
+.diff-hunk {
+  padding: 4px 14px;
+  margin-top: 6px;
+  color: var(--live);
+  white-space: pre;
+}
+.diff-hunk:first-child,
+.diff-sides + .diff-hunk {
+  margin-top: 0;
+}
+.diff-line {
+  display: grid;
+  grid-template-columns: calc(var(--ln) + 16px) calc(var(--ln) + 16px) auto;
 }
 .diff .add {
   background: var(--ok-soft);
+}
+.diff .add .code {
   color: var(--ok);
 }
 .diff .del {
   background: var(--bad-soft);
+}
+.diff .del .code {
   color: var(--bad);
 }
-.diff .hunk {
-  color: var(--live);
+.diff .note .code {
+  color: var(--graphite);
+  font-style: italic;
 }
-.diff .file {
-  font-weight: 700;
-  color: var(--ink);
-  margin-top: 8px;
+
+/* Side by side wraps long lines so before and after stay in view together. */
+.diff-sides,
+.diff-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.diff-sides {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface);
+  border-bottom: 1px solid var(--hairline);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--graphite);
+}
+.diff-sides span {
+  padding: 6px 14px;
+}
+.diff-sides span + span,
+.diff-side + .diff-side {
+  border-left: 1px solid var(--hairline);
+}
+.diff-side {
+  display: grid;
+  grid-template-columns: calc(var(--ln) + 16px) minmax(0, 1fr);
+}
+.diff-split .code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.diff-side-blank {
+  background: repeating-linear-gradient(-45deg, transparent 0 6px, var(--hairline) 6px 7px);
 }
 
 /* timeline */

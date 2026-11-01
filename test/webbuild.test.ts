@@ -47,7 +47,7 @@ test("a source file changed after the build makes it outdated, however deep", ()
 
 test("a change to shared contracts the UI bundles makes the build outdated", () => {
   const shared = [
-    "packages/contracts/src/index.ts", "packages/contracts/src/types.ts", "packages/contracts/src/rules.ts",
+    "packages/contracts/src/index.ts", "packages/contracts/src/types.ts", "packages/contracts/src/diff.ts", "packages/contracts/src/rules.ts",
     "packages/contracts/package.json", "packages/contracts/tsconfig.json",
   ];
   // Every UI and shared file predates the build; only `changed` (if any) is touched after it.

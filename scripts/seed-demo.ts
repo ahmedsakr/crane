@@ -8,7 +8,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Store } from "../src/core/store.js";
 import { craneHome } from "../src/core/paths.js";
 import { OperatorActions } from "../src/factory/actions.js";
@@ -149,13 +149,71 @@ store.updateTask(client.id, {
         effort: "small",
       },
     ],
-    changedFiles: ["packages/client/src/index.ts", "src/webhooks/retry.ts", "src/checkout/charge.ts"],
+    changedFiles: ["packages/client/package.json", "packages/client/src/index.ts", "src/checkout/charge.ts", "src/webhooks/retry.ts"],
     acceptance: [
       { criterion: "Callers import @payments/client, not ../client", met: true, evidence: "rg '../client' src returns nothing; 14 imports of @payments/client" },
       { criterion: "npm run build emits packages/client/dist", met: false, evidence: "The root build doesn't include the workspace yet. That needs the shared build setup." },
     ],
   },
 });
+seedClientBranch(api.path, store.getTask(client.id)!.branch!);
+
+/** Real commits behind the review task's branch, so its changes have something to show. */
+function seedClientBranch(dir: string, branch: string) {
+  const g = (...a: string[]) => execFileSync("git", ["-c", "user.name=demo", "-c", "user.email=demo@localhost", ...a], { cwd: dir, stdio: "ignore" });
+  const write = (file: string, text: string) => {
+    mkdirSync(dirname(join(dir, file)), { recursive: true });
+    writeFileSync(join(dir, file), text);
+  };
+  const backoff = (name: string, call: string) =>
+    [
+      `export async function ${name}(attempts = 5) {`,
+      "  let delay = 200;",
+      "  for (let i = 0; i < attempts; i++) {",
+      "    try {",
+      `      return await ${call};`,
+      "    } catch (err) {",
+      "      if (i === attempts - 1) throw err;",
+      "      await new Promise((r) => setTimeout(r, delay));",
+      "      delay *= 2;",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+  const client = [
+    "const BASE = process.env.PAYMENTS_URL ?? 'https://payments.internal';",
+    "",
+    "export async function request(path: string, body: unknown) {",
+    "  const res = await fetch(`${BASE}${path}`, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } });",
+    "  if (!res.ok) throw new Error(`${path} failed with ${res.status}`);",
+    "  return res.json();",
+    "}",
+    "",
+  ].join("\n");
+  if (!existsSync(join(dir, "src", "client", "index.ts"))) {
+    write("src/client/index.ts", client);
+    write("src/webhooks/retry.ts", `import { request } from "../client";\n\n${backoff("redeliver", "request('/webhooks/redeliver', {})")}`);
+    write("src/checkout/charge.ts", `import { request } from "../client";\n\n${backoff("charge", "request('/charges', {})")}`);
+    g("add", ".");
+    g("commit", "-qm", "Add the payments client and its callers");
+  }
+  g("checkout", "-q", "-B", branch);
+  mkdirSync(join(dir, "packages", "client", "src"), { recursive: true });
+  g("mv", "src/client/index.ts", "packages/client/src/index.ts");
+  write(
+    "packages/client/src/index.ts",
+    client.replace("export async function request", "/** Calls the payments service, retrying with exponential backoff. */\nexport async function request") +
+      "\n" + backoff("withBackoff", "fn()").replace("withBackoff(attempts = 5)", "withBackoff<T>(fn: () => Promise<T>, attempts = 5)"),
+  );
+  write("packages/client/package.json", JSON.stringify({ name: "@payments/client", version: "0.1.0", main: "src/index.ts" }, null, 2) + "\n");
+  write("src/webhooks/retry.ts", `import { request, withBackoff } from "@payments/client";\n\nexport const redeliver = () => withBackoff(() => request("/webhooks/redeliver", {}));\n`);
+  write("src/checkout/charge.ts", `import { request, withBackoff } from "@payments/client";\n\nexport const charge = (attempts = 5) => withBackoff(() => request("/charges", {}), attempts);\n`);
+  g("add", "-A");
+  g("commit", "-qm", "Extract the payments client into its own package");
+  g("checkout", "-q", "main");
+}
+
 store.createTask({
   kind: "maintenance",
   title: "Move webhook handlers onto the payments client package",

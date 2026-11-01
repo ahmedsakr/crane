@@ -24,6 +24,7 @@ import type {
   TaskRunOptions,
 } from "@crane/contracts";
 
+export type { DiffFile, DiffHunk, DiffLine } from "@crane/contracts";
 export type {
   TaskGates,
   Lookout,
@@ -60,11 +61,12 @@ export {
   STATUS_LABEL,
   acceptanceFor,
   choosableDrivers,
-  diffFiles,
   driverLabel,
   lastMergeOutcome,
   lookoutsLabel,
+  parseDiff,
   prerequisiteMet,
+  splitRows,
   UNSHIPPED_STATUSES,
   ruleLabel,
   settingsLabel,
