@@ -1,4 +1,4 @@
-import type { AgentDriver } from "../agents/driver.js";
+import type { AgentDriver } from "../agent-protocol/index.js";
 import { ClaudeCodeDriver } from "../agents/claude-code.js";
 import { CodexDriver } from "../agents/codex.js";
 import { SimulatedDriver } from "../agents/simulated.js";

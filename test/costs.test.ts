@@ -7,7 +7,7 @@ import { Store } from "../src/core/store.js";
 import { usageFromResult } from "../src/agents/claude-code.js";
 import { usageFromTurn } from "../src/agents/codex.js";
 import { Factory } from "../src/factory/orchestrator.js";
-import type { AgentDriver, RunContext, RunResult } from "../src/agents/driver.js";
+import type { AgentDriver, RunContext, RunResult } from "../src/agent-protocol/index.js";
 import type { RunUsage } from "../src/core/types.js";
 
 const tmpStore = () => new Store(join(mkdtempSync(join(tmpdir(), "crane-cost-")), "t.db"));
