@@ -21,6 +21,7 @@ import {
   type DriverName,
   type DriverSettings,
   type TaskRunOptions,
+  type RoleRunOptions,
   type TaskGates,
   type PostmortemSettings,
 } from "@crane/contracts";
@@ -426,19 +427,21 @@ export class OperatorActions {
   }
 
   /**
-   * Start a crew member's maintenance run on Crane's own repo. The task is
+   * Start a crew member's maintenance run, defaulting to Crane's own repo. The task is
    * assigned to that member, so only they pick it up, at their role's freedom.
    */
-  async runRole(id: string): Promise<Task> {
+  async runRole(id: string, opts: RoleRunOptions = {}): Promise<Task> {
     const member = this.store.listAgents().find((a) => a.id === id);
     if (!member) throw new Error(`No crew member ${id}`);
     if (!member.role) throw new Error(`${member.name} has no maintenance role. Give them one first`);
     if (!member.active) throw new Error(`${member.name} is on-call. Activate them first, so the run doesn't wait in the queue`);
-    const repo = await this.ensureFactoryRepo();
+    if (opts.repoId !== undefined && (typeof opts.repoId !== "string" || !opts.repoId.trim())) {
+      throw new Error("Choose a connected repo for this run");
+    }
+    const repo = opts.repoId === undefined ? await this.ensureFactoryRepo() : this.needRepo(opts.repoId);
     if (!repo) throw new Error("Crane's own repo isn't connected, so there's nothing to maintain");
     const open = this.store
-      .listTasks({ status: ["queued", "running"], repoId: repo.id })
-      .find((t) => t.assignee === member.id);
+      .listTasks({ status: ["queued", "running"], repoId: repo.id, assignee: member.id, limit: 1 })[0];
     if (open) throw new Error(`${member.name} already has a run under way: ${open.id} · ${open.title}`);
 
     const role = MAINTENANCE_ROLE[member.role];
@@ -449,10 +452,12 @@ export class OperatorActions {
       repoId: repo.id,
       autonomy: role.autonomy,
       assignee: member.id,
+      scheduledAt: opts.scheduledAt,
     });
     this.store.addEvent(task.id, "operator", `Started ${member.name}'s ${role.label.toLowerCase()} run`, {
       agentId: member.id,
       role: member.role,
+      repoId: repo.id,
     });
     return task;
   }

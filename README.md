@@ -128,9 +128,9 @@ If no agent is installed, Crane falls back to **simulated** agents. They walk th
 
 ### Maintenance roles
 
-A crew member can be dedicated to one kind of upkeep on Crane itself: **Code quality**, **Duplication**, **Packaging** (module boundaries, and parts that could be shared as packages), **Best practices**, **Security review**, or **Tests**. Pick it from **Maintenance role** in the member's settings on the Crew page, then start a run from the button on their row, or with `crane agents configure Hoist --role security` (`--role none` makes them a general member again; `crane agents roles` lists them all). A member with a role stops taking queued tasks and works only the runs you start for them, though they still help land approved merges.
+A crew member can be dedicated to one kind of upkeep on a connected repo: **Code quality**, **Duplication**, **Packaging** (module boundaries, and parts that could be shared as packages), **Best practices**, **Security review**, or **Tests**. Pick it from **Maintenance role** in the member's settings on the Crew page, then start a run from the button on their row, or with `crane agents configure Hoist --role security` (`--role none` makes them a general member again; `crane agents roles` lists them all). A member with a role stops taking queued tasks and works only the runs you start for them, though they still help land approved merges.
 
-Start a run with the button on their card (**Review security**, **Reduce duplication**, …) or `crane agents run hoist`. It queues a maintenance task on Crane's repo that only that member picks up, with a brief for their role. Packaging and security reviews investigate only, so turn the findings you want into follow-ups; the others make a change on a branch and wait for your review. A member has one run under way at a time, and must be active to start one.
+Start a run with the button on their card (**Review security**, **Reduce duplication**, …), choose a repository and start time, then select **Start run** or **Schedule run**. Crane's own repo is the default. In the CLI, use `crane agents run hoist`, or `crane agents run hoist --repo my-app --at 2030-06-15T09:00:00-04:00` to schedule a run on another connected repo (name or id). It queues a maintenance task that only that member picks up, with a brief for their role. Packaging and security reviews investigate only, so turn the findings you want into follow-ups; the others make a change on a branch and wait for your review. A member has one queued or running run per repo at a time, including future runs, and must be active to start one. Runs in different repos wait for that member to be free.
 
 ## The CLI
 
@@ -156,7 +156,7 @@ Start a run with the button on their card (**Review security**, **Reduce duplica
 | `crane agents` / `crane agents use <agent>` | Who's on the crew, which agents are installed, and which one new tasks run on |
 | `crane agents set <agent> --model <model> --effort <level>` | Choose the model and effort an agent runs with (`default` for its own) |
 | `crane agents postmortem [--agent <agent>] [--model <model>] [--effort <level>]` | Show or set defaults for newly queued post-mortems |
-| `crane agents run <member>` | Start a member's maintenance run on Crane (`crane agents configure <member> --role <role>` to give them one) |
+| `crane agents run <member> [--repo <repo>] [--at <timestamp>]` | Start or schedule a member's maintenance run; repo defaults to Crane (`crane agents configure <member> --role <role>` to give them one) |
 | `crane analytics` | What the factory spent, by day, repo, type, and task (`--days 7`). `crane show <id> --events` lists a task's runs and their costs. |
 | `crane pause` / `crane resume` | Stop or restart picking up new tasks |
 | `crane serve` | Run the factory: agents, API, and dashboard |

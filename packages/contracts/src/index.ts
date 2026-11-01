@@ -20,6 +20,7 @@ export type {
   AgentState,
   Agent,
   TaskRunOptions,
+  RoleRunOptions,
   NewTask,
   MaintenanceRole,
   MaintenanceRoleInfo,

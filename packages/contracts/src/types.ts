@@ -283,6 +283,14 @@ export interface TaskRunOptions {
   effort?: string | null;
 }
 
+/** Options for a crew member's maintenance run. */
+export interface RoleRunOptions {
+  /** Connected repo id or name; omitted means Crane's own repo. */
+  repoId?: string;
+  /** Earliest pickup time, or null for now. */
+  scheduledAt?: string | null;
+}
+
 export interface NewTask extends TaskRunOptions {
   kind: TaskKind;
   title: string;

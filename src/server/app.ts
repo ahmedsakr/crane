@@ -4,7 +4,7 @@ import { getMimeType } from "hono/utils/mime";
 import { readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import type { Store } from "../core/store.js";
-import { lastMergeOutcome, type TaskStatus, type NewTask, type TaskDetail, type TaskDiff, type TaskDraft, type TaskGates, type TaskRunOptions } from "@crane/contracts";
+import { lastMergeOutcome, type TaskStatus, type NewTask, type TaskDetail, type TaskDiff, type TaskDraft, type TaskGates, type TaskRunOptions, type RoleRunOptions } from "@crane/contracts";
 import { OperatorActions } from "../factory/actions.js";
 import { draftTask } from "../factory/instruct.js";
 import { diffForTask } from "../factory/git.js";
@@ -221,7 +221,7 @@ export function createApp(store: Store, opts: { exposed?: boolean } = {}) {
 
   api.post("/agents/:id", async (c) => c.json(await actions.configureCrew(c.req.param("id"), await c.req.json())));
   /** Start a crew member's maintenance run, assigned to them. */
-  api.post("/agents/:id/run", async (c) => c.json(await actions.runRole(c.req.param("id")), 201));
+  api.post("/agents/:id/run", async (c) => c.json(await actions.runRole(c.req.param("id"), await optionalJsonObject<RoleRunOptions>(c.req.raw)), 201));
   api.get("/agents", (c) => c.json(store.listAgents()));
 
   /** The agents tasks can run on (Claude Code, Codex, …) and which one is the default. */
