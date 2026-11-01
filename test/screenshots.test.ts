@@ -4,13 +4,13 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseReport } from "../src/agents/report.js";
+import { parseReport } from "../src/agent-protocol/index.js";
 import { resumePrompt, systemPrompt } from "../src/agents/prompts.js";
 import { readScreenshot, retainScreenshots, screenshotPath } from "../src/core/screenshots.js";
 import { Store } from "../src/core/store.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import { createApp } from "../src/server/app.js";
-import type { AgentDriver } from "../src/agents/driver.js";
+import type { AgentDriver } from "../src/agent-protocol/index.js";
 
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=", "base64");
 

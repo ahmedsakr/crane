@@ -1,5 +1,3 @@
-import type { RunUsage } from "../core/types.js";
-
 // Standard API USD per million tokens: input, cached input, output.
 // Verified 2026-10-31: https://developers.openai.com/api/docs/pricing
 // Estimates exclude tools, service-tier and long-context surcharges. Exact model
@@ -17,11 +15,9 @@ export function codexCost(model: string | null, input: number, cached: number, o
   return price ? (input * price[0] + cached * price[1] + output * price[2]) / 1_000_000 : null;
 }
 
-/** Preserve known subtotals while propagating missing prices through retries and turns. */
-export function combinedCost(a: RunUsage, b: RunUsage): Pick<RunUsage, "costUsd" | "costStatus"> {
-  const statuses = [a.costStatus, b.costStatus];
-  return {
-    costUsd: a.costUsd + b.costUsd,
-    costStatus: statuses.includes("unknown") ? "unknown" : statuses.includes("estimated") ? "estimated" : "reported",
-  };
-}
+/**
+ * @deprecated Provider-neutral, so it moved to `src/agent-protocol`. Re-exported
+ * here so branches written against the old path still build; remove once none
+ * import it. The factory must not import this module (`test/boundaries.test.ts`).
+ */
+export { combinedCost } from "../agent-protocol/index.js";

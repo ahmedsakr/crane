@@ -1,6 +1,5 @@
 import type { Task, Repo } from "../core/types.js";
-import type { AgentJob, ResolveConflictsJob } from "./driver.js";
-import { REPORT_FENCE } from "./report.js";
+import { REPORT_FENCE, type AgentJob, type ResolveConflictsJob } from "../agent-protocol/index.js";
 
 const KIND_BRIEF: Record<Task["kind"], string> = {
   maintenance:

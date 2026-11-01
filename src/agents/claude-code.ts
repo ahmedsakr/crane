@@ -1,8 +1,14 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { AgentRunError, isTransientFailure, type AgentDriver, type RunContext, type RunResult } from "./driver.js";
+import {
+  AgentRunError,
+  isTransientFailure,
+  parseReport,
+  type AgentDriver,
+  type RunContext,
+  type RunResult,
+} from "../agent-protocol/index.js";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
-import { parseReport } from "./report.js";
 import { ALWAYS_DENIED } from "./policy.js";
 import { overlapsDenied, suggestRules } from "../core/permissions.js";
 import type { Autonomy, BlockedCall, RunUsage } from "../core/types.js";
