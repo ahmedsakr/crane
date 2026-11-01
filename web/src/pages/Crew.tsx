@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../App";
 import {
@@ -8,12 +8,15 @@ import {
   MAINTENANCE_ROLE,
   MAINTENANCE_ROLES,
   settingsLabel,
+  type Agent,
   type DriverInfo,
   type MaintenanceRole,
+  type MaintenanceRoleInfo,
+  type Task,
 } from "../lib/api";
 import { ago, plural } from "../lib/format";
 import { useDrivers, useTick } from "../lib/hooks";
-import { Empty, useToast } from "../components/bits";
+import { Chevron, Empty, useToast } from "../components/bits";
 
 /** What an agent runs on, with the editor one tap away. */
 function TuningSummary({ driver: d, onEdit }: { driver: DriverInfo; onEdit: () => void }) {
@@ -112,7 +115,8 @@ function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: Dr
         <h2 className="section-title">Runs on</h2>
       </div>
       <p className="muted" style={{ maxWidth: "60ch", margin: "0 0 12px", fontSize: 14 }}>
-        Crew members follow the factory default unless you choose an agent for them. A task’s agent choice and resumed sessions take priority. Each agent runs on the model and effort you set here.
+        Crew members use the default unless you choose an agent for them. Each agent runs on the model and effort you set here.
+        {drivers.some((d) => d.isDefault && d.name === "simulated") && " Simulated agents don't call a model; they're for trying Crane out."}
       </p>
       <ul className="rows card" style={{ padding: "0 18px" }}>
         {drivers.map((d) => (
@@ -154,14 +158,165 @@ function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: Dr
   );
 }
 
+type CrewInput = { active?: boolean; defaultDriver?: string | null; role?: MaintenanceRole | null };
+
+/** One member as the page shows it: what they're on, and what's waiting for them. */
+interface Member {
+  a: Agent;
+  role: MaintenanceRoleInfo | null;
+  /** The task they're working right now. */
+  doing: Task | null;
+  /** A run started for this member that they haven't picked up yet. */
+  waiting: Task | null;
+}
+
+/** Working members first, then those with a run waiting, then the free ones. */
+const memberRank = (m: Member) => (m.doing ? 0 : m.waiting ? 1 : 2);
+
+/** The short line under a member's name: their state, in the operator's words. */
+function memberStatus({ a, role, waiting }: Member): string {
+  const own = a.defaultDriver ? ` · ${driverLabel(a.defaultDriver)}` : "";
+  if (a.state === "working") return a.active ? `Working on ${driverLabel(a.driver)}` : "Finishing current work, then on-call";
+  if (!a.active) return `On-call${role ? ` · ${role.label}` : ""}${own}`;
+  if (a.state === "paused") return "Paused";
+  // The run button already says what an idle maintainer is waiting for.
+  if (role) return `${role.label}${waiting ? " · run queued" : ""}${own}`;
+  return `Waiting for work${own}`;
+}
+
+/** A member's maintenance role, default agent, and on-call switch, opened from their row. */
+function MemberSettings({
+  m,
+  drivers,
+  factoryDriver,
+  saving,
+  configure,
+}: {
+  m: Member;
+  drivers: DriverInfo[] | null;
+  factoryDriver: string;
+  saving: boolean;
+  configure: (input: CrewInput) => void;
+}) {
+  const { a, role } = m;
+  // On-call members who aren't working already have Activate on their row.
+  const toggle = a.active || a.state === "working";
+  const last = ago(a.lastActiveAt);
+  return (
+    <div className="crew-settings" id={`crew-settings-${a.id}`}>
+      <div className="crew-fields">
+        <label className="tuning-field">
+          <span>Maintenance role</span>
+          <select className="input" aria-label={`Maintenance role for ${a.name}`} value={a.role ?? ""} disabled={saving}
+            onChange={(e) => configure({ role: (e.target.value || null) as MaintenanceRole | null })}>
+            <option value="">None: takes any queued task</option>
+            {MAINTENANCE_ROLES.map((r) => <option key={r} value={r}>{MAINTENANCE_ROLE[r].label}</option>)}
+          </select>
+          <span className="crew-field-note">
+            {role ? `${role.summary} ${AUTONOMY_LABEL[role.autonomy]}. Works only the runs you start.` : "Picks up the oldest queued task when free."}
+          </span>
+        </label>
+        <label className="tuning-field">
+          <span>Default agent</span>
+          <select className="input" aria-label={`Default agent for ${a.name}`} value={a.defaultDriver ?? ""} disabled={saving || !drivers}
+            onChange={(e) => configure({ defaultDriver: e.target.value || null })}>
+            <option value="">Factory default ({factoryDriver})</option>
+            {drivers?.map((d) => <option key={d.name} value={d.name} disabled={!d.available}>{d.label}{!d.available ? " (not installed)" : ""}</option>)}
+          </select>
+          <span className="crew-field-note">A task’s own agent choice and resumed sessions come first.</span>
+        </label>
+      </div>
+      <div className="crew-settings-foot">
+        <span className="muted">
+          <span className="tabular">{a.tasksCompleted}</span> finished{last ? ` · last active ${last}` : ""}
+        </span>
+        {toggle && (
+          <button className="btn btn-ghost btn-sm" disabled={saving} onClick={() => configure({ active: !a.active })}>
+            {a.active ? "Put on-call" : "Activate"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** One crew member: who, what they're on, and the one action that matters now. Settings open in place. */
+function MemberRow({
+  m,
+  open,
+  onToggle,
+  saving,
+  configure,
+  run,
+  children,
+}: {
+  m: Member;
+  open: boolean;
+  onToggle: () => void;
+  saving: boolean;
+  configure: (input: CrewInput) => void;
+  run: () => void;
+  children: ReactNode;
+}) {
+  const { a, role, doing, waiting } = m;
+  const pending = doing ?? waiting;
+  const onCall = !a.active && a.state !== "working";
+  return (
+    <li>
+      <div className={`crew-row${open ? " open" : ""}`}>
+        <span className={`avatar ${a.state === "working" ? "working" : ""}`}>{a.name[0]}</span>
+        <span className="crew-who">
+          <span className="agent-name crew-name">
+            {a.name}
+            {a.state === "working" && <span className="dot dot-running" aria-label="Working" />}
+          </span>
+          <span className="row-meta">{memberStatus(m)}</span>
+        </span>
+        <span className="crew-what">
+          {pending ? (
+            <>
+              <Link to={`/tasks/${pending.id}`} className="crew-task">{pending.title}</Link>
+              {!doing && <span className="muted"> · queued for {a.name}</span>}
+            </>
+          ) : a.active && a.state !== "paused" && !role ? (
+            <span className="muted">Nothing assigned</span>
+          ) : null}
+        </span>
+        <span className="crew-actions">
+          {/* Hidden while their own run is queued or underway: the row already shows it. */}
+          {role && a.active && pending?.assignee !== a.id && (
+            <button className="btn btn-quiet btn-sm" title={role.summary} disabled={saving} onClick={run}>
+              {role.action}
+            </button>
+          )}
+          {onCall && (
+            <button className="btn btn-quiet btn-sm" disabled={saving} onClick={() => configure({ active: true })}>
+              Activate
+            </button>
+          )}
+          <button className="crew-toggle" onClick={onToggle} aria-expanded={open} aria-controls={`crew-settings-${a.id}`}
+            aria-label={`${open ? "Hide" : "Show"} settings for ${a.name}`} title="Role, agent, and on-call">
+            <Chevron />
+          </button>
+        </span>
+      </div>
+      {open && children}
+    </li>
+  );
+}
+
 export function Crew() {
   const { overview: o, refresh } = useApp();
   const toast = useToast();
   const [saving, setSaving] = useState<string | null>(null);
-  const configure = async (id: string, input: { active?: boolean; defaultDriver?: string | null; role?: MaintenanceRole | null }) => {
-    setSaving(id);
-    try { await api.configureCrew(id, input); refresh(); }
-    catch (e) { toast({ text: (e as Error).message }); }
+  const [open, setOpen] = useState<string | null>(null);
+  const configure = async (a: Agent, input: CrewInput) => {
+    setSaving(a.id);
+    try {
+      await api.configureCrew(a.id, input);
+      if (input.active !== undefined) toast({ text: input.active ? `${a.name} is active` : a.state === "working" ? `${a.name} goes on-call after this task` : `${a.name} is on-call` });
+      refresh();
+    } catch (e) { toast({ text: (e as Error).message }); }
     finally { setSaving(null); }
   };
   const run = async (id: string) => {
@@ -178,18 +333,59 @@ export function Crew() {
   if (!o) return null;
   const driver = driverLabel(drivers?.find((d) => d.isDefault)?.name ?? o.factory.driver);
 
+  const members: Member[] = o.agents.map((a) => {
+    const doing = a.taskId ? o.inFlight.find((m) => m.id === a.taskId) ?? null : null;
+    const waiting = doing ? null : o.inFlight.find((m) => m.assignee === a.id && m.status === "queued") ?? null;
+    return { a, role: a.role ? MAINTENANCE_ROLE[a.role] : null, doing, waiting };
+  });
+  // Members still finishing a task stay with the active ones until it's done.
+  const active = members.filter((m) => m.a.active || m.a.state === "working").sort((x, y) => memberRank(x) - memberRank(y));
+  const onCall = members.filter((m) => !m.a.active && m.a.state !== "working");
+  const working = members.filter((m) => m.a.state === "working").length;
+  const free = active.filter((m) => m.a.active && m.a.state === "idle" && !m.role && !m.waiting);
+
+  // Queued work nobody is free to take: offer the one tap that fixes it.
+  const queuedForAnyone = Math.max(0, o.counts.queued - o.inFlight.filter((m) => m.status === "queued" && m.assignee).length);
+  const spare = onCall.find((m) => !m.role);
+  const short = o.factory.running && !o.factory.paused && queuedForAnyone > 0 && free.length === 0 && spare;
+
+  const row = (m: Member) => (
+    <MemberRow key={m.a.id} m={m} open={open === m.a.id} onToggle={() => setOpen(open === m.a.id ? null : m.a.id)}
+      saving={!!saving} configure={(input) => configure(m.a, input)} run={() => run(m.a.id)}>
+      <MemberSettings m={m} drivers={drivers} factoryDriver={driver} saving={!!saving} configure={(input) => configure(m.a, input)} />
+    </MemberRow>
+  );
+
   return (
     <>
       <div className="page-head">
         <h1 className="page-title">Crew</h1>
       </div>
-      <p className="muted" style={{ maxWidth: "60ch" }}>
-        {o.factory.running
-          ? `${plural(o.agents.filter((a) => a.active).length, "active crew member")}, with ${driver} as the factory default. Each picks up the oldest queued task when it's free.`
-          : "The factory is off. Run crane serve to bring the crew in."}
-        {" On-call members take no new work until you activate them. Members with a maintenance role work only the runs you start for them."}
-        {o.factory.driver === "simulated" && " Simulated agents don't call a model; they're for trying Crane out."}
-      </p>
+      {o.agents.length > 0 && (
+        <p className="crew-summary">
+          <span><strong className="tabular">{working}</strong> working</span>
+          <span><strong className="tabular">{free.length}</strong> free</span>
+          <span><strong className="tabular">{onCall.length}</strong> on-call</span>
+          <span>New tasks run on <strong>{driver}</strong></span>
+        </p>
+      )}
+
+      {!o.factory.running && (
+        <div className="notice">
+          <strong>The factory is off.</strong>
+          <span>Run <span className="mono">crane serve</span> to bring the crew in.</span>
+        </div>
+      )}
+      {short && (
+        <div className="notice" role="status">
+          <span>
+            <strong>{plural(queuedForAnyone, "task")} waiting</strong> and no one is free to take {queuedForAnyone === 1 ? "it" : "them"}.
+          </span>
+          <button className="btn btn-primary btn-sm notice-action" disabled={!!saving} onClick={() => configure(spare.a, { active: true })}>
+            Activate {spare.a.name}
+          </button>
+        </div>
+      )}
 
       {o.agents.length === 0 ? (
         <div style={{ marginTop: 20 }}>
@@ -198,98 +394,32 @@ export function Crew() {
           </Empty>
         </div>
       ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 260px), 1fr))",
-            gap: 16,
-            marginTop: 20,
-          }}
-        >
-          {o.agents.map((a) => {
-            const doing = a.taskId ? o.inFlight.find((m) => m.id === a.taskId) : null;
-            const role = a.role ? MAINTENANCE_ROLE[a.role] : null;
-            // A run started for this member that it hasn't picked up yet.
-            const waiting = !doing ? o.inFlight.find((m) => m.assignee === a.id && m.status === "queued") : null;
-            const pending = doing ?? waiting;
-            return (
-              <div className="card card-pad" key={a.id}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <span className={`avatar ${a.state === "working" ? "working" : ""}`} style={{ width: 44, height: 44, fontSize: 18 }}>
-                    {a.name[0]}
-                  </span>
-                  <span style={{ minWidth: 0 }}>
-                    <span className="agent-name" style={{ display: "block", fontSize: 16 }}>
-                      {a.name}
-                    </span>
-                    <span className="muted" style={{ fontSize: 13 }}>
-                      {a.state === "working"
-                        ? `Working on ${driverLabel(a.driver)}`
-                        : !a.active
-                          ? "On-call"
-                          : a.state === "paused"
-                          ? "Paused"
-                          : role
-                          ? `${role.label} · waiting for a run`
-                          : "Waiting for work"}
-                    </span>
-                  </span>
-                  {a.state === "working" && <span className="dot dot-running" style={{ marginLeft: "auto" }} />}
-                </div>
-                <div style={{ marginTop: 16, fontSize: 14, minHeight: 42 }}>
-                  {pending ? (
-                    <>
-                      <Link to={`/tasks/${pending.id}`} style={{ fontWeight: 600 }}>
-                        {pending.title}
-                      </Link>
-                      {!doing && <span className="muted" style={{ display: "block", fontSize: 13 }}>Queued for {a.name}</span>}
-                    </>
-                  ) : (
-                    <span className="muted">Nothing assigned</span>
-                  )}
-                </div>
-                {role && a.active && (
-                  <button className="btn btn-primary btn-sm" style={{ width: "100%", marginTop: 12 }}
-                    disabled={!!saving || (!!pending && pending.assignee === a.id)}
-                    title={role.summary}
-                    onClick={() => run(a.id)}>
-                    {role.action}
-                  </button>
-                )}
-                <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
-                  <label style={{ display: "grid", gap: 6, fontSize: 13 }}>
-                    Maintenance role
-                    <select style={{ minWidth: 0, width: "100%" }} aria-label={`Maintenance role for ${a.name}`} value={a.role ?? ""} disabled={!!saving}
-                      onChange={(e) => configure(a.id, { role: (e.target.value || null) as MaintenanceRole | null })}>
-                      <option value="">None: takes any queued task</option>
-                      {MAINTENANCE_ROLES.map((r) => <option key={r} value={r}>{MAINTENANCE_ROLE[r].label}</option>)}
-                    </select>
-                    {role && <span className="muted">{role.summary} {AUTONOMY_LABEL[role.autonomy]}.</span>}
-                  </label>
-                  <label style={{ display: "grid", gap: 6, fontSize: 13 }}>
-                    Default agent
-                    <select style={{ minWidth: 0, width: "100%" }} aria-label={`Default agent for ${a.name}`} value={a.defaultDriver ?? ""} disabled={!!saving || !drivers}
-                      onChange={(e) => configure(a.id, { defaultDriver: e.target.value || null })}>
-                      <option value="">Factory default ({driver})</option>
-                      {drivers?.map((d) => <option key={d.name} value={d.name} disabled={!d.available}>{d.label}{!d.available ? " (not installed)" : ""}</option>)}
-                    </select>
-                  </label>
-                  <button className="btn btn-quiet btn-sm" disabled={!!saving}
-                    onClick={() => configure(a.id, { active: !a.active })}>
-                    {a.active ? "Put on-call" : "Activate"}
-                  </button>
-                  {!a.active && a.state === "working" && <span className="muted" style={{ fontSize: 13 }}>Finishing current work, then on-call</span>}
-                </div>
-                <dl className="facts" style={{ marginTop: 12, borderTop: "1px solid var(--hairline)", paddingTop: 12 }}>
-                  <dt>Finished</dt>
-                  <dd className="tabular">{a.tasksCompleted}</dd>
-                  <dt>Last active</dt>
-                  <dd>{ago(a.lastActiveAt) || "—"}</dd>
-                </dl>
+        <>
+          <section className="section crew-section" aria-labelledby="crew-active">
+            <div className="section-head">
+              <h2 className="section-title" id="crew-active">
+                Active <span className="count">{active.length}</span>
+              </h2>
+            </div>
+            {active.length > 0 ? (
+              <ul className="rows card crew-list">{active.map(row)}</ul>
+            ) : (
+              <Empty title="No one is active">Activate an on-call member to start taking work.</Empty>
+            )}
+          </section>
+
+          {onCall.length > 0 && (
+            <section className="section crew-section" aria-labelledby="crew-on-call">
+              <div className="section-head">
+                <h2 className="section-title" id="crew-on-call">
+                  On-call <span className="count">{onCall.length}</span>
+                </h2>
+                <span className="muted crew-section-note">No new work until you activate them</span>
               </div>
-            );
-          })}
-        </div>
+              <ul className="rows card crew-list">{onCall.map(row)}</ul>
+            </section>
+          )}
+        </>
       )}
 
       {drivers && drivers.length > 0 && <RunsOn drivers={drivers} onChange={set} />}
