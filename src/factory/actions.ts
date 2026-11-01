@@ -21,7 +21,7 @@ import {
   type TaskRunOptions,
   type PostmortemSettings,
 } from "@crane/contracts";
-import { currentBranch, isGitRepo, removeWorktree, repoRoot } from "./git.js";
+import { inferDefaultBranch, isGitRepo, removeWorktree, repoRoot } from "./git.js";
 import { DEFAULT_DRIVER_KEY, driverCatalog, driverEffortKey, driverModelKey, isAvailable, sharedDrivers } from "./drivers.js";
 import { factoryRoot } from "../core/paths.js";
 import { parseRule } from "@crane/contracts/rules";
@@ -42,7 +42,7 @@ export function toRule(input: string): string {
 const MODEL_NAME = /^[A-Za-z0-9][\w.:/@[\]-]{0,119}$/;
 
 /** An agent name the operator typed or sent, checked. Null and "default" mean the factory's default. */
-function checkDriver(name: string | null | undefined): Task["driver"] {
+function checkDriver(name: string | null | undefined): DriverName | null {
   if (name === undefined || name === null || name === "" || name === "default") return null;
   if (!isDriverName(name)) throw new Error(`Unknown agent “${name}”. Use one of: ${DRIVER_NAMES.join(", ")}`);
   return name;
@@ -89,7 +89,7 @@ function checkTaskRunOptions(input: TaskRunOptions): TaskRunOptions {
   // Untuned tasks may follow the default agent, which can change before pickup.
   if (input.model == null && input.effort == null) return { driver, model: null, effort: null };
   if (!driver) throw new Error("Choose an agent before setting a task's model or effort");
-  return { driver, ...checkDriverSettings(driver as DriverName, input) };
+  return { driver, ...checkDriverSettings(driver, input) };
 }
 
 /**
@@ -105,14 +105,14 @@ export class OperatorActions {
     if (existing) return existing;
     const root = factoryRoot();
     if (!(await isGitRepo(root))) return null;
-    return this.store.addRepo({ path: await repoRoot(root), name: "crane", defaultBranch: await currentBranch(root), isFactory: true });
+    return this.store.addRepo({ path: await repoRoot(root), name: "crane", defaultBranch: await inferDefaultBranch(root), isFactory: true });
   }
 
   async connectRepo(path: string, name?: string): Promise<Repo> {
     const abs = resolve(path);
     if (!(await isGitRepo(abs))) throw new Error(`${abs} is not a git repository`);
     const root = await repoRoot(abs);
-    return this.store.addRepo({ path: root, name, defaultBranch: await currentBranch(root) });
+    return this.store.addRepo({ path: root, name, defaultBranch: await inferDefaultBranch(root) });
   }
 
   createTask(input: NewTask): Task {
@@ -218,7 +218,7 @@ export class OperatorActions {
    * from the next run, including a resumed one.
    */
   async configureDriver(name: string, input: { model?: string | null; effort?: string | null }): Promise<DriverInfo[]> {
-    const driver = checkDriver(name) as DriverName | null;
+    const driver = checkDriver(name);
     if (!driver) throw new Error("Choose which agent to set up");
     const { model, effort } = checkDriverSettings(driver, input);
     // Validate the whole request before changing either saved preference.
@@ -235,7 +235,7 @@ export class OperatorActions {
   configurePostmortem(input: { driver?: string | null; model?: string | null; effort?: string | null }): PostmortemSettings {
     if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Expected post-mortem settings");
     const saved = this.postmortemSettings();
-    const driver = input.driver === undefined ? saved.driver : (checkDriver(input.driver) as DriverName | null);
+    const driver = input.driver === undefined ? saved.driver : checkDriver(input.driver);
     const changed = driver !== saved.driver;
     const next = { driver, model: changed ? null : saved.model, effort: changed ? null : saved.effort };
     if (driver && isTunable(driver)) {

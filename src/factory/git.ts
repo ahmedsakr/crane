@@ -17,7 +17,8 @@ export async function repoRoot(path: string): Promise<string> {
   return git(path, "rev-parse", "--show-toplevel");
 }
 
-export async function currentBranch(path: string): Promise<string> {
+/** Infer the default branch from origin/HEAD, then the checked-out branch, then main. */
+export async function inferDefaultBranch(path: string): Promise<string> {
   try {
     const ref = await git(path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD");
     return ref.replace(/^origin\//, "");
