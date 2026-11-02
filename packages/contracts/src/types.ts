@@ -218,6 +218,17 @@ export type EventType =
   | "blocked" // a tool call the agent's permissions refused; data is a BlockedCall
   | "operator"; // something the operator did
 
+/** Persisted agent command evidence; exitCode is null until actually received. */
+export interface CommandEvidence {
+  commandId: string;
+  itemId: string | null;
+  sessionId: string | null;
+  command: string;
+  truncated: boolean;
+  status: "running" | "completed" | "failed" | "interrupted" | "unknown";
+  exitCode: number | null;
+}
+
 export interface TaskEvent {
   id: number;
   taskId: string;

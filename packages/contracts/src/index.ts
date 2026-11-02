@@ -2,6 +2,7 @@
 export { nextCrewFire, validateCrewSchedule, crewScheduleLabel } from "./crew-schedules.js";
 export type { CrewSchedule, CrewScheduleInput } from "./crew-schedules.js";
 export type {
+  CommandEvidence,
   TaskKind,
   Autonomy,
   TaskStatus,

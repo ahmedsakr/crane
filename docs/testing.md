@@ -26,6 +26,7 @@ agent CLIs or listen on ports.
 | Source and package boundaries | `node --import tsx test/boundaries.test.ts` |
 | Configured checks and factory-owned evidence | `node --import tsx test/checks.test.ts` |
 | Token pricing and cost ledger | `node --import tsx test/codex-costs.test.ts` |
+| Command lifecycle evidence, redaction, and recovery prompts | `node --import tsx test/command-evidence.test.ts` |
 
 This is a conservative starting selection, not an exhaustive list of runnable
 files. For other task-relevant tests, inspect their setup and dependencies

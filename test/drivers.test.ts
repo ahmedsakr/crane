@@ -11,7 +11,7 @@ import { resolveDefaultDriver } from "../src/factory/drivers.js";
 import { SimulatedDriver } from "../src/agents/simulated.js";
 import { CodexDriver, codexArgs, unwrapShell, usageFromTurn } from "../src/agents/codex.js";
 import type { AgentDriver, ResolveConflictsJob, RunContext, RunResult } from "@crane/agent-protocol";
-import type { RunUsage, Task } from "@crane/contracts";
+import type { CommandEvidence, RunUsage, Task } from "@crane/contracts";
 import { resumePrompt, systemPrompt } from "../src/agents/prompts.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
@@ -189,6 +189,12 @@ test("prompts: an agent is told which checks Crane runs after it, so a blocked o
 test("codex: runs exec in a read-only sandbox to investigate, and turns its events into the task's", async () => {
   const { bin, log } = fakeCodex("ok");
   const { ctx, notes, tools, sessions, usage } = ctxFor({ autonomy: "observe" });
+  const commands: CommandEvidence[] = [];
+  const emit = ctx.emit;
+  ctx.emit = (type, message, data) => {
+    emit(type, message, data);
+    if (data?.command) commands.push(data.command as CommandEvidence);
+  };
   const r = await new CodexDriver(bin).run(ctx);
 
   const [call] = calls(log);
@@ -202,7 +208,12 @@ test("codex: runs exec in a read-only sandbox to investigate, and turns its even
   assert.ok(call!.stdin.includes("# X\n\nDo the thing"), "then the task itself");
 
   assert.deepEqual(sessions, ["thread-1"]);
-  assert.deepEqual(tools, ["Ran npm test", "Edited src/a.ts", "Wrote src/b.ts"]);
+  assert.equal(commands.length, 2);
+  assert.equal(commands[0]!.commandId, commands[1]!.commandId);
+  assert.deepEqual(commands.map((c) => [c.itemId, c.sessionId, c.status, c.exitCode]), [
+    ["i1", "thread-1", "running", null], ["i1", "thread-1", "completed", 0],
+  ]);
+  assert.deepEqual(tools, ["Started npm test", "Command completed npm test (exit 0)", "Edited src/a.ts", "Wrote src/b.ts"]);
   assert.ok(notes.includes("Fixed it."), notes.join("\n"));
   assert.ok(!notes.some((n) => n.includes("crane-report")), "the report block isn't narrated");
   assert.equal(r.report.summary, "Codex did it");

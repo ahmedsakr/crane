@@ -5,6 +5,7 @@ import { combinedCost, parseReport, type AgentDriver, type RunContext, type RunR
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
 import type { RunUsage } from "@crane/contracts";
 import { codexCost } from "./codex-pricing.js";
+import { CommandTracker } from "../core/command-evidence.js";
 
 /** Codex exited before it got going again on an earlier session. */
 class SessionNotResumed extends Error {}
@@ -131,6 +132,13 @@ export class CodexDriver implements AgentDriver {
       let failed: string | null = null; // the turn failed
       let errored: string | null = null; // the last stream error, which may have been recovered from
       let stderr = "";
+      let sessionId: string | null = resume ?? null;
+      const commands = new CommandTracker((command) => {
+        const label = command.status === "running" ? "Started" : `Command ${command.status}`;
+        emit("tool", `${label} ${command.command.split("\n")[0]?.slice(0, 120)}${command.exitCode === null ? "" : ` (exit ${command.exitCode})`}`, {
+          tool: "shell", command,
+        });
+      });
 
       const onAbort = () => {
         child.kill("SIGTERM");
@@ -155,7 +163,7 @@ export class CodexDriver implements AgentDriver {
             }
             return;
           case "command_execution":
-            if (phase === "started") emit("tool", `Ran ${unwrapShell(item.command).split("\n")[0]?.slice(0, 120)}`, { tool: "shell" });
+            commands.record(phase, item, unwrapShell(item.command), sessionId);
             return;
           case "file_change":
             if (phase !== "completed") return;
@@ -190,6 +198,7 @@ export class CodexDriver implements AgentDriver {
         switch (msg.type) {
           case "thread.started": {
             started = true;
+            if (typeof msg.thread_id === "string") sessionId = msg.thread_id;
             if (typeof msg.thread_id === "string") ctx.onSession?.(msg.thread_id);
             const verb = resume ? "resumed" : "started";
             const tuned = [model, ctx.effort ? `${ctx.effort} effort` : null].filter(Boolean).join(", ");
@@ -231,6 +240,7 @@ export class CodexDriver implements AgentDriver {
       });
       child.on("close", (code) => {
         signal.removeEventListener("abort", onAbort);
+        commands.close(signal.aborted);
         // Reported before we decide whether the run succeeded: a failed run still used tokens.
         if (usage) ctx.onUsage?.(usage);
         if (signal.aborted) return reject(new Error("Cancelled by operator"));
