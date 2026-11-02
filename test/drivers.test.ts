@@ -1,7 +1,8 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { fakeCodex } from "./support/fake-agents.js";
+import { sh } from "./support/git.js";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/core/store.js";
@@ -15,58 +16,6 @@ import type { CommandEvidence, RunUsage, Task } from "@crane/contracts";
 import { resumePrompt, systemPrompt } from "../src/agents/prompts.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
-
-const REPORT = '```crane-report\\n{\\"summary\\":\\"Codex did it\\",\\"findings\\":[{\\"title\\":\\"One thing\\",\\"detail\\":\\"d\\",\\"impact\\":\\"high\\",\\"effort\\":\\"small\\"}],\\"changedFiles\\":[]}\\n```';
-
-/**
- * A stand-in `codex` that logs its arguments and stdin, then plays back the
- * JSON events `codex exec --json` sends. `mode` picks the story.
- */
-function fakeCodex(mode: "ok" | "lost-session" | "turn-failed" | "overloaded" | "multi-turn"): { bin: string; log: string } {
-  const dir = mkdtempSync(join(tmpdir(), "crane-fake-codex-"));
-  const log = join(dir, "calls.log");
-  const bin = join(dir, "codex");
-  writeFileSync(
-    bin,
-    `#!/usr/bin/env node
-const fs = require("node:fs");
-const args = process.argv.slice(2);
-if (args[0] === "--version") { console.log("codex-cli 0.99.0"); process.exit(0); }
-let stdin = "";
-process.stdin.on("data", (d) => (stdin += d));
-process.stdin.on("end", () => {
-  fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ args, stdin }) + "\\n");
-  const say = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
-  if (${JSON.stringify(mode)} === "lost-session" && args.includes("resume")) {
-    say({ type: "error", message: "No saved session found" });
-    process.exit(1);
-  }
-  say({ type: "thread.started", thread_id: "thread-1" });
-  say({ type: "turn.started" });
-  if (${JSON.stringify(mode)} === "turn-failed") {
-    say({ type: "turn.failed", error: { message: "You've hit your usage limit." } });
-    process.exit(1);
-  }
-  if (${JSON.stringify(mode)} === "overloaded") {
-    say({ type: "turn.failed", error: { message: "API Error: 529 overloaded_error" } });
-    process.exit(1);
-  }
-  say({ type: "item.started", item: { id: "i1", type: "command_execution", command: "bash -lc 'npm test'", status: "in_progress" } });
-  say({ type: "item.completed", item: { id: "i1", type: "command_execution", command: "bash -lc 'npm test'", exit_code: 0, status: "completed" } });
-  const cwd = args[args.indexOf("--cd") + 1];
-  say({ type: "item.completed", item: { id: "i2", type: "file_change", changes: [{ path: cwd + "/src/a.ts", kind: "update" }, { path: "src/b.ts", kind: "add" }] } });
-  say({ type: "item.completed", item: { id: "i3", type: "reasoning", text: "thinking" } });
-  say({ type: "item.completed", item: { id: "i4", type: "agent_message", text: "Fixed it.\\n\\n${REPORT}" } });
-  say({ type: "turn.completed", usage: { input_tokens: 1000, cached_input_tokens: 600, output_tokens: 50 } });
-  if (${JSON.stringify(mode)} === "multi-turn") {
-    say({ type: "turn.completed", usage: { input_tokens: 1000, cached_input_tokens: 600, output_tokens: 50 } });
-  }
-});
-`,
-  );
-  chmodSync(bin, 0o755);
-  return { bin, log };
-}
 
 const calls = (log: string) =>
   readFileSync(log, "utf8")
@@ -371,10 +320,6 @@ test("registry: auto keeps a saved real agent, skips a saved simulated one, and 
   await assert.rejects(resolveDefaultDriver("gemini", null, [claude]), /Unknown agent/);
 });
 
-const ID = ["-c", "user.name=Test", "-c", "user.email=test@localhost", "-c", "commit.gpgsign=false"];
-// No stdin pipe: closing one fails with EPERM in Codex's sandbox, so the suite couldn't run there.
-const sh = (cwd: string, ...args: string[]) =>
-  execFileSync("git", [...ID, ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 async function setup() {
   const root = mkdtempSync(join(tmpdir(), "crane-drivers-"));
   const checkout = join(root, "checkout");

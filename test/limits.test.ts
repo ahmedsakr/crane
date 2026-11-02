@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { fakeClaude } from "./support/fake-agents.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/core/store.js";
@@ -114,23 +115,6 @@ const task = (autonomy: Task["autonomy"] = "observe"): Task => ({
   startedAt: null,
   finishedAt: null,
 });
-
-/** A fake `claude` that records its arguments and replays the lines in $FAKE_LINES. */
-function fakeClaude(lines: object[]) {
-  const dir = scratch("crane-fake-claude-");
-  const bin = join(dir, "claude");
-  writeFileSync(join(dir, "lines.json"), JSON.stringify(lines));
-  writeFileSync(
-    bin,
-    `#!/usr/bin/env node
-const fs = require("fs");
-fs.writeFileSync(${JSON.stringify(join(dir, "args.json"))}, JSON.stringify(process.argv.slice(2)));
-for (const l of JSON.parse(fs.readFileSync(${JSON.stringify(join(dir, "lines.json"))}, "utf8"))) console.log(JSON.stringify(l));
-`,
-  );
-  chmodSync(bin, 0o755);
-  return { bin, args: () => JSON.parse(readFileSync(join(dir, "args.json"), "utf8")) as string[] };
-}
 
 function collect() {
   const events: { type: EventType; message: string; data?: Record<string, unknown> }[] = [];

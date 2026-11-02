@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { fakeResumingClaude } from "./support/fake-agents.js";
+import { sh } from "./support/git.js";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -15,10 +16,6 @@ import type { CommandEvidence, Task } from "@crane/contracts";
 import { CommandTracker } from "../src/core/command-evidence.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
-
-const ID = ["-c", "user.name=Test", "-c", "user.email=test@localhost", "-c", "commit.gpgsign=false"];
-const sh = (cwd: string, ...args: string[]) =>
-  execFileSync("git", [...ID, ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 
 async function setup() {
   const root = mkdtempSync(join(tmpdir(), "crane-restart-"));
@@ -147,32 +144,8 @@ test("store: an older database gains the session and agent columns", () => {
   new Store(file).close(); // opening it again is a no-op
 });
 
-/** A stand-in `claude` that fails to resume, the way it does when a session's history is gone. */
-function fakeClaude(): { bin: string; log: string } {
-  const dir = mkdtempSync(join(tmpdir(), "crane-fake-claude-"));
-  const log = join(dir, "calls.log");
-  const bin = join(dir, "claude");
-  writeFileSync(
-    bin,
-    `#!/usr/bin/env node
-const fs = require("node:fs");
-const args = process.argv.slice(2);
-fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + "\\n");
-if (args.includes("--resume")) {
-  process.stderr.write("No conversation found with session ID: " + args[args.indexOf("--resume") + 1] + "\\n");
-  process.exit(1);
-}
-const say = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
-say({ type: "system", subtype: "init", session_id: "fresh-session", model: "fake" });
-say({ type: "result", subtype: "success", total_cost_usd: 0.25, result: "Done.\\n\\n\`\`\`crane-report\\n{\\"summary\\":\\"All good\\",\\"findings\\":[],\\"changedFiles\\":[]}\\n\`\`\`" });
-`,
-  );
-  chmodSync(bin, 0o755);
-  return { bin, log };
-}
-
 test("claude code: resumes with --resume, and starts fresh if the old session can't be loaded", async () => {
-  const { bin, log } = fakeClaude();
+  const { bin, log } = fakeResumingClaude();
   const driver = new ClaudeCodeDriver(bin);
   const task = {
     id: "t-x", kind: "maintenance", title: "X", brief: "", autonomy: "observe", report: null,

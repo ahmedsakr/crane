@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { sh } from "./support/git.js";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,10 +12,6 @@ import { siblingTasksFor } from "../src/factory/task-context.js";
 import { resumePrompt, userPrompt } from "../src/agents/prompts.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-context-home-"));
-
-const sh = (cwd: string, ...args: string[]) => execFileSync("git", [
-  "-c", "user.name=Test", "-c", "user.email=test@localhost", "-c", "commit.gpgsign=false", ...args,
-], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 
 function setup() {
   const root = mkdtempSync(join(tmpdir(), "crane-context-"));
