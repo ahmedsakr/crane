@@ -116,7 +116,7 @@ test("acceptance: a pre-approved task merges on its own only when every criterio
     const t = make({ acceptance });
     actions.preApprove(t.id);
     store.claimNextTask("a-jib");
-    store.updateTask(t.id, { branch: `crane/${t.id}`, report: report(results) });
+    store.updateTask(t.id, { branch: `crane/${t.id}`, report: report(results), visualReview: { status: "not_required", commit: "test", tree: "test", note: "No UI changes", decidedAt: null } });
     return { id: t.id, next: store.finishWork(t.id, "needs_review") };
   };
   try {

@@ -8,6 +8,7 @@ export type {
   Repo,
   Finding,
   Report,
+  VisualReview,
   AcceptanceResult,
   PrerequisiteState,
   TaskGates,
@@ -75,6 +76,7 @@ export {
   acceptanceFor,
   prerequisiteMet,
   unmetAcceptance,
+  visualReviewPending,
 } from "./types.js";
 export type { DiffLine, DiffHunk, DiffFile, ParsedDiff, SplitRow } from "./diff.js";
 export { parseDiff, diffFiles, splitRows } from "./diff.js";

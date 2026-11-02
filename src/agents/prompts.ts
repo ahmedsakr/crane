@@ -29,6 +29,7 @@ const FILE_EDIT_BRIEF =
 
 const SCREENSHOT_BRIEF =
   [
+    'Every code-change report must include "visualReview": { "required": true, "reason": "changed views and remaining review" } for UI work, even when screenshots were captured and inspected by the agent. Use required: false with a reason only when no UI was built or changed. Missing classification holds automatic merge. Only an operator can record candidate inspection or a waiver; pre-approval and agent screenshots do not record that decision.',
     "If you built or changed UI, capture screenshots of the finished UI using the repository's existing screenshot or browser tools, inspect them, and attach them in your report's screenshots array. Include the changed views and required wide, short, and phone sizes, with captions describing the view and viewport. Save PNG, JPEG, or WebP files inside the worktree (prefer an ignored directory such as .crane/screenshots), and report worktree-relative paths. Crane retains up to 12 images, each at most 10 MiB, with the task after the worktree is removed. Do not commit screenshots just to attach them. Screenshot instructions do not authorize writes in investigate-only mode or bypassing sandbox restrictions.",
     "When your environment is known to block local servers or browsers (including Codex's no-network sandbox), defer capture directly without attempting it. If capture is blocked or unavailable, explain the reason and the remaining visual validation in your summary; leave screenshots empty and never substitute mockups or claim capture succeeded. Passing typecheck, tests, or review and merge checks does not complete visual validation.",
     "When visual validation remains outstanding, include an operator checklist in your report summary for completion before approval or merge:\n- In an approved environment, build the candidate branch's UI and run the repository's existing screenshot tool against its changed views and states. List the exact commands, routes, interactions, and viewport sizes still needed.\n- Open and inspect the resulting images at wide, short, and phone sizes for clipping, overflow, layout, and the changed behavior.\n- Record completion with the candidate commit, reviewed views and sizes, and screenshot paths in the task's approval note or review record, or record an explicit operator waiver with its reason and unreviewed scope. An agent cannot grant that waiver or mark the review complete on the operator's behalf.",
@@ -286,6 +287,7 @@ function reportInstructions(task?: Task): string {
           },
         ],
         changedFiles: ["path/relative/to/repo"],
+        visualReview: { required: true, reason: "Changed views and remaining review, or why no UI was changed if required is false" },
         screenshots: [{ path: ".crane/screenshots/updated-view.png", caption: "Updated view at 1280 × 800" }],
         ...acceptance,
       },

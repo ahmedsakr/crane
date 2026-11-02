@@ -1765,6 +1765,15 @@ button.file-row:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: -1px;
 }
+.visual-review-fields {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  min-width: 0;
+}
+.visual-review-fields label { display: grid; gap: 6px; min-width: 0; }
+.visual-review-fields .input { width: 100%; min-width: 0; box-sizing: border-box; }
+.visual-review-fields textarea.input { height: 100px; padding: 12px 14px; resize: vertical; }
 
 /* ── crew page ──────────────────────────────────────────── */
 .crew-summary {

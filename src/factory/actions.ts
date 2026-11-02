@@ -6,6 +6,7 @@ import {
   DRIVER_NAMES,
   EFFORT_LEVELS,
   driverLabel,
+  visualReviewPending,
   ruleLabel,
   isDriverName,
   isMaintenanceRole,
@@ -33,6 +34,7 @@ import { DEFAULT_DRIVER_KEY, driverEffortKey, driverModelKey } from "./settings.
 import { factoryRoot } from "../core/paths.js";
 import { parseRule } from "@crane/contracts/rules";
 import { ALWAYS_DENIED, overlapsDenied } from "@crane/agent-policy";
+import { git } from "../core/git.js";
 
 /**
  * Accept what an operator would type: a rule (`Bash(npm ci:*)`, `WebFetch`)
@@ -249,6 +251,39 @@ export class OperatorActions {
     return m;
   }
 
+  /** A separate operator decision: ordinary approval and pre-approval never waive visual review. */
+  async recordVisualReview(id: string, input: { status: "inspected" | "waived"; commit: string; note: string }): Promise<Task> {
+    const task = this.need(id);
+    if (!input || !["inspected", "waived"].includes(input.status)) throw new Error("Visual decision must be inspected or waived");
+    if (typeof input.commit !== "string" || !/^[a-f0-9]{40,64}$/.test(input.commit)) throw new Error("Supply the full candidate commit");
+    if (typeof input.note !== "string" || !input.note.trim() || input.note.length > 10000) {
+      throw new Error("Record reviewed views, sizes and screenshot paths, or the waiver reason and unreviewed scope (at most 10000 characters)");
+    }
+    if (!task.branch || !["needs_review", "approved", "done"].includes(task.status)) throw new Error("Visual review requires a finished candidate awaiting approval or merge");
+    let candidate = task.visualReview;
+    // Older tasks have no structured candidate. Resolve their branch without changing the operator's checkout.
+    if (!candidate) {
+      const repo = task.repoId ? this.store.getRepo(task.repoId) : null;
+      if (!repo) throw new Error("This task has no candidate repo");
+      candidate = { status: "pending", commit: await git(repo.path, "rev-parse", `refs/heads/${task.branch}^{commit}`),
+        tree: await git(repo.path, "rev-parse", `refs/heads/${task.branch}^{tree}`), note: "", decidedAt: null };
+    }
+    const expected = candidate;
+    return this.store.db.transaction(() => {
+      const current = this.need(id);
+      if (current.status !== task.status || (current.visualReview?.commit ?? null) !== (task.visualReview?.commit ?? null)
+        || input.commit !== expected.commit) throw new Error("The candidate changed; inspect its current commit and record a new decision");
+      const review = { ...expected, status: input.status, note: input.note.trim(), decidedAt: new Date().toISOString() };
+      this.store.updateTask(id, { visualReview: review });
+      this.store.addEvent(id, "operator", input.status === "inspected" ? "Recorded candidate visual inspection" : "Waived candidate visual review", { visualReview: review });
+      return this.need(id);
+    }).immediate();
+  }
+
+  private requireVisualReview(task: Task) {
+    if (visualReviewPending(task)) throw new Error("Record candidate visual inspection or an explicit operator waiver before approval or merge");
+  }
+
   /**
    * Approve a task. When it changed code, this also merges its branch into the
    * repo's default branch and pushes it, unless `merge: false` ("Approve only").
@@ -258,6 +293,7 @@ export class OperatorActions {
     if (m.status !== "needs_review") throw new Error(`Task ${m.id} isn't waiting for review`);
     if (note !== undefined && typeof note !== "string") throw new Error("Note must be text");
     if (opts.merge !== undefined && typeof opts.merge !== "boolean") throw new Error("Merge must be a boolean");
+    this.requireVisualReview(m);
     const merge = (opts.merge ?? true) && !!m.branch;
     this.store.addEvent(m.id, "operator", note ? `Approved: ${note}` : "Approved");
     if (merge) return this.queueMerge(m);
@@ -300,6 +336,7 @@ export class OperatorActions {
     if (m.status === "needs_review") return this.approve(id);
     if (!m.branch) throw new Error(`Task ${m.id} didn't change any code, so there's nothing to merge`);
     if (!["approved", "done"].includes(m.status)) throw new Error(`Task ${m.id} isn't ready to merge`);
+    this.requireVisualReview(m);
     this.store.addEvent(m.id, "operator", "Asked to merge");
     return this.queueMerge(m);
   }

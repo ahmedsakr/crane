@@ -35,6 +35,8 @@ const run = promisify(execFile);
 export class MergeError extends Error {}
 
 export interface MergeRequest {
+  /** Factory gate, after conflict resolution and checks, before any push or default-branch update. */
+  verifyVisualReview?: (commit: string, tree: string, branchCommit: string, changedFiles: string[]) => Promise<void>;
   checks?: string[];
   recordValidation?: (run: ValidationRun) => void;
   repo: Repo;
@@ -352,10 +354,12 @@ export async function landTask(req: MergeRequest): Promise<MergeResult> {
     await prepareDependencies(req);
     await runChecks(workdir, req.checks ?? [], "merge", req.recordValidation ?? (() => {}), signal);
     if (signal?.aborted) throw new Error("Stopped");
-    const changedManifests = commit
+    const changedFiles = commit
       ? (await g(workdir, ["diff", "--name-only", "--no-renames", "-z", base.sha, head])).split("\0")
-        .filter(file => ["package.json", "package-lock.json"].includes(basename(file)))
+        .filter(Boolean)
       : [];
+    const changedManifests = changedFiles.filter(file => ["package.json", "package-lock.json"].includes(basename(file)));
+    await req.verifyVisualReview?.(head, await g(workdir, ["rev-parse", `${head}^{tree}`]), branchSha, changedFiles);
     if (remote) {
       if ((await push(repo, remote, head)) === "moved") {
         emit("note", `${remote}/${repo.defaultBranch} moved while merging. Starting over from the new tip.`);
