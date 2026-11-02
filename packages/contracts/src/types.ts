@@ -775,8 +775,10 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
  */
 export interface MergeOutcome {
   error?: string;
-  /** The commit that landed on the default branch. */
-  commit?: string;
+  /** The merge commit that landed on the default branch, or null when the branch was already there. */
+  commit?: string | null;
+  /** Where the default branch pointed afterwards, so the landing can be checked even without a merge commit. */
+  head?: string;
   /** The remote it was pushed to, or null when the repo has none. */
   pushedTo?: string | null;
   /** A checkout of the default branch Crane left alone (it had local changes), so the operator can catch up. */

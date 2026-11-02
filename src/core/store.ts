@@ -10,6 +10,7 @@ import {
   UNSHIPPED_STATUSES,
   isLookout,
   isMaintenanceRole,
+  lastMergeOutcome,
   prerequisiteMet,
   ruleLabel,
   unmetAcceptance,
@@ -45,6 +46,13 @@ import type {
   DriverSettings,
   PostmortemSettings,
 } from "@crane/contracts";
+
+/** A commit a merged prerequisite put on the default branch. */
+export interface LandedCommit {
+  id: string;
+  title: string;
+  commit: string;
+}
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS repos (
@@ -656,6 +664,27 @@ export class Store {
       // A prerequisite that's gone can never land; it holds the task until the operator waives it.
       return t ? { id: t.id, title: t.title, status: t.status, met: prerequisiteMet(t) } : { id, title: "Unknown task", status: "failed", met: false };
     });
+  }
+
+  /**
+   * What the task's merged prerequisites in this repo put on the default branch:
+   * the commits a checkout must contain, and tasks whose record names no commit
+   * (merged before Crane kept one). Prerequisites finished without a branch left
+   * nothing to find, and a waiver means the operator accepted them being missing.
+   */
+  prerequisiteCommits(task: Pick<Task, "prerequisites" | "prerequisitesWaivedAt" | "repoId">): { commits: LandedCommit[]; unrecorded: string[] } {
+    const commits: LandedCommit[] = [];
+    const unrecorded: string[] = [];
+    if (task.prerequisitesWaivedAt) return { commits, unrecorded };
+    for (const id of task.prerequisites) {
+      const t = this.getTask(id);
+      if (t?.status !== "merged" || t.repoId !== task.repoId) continue;
+      const outcome = lastMergeOutcome(this.listEvents(t.id));
+      const commit = outcome?.commit ?? outcome?.head;
+      if (commit) commits.push({ id: t.id, title: t.title, commit });
+      else unrecorded.push(t.id);
+    }
+    return { commits, unrecorded };
   }
 
   /** Tasks started from this task's findings, oldest first. */

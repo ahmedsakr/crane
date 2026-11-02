@@ -3,6 +3,8 @@ import { isAbsolute, join, relative } from "node:path";
 import { git } from "../core/git.js";
 import { worktreesDir } from "../core/paths.js";
 import { slugify } from "../core/ids.js";
+import type { LandedCommit } from "../core/store.js";
+import { fetchDefault, newestDefault, remoteFor, why } from "./merge.js";
 import type { Task, Repo, TaskDiff } from "@crane/contracts";
 
 export async function isGitRepo(path: string): Promise<boolean> {
@@ -35,20 +37,83 @@ export function branchFor(task: Task): string {
   return `crane/${slugify(task.title, 32)}-${task.id.slice(2)}`;
 }
 
-/** Give a task its own branch and working directory so agents never touch the operator's checkout. */
-export async function createWorktree(repo: Repo, task: Task): Promise<{ branch: string; path: string }> {
+/** Crane stopped before dependency setup or the agent, and the operator has something to fix. */
+export class PreparationHold extends Error {}
+
+/**
+ * Hold unless `target` contains every required commit. A commit git can't find
+ * counts as missing: nothing here can show that it's there.
+ */
+export async function requireCommits(cwd: string, target: string, required: readonly LandedCommit[], where: string, next: string): Promise<void> {
+  const missing: LandedCommit[] = [];
+  for (const c of required) {
+    if (!(await succeeds(cwd, "merge-base", "--is-ancestor", c.commit, target))) missing.push(c);
+  }
+  if (!missing.length) return;
+  const list = missing.map((c) => `${c.id} "${c.title}" (${c.commit.slice(0, 8)})`).join(", ");
+  throw new PreparationHold(`${where} doesn't contain landed prerequisite ${list}. ${next}`);
+}
+
+export interface WorktreeOptions {
+  /** Commits the worktree must contain before anything runs in it. */
+  required?: readonly LandedCommit[];
+  signal?: AbortSignal;
+  note?: (message: string) => void;
+}
+
+/**
+ * The commit a new worktree starts from: the newest of the local and remote
+ * default branch, by the merge path's rules. Never moves either of them, so an
+ * operator checkout left behind stays exactly as it is. A failed fetch isn't a
+ * hold on its own, since the refs already here may be enough.
+ */
+async function worktreeBase(repo: Repo, opts: WorktreeOptions): Promise<{ sha: string; label: string }> {
+  const main = repo.defaultBranch;
+  const remote = await remoteFor(repo);
+  if (remote) {
+    try {
+      await fetchDefault(repo, remote, opts.signal);
+    } catch (err) {
+      if (opts.signal?.aborted) throw err;
+      opts.note?.(`Couldn't fetch ${main} from ${remote}: ${why(err)}. Starting from the commits Crane already has`);
+    }
+  }
+  const tip = await newestDefault(repo, remote);
+  if (tip === "diverged") {
+    throw new PreparationHold(`Your local ${main} and ${remote}/${main} have diverged, so Crane can't choose a commit to start from. Bring them back together (git pull), then retry this task.`);
+  }
+  if (!tip) return { sha: "HEAD", label: "HEAD" };
+  if (tip.localBehind) opts.note?.(`Starting from ${tip.label}, because your local ${main} is behind it. Crane didn't change your ${main} or its checkout`);
+  return tip;
+}
+
+/**
+ * Give a task its own branch and working directory so agents never touch the
+ * operator's checkout. A worktree that already exists keeps its work untouched;
+ * it's only checked. Holds, creating nothing new, if a required commit is missing.
+ */
+export async function createWorktree(repo: Repo, task: Task, opts: WorktreeOptions = {}): Promise<{ branch: string; path: string; base?: string }> {
   const branch = branchFor(task);
   const path = join(worktreesDir(), task.id);
-  if (!existsSync(path)) {
-    let base = repo.defaultBranch;
-    try {
-      await git(repo.path, "rev-parse", "--verify", base);
-    } catch {
-      base = "HEAD";
-    }
-    await git(repo.path, "worktree", "add", "-b", branch, path, base);
+  const required = opts.required ?? [];
+  if (existsSync(path)) {
+    await requireCommits(path, "HEAD", required, `This task's worktree at ${path}`, `Crane didn't start the agent, and saves the task's work to ${branch}. Retry this task to start from the newest ${repo.defaultBranch}.`);
+    return { branch, path };
   }
-  return { branch, path };
+  const base = await worktreeBase(repo, opts);
+  await requireCommits(repo.path, base.sha, required, base.label, `Crane didn't start the agent. Bring ${repo.defaultBranch} up to date, then retry this task.`);
+  await git(repo.path, "worktree", "add", "-b", branch, path, base.sha);
+  return { branch, path, base: await git(path, "rev-parse", "HEAD") };
+}
+
+/**
+ * What a task's branch is compared with: the newest default branch, so commits it
+ * started from aren't mistaken for its own when the local default branch is behind.
+ * Null when the repo has no default branch.
+ */
+export async function comparisonBase(repo: Repo): Promise<string | null> {
+  const tip = await newestDefault(repo, await remoteFor(repo));
+  return tip === "diverged" ? `refs/heads/${repo.defaultBranch}` : (tip?.sha ?? null);
 }
 
 /** Commit anything the agent left uncommitted, then list what changed on the branch. */
@@ -67,12 +132,8 @@ export async function finalizeWorktree(repo: Repo, task: Task, path: string): Pr
       `crane: ${task.title}\n\nTask ${task.id}`,
     );
   }
-  let base = repo.defaultBranch;
-  try {
-    await git(path, "rev-parse", "--verify", base);
-  } catch {
-    return [];
-  }
+  const base = await comparisonBase(repo);
+  if (!base) return [];
   const out = await git(path, "diff", "--name-only", `${base}...HEAD`);
   return out ? out.split("\n") : [];
 }
@@ -93,7 +154,7 @@ export async function diffForTask(repo: Repo, task: Task, mergeCommit?: string |
   try {
     if (mergeCommit) return { diff: await git(repo.path, "diff", `${mergeCommit}^1`, mergeCommit), live: false };
     if (!task.branch) return { diff: "", live: false };
-    return { diff: await git(repo.path, "diff", `${repo.defaultBranch}...${task.branch}`), live: false };
+    return { diff: await git(repo.path, "diff", `${(await comparisonBase(repo)) ?? repo.defaultBranch}...${task.branch}`), live: false };
   } catch {
     return { diff: "", live: false };
   }
@@ -109,7 +170,7 @@ export const MAX_NEW_FILES = 100;
  */
 async function worktreeDiff(repo: Repo, path: string): Promise<string> {
   const read = (...args: string[]) => git(path, "--no-optional-locks", ...args);
-  const base = await read("merge-base", repo.defaultBranch, "HEAD").catch(() => "HEAD");
+  const base = await read("merge-base", (await comparisonBase(repo)) ?? repo.defaultBranch, "HEAD").catch(() => "HEAD");
   const parts = [await read("diff", base)];
   const added = (await read("ls-files", "--others", "--exclude-standard", "-z")).split("\0").filter(Boolean);
   for (const file of added.slice(0, MAX_NEW_FILES)) {
