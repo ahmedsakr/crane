@@ -84,7 +84,7 @@ export async function serve(
   if (factoryBuildOutdated()) {
     console.log(`  ${ui.accent("!")} ${ui.dim("This is an old build of Crane. Run npm run build, then restart, to run the latest code.")}`);
   } else if (!buildDashboard && servedDashboard()?.outdated) {
-    console.log(`  ${ui.accent("!")} ${ui.dim("The dashboard is older than its source. Run npm run build to see the latest UI.")}`);
+    console.log(`  ${ui.accent("!")} ${ui.dim("The dashboard is older than its source. Run npm run build -w web to see the latest UI.")}`);
   }
   console.log(`\n${ui.hint(['crane do "…"', "in another terminal, to give it work"])}\n`);
 

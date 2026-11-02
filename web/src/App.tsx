@@ -132,11 +132,13 @@ function Shell() {
           </div>
         ) : (
           built &&
-          overview?.factory.uiOutdated && (
+          overview?.factory.uiOutdated &&
+          // The full build the notice above asks for rebuilds the dashboard too.
+          !overview.factory.factoryOutdated && (
             <div className="notice notice-top" role="status">
               <strong>This dashboard is out of date.</strong>
               <span>
-                Recent changes to Crane's UI won't show until you run <span className="mono">npm run build</span> and reload.
+                Crane rebuilds it after merges. If this stays, run <span className="mono">npm run build -w web</span> in Crane's checkout and reload.
               </span>
             </div>
           )
