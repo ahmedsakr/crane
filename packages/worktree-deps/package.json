@@ -11,7 +11,7 @@
     }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "dev": "tsc -p tsconfig.json --watch"
+    "build": "tsc -b tsconfig.json",
+    "dev": "tsc -b tsconfig.json --watch"
   }
 }

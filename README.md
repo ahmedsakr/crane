@@ -215,11 +215,15 @@ npm test
 ```
 
 The private workspaces compile to ESM and declarations before build, typecheck,
-tests, dev, and the source CLI. `npm run build:packages` builds contracts first,
-then agent protocol and agent policy; run it before invoking source scripts
-directly. `npm run dev` watches all three packages. Import policy helpers from
+tests, dev, and the source CLI. `npm run build:packages` checks workspace links,
+then runs `tsc -b tsconfig.packages.json` to build packages in dependency order;
+run it before invoking source scripts directly. Each package is composite and
+references its workspace dependencies. Keep the solution's references in sync
+with `packages/*`; package boundary tests check both lists. Build caches live
+inside each package's `dist/`, so deleting that directory also clears its cache.
+`npm run dev` uses one `tsc -b` watcher for the package graph. Import policy helpers from
 `@crane/agent-policy`; its only runtime dependency is `@crane/contracts/rules`,
-and its command splitter stays internal. The root npm tarball bundles all three
+and its command splitter stays internal. The root npm tarball bundles all four
 packages for installed CLI use without separate registry releases. Changes to
 protocol or policy inputs mark the running factory as outdated; rebuild and
 restart it to load them.
