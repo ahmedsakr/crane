@@ -1106,13 +1106,6 @@ a.row:hover .row-title {
   gap: 12px;
   margin-top: 10px;
 }
-.schedule-fields .input {
-  min-width: 0;
-  max-width: 100%;
-}
-.schedule-fields small {
-  grid-column: 1 / -1;
-}
 /* Restates .input, which the instruct sheet's own textarea rule would otherwise strip. */
 .gates-fields textarea.input {
   height: auto;
@@ -1819,18 +1812,34 @@ button.file-row:focus-visible {
   font-size: 13px;
 }
 .crew-list {
-  padding: 0 18px;
+  /* Rows run edge to edge so the whole row can light up; the last border is clipped. */
+  overflow: hidden;
 }
 .crew-row {
+  position: relative;
   display: grid;
   grid-template-columns: auto minmax(150px, 0.9fr) minmax(0, 1.6fr) auto;
   align-items: center;
   gap: 14px;
-  padding: 14px 0;
+  padding: 14px 18px;
+  min-height: 64px;
+  box-sizing: border-box;
+  margin-bottom: -1px;
   border-bottom: 1px solid var(--hairline);
+  transition: background 0.12s ease;
 }
-.rows > li:last-child > .crew-row:not(.open) {
-  border-bottom: 0;
+.crew-row:has(.crew-open):hover {
+  background: var(--surface-2);
+}
+.crew-row-plain {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.crew-row-compact {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.crew-row-compact .crew-what {
+  grid-column: 2 / -1;
+  grid-row: 2;
 }
 .crew-who {
   min-width: 0;
@@ -1844,15 +1853,46 @@ button.file-row:focus-visible {
   align-items: center;
   gap: 8px;
 }
+/* The name is the button; ::after stretches its target across the row, so
+   tapping anywhere opens the sheet while links and buttons above it still work. */
+.crew-open {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  justify-self: start;
+}
+.crew-open::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.crew-open:focus-visible {
+  outline: none;
+}
+.crew-open:focus-visible::after {
+  outline: 2px solid var(--ink);
+  outline-offset: -3px;
+  border-radius: 8px;
+}
 .crew-what {
   min-width: 0;
   font-size: 14px;
+  display: grid;
+}
+.crew-what:empty {
+  display: none;
+}
+.crew-task {
+  position: relative;
+  z-index: 1;
+  font-weight: 600;
+  justify-self: start;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.crew-task {
-  font-weight: 600;
 }
 .crew-task:hover {
   text-decoration: underline;
@@ -1860,84 +1900,399 @@ button.file-row:focus-visible {
   text-underline-offset: 3px;
 }
 .crew-actions {
+  /* Always the last column, or a row with nothing in .crew-what shifts out of line. */
+  grid-column: -2 / -1;
+  grid-row: 1;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
-}
-.crew-toggle {
-  width: 32px;
-  height: 32px;
-  border-radius: 999px;
-  border: 0;
-  background: transparent;
-  color: var(--graphite);
-  display: grid;
-  place-items: center;
-  cursor: pointer;
-  flex: none;
-}
-.crew-toggle:hover {
-  background: var(--surface-2);
-  color: var(--ink);
-}
-.crew-toggle .row-chev {
-  color: currentColor;
-  transform: rotate(90deg);
-  transition: transform 0.15s ease;
-}
-.crew-toggle[aria-expanded="true"] .row-chev {
-  transform: rotate(-90deg);
-}
-.crew-settings {
-  padding: 14px 0 16px 48px;
-  border-bottom: 1px solid var(--hairline);
-  display: grid;
-  gap: 14px;
-}
-.rows > li:last-child > .crew-settings {
-  border-bottom: 0;
-}
-.crew-fields {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px 16px;
-}
-.crew-fields .tuning-field {
-  flex: 1 1 220px;
-  align-content: start;
-}
-.crew-field-note {
-  font-size: 12.5px;
-  line-height: 1.4;
-}
-.crew-settings-foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: 10px;
-  flex-wrap: wrap;
-  font-size: 13px;
+}
+.crew-actions .btn {
+  position: relative;
+  z-index: 1;
+}
+.crew-row:has(.crew-open):hover .row-chev {
+  color: var(--graphite);
+}
+/* On-call members wait on the bench: no work to show, so they share the width. */
+@media (min-width: 761px) {
+  .crew-bench {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .crew-bench > li:nth-child(odd) {
+    border-right: 1px solid var(--hairline);
+  }
 }
 @media (max-width: 560px) {
-  .crew-row {
+  .crew-row:not(.crew-row-plain) {
     grid-template-columns: auto minmax(0, 1fr) auto;
     row-gap: 6px;
   }
   .crew-what {
     grid-column: 2 / -1;
     grid-row: 2;
+  }
+  .crew-task {
     white-space: normal;
   }
-  .crew-what:empty {
-    display: none;
+  .crew-section-note {
+    display: block;
   }
-  .crew-settings {
-    padding-left: 0;
+  .crew-section .section-head {
+    flex-direction: column;
+    gap: 2px;
+  }
+}
+.crew-field-note,
+.crew-note {
+  font-size: 13px;
+  line-height: 1.4;
+}
+.crew-note {
+  margin: 0;
+}
+
+/* ── sheets with a fixed head and foot ──────────────────── */
+.sheet-scrim {
+  overflow: hidden;
+}
+.sheet-pane {
+  width: min(560px, 100%);
+  max-height: calc(100vh - max(8vh, 24px) - 24px);
+  max-height: calc(100dvh - max(8vh, 24px) - 24px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  outline: none;
+}
+.sheet-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 16px 14px 24px;
+  border-bottom: 1px solid var(--hairline);
+}
+.sheet-pane-titles {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.sheet-pane-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 20px;
+  letter-spacing: -0.025em;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.sheet-pane-subtitle {
+  margin: 1px 0 0;
+  font-size: 13px;
+  color: var(--graphite);
+}
+.sheet-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--graphite);
+  cursor: pointer;
+}
+.sheet-icon:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+.sheet-pane-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px 24px;
+}
+.sheet-pane-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px 12px;
+  padding: 12px 24px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--hairline);
+  background: var(--surface-2);
+}
+.sheet-pane-note {
+  flex: 1 1 160px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--graphite);
+}
+.sheet-pane-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.sheet-section + .sheet-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hairline);
+}
+.sheet-section > .crew-note + .crew-note,
+.sheet-section > .schedule-list + .crew-note {
+  margin-top: 8px;
+}
+.sheet-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.sheet-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sheet-section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink);
+}
+h3.sheet-section-title:only-child {
+  margin-bottom: 8px;
+}
+.sheet-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+}
+.sheet-link:hover {
+  border-color: var(--hairline-strong);
+}
+.sheet-link .row-chev {
+  flex: none;
+}
+.sheet-fields,
+.run-form,
+.schedule-fields {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.schedule-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.schedule-time {
+  max-width: 180px;
+}
+.check {
+  display: flex;
+  gap: 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.check input {
+  margin: 3px 0 0;
+  flex: none;
+}
+.check small {
+  display: block;
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--graphite);
+}
+.schedule-rules {
+  margin: 0;
+}
+.schedule-rules p {
+  margin: 8px 0 0;
+  line-height: 1.45;
+}
+.schedule-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.schedule-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  font-size: 13px;
+}
+.schedule-item-main {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+  overflow-wrap: anywhere;
+}
+.schedule-item-main strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.schedule-item-actions {
+  display: flex;
+  gap: 6px;
+}
+@media (max-width: 560px) {
+  .sheet-scrim {
+    place-items: end stretch;
+    padding: 0;
+  }
+  .sheet-pane {
+    width: 100%;
+    max-height: 92vh;
+    max-height: 92dvh;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+  .sheet-pane-head {
+    padding-left: 18px;
+    padding-right: 10px;
+  }
+  .sheet-pane-body {
+    padding: 16px 18px;
+  }
+  .sheet-pane-foot {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+  /* 16px stops iOS zooming the page when a field takes focus. */
+  .sheet-pane .input {
+    font-size: 16px;
   }
 }
 
-/* An agent's model and effort, opened from its row on the Crew page. */
+/* ── choosing from a few: pills backed by real inputs ───── */
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pill {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+}
+.pill input {
+  position: absolute;
+  opacity: 0;
+  inset: 0;
+  margin: 0;
+  cursor: inherit;
+}
+.pill span,
+.pill-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.pill:hover span,
+.pill-btn:hover {
+  border-color: var(--graphite);
+  color: var(--ink);
+}
+.pill input:checked + span,
+.pill-btn.on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--concrete);
+}
+.pill input:focus-visible + span {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.pill input:disabled + span {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.week {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.week-day span {
+  height: 30px;
+  padding: 0 9px;
+  font-size: 12.5px;
+}
+
+/* A start time: when it is, in words, under the choice that set it. */
+.when {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+.when-label {
+  padding: 0;
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: var(--graphite);
+}
+/* Inside a "Start time" disclosure the summary already names it. The radio group keeps its own label. */
+.gates .when {
+  margin-top: 10px;
+}
+.gates .when-label {
+  display: none;
+}
+.when-custom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  max-width: 400px;
+}
+.when-custom .tuning-field {
+  flex: 1 1 140px;
+}
+.when-summary {
+  margin: 0;
+  font-size: 14px;
+}
+.when-summary strong {
+  font-weight: 600;
+}
+.when-note {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--graphite);
+}
+
 .tuning-change {
   background: none;
   border: 0;
@@ -1949,12 +2304,6 @@ button.file-row:focus-visible {
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
-}
-.tuning {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 10px;
 }
 .tuning-field {
   display: grid;
@@ -2319,9 +2668,3 @@ button.file-row:focus-visible {
   color: var(--graphite);
   overflow-wrap: anywhere;
 }
-.crew-schedules { padding: 0 0 12px; font-size: 13px; }
-.crew-schedule-editor { margin-top: 12px; padding: 14px; border: 1px solid var(--hairline); border-radius: 14px; overflow-wrap: anywhere; }
-.crew-schedule-item { padding: 12px 0; border-bottom: 1px solid var(--hairline); margin-bottom: 12px; }
-.crew-schedule-actions, .crew-schedule-days { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
-.crew-schedule-fields { border: 0; padding: 0; margin: 12px 0 0; display: grid; gap: 12px; min-width: 0; }
-.crew-schedule-fields .input { width: 100%; min-width: 0; box-sizing: border-box; }

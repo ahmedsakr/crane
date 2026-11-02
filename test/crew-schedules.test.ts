@@ -211,6 +211,8 @@ test("crew schedules: API CRUD validates input and ownership without sockets", a
     assert.equal(created.status, 201);
     const s = await created.json();
     assert.equal((await (await app.request(base)).json()).length, 1);
+    // The crew page reads every member's schedules in one request.
+    assert.deepEqual((await (await app.request("/api/crew/schedules")).json()).map((x: { id: string; agentId: string }) => [x.id, x.agentId]), [[s.id, "a-tests"]]);
     assert.equal((await post(`${base}/${s.id}`, { ...input, preApprove: false, enabled: false })).status, 200);
     assert.equal(store.listCrewSchedules()[0]!.preApprove, false);
     assert.equal((await post(`${base}/missing`, input)).status, 400);
