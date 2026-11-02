@@ -52,6 +52,7 @@ function setup(opts: { remote?: boolean } = {}) {
     effort: null,
     driverSettings: null,
     assignee: null,
+    postmortemOf: null,
     preApprovedAt: null,
     prerequisites: [],
     prerequisitesWaivedAt: null,

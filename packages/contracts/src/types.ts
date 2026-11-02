@@ -153,6 +153,11 @@ export interface Task {
    */
   assignee: string | null;
   /**
+   * The merged task this post-mortem reviews, kept across retries. Null for any
+   * other task. Post-mortems go to the crew named in `PostmortemSettings.crew`.
+   */
+  postmortemOf: string | null;
+  /**
    * When the operator pre-approved this task, before it reached review. Once
    * its run finishes and its checks pass, it goes straight to the merge queue
    * instead of waiting for them. Null means it waits for review as usual.
@@ -302,6 +307,8 @@ export interface Agent {
    * A member with a role works only the runs the operator starts for it.
    */
   role: MaintenanceRole | null;
+  /** The operator named this member to run post-mortems, whether active or on-call. */
+  runsPostmortems: boolean;
   id: string;
   name: string;
   state: AgentState;
@@ -710,6 +717,12 @@ export interface DriverSettings {
 /** Defaults for newly queued post-mortems. A null driver keeps the merged task's choice. */
 export interface PostmortemSettings extends DriverSettings {
   driver: DriverName | null;
+  /**
+   * The crew members who run post-mortems, active or on-call, and the only ones
+   * who do. Empty leaves them to any active member. Unlike the agent, model, and
+   * effort, this is read at pickup, so a change reaches reviews already waiting.
+   */
+  crew: string[];
 }
 
 /** One agent the operator can choose, and whether this machine can run it. */

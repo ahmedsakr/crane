@@ -75,6 +75,35 @@ test("cli: visual decisions are separate from approval, candidate-bound and expl
   } finally { store.close(); }
 });
 
+test("cli: post-mortem crew is set by name, shown, kept by other changes, and reset with default", async () => {
+  const { store } = setup();
+  store.upsertAgent({ id: "a-jib", name: "Jib", driver: "simulated" });
+  store.upsertAgent({ id: "a-hoist", name: "Hoist", driver: "simulated" });
+  store.setSetting("crew_active_a-hoist", "false");
+  try {
+    assert.match((await crane(store, "agents", "postmortem")).out, /Run by any active member/);
+    const set = await crane(store, "agents", "postmortem", "--crew", "hoist, Jib");
+    assert.equal(set.code, 0, set.err);
+    assert.match(set.out, /Run by Jib, Hoist \(on-call\)|Run by Hoist \(on-call\), Jib/);
+    assert.deepEqual(store.postmortemCrew(), ["a-hoist", "a-jib"]);
+    assert.match((await crane(store, "agents")).out, /On-call · default: factory default · runs post-mortems/);
+    assert.equal((await crane(store, "agents", "postmortem", "--agent", "codex")).code, 0);
+    assert.deepEqual(store.postmortemCrew(), ["a-hoist", "a-jib"], "changing the agent keeps the crew");
+    for (const bad of ["ghost", "jib,ghost", " , "]) {
+      assert.equal((await crane(store, "agents", "postmortem", "--crew", bad)).code, 1, bad);
+      assert.deepEqual(store.postmortemCrew(), ["a-hoist", "a-jib"], "a refused change saves nothing");
+    }
+    const source = store.createTask({ kind: "maintenance", title: "Feature", brief: "", repoId: null, autonomy: "observe" });
+    store.setStatus(source.id, "merging");
+    const review = store.completeMerge(source.id, "Merged", {})!;
+    assert.match((await crane(store, "show", review.id)).out, /for Jib, Hoist \(on-call\)|for Hoist \(on-call\), Jib/);
+    const reset = await crane(store, "agents", "postmortem", "--crew", "default");
+    assert.equal(reset.code, 0, reset.err);
+    assert.deepEqual(store.postmortemCrew(), []);
+    assert.match(reset.out, /Run by any active member/);
+  } finally { store.close(); }
+});
+
 test("cli: recurring crew schedules add, list, update pre-approval, pause, resume and remove", async () => {
   const { store } = setup();
   store.upsertAgent({ id: "a-jib", name: "Jib", driver: "simulated" });

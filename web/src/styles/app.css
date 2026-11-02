@@ -1974,6 +1974,35 @@ button.file-row:focus-visible {
   gap: 6px;
   padding-bottom: 2px;
 }
+.postmortem-crew {
+  flex: 1 1 100%;
+  min-width: 0;
+  margin: 0 0 6px;
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--graphite);
+}
+.postmortem-crew legend {
+  padding: 0 0 8px;
+}
+.postmortem-crew-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 8px 18px;
+}
+.postmortem-crew-list label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--ink);
+}
+.postmortem-crew-list .muted {
+  font-size: 12.5px;
+}
 
 /* ── toast ──────────────────────────────────────────────── */
 .toast {

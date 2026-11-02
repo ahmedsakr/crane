@@ -352,15 +352,17 @@ export class Factory {
     for (const agent of this.crew) {
       if (this.busy.has(agent.id)) continue;
       this.store.setAgentState(agent.id, paused ? "paused" : "idle", null);
-      if (paused || !this.store.crewActive(agent.id)) continue;
+      if (paused) continue;
+      const active = this.store.crewActive(agent.id);
       // Approved merges first: the operator has already said yes and is waiting on them.
-      const merge = this.store.claimNextMerge(agent.id, [...this.mergingRepos]);
+      const merge = active ? this.store.claimNextMerge(agent.id, [...this.mergingRepos]) : null;
       if (merge) {
         this.track(this.merge(agent, merge), agent.id, merge.id);
         continue;
       }
       // A member with a maintenance role is kept for the runs the operator starts for it.
-      const task = this.store.claimNextTask(agent.id, { onlyAssigned: this.store.crewRole(agent.id) !== null });
+      // An on-call member comes in only for the post-mortems the operator named them for.
+      const task = this.store.claimNextTask(agent.id, active ? { onlyAssigned: this.store.crewRole(agent.id) !== null } : { onlyPostmortems: true });
       if (!task) continue;
       this.track(this.work(agent, task), agent.id, task.id);
     }

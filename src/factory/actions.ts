@@ -378,7 +378,7 @@ export class OperatorActions {
     // A maintenance run goes back to the member it was started for.
     const next = this.store.createTask({ kind: m.kind, title: m.title, brief: m.brief, repoId: m.repoId, autonomy: m.autonomy,
       driver, model: driver === m.driver ? m.model : null, effort: driver === m.driver ? m.effort : null, assignee: m.assignee,
-      driverSettings: driver === m.driver ? m.driverSettings : null,
+      driverSettings: driver === m.driver ? m.driverSettings : null, postmortemOf: m.postmortemOf,
       // The same gates, but not a waiver: that approved the scope of the earlier run only.
       prerequisites: m.prerequisites, acceptance: m.acceptance, lookouts: m.lookouts });
     const on = opts.driver !== undefined ? ` on ${driver ? driverLabel(driver) : "the default agent"}` : "";
@@ -410,13 +410,18 @@ export class OperatorActions {
     return this.store.postmortemSettings();
   }
 
-  /** Defaults are captured when a merge queues its read-only post-mortem. */
-  configurePostmortem(input: { driver?: string | null; model?: string | null; effort?: string | null }): PostmortemSettings {
+  /**
+   * The agent, model, and effort are captured when a merge queues its read-only
+   * post-mortem. `crew` names who runs them, and applies to those already waiting;
+   * an empty list leaves them to any active member.
+   */
+  configurePostmortem(input: { driver?: string | null; model?: string | null; effort?: string | null; crew?: string[] }): PostmortemSettings {
     if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Expected post-mortem settings");
     const saved = this.postmortemSettings();
     const driver = input.driver === undefined ? saved.driver : checkDriver(input.driver);
     const changed = driver !== saved.driver;
-    const next = { driver, model: changed ? null : saved.model, effort: changed ? null : saved.effort };
+    const crew = input.crew === undefined ? saved.crew : this.checkPostmortemCrew(input.crew);
+    const next = { driver, model: changed ? null : saved.model, effort: changed ? null : saved.effort, crew };
     if (driver && isTunable(driver)) {
       const tuning = checkDriverSettings(driver, input);
       if (tuning.model !== undefined) next.model = tuning.model || null;
@@ -431,6 +436,13 @@ export class OperatorActions {
     }
     this.store.setPostmortemSettings(next);
     return next;
+  }
+
+  private checkPostmortemCrew(crew: unknown): string[] {
+    if (!Array.isArray(crew)) throw new Error("Choose who runs post-mortems as a list of crew members");
+    const members = new Set(this.store.listAgents().map((a) => a.id));
+    for (const id of crew) if (!members.has(id as string)) throw new Error(`No crew member ${String(id)}`);
+    return [...new Set(crew as string[])];
   }
 
   /** Choose the agent new tasks run on, unless the operator picks another for a task. */
