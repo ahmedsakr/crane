@@ -79,6 +79,8 @@ export interface Finding {
 }
 
 export interface Report {
+  /** Agent classification only; operator decisions live on Task.visualReview. Missing means unknown. */
+  visualReview?: { required: boolean; reason: string };
   /** Factory-owned evidence; never accepted from agent output. */
   validation?: ValidationRun[];
   summary: string;
@@ -116,6 +118,8 @@ export interface ValidationRun {
 }
 
 export interface Task {
+  /** Factory-owned candidate and operator-owned visual decision. Null/absent requires review. */
+  visualReview?: VisualReview | null;
   id: string;
   kind: TaskKind;
   title: string;
@@ -184,6 +188,18 @@ export interface Task {
   scheduleId: string | null;
   startedAt: string | null;
   finishedAt: string | null;
+}
+
+export interface VisualReview {
+  status: "pending" | "not_required" | "inspected" | "waived";
+  commit: string;
+  tree: string;
+  note: string;
+  decidedAt: string | null;
+}
+
+export function visualReviewPending(task: Pick<Task, "branch" | "visualReview">): boolean {
+  return !!task.branch && (!task.visualReview || task.visualReview.status === "pending");
 }
 
 export type EventType =

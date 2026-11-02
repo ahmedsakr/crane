@@ -119,7 +119,7 @@ test("pre-approve: a finished run goes to the merge queue instead of review, unl
     const yes = make();
     actions.preApprove(yes.id);
     store.claimNextTask("a-jib");
-    store.updateTask(yes.id, { branch: `crane/${yes.id}` });
+    store.updateTask(yes.id, { branch: `crane/${yes.id}`, visualReview: { status: "not_required", commit: "test", tree: "test", note: "No UI changes", decidedAt: null } });
     assert.equal(store.finishWork(yes.id, "needs_review"), "merging");
     const merging = store.getTask(yes.id)!;
     assert.equal(merging.status, "merging");
@@ -131,7 +131,7 @@ test("pre-approve: a finished run goes to the merge queue instead of review, unl
     // "Change on a branch" tasks finish as done; pre-approved ones merge too.
     const act = make("act");
     actions.preApprove(act.id);
-    store.updateTask(act.id, { branch: `crane/${act.id}` });
+    store.updateTask(act.id, { branch: `crane/${act.id}`, visualReview: { status: "not_required", commit: "test", tree: "test", note: "No UI changes", decidedAt: null } });
     assert.equal(store.finishWork(act.id, "done"), "merging");
 
     // Not pre-approved, or undone: review as usual.

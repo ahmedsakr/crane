@@ -154,6 +154,10 @@ export function createApp(store: Store, opts: { exposed?: boolean } = {}) {
     const { note, merge } = await optionalJsonObject<{ note?: string; merge?: boolean }>(c.req.raw);
     return c.json(await actions.approve(c.req.param("id"), note, { merge }));
   });
+  api.post("/tasks/:id/visual-review", async (c) => {
+    const input = await optionalJsonObject<{ status: "inspected" | "waived"; commit: string; note: string }>(c.req.raw);
+    return c.json(await actions.recordVisualReview(c.req.param("id"), input));
+  });
   api.post("/tasks/:id/schedule", async (c) => {
     const body = await c.req.json<{ scheduledAt: string | null }>();
     if (!body || typeof body !== "object" || !("scheduledAt" in body)) return c.json({ error: "Give scheduledAt, or null to start now" }, 400);

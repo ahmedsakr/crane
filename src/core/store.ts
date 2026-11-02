@@ -13,6 +13,7 @@ import {
   prerequisiteMet,
   ruleLabel,
   unmetAcceptance,
+  visualReviewPending,
   type MaintenanceRole,
   type CrewSchedule,
   type CrewScheduleInput,
@@ -152,6 +153,7 @@ const TASK_UPDATE_COLUMNS = {
   worktree: "worktree",
   sessionId: "session_id",
   report: "report",
+  visualReview: "visual_review",
   costUsd: "cost_usd",
   startedAt: "started_at",
   finishedAt: "finished_at",
@@ -233,6 +235,7 @@ const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
   ["lookouts", "TEXT"],
   ["scheduled_at", "TEXT"],
   ["schedule_id", "TEXT"],
+  ["visual_review", "TEXT"],
 ];
 
 /** Add any missing columns to an older database. Safe if two processes open it at once. */
@@ -280,6 +283,7 @@ function toTask(r: Row): Task {
     driverSettings: r.driver_settings ? JSON.parse(r.driver_settings as string) as DriverSettings : null,
     assignee: (r.assignee as string) ?? null,
     preApprovedAt: (r.pre_approved_at as string) ?? null,
+    visualReview: r.visual_review ? JSON.parse(r.visual_review as string) : null,
     prerequisites: r.prerequisites ? JSON.parse(r.prerequisites as string) as string[] : [],
     prerequisitesWaivedAt: (r.prerequisites_waived_at as string) ?? null,
     acceptance: r.acceptance ? JSON.parse(r.acceptance as string) as string[] : [],
@@ -674,7 +678,7 @@ export class Store {
       const col = cols[k];
       if (!col) continue;
       sets.push(`${col} = ?`);
-      params.push(k === "report" && v ? JSON.stringify(v) : v);
+      params.push((k === "report" || k === "visualReview") && v ? JSON.stringify(v) : v);
     }
     if (!sets.length) return;
     params.push(id);
@@ -741,6 +745,10 @@ export class Store {
       if (!task || task.status === "cancelled") return null;
       // Passing checks don't show the asked-for scope is done; only the acceptance criteria do.
       const unmet = unmetAcceptance(task);
+      if (task.preApprovedAt && task.autonomy !== "observe" && visualReviewPending(task)) {
+        this.setStatus(id, "needs_review", "Pre-approved, but candidate visual inspection or an explicit operator waiver is required", { visualReviewPending: true });
+        return "needs_review" as const;
+      }
       if (task.preApprovedAt && task.branch && task.autonomy !== "observe" && unmet.length) {
         this.setStatus(id, "needs_review",
           `Pre-approved, but the report doesn't show ${unmet.length === 1 ? "an acceptance criterion" : `${unmet.length} acceptance criteria`} met. Ready for your review`,

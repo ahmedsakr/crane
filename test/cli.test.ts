@@ -49,11 +49,31 @@ function setup() {
   const repo = store.addRepo({ path: "/repo", name: "app" });
   const task = (status: Parameters<Store["updateTask"]>[1]["status"], branch = true) => {
     const t = store.createTask({ kind: "maintenance", title: `${status} task`, brief: "", repoId: repo.id, autonomy: "propose" });
-    store.updateTask(t.id, { status, branch: branch ? `crane/${t.id}` : null });
+    store.updateTask(t.id, { status, branch: branch ? `crane/${t.id}` : null,
+      visualReview: { status: "not_required", commit: "a".repeat(40), tree: "b".repeat(40), note: "No UI changes", decidedAt: null } });
     return store.getTask(t.id)!;
   };
   return { store, repo, task };
 }
+
+test("cli: visual decisions are separate from approval, candidate-bound and explicit", async () => {
+  const { store, task } = setup();
+  const candidate = task("needs_review");
+  const commit = "a".repeat(40);
+  store.updateTask(candidate.id, { visualReview: { status: "pending", commit, tree: "b".repeat(40), note: "UI changed", decidedAt: null } });
+  try {
+    assert.equal((await crane(store, "approve", candidate.id, "-m", "waive review")).code, 1);
+    assert.equal((await crane(store, "visual-review", candidate.id, "--commit", "c".repeat(40), "--waive", "-m", "Urgent repair; task page at all sizes unreviewed")).code, 1);
+    assert.equal((await crane(store, "visual-review", candidate.id, "--commit", commit, "--waive", "-m", "Urgent repair; task page at all sizes unreviewed")).code, 0);
+    assert.equal(store.getTask(candidate.id)!.visualReview!.status, "waived");
+    assert.equal(store.getTask(candidate.id)!.status, "needs_review");
+    assert.equal((await crane(store, "approve", candidate.id)).code, 0);
+    const inspected = task("needs_review");
+    store.updateTask(inspected.id, { visualReview: { status: "pending", commit, tree: "b".repeat(40), note: "UI changed", decidedAt: null } });
+    assert.equal((await crane(store, "visual-review", inspected.id, "--commit", commit, "-m", "Task page wide, short, phone; .crane/screenshots/task-*.png; no clipping")).code, 0);
+    assert.equal(store.getTask(inspected.id)!.visualReview!.status, "inspected");
+  } finally { store.close(); }
+});
 
 test("cli: recurring crew schedules add, list, update pre-approval, pause, resume and remove", async () => {
   const { store } = setup();

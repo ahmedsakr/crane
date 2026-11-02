@@ -87,6 +87,27 @@ const noResolve = async () => {
   throw new Error("should not be asked to resolve conflicts");
 };
 
+test("merge: visual gate sees the checked candidate and prevents push and local default update", async () => {
+  const { root, checkout, repo, task, wt } = setup();
+  commitFile(wt, "feature.txt", "feature\n", "feature");
+  const before = sh(join(root, "origin.git"), "rev-parse", "main");
+  const branchCommit = sh(wt, "rev-parse", "HEAD");
+  let checked = false;
+  await assert.rejects(landTask({ repo, task, workdir: wt, emit, resolveConflicts: noResolve,
+    recordValidation: () => { checked = true; },
+    verifyVisualReview: async (commit, tree, branch, changedFiles) => {
+      assert.equal(checked, true, "visual decision is checked after configured checks");
+      assert.equal(commit, sh(wt, "rev-parse", "HEAD"));
+      assert.equal(tree, sh(wt, "rev-parse", "HEAD^{tree}"));
+      assert.equal(branch, branchCommit);
+      assert.deepEqual(changedFiles, ["feature.txt"]);
+      throw new Error("Candidate visual inspection required");
+    },
+  }), /visual inspection required/);
+  assert.equal(sh(join(root, "origin.git"), "rev-parse", "main"), before);
+  assert.equal(sh(checkout, "rev-parse", "HEAD"), before);
+});
+
 test("merge: failed and unconfigured checks never push", async () => {
   for (const checks of [["echo broken; exit 1"], []]) {
     const { root, repo, task, wt } = setup();
@@ -569,7 +590,7 @@ test("actions: approve merges by default, approve only keeps the branch, merge p
   const r = store.addRepo({ path: mkdtempSync(join(tmpdir(), "crane-repo-")) });
   const make = (title: string) => {
     const t = store.createTask({ kind: "maintenance", title, brief: "", repoId: r.id, autonomy: "propose" });
-    store.updateTask(t.id, { branch: `crane/${t.id}`, agentId: "a-jib" });
+    store.updateTask(t.id, { branch: `crane/${t.id}`, agentId: "a-jib", visualReview: { status: "not_required", commit: "test", tree: "test", note: "No UI changes", decidedAt: null } });
     store.setStatus(t.id, "needs_review");
     return t;
   };

@@ -15,6 +15,7 @@ import { worktreesDir } from "../core/paths.js";
 import { retainScreenshots } from "../core/screenshots.js";
 import { siblingTasksFor } from "./task-context.js";
 import { OperatorActions } from "./actions.js";
+import { candidateVisualReview, requireCandidateVisualReview, visualReviewRequired } from "./visual-review.js";
 
 const CREW = ["Jib", "Boom", "Hoist", "Trolley", "Rigger", "Winch", "Gantry", "Mast"];
 
@@ -433,6 +434,7 @@ export class Factory {
         emit,
         signal: ac.signal,
         checks: this.store.repoChecks(repo.id),
+        verifyVisualReview: async (commit, tree, branchCommit, changedFiles) => requireCandidateVisualReview(this.store, task.id, commit, tree, branchCommit, changedFiles),
         recordValidation: (run) => {
           const report = this.store.getTask(task.id)?.report ?? { summary: "", findings: [], changedFiles: [] };
           this.store.updateTask(task.id, { report: { ...report, validation: [...(report.validation ?? []), run] } });
@@ -450,6 +452,10 @@ export class Factory {
             // landTask runs these as merge checks once the conflicts are resolved.
             checks: this.store.repoChecks(repo.id),
           });
+          if (current.visualReview?.status === "not_required" && visualReviewRequired({ ...r.report, changedFiles: [...r.report.changedFiles, ...files] })) {
+            this.store.updateTask(task.id, { visualReview: { ...current.visualReview, status: "pending",
+              note: "Conflict resolution requires a visual decision for the resulting candidate." } });
+          }
           if (r.report.screenshots?.length) {
             const screenshots = retainScreenshots(task.id, cwd, r.report.screenshots, message => emit("note", message));
             const report = this.store.getTask(task.id)?.report;
@@ -564,6 +570,7 @@ export class Factory {
       if (task.autonomy !== "observe") {
         const changed = await finalizeWorktree(repo, task, cwd);
         result.report.changedFiles = [...new Set([...changed, ...result.report.changedFiles])];
+        this.store.updateTask(task.id, { visualReview: await candidateVisualReview(cwd, result.report) });
         this.store.updateTask(task.id, { report: result.report });
         await runChecks(cwd, this.store.repoChecks(repo.id), "review", (run) => {
           result.report.validation!.push(run);

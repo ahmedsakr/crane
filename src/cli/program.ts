@@ -129,7 +129,7 @@ program
   .option("-a, --autonomy <level>", "observe | propose | act")
   .option("--agent <agent>", `which agent works it: ${DRIVER_NAMES.join(" | ")} (default: the factory's default)`)
   .option("--at <timestamp>", "start no earlier than this ISO timestamp with timezone, e.g. 2030-06-15T09:00:00-04:00")
-  .option("--pre-approve", "merge once the run and checks pass, without waiting for review")
+  .option("--pre-approve", "merge after checks and acceptance pass; UI still requires a visual decision")
   .option("--after <id>", AFTER_HELP, collect, [])
   .option("--accept <criterion>", ACCEPT_HELP, collect, [])
   .option("--look-for <what>", LOOK_FOR_HELP, collect, [])
@@ -386,6 +386,11 @@ program
     const forMember = member ? ` · for ${member.name}${m.status === "queued" && !member.active ? " (on-call)" : ""}` : "";
     const preApproved = m.preApprovedAt && ["queued", "running"].includes(m.status) ? " · pre-approved" : "";
     console.log(`  ${ui.statusText(m.status)}${ui.dim(forMember + on + cost + preApproved)}`);
+    if (m.branch) {
+      console.log(`  Visual review: ${m.visualReview?.status ?? "pending"}${m.visualReview ? ` · candidate ${m.visualReview.commit}` : ""}`);
+      if (m.visualReview?.note) console.log(ui.wrap(m.visualReview.note, 2));
+      if (!m.visualReview || m.visualReview.status === "pending") console.log(`  Record inspection: crane visual-review ${m.id} --commit <full-sha> -m 'views, sizes, screenshot paths' (or --waive with reason and scope)`);
+    }
     if (settingsLabel(m)) console.log(ui.dim(`  Model settings: ${settingsLabel(m)}`));
     if (m.lookouts.length) console.log(ui.dim(`  Also looks for: ${lookoutsLabel(m.lookouts)}`));
     if (m.scheduledAt) console.log(ui.dim(`  Start no earlier than: ${new Date(m.scheduledAt).toLocaleString()} (${m.scheduledAt})`));
@@ -555,6 +560,20 @@ const act = (name: string, desc: string, fn: (id: string, note?: string) => Prom
     });
 
 program
+  .command("visual-review")
+  .description("Record candidate visual inspection or an explicit waiver before approval or merge")
+  .argument("<id>")
+  .requiredOption("--commit <sha>", "full candidate commit inspected or waived")
+  .requiredOption("-m, --message <note>", "reviewed views, sizes and screenshot paths, or waiver reason and unreviewed scope")
+  .option("--waive", "explicitly waive visual review for this candidate")
+  .action(async (id: string, opts: { commit: string; message: string; waive?: boolean }) => {
+    try {
+      const task = await actions.recordVisualReview(id, { status: opts.waive ? "waived" : "inspected", commit: opts.commit, note: opts.message });
+      ui.ok(`Visual review ${task.visualReview!.status} for ${task.visualReview!.commit}`);
+    } catch (err) { ui.fail((err as Error).message); }
+  });
+
+program
   .command("approve")
   .description("Approve a task that's waiting for you, and merge and push its branch")
   .argument("<id>")
@@ -597,7 +616,7 @@ program
       }
       const m = actions.preApprove(id, opts.message);
       const main = (m.repoId && store.getRepo(m.repoId)?.defaultBranch) || "main";
-      ui.ok(`Pre-approved. Crane merges it into ${main} once its checks pass  ${ui.dim(m.id)}`);
+      ui.ok(`Pre-approved. Crane merges it into ${main} after its checks and acceptance pass; UI still requires a visual decision  ${ui.dim(m.id)}`);
       console.log(ui.hint([`crane watch ${m.id}`, "follow along live"], [`crane pre-approve ${m.id} --undo`, "wait for review instead"]));
     } catch (err) {
       ui.fail((err as Error).message);

@@ -27,7 +27,32 @@ import { BlockedItem, StatusChip, useToast } from "../components/bits";
 import { useApp } from "../lib/app-context";
 import { FollowUpForm } from "../components/FollowUpForm";
 import { TaskScheduleForm } from "../components/TaskScheduleForm";
+import { visualReviewPending, type Task } from "@crane/contracts";
 import { Changes } from "../components/Changes";
+
+function VisualReviewForm({ task, busy, save }: { task: Task; busy: boolean; save: (input: { status: "inspected" | "waived"; commit: string; note: string }) => void }) {
+  const [status, setStatus] = useState<"inspected" | "waived">("inspected");
+  const [commit, setCommit] = useState(task.visualReview?.commit ?? "");
+  const [note, setNote] = useState("");
+  return <details>
+    <summary>Record inspection or waiver</summary>
+    <form className="visual-review-fields" onSubmit={e => { e.preventDefault(); save({ status, commit, note }); }}>
+      <label>Decision
+        <select className="input" value={status} onChange={e => setStatus(e.target.value as typeof status)} disabled={busy}>
+          <option value="inspected">I inspected this candidate</option>
+          <option value="waived">I waive visual review for this candidate</option>
+        </select>
+      </label>
+      <label>Candidate commit
+        <input className="input mono" required value={commit} onChange={e => setCommit(e.target.value)} pattern="[a-f0-9]{40,64}" readOnly={!!task.visualReview} disabled={busy} />
+      </label>
+      <label>{status === "inspected" ? "Reviewed views, sizes and screenshot paths" : "Waiver reason and unreviewed scope"}
+        <textarea className="input" required maxLength={10000} value={note} onChange={e => setNote(e.target.value)} disabled={busy} />
+      </label>
+      <button className="btn btn-primary" disabled={busy || !note.trim()}>{status === "inspected" ? "Record inspection" : "Record waiver"}</button>
+    </form>
+  </details>;
+}
 
 /** Group consecutive tool calls so the timeline reads as a story, with the mechanics one click away. */
 function groupEvents(events: TaskEvent[]) {
@@ -174,6 +199,7 @@ export function TaskPage() {
   if (!data) return <p className="muted" style={{ paddingTop: 40 }}>Loading…</p>;
   const { task: m, repo, agent } = data;
   const report = m.report;
+  const visualPending = visualReviewPending(m);
   const main = repo?.defaultBranch ?? "main";
   const merge = lastMergeOutcome(events);
   // The agent that worked it, or the one it asked for. Before it starts with no choice, nothing to say.
@@ -224,6 +250,22 @@ export function TaskPage() {
           </div>
           <h1 className="detail-title">{m.title}</h1>
 
+          {m.branch && ["needs_review", "approved", "done"].includes(m.status) && <div className="card card-pad visual-review">
+            <h2 className="card-title">Visual review: {visualPending ? "Needs your decision" : m.visualReview?.status.replace("_", " ")}</h2>
+            <p>{visualPending ? "Approval and merging wait for candidate inspection or an explicit waiver. Pre-approval and passing checks do not complete visual review." : m.visualReview?.note}</p>
+            {!visualPending && m.visualReview && <details>
+              <summary>Candidate decision</summary>
+              <p className="mono" style={{ overflowWrap: "anywhere" }}>{m.visualReview.commit}</p>
+              {m.visualReview.decidedAt && <p>Recorded {new Date(m.visualReview.decidedAt).toLocaleString()}</p>}
+            </details>}
+            {visualPending && <>
+              <p>{m.visualReview?.note}</p>
+              <p>Inspect the candidate at wide (1280 × 800), short (1280 × 600), and phone (390 × 844) sizes using the report's handoff below.</p>
+              <VisualReviewForm key={`${m.id}:${m.visualReview?.commit}`} task={m} busy={!!busy}
+                save={input => run("visual-review", () => api.recordVisualReview(m.id, input), "Visual decision recorded. You can approve or merge the candidate.")} />
+            </>}
+          </div>}
+
           {m.status === "needs_review" && (
             <div className="decision">
               <div className="decision-copy">
@@ -247,7 +289,7 @@ export function TaskPage() {
                 {m.branch && (
                   <button
                     className="btn btn-quiet"
-                    disabled={!!busy}
+                    disabled={!!busy || visualPending}
                     onClick={() => run("approve-only", () => api.approve(m.id, { merge: false }), "Approved. The branch is kept for you.")}
                   >
                     Approve only
@@ -255,7 +297,7 @@ export function TaskPage() {
                 )}
                 <button
                   className="btn btn-crane"
-                  disabled={!!busy}
+                  disabled={!!busy || visualPending}
                   onClick={() => run("approve", () => api.approve(m.id), m.branch ? "Approved. Merging it now." : "Marked as reviewed")}
                 >
                   {m.branch ? "Approve and merge" : "Mark as reviewed"}
@@ -330,8 +372,8 @@ export function TaskPage() {
                 <strong>{m.preApprovedAt ? "Pre-approved" : "Merge when it passes"}</strong>
                 <span>
                   {m.preApprovedAt
-                    ? `Once its checks pass${acceptanceGate}, Crane merges it into ${main} without waiting for your review. Otherwise nothing merges.`
-                    : `Pre-approve it and Crane merges it into ${main} once its checks pass${acceptanceGate}, without waiting for your review.`}
+                    ? `Once its checks pass${acceptanceGate}, Crane merges it into ${main}. UI changes still wait for your candidate inspection or explicit waiver.`
+                    : `Pre-approve it and Crane merges it into ${main} once its checks pass${acceptanceGate}. UI changes still wait for your candidate inspection or explicit waiver.`}
                 </span>
               </div>
               {m.preApprovedAt ? (
@@ -582,7 +624,7 @@ export function TaskPage() {
               <p style={{ margin: "0 0 12px", fontSize: 14, color: "var(--ink-2)" }}>
                 Crane merges {m.branch} and pushes it. An agent resolves any conflicts.
               </p>
-              <button className="btn btn-primary btn-sm" disabled={!!busy} onClick={() => run("merge", () => api.merge(m.id), "Merging it now")}>
+              <button className="btn btn-primary btn-sm" disabled={!!busy || visualPending} onClick={() => run("merge", () => api.merge(m.id), "Merging it now")}>
                 Merge
               </button>
               <details style={{ marginTop: 12 }}>

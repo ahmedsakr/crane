@@ -107,6 +107,7 @@ export const api = {
   merge: (id: string) => post<Task>(`/tasks/${id}/merge`),
   /** Approve a queued or running task ahead of time, so it merges once its checks pass. */
   preApprove: (id: string, note?: string) => post<Task>(`/tasks/${id}/pre-approve`, { note }),
+  recordVisualReview: (id: string, input: { status: "inspected" | "waived"; commit: string; note: string }) => post<Task>(`/tasks/${id}/visual-review`, input),
   undoPreApproval: (id: string) => req<Task>(`/tasks/${id}/pre-approve`, { method: "DELETE" }),
   /** Start a queued task without the prerequisites that haven't landed, approving a reduced scope. */
   waivePrerequisites: (id: string, note?: string) => post<Task>(`/tasks/${id}/waive-prerequisites`, { note }),

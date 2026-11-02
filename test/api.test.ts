@@ -44,7 +44,8 @@ test("api: approval keeps empty-body defaults and honors approve only", async ()
     const app = createApp(store);
     for (const body of [undefined, "{}", '{"merge":true}', '{"merge":false,"note":"Reviewed"}']) {
       const task = store.createTask({ kind: "maintenance", title: "Approve", brief: "", repoId: repo.id, autonomy: "propose" });
-      store.updateTask(task.id, { status: "needs_review", branch: `crane/${task.id}` });
+      store.updateTask(task.id, { status: "needs_review", branch: `crane/${task.id}`,
+        visualReview: { status: "not_required", commit: "test", tree: "test", note: "No UI changes", decidedAt: null } });
       const response = await app.request(`/api/tasks/${task.id}/approve`, { method: "POST", body });
       assert.equal(response.status, 200);
       assert.equal((await response.json()).status, body?.includes("false") ? "approved" : "merging");
@@ -67,7 +68,8 @@ test("api: cross-origin and rebound requests change nothing", async () => {
   try {
     const repo = store.addRepo({ path: "/repo" });
     const task = store.createTask({ kind: "maintenance", title: "Approve", brief: "", repoId: repo.id, autonomy: "propose" });
-    store.updateTask(task.id, { status: "needs_review", branch: `crane/${task.id}` });
+    store.updateTask(task.id, { status: "needs_review", branch: `crane/${task.id}`,
+      visualReview: { status: "not_required", commit: "test", tree: "test", note: "No UI changes", decidedAt: null } });
     const app = createApp(store);
     const snapshot = () => ({ task: store.getTask(task.id), events: store.listEvents(task.id), repos: store.listRepos(), tools: store.repoTools(repo.id) });
     const before = snapshot();

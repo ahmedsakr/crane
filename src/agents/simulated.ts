@@ -61,6 +61,7 @@ export class SimulatedDriver implements AgentDriver {
         summary: `Simulated run. ${script.summary}`,
         findings: script.findings,
         changedFiles: [],
+        visualReview: { required: false, reason: "The simulated driver only writes a Markdown note, with no UI changes." },
       },
     };
   }
@@ -78,7 +79,8 @@ export class SimulatedDriver implements AgentDriver {
       emit("tool", `Edited ${f}`, { simulated: true });
     }
     return {
-      report: { summary: `Simulated run. Kept both sides of the conflicts in ${files.length} file(s).`, findings: [], changedFiles: files },
+      report: { summary: `Simulated run. Kept both sides of the conflicts in ${files.length} file(s).`, findings: [], changedFiles: files,
+        visualReview: { required: false, reason: "Simulated conflict resolution preserves both sides of text files." } },
     };
   }
 }

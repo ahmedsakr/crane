@@ -36,6 +36,14 @@ export function parseReport(finalText: string): Report {
       return {
         summary: String(raw.summary ?? "").trim() || firstParagraph(block.rest),
         findings,
+        ...(raw.visualReview && typeof raw.visualReview === "object"
+          && typeof (raw.visualReview as Record<string, unknown>).required === "boolean"
+          && typeof (raw.visualReview as Record<string, unknown>).reason === "string"
+          && String((raw.visualReview as Record<string, unknown>).reason).trim()
+          ? { visualReview: {
+            required: (raw.visualReview as { required: boolean }).required,
+            reason: String((raw.visualReview as Record<string, unknown>).reason).slice(0, 2000),
+          } } : {}),
         changedFiles: Array.isArray(raw.changedFiles) ? raw.changedFiles.map(String) : [],
         ...(Array.isArray(raw.screenshots) ? { screenshots: raw.screenshots
           .filter((s): s is Screenshot => !!s && typeof s === "object" && typeof s.path === "string" && typeof s.caption === "string")
