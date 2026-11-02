@@ -12,7 +12,16 @@ Crane is an autonomous software factory steered by a human operator. Agents run 
 - `npm run crane -- <cmd>`: run the CLI from source, including the workspace preflight and package builds. Direct `npx tsx src/cli/index.ts <cmd>` calls need `npm run build:packages` first.
 - Inspecting live factory state: `npm run --silent crane -- tasks --all --json` gives every task with its status, `branch`, and `worktree` (add `-n 500` for more than 50). The CLI opens the store read-write and runs its migrations, so if your branch changes the schema in `src/core/store.ts`, or you need a table the CLI doesn't show, open `$CRANE_HOME/crane.db` with `better-sqlite3` and `{ readonly: true }` instead. There is no `sqlite3` binary, and Node 20 has no `node:sqlite`. Use Glob/Read for paths under `$CRANE_HOME`, not shell `ls`.
 - Demo data: `CRANE_HOME=/tmp/crane-demo npx tsx scripts/seed-demo.ts`, then `serve --driver simulated`
-- `npm run screenshot -- <path> [steps] --out <file.png>`: boots a throwaway demo factory and screenshots the built UI in headless Chromium. Steps run in order: `--click <sel>`, `--type <text>`, `--key Escape`, `--wait-for <sel>`, `--eval <js>`, `--shot <file>`, `--size 390x844`; `--media prefers-color-scheme=dark` (or `prefers-reduced-motion=reduce`) applies to the whole run. Run `npm run build -w web` first. Example: `npm run screenshot -- "/?instruct=Fix the tests" --click ".choice-btn" --out .crane/menu.png`
+- `npm run screenshot -- <path> [steps] --out <file.png>`: boots a throwaway demo factory and screenshots the built UI in headless Chromium. Steps run in order: `--click <sel>`, `--type <text>`, `--key Escape`, `--wait-for <sel>`, `--eval <js>`, `--shot <file>`. Whole-run options: `--size 390x844` (default `1280x800`) and `--media prefers-color-scheme=dark` (or `prefers-reduced-motion=reduce`). `--size` applies to every capture, regardless of its position; repeating it uses only the last value. Use one invocation per viewport. Run `npm run build -w web` first. Example: `npm run screenshot -- "/?instruct=Fix the tests" --click ".choice-btn" --out .crane/menu.png`
+
+  Task-page example: wait for a loaded task link before navigating, then for task content before capturing. These commands open the first task in each throwaway demo's list; for a specific task or state, choose its link and wait for a selector that identifies the required content. Page load alone does not mean task data has loaded; `--wait-for` waits for a matching element to exist.
+
+  ```sh
+  npm run build -w web
+  npm run screenshot -- /tasks --size 1280x800 --wait-for '.rows a.row' --click '.rows a.row' --wait-for '.detail-title' --out .crane/screenshots/task-wide.png
+  npm run screenshot -- /tasks --size 1280x600 --wait-for '.rows a.row' --click '.rows a.row' --wait-for '.detail-title' --out .crane/screenshots/task-short.png
+  npm run screenshot -- /tasks --size 390x844 --wait-for '.rows a.row' --click '.rows a.row' --wait-for '.detail-title' --out .crane/screenshots/task-phone.png
+  ```
 
 ## Shape
 
