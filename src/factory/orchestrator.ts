@@ -3,7 +3,7 @@ import { completionReviewReason, driverLabel, isDriverName, unmetAcceptance, typ
 import { AgentRunError, combinedCost, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
-import { createWorktree, finalizeWorktree, putAwayWorktree, removeWorktree } from "./git.js";
+import { createWorktree, finalizeWorktree, PreparationHold, putAwayWorktree, removeWorktree, requireCommits } from "./git.js";
 import { installDependencies } from "@crane/worktree-deps";
 import { elapsed } from "./elapsed.js";
 import { deleteMergedBranch, landTask, MergeError } from "./merge.js";
@@ -510,7 +510,7 @@ export class Factory {
       // Record the outcome before cleaning up: if the merge just updated Crane's own
       // checkout, a dev server may restart any moment.
       this.store.completeMerge(task.id, message, {
-        merge: { commit: result.commit, pushedTo: result.pushedTo, checkoutBehind: result.checkoutBehind },
+        merge: { commit: result.commit, head: result.head, pushedTo: result.pushedTo, checkoutBehind: result.checkoutBehind },
       });
       this.log(`${agent.name} merged ${task.id}`);
       await removeWorktree(repo, workdir);
@@ -553,13 +553,19 @@ export class Factory {
       const repo = task.repoId ? this.store.getRepo(task.repoId) : null;
       if (!repo) throw new Error("This task has no repo to work in");
 
+      const { commits: required, unrecorded } = this.store.prerequisiteCommits(task);
+      if (unrecorded.length) emit("note", `Couldn't check that ${unrecorded.join(", ")} landed here: Crane has no record of the commit`);
+
       let cwd = repo.path;
-      if (task.autonomy !== "observe") {
+      if (task.autonomy === "observe") {
+        // Investigate-only runs read the operator's checkout, so that's what must contain them.
+        await requireCommits(repo.path, "HEAD", required, `Your checkout at ${repo.path}`, "Crane didn't start the agent, and doesn't update your checkout. Update it, then retry this task.");
+      } else {
         // Reuses the worktree if an earlier run left one, so nothing done so far is lost.
-        const wt = await createWorktree(repo, task);
+        const wt = await createWorktree(repo, task, { required, signal: ac.signal, note: (message) => emit("note", message) });
         cwd = wt.path;
         this.store.updateTask(task.id, { branch: wt.branch, worktree: wt.path });
-        emit("note", `${task.worktree ? "Back on" : "Working on"} branch ${wt.branch}`, { branch: wt.branch });
+        emit("note", `${task.worktree ? "Back on" : "Working on"} branch ${wt.branch}`, { branch: wt.branch, ...(wt.base ? { base: wt.base } : {}) });
         const started = Date.now();
         try {
           const note = await installDependencies(wt.path, {
@@ -650,6 +656,10 @@ export class Factory {
         this.requeue(task.id, STOPPED_MESSAGE);
       } else if (ac.signal.aborted) {
         this.store.setStatus(task.id, "cancelled", "Cancelled");
+      } else if (err instanceof PreparationHold) {
+        emit("error", message, { hold: true });
+        this.store.setStatus(task.id, "failed", "Held before the agent started");
+        this.log(`${agent.name} held ${task.id}: ${message}`);
       } else {
         const turns = err instanceof AgentRunError && err.opts.limit === "turns";
         emit("error", message, turns ? { limit: "turns" } : undefined);

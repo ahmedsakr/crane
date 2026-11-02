@@ -75,12 +75,13 @@ const NET_ENV = () => ({
   GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND ?? "ssh -o BatchMode=yes",
 });
 
-async function g(cwd: string, args: string[], opts: { net?: boolean } = {}): Promise<string> {
+async function g(cwd: string, args: string[], opts: { net?: boolean; signal?: AbortSignal } = {}): Promise<string> {
   const { stdout } = await run("git", args, {
     cwd,
     maxBuffer: 16 * 1024 * 1024,
     env: opts.net ? NET_ENV() : process.env,
     timeout: opts.net ? 2 * 60_000 : 60_000,
+    signal: opts.signal,
   });
   return stdout.trim();
 }
@@ -95,7 +96,7 @@ async function succeeds(cwd: string, args: string[]): Promise<boolean> {
 }
 
 /** The useful line out of a failed git call, for the operator. */
-function why(err: unknown): string {
+export function why(err: unknown): string {
   const e = err as { stderr?: string; stdout?: string; message?: string };
   const text = `${e.stderr ?? ""}\n${e.stdout ?? ""}`.trim() || e.message || String(err);
   const lines = text.split("\n").map((l) => l.replace(/^(fatal|error|hint):\s*/, "").trim());
@@ -155,6 +156,41 @@ async function prepareWorkdir(repo: Repo, workdir: string, branch: string) {
   await g(repo.path, ["worktree", "add", "--detach", workdir, branch]);
 }
 
+/** Update the remote-tracking ref for the default branch. Touches no local branch or checkout. */
+export async function fetchDefault(repo: Repo, remote: string, signal?: AbortSignal): Promise<void> {
+  const main = repo.defaultBranch;
+  await g(repo.path, ["fetch", "--quiet", remote, `+refs/heads/${main}:refs/remotes/${remote}/${main}`], { net: true, signal });
+}
+
+export interface DefaultTip {
+  sha: string;
+  label: string;
+  /** Commits on the local default branch that aren't on the remote yet, as a count. */
+  ahead: string | null;
+  /** Whether the local default branch exists and is behind this tip. */
+  localBehind: boolean;
+}
+
+/**
+ * The newest of the local and remote default branch, from the refs already here.
+ * Null when neither exists, "diverged" when neither contains the other.
+ */
+export async function newestDefault(repo: Repo, remote: string | null): Promise<DefaultTip | "diverged" | null> {
+  const main = repo.defaultBranch;
+  const local = await revParse(repo.path, `refs/heads/${main}`);
+  const upstream = remote ? await revParse(repo.path, `refs/remotes/${remote}/${main}`) : null;
+  if (!local && !upstream) return null;
+  if (!upstream) return { sha: local!, label: main, ahead: null, localBehind: false };
+  if (!local || local === upstream || (await isAncestor(repo.path, local, upstream))) {
+    return { sha: upstream, label: `${remote}/${main}`, ahead: null, localBehind: !!local && local !== upstream };
+  }
+  if (await isAncestor(repo.path, upstream, local)) {
+    const ahead = await g(repo.path, ["rev-list", "--count", `${upstream}..${local}`]);
+    return { sha: local, label: main, ahead, localBehind: false };
+  }
+  return "diverged";
+}
+
 /** The commit to merge onto: the newest of the local and remote default branch. */
 async function resolveBase(
   repo: Repo,
@@ -162,29 +198,20 @@ async function resolveBase(
   emit: MergeRequest["emit"],
 ): Promise<{ sha: string; label: string }> {
   const main = repo.defaultBranch;
-  const local = await revParse(repo.path, `refs/heads/${main}`);
-  let upstream: string | null = null;
   if (remote) {
     try {
-      await g(repo.path, ["fetch", "--quiet", remote, `+refs/heads/${main}:refs/remotes/${remote}/${main}`], { net: true });
+      await fetchDefault(repo, remote);
     } catch (err) {
       throw new MergeError(`Couldn't fetch ${main} from ${remote}: ${why(err)}`);
     }
-    upstream = await revParse(repo.path, `refs/remotes/${remote}/${main}`);
   }
-  if (!local && !upstream) throw new MergeError(`There's no ${main} branch to merge into`);
-  if (!upstream) return { sha: local!, label: main };
-  if (!local || local === upstream || (await isAncestor(repo.path, local, upstream))) {
-    return { sha: upstream, label: `${remote}/${main}` };
+  const tip = await newestDefault(repo, remote);
+  if (!tip) throw new MergeError(`There's no ${main} branch to merge into`);
+  if (tip === "diverged") {
+    throw new MergeError(`Your local ${main} and ${remote}/${main} have diverged. Bring them back together (git pull), then merge again.`);
   }
-  if (await isAncestor(repo.path, upstream, local)) {
-    const ahead = await g(repo.path, ["rev-list", "--count", `${upstream}..${local}`]);
-    emit("note", `Your local ${main} has ${ahead} commit${ahead === "1" ? "" : "s"} not on ${remote} yet. They'll be pushed too.`);
-    return { sha: local, label: main };
-  }
-  throw new MergeError(
-    `Your local ${main} and ${remote}/${main} have diverged. Bring them back together (git pull), then merge again.`,
-  );
+  if (tip.ahead) emit("note", `Your local ${main} has ${tip.ahead} commit${tip.ahead === "1" ? "" : "s"} not on ${remote} yet. They'll be pushed too.`);
+  return tip;
 }
 
 const MARKER = /^(<{7}|>{7})(\s|$)/m;

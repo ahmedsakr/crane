@@ -2,6 +2,7 @@ import type { Repo, Task } from "@crane/contracts";
 import type { SiblingTask } from "@crane/agent-protocol";
 import { git } from "../core/git.js";
 import type { Store } from "../core/store.js";
+import { comparisonBase } from "./git.js";
 
 /** Read shared refs, never sibling worktrees: their uncommitted work belongs to their agents. */
 export async function siblingTasksFor(store: Store, task: Task, repo: Repo): Promise<SiblingTask[]> {
@@ -16,9 +17,10 @@ export async function siblingTasksFor(store: Store, task: Task, repo: Repo): Pro
   let unmerged: Set<string> | null = null;
   try {
     // Two reads for the whole snapshot, rather than a subprocess for each sibling.
+    const main = (await comparisonBase(repo)) ?? `refs/heads/${repo.defaultBranch}`;
     const refs = await Promise.all([
       git(repo.path, "for-each-ref", "--format=%(refname)", "refs/heads/"),
-      git(repo.path, "for-each-ref", "--format=%(refname)", `--no-merged=refs/heads/${repo.defaultBranch}`, "refs/heads/"),
+      git(repo.path, "for-each-ref", "--format=%(refname)", `--no-merged=${main}`, "refs/heads/"),
     ]);
     branches = new Set(refs[0].split("\n"));
     unmerged = new Set(refs[1].split("\n"));
