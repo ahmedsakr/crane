@@ -17,11 +17,13 @@ Crane is an autonomous software factory steered by a human operator. Agents run 
   Task-page example: wait for a loaded task link before navigating, then for task content before capturing. These commands open the first task in each throwaway demo's list; for a specific task or state, choose its link and wait for a selector that identifies the required content. Page load alone does not mean task data has loaded; `--wait-for` waits for a matching element to exist.
 
   ```sh
-  npm run build -w web
-  npm run screenshot -- /tasks --size 1280x800 --wait-for '.rows a.row' --click '.rows a.row' --wait-for '.detail-title' --out .crane/screenshots/task-wide.png
-  npm run screenshot -- /tasks --size 1280x600 --wait-for '.rows a.row' --click '.rows a.row' --wait-for '.detail-title' --out .crane/screenshots/task-short.png
+  npm run build -w web &&
+  npm run screenshot -- /tasks --size 1280x800 --wait-for '.rows a.row' --click '.rows a.row' --wait-for '.detail-title' --out .crane/screenshots/task-wide.png &&
+  npm run screenshot -- /tasks --size 1280x600 --wait-for '.rows a.row' --click '.rows a.row' --wait-for '.detail-title' --out .crane/screenshots/task-short.png &&
   npm run screenshot -- /tasks --size 390x844 --wait-for '.rows a.row' --click '.rows a.row' --wait-for '.detail-title' --out .crane/screenshots/task-phone.png
   ```
+
+Captures serve `web/dist`: wait for the UI build to finish successfully before starting any dependent capture. Use `npm run build -w web && npm run screenshot -- ...`; viewport captures may run in parallel only after that successful build. Rebuild after further UI changes.
 
 ## Shape
 

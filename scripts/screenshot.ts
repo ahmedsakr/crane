@@ -4,7 +4,7 @@
  * at one that's already running. Drives Chromium over its DevTools pipe, so it
  * needs no browser library, just a Chromium binary.
  *
- *   npm run build -w web
+ *   npm run build -w web &&
  *   npm run screenshot -- "/?instruct=Fix the flaky tests" --click ".choice-btn" --out /tmp/menu.png
  *
  * Options (steps run in the order given, one screenshot at the end):
