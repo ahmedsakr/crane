@@ -35,7 +35,7 @@ const run = promisify(execFile);
 export class MergeError extends Error {}
 
 export interface MergeRequest {
-  /** Factory gate, after conflict resolution and checks, before any push or default-branch update. */
+  /** Factory gate after candidate construction, then again after checks before any push or default-branch update. */
   verifyVisualReview?: (commit: string, tree: string, branchCommit: string, changedFiles: string[]) => Promise<void>;
   checks?: string[];
   recordValidation?: (run: ValidationRun) => void;
@@ -348,18 +348,23 @@ export async function landTask(req: MergeRequest): Promise<MergeResult> {
     }
     if (signal?.aborted) throw new Error("Stopped");
 
+    const changedFiles = commit
+      ? (await g(workdir, ["diff", "--name-only", "--no-renames", "-z", base.sha, head])).split("\0")
+        .filter(Boolean)
+      : [];
+    const tree = await g(workdir, ["rev-parse", `${head}^{tree}`]);
+    // Fail before expensive validation when this candidate needs an operator's
+    // decision. Each remote-moved retry must authorize its own candidate.
+    await req.verifyVisualReview?.(head, tree, branchSha, changedFiles);
+
     // Every time, including after a deferred preparation or a resolver's own
     // install: merge checks run only against dependencies Crane prepared for the
     // merge commit's manifests (it reinstalls whenever they changed).
     await prepareDependencies(req);
     await runChecks(workdir, req.checks ?? [], "merge", req.recordValidation ?? (() => {}), signal);
     if (signal?.aborted) throw new Error("Stopped");
-    const changedFiles = commit
-      ? (await g(workdir, ["diff", "--name-only", "--no-renames", "-z", base.sha, head])).split("\0")
-        .filter(Boolean)
-      : [];
     const changedManifests = changedFiles.filter(file => ["package.json", "package-lock.json"].includes(basename(file)));
-    await req.verifyVisualReview?.(head, await g(workdir, ["rev-parse", `${head}^{tree}`]), branchSha, changedFiles);
+    await req.verifyVisualReview?.(head, tree, branchSha, changedFiles);
     if (remote) {
       if ((await push(repo, remote, head)) === "moved") {
         emit("note", `${remote}/${repo.defaultBranch} moved while merging. Starting over from the new tip.`);

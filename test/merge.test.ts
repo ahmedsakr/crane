@@ -85,23 +85,56 @@ const noResolve = async () => {
   throw new Error("should not be asked to resolve conflicts");
 };
 
-test("merge: visual gate sees the checked candidate and prevents push and local default update", async () => {
+test("merge: visual gate rejects the candidate before dependencies and checks", async () => {
+  const { root, checkout, repo, task, wt } = setup();
+  commitFile(wt, "package.json", '{"name":"fixture","version":"1.0.0"}\n', "manifest");
+  commitFile(wt, "package-lock.json", '{"lockfileVersion":3,"packages":{}}\n', "lock");
+  const before = sh(join(root, "origin.git"), "rev-parse", "main");
+  const branchCommit = sh(wt, "rev-parse", "HEAD");
+  const notes: string[] = [];
+  let checked = false;
+  let gated = false;
+  await assert.rejects(landTask({ repo, task, workdir: wt,
+    emit: (_type, message) => { notes.push(message); }, resolveConflicts: noResolve,
+    recordValidation: () => { checked = true; },
+    verifyVisualReview: async (commit, tree, branch, changedFiles) => {
+      gated = true;
+      assert.equal(checked, false);
+      assert.deepEqual(notes, [], "dependency preparation has not started");
+      assert.equal(commit, sh(wt, "rev-parse", "HEAD"));
+      assert.equal(tree, sh(wt, "rev-parse", "HEAD^{tree}"));
+      assert.equal(branch, branchCommit);
+      assert.deepEqual(changedFiles, ["package-lock.json", "package.json"]);
+      throw new Error("Candidate visual inspection required");
+    },
+  }), /visual inspection required/);
+  assert.equal(gated, true);
+  assert.equal(checked, false);
+  assert.ok(!existsSync(join(wt, "node_modules")));
+  assert.equal(sh(join(root, "origin.git"), "rev-parse", "main"), before);
+  assert.equal(sh(checkout, "rev-parse", "HEAD"), before);
+});
+
+test("merge: visual gate rechecks authorization after checks and prevents push and local default update", async () => {
   const { root, checkout, repo, task, wt } = setup();
   commitFile(wt, "feature.txt", "feature\n", "feature");
   const before = sh(join(root, "origin.git"), "rev-parse", "main");
   const branchCommit = sh(wt, "rev-parse", "HEAD");
   let checked = false;
+  let gates = 0;
   await assert.rejects(landTask({ repo, task, workdir: wt, emit, resolveConflicts: noResolve,
     recordValidation: () => { checked = true; },
     verifyVisualReview: async (commit, tree, branch, changedFiles) => {
-      assert.equal(checked, true, "visual decision is checked after configured checks");
+      gates++;
+      assert.equal(checked, gates === 2, "visual decision is checked before and after configured checks");
       assert.equal(commit, sh(wt, "rev-parse", "HEAD"));
       assert.equal(tree, sh(wt, "rev-parse", "HEAD^{tree}"));
       assert.equal(branch, branchCommit);
       assert.deepEqual(changedFiles, ["feature.txt"]);
-      throw new Error("Candidate visual inspection required");
+      if (gates === 2) throw new Error("Candidate visual inspection required");
     },
   }), /visual inspection required/);
+  assert.equal(gates, 2);
   assert.equal(sh(join(root, "origin.git"), "rev-parse", "main"), before);
   assert.equal(sh(checkout, "rev-parse", "HEAD"), before);
 });
@@ -453,6 +486,39 @@ test("merge: if origin moves mid-merge, it starts over instead of forcing", asyn
   const origin = join(root, "origin.git");
   assert.equal(sh(origin, "rev-parse", "main"), r.commit);
   assert.equal(sh(origin, "show", "main:late.txt"), "late", "the late push survived");
+});
+
+test("merge: a remote-moved retry requires authorization before checking its changed candidate", async () => {
+  const { root, checkout, repo, task, wt } = setup();
+  commitFile(wt, "feature.txt", "feature\n", "feature");
+  const before = sh(checkout, "rev-parse", "HEAD");
+  const checked: string[] = [];
+  let authorizedTree: string | undefined;
+  let gates = 0;
+  let remoteHead = before;
+  await assert.rejects(landTask({ repo, task, workdir: wt, emit, resolveConflicts: noResolve,
+    recordValidation: run => { checked.push(run.commit); },
+    verifyVisualReview: async (commit, tree) => {
+      gates++;
+      if (gates === 1) {
+        authorizedTree = tree;
+        assert.deepEqual(checked, []);
+      } else if (gates === 2) {
+        assert.equal(tree, authorizedTree);
+        assert.deepEqual(checked, [commit]);
+        landElsewhere(root, "late.txt", "late\n");
+        remoteHead = sh(join(root, "origin.git"), "rev-parse", "main");
+      } else {
+        assert.notEqual(tree, authorizedTree);
+        assert.equal(checked.length, 1, "the changed retry has not run checks");
+        throw new Error("Changed candidate requires visual inspection");
+      }
+    },
+  }), /Changed candidate requires visual inspection/);
+  assert.equal(gates, 3);
+  assert.equal(checked.length, 1);
+  assert.equal(sh(join(root, "origin.git"), "rev-parse", "main"), remoteHead);
+  assert.equal(sh(checkout, "rev-parse", "HEAD"), before);
 });
 
 test("factory: a task goes from work to review to merged and pushed, through a conflict", async () => {
