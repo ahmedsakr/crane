@@ -36,9 +36,17 @@ test("dependencies: refresh an already prepared tree when a workspace is introdu
   const { root, addWorkspace } = fixture(t);
   assert.match((await installDependencies(root))!, /Installed dependencies/);
   addWorkspace();
-  assert.match((await installDependencies(root))!, /Installed dependencies/);
+  const progress: string[] = [];
+  const note = await installDependencies(root, { from: root, onProgress: n => progress.push(n) });
+  const reason = "preparation not reusable: dependency inputs changed since preparation";
+  assert.ok(progress[0]);
+  assert.ok(progress[0].includes(reason), progress[0]);
+  assert.ok(note!.includes(reason), note!);
+  assert.ok(progress[0].indexOf(reason) < progress[0].indexOf("didn't copy"));
+  assert.match(note!, /the worktree already has node_modules/);
   assert.equal(realpathSync(join(root, "node_modules/@fixture/contracts")), join(root, "packages/contracts"));
-  assert.equal(await installDependencies(root), null, "unchanged inputs keep the fast path");
+  assert.equal(await installDependencies(root, { onProgress: () => assert.fail("reuse should be silent") }), null,
+    "unchanged inputs keep the fast path");
 });
 
 test("dependencies: manifests and workspace configuration invalidate preparation even without lock changes", async t => {
@@ -62,6 +70,26 @@ test("dependencies: manifests and workspace configuration invalidate preparation
   }
 });
 
+test("dependencies: an existing install without a marker explains why it cannot be reused", async t => {
+  const { root } = fixture(t);
+  await installDependencies(root);
+  rmSync(join(root, "node_modules/.crane-dependencies"));
+  const sentinel = join(root, "node_modules/sentinel");
+  writeFileSync(sentinel, "old install");
+  const progress: string[] = [];
+  const note = await installDependencies(root, {
+    from: root,
+    onProgress(n) {
+      assert.ok(existsSync(sentinel), "the reason is emitted before the clean install");
+      progress.push(n);
+    },
+  });
+  const reason = " · preparation not reusable: the preparation marker is missing or unreadable · didn't copy from your checkout: the worktree already has node_modules";
+  assert.deepEqual(progress, [`Installing dependencies (npm ci --no-audit --no-fund)${reason}`]);
+  assert.ok(note!.endsWith(reason), note!);
+  assert.ok(!existsSync(sentinel), "verification still requires a clean install");
+});
+
 test("dependencies: repair missing links and links into another checkout with unchanged inputs", async t => {
   const { root, addWorkspace } = fixture(t);
   const other = fixture(t);
@@ -72,7 +100,14 @@ test("dependencies: repair missing links and links into another checkout with un
   for (const destination of [null, join(other.root, "packages/contracts")]) {
     rmSync(link);
     if (destination) symlinkSync(destination, link);
-    assert.match((await installDependencies(root))!, /Installed dependencies/);
+    const progress: string[] = [];
+    const note = await installDependencies(root, { onProgress: n => progress.push(n) });
+    assert.ok(progress[0]);
+    const reason = destination
+      ? "local package link node_modules/@fixture/contracts does not point to packages/contracts inside the worktree"
+      : "local package link node_modules/@fixture/contracts or its target packages/contracts is missing or unreadable";
+    assert.ok(progress[0].includes(reason), progress[0]);
+    assert.ok(note!.includes(reason), note!);
     assert.equal(realpathSync(link), join(root, "packages/contracts"));
     assert.ok(existsSync(join(other.root, "packages/contracts/package.json")), "the other checkout stays intact");
   }
@@ -122,7 +157,7 @@ test("dependencies: a skipped copy is explained before the install starts and on
   const options: InstallDependenciesOptions = { from: from.root, onProgress: (n) => progress.push(n) };
   const note = await installDependencies(to.root, options);
   const reason = "didn't copy from your checkout: its package-lock.json differs from the worktree's";
-  assert.deepEqual(progress, [`Installing dependencies (npm ci --no-audit --no-fund) · ${reason}`]);
+  assert.deepEqual(progress, [`Installing dependencies (npm ci --no-audit --no-fund) · preparation not reusable: the preparation marker is missing or unreadable · ${reason}`]);
   assert.match(note!, /^Installed dependencies \(npm ci --no-audit --no-fund\) in \d+(\.\d)?s · /);
   assert.ok(note!.endsWith(reason), note!);
 });
@@ -135,8 +170,10 @@ test("dependencies: a copied preparation reports progress and its duration", asy
   await installDependencies(from.root);
   const progress: string[] = [];
   const note = await installDependencies(to.root, { from: from.root, onProgress: (n) => progress.push(n) });
-  assert.deepEqual(progress, ["Copying dependencies from your checkout"]);
-  assert.match(note!, /^Copied dependencies from your checkout \(node_modules\) in \d+\.\ds$/);
+  const reason = " · preparation not reusable: the preparation marker is missing or unreadable";
+  assert.deepEqual(progress, [`Copying dependencies from your checkout${reason}`]);
+  assert.match(note!, /^Copied dependencies from your checkout \(node_modules\) in \d+\.\ds · /);
+  assert.ok(note!.endsWith(reason), note!);
 });
 
 test("dependencies: durations read naturally", () => {
@@ -161,7 +198,7 @@ test("dependencies: cancelling a copy cleans the destination without falling bac
       controller.abort();
     },
   }), { name: "AbortError" });
-  assert.deepEqual(progress, ["Copying dependencies from your checkout"]);
+  assert.deepEqual(progress, ["Copying dependencies from your checkout · preparation not reusable: the preparation marker is missing or unreadable"]);
   assert.ok(!existsSync(join(to.root, "node_modules")), "no partial copy or preparation marker remains");
   assert.ok(existsSync(join(from.root, "node_modules/.crane-dependencies")), "the source preparation stays intact");
 });
