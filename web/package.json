@@ -6,7 +6,7 @@
   "scripts": {
     "predev": "npm run build -w @crane/contracts",
     "dev": "vite",
-    "prebuild": "npm run build -w @crane/contracts",
+    "prebuild": "tsc -b ../packages/contracts/tsconfig.json",
     "build": "vite build",
     "pretypecheck": "npm run build -w @crane/contracts",
     "typecheck": "tsc -p tsconfig.json --noEmit",

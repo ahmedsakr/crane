@@ -33,7 +33,7 @@
     "dev:web": "npm run dev -w web",
     "build:packages": "node scripts/check-workspace-links.mjs && tsc -b tsconfig.packages.json",
     "build:backend": "esbuild \"src/**/*.ts\" --outdir=dist --outbase=src --platform=node --format=esm --target=es2022 --sourcemap --log-level=warning",
-    "build": "npm run build:packages && npm run build:backend && npm run build -w web",
+    "build": "node scripts/build.mjs",
     "prepack": "npm run typecheck && npm run build",
     "typecheck": "npm run build:packages && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm run typecheck -w web",
     "pretest": "npm run build:packages",
