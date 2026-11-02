@@ -81,7 +81,7 @@ export interface Finding {
 export interface Report {
   /** Agent classification only; operator decisions live on Task.visualReview. Missing means unknown. */
   visualReview?: { required: boolean; reason: string };
-  /** Factory-owned evidence; never accepted from agent output. */
+  /** Factory-owned evidence; never accepted from agent output. The API's task lists leave it out; a task's own detail has it. */
   validation?: ValidationRun[];
   summary: string;
   findings: Finding[];

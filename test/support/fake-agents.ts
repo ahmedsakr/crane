@@ -49,7 +49,7 @@ const REPORT = '```crane-report\\n{\\"summary\\":\\"Codex did it\\",\\"findings\
  * A stand-in `codex` that logs its arguments and stdin, then plays back the
  * JSON events `codex exec --json` sends. `mode` picks the story.
  */
-export function fakeCodex(mode: "ok" | "lost-session" | "turn-failed" | "overloaded" | "multi-turn"): { bin: string; log: string } {
+export function fakeCodex(mode: "ok" | "lost-session" | "turn-failed" | "overloaded" | "multi-turn" | "malformed"): { bin: string; log: string } {
   const dir = mkdtempSync(join(tmpdir(), "crane-fake-codex-"));
   const log = join(dir, "calls.log");
   const bin = join(dir, "codex");
@@ -70,6 +70,11 @@ process.stdin.on("end", () => {
   }
   say({ type: "thread.started", thread_id: "thread-1" });
   say({ type: "turn.started" });
+  if (${JSON.stringify(mode)} === "malformed") {
+    say(null);
+    say({ type: "item.completed", item: { type: "file_change", changes: 5 } });
+    say({ type: "item.completed", item: { type: "file_change", changes: 6 } });
+  }
   if (${JSON.stringify(mode)} === "turn-failed") {
     say({ type: "turn.failed", error: { message: "You've hit your usage limit." } });
     process.exit(1);

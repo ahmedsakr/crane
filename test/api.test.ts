@@ -201,6 +201,44 @@ test("api: invalid check settings cannot replace the operator's merge gates", as
   } finally { store.close(); }
 });
 
+test("api: polled task lists leave out check logs, and the task page still gets them", async () => {
+  const store = new Store(":memory:");
+  try {
+    const repo = store.addRepo({ path: "/repo" });
+    const app = createApp(store);
+    const logs = "a long test log\n".repeat(1000);
+    const report = {
+      summary: "Did it", changedFiles: ["a.ts"],
+      findings: [{ title: "One thing", detail: "d", impact: "low" as const, effort: "small" as const }],
+      validation: [{ phase: "review" as const, commit: "abc", command: "npm test", status: "passed" as const, exitCode: 0, logs, durationMs: 1 }],
+    };
+    const ids = (["needs_review", "running", "merged"] as const).map((status) => {
+      const task = store.createTask({ kind: "maintenance", title: status, brief: "", repoId: repo.id, autonomy: "propose" });
+      store.updateTask(task.id, { status, report });
+      return task.id;
+    });
+
+    const lists: Record<string, { id: string; report: Record<string, unknown> | null }[]> = {
+      tasks: await (await app.request("/api/tasks")).json(),
+    };
+    const overview = await (await app.request("/api/overview")).json();
+    Object.assign(lists, { needsReview: overview.needsReview, inFlight: overview.inFlight, recent: overview.recent });
+    for (const [name, list] of Object.entries(lists)) {
+      assert.ok(list.length, name);
+      for (const task of list) {
+        assert.equal(task.report?.validation, undefined, `${name} leaves out validation`);
+        assert.equal(task.report?.summary, "Did it", `${name} keeps what the rows show`);
+        assert.deepEqual(task.report?.changedFiles, ["a.ts"], name);
+        assert.equal((task.report?.findings as unknown[]).length, 1, name);
+      }
+    }
+
+    const detail = await (await app.request(`/api/tasks/${ids[0]}`)).json();
+    assert.equal(detail.task.report.validation[0].logs, logs);
+    assert.equal(store.getTask(ids[0]!)?.report?.validation?.[0]?.logs, logs, "nothing is removed from storage");
+  } finally { store.close(); }
+});
+
 test("api: premature approval is rejected without changing the task or its history", async () => {
   const store = new Store(":memory:");
   try {

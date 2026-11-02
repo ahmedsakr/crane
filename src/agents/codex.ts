@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
 import { relative, isAbsolute } from "node:path";
 import {
   AgentRunError,
@@ -10,6 +9,7 @@ import {
   type RunContext,
   type RunResult,
 } from "@crane/agent-protocol";
+import { cliAnswers, readMessages } from "./cli.js";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
 import type { RunUsage } from "@crane/contracts";
 import { codexCost } from "./codex-pricing.js";
@@ -98,11 +98,7 @@ export class CodexDriver implements AgentDriver {
   ) {}
 
   available(): Promise<boolean> {
-    return new Promise((resolve) => {
-      const p = spawn(this.bin, ["--version"], { stdio: "ignore" });
-      p.on("error", () => resolve(false));
-      p.on("exit", (code) => resolve(code === 0));
-    });
+    return cliAnswers(this.bin);
   }
 
   async run(ctx: RunContext): Promise<RunResult> {
@@ -132,6 +128,8 @@ export class CodexDriver implements AgentDriver {
     };
 
     return new Promise<RunResult>((resolve, reject) => {
+      // Aborted while the factory got ready: that event has fired, so the listener below would never hear it.
+      if (signal.aborted) return reject(new AgentRunError("Cancelled by operator", { sessionId: resume ?? null }));
       const child = spawn(this.bin, args, { cwd, env: process.env, stdio: ["pipe", "pipe", "pipe"] });
       let lastText = "";
       let started = false;
@@ -195,14 +193,7 @@ export class CodexDriver implements AgentDriver {
         }
       };
 
-      const rl = createInterface({ input: child.stdout });
-      rl.on("line", (line) => {
-        let msg: Record<string, any>;
-        try {
-          msg = JSON.parse(line);
-        } catch {
-          return;
-        }
+      readMessages(child.stdout, (msg) => {
         switch (msg.type) {
           case "thread.started": {
             started = true;
@@ -242,7 +233,7 @@ export class CodexDriver implements AgentDriver {
             if (typeof msg.message === "string") errored = msg.message;
             return;
         }
-      });
+      }, (reason) => emit("note", `Skipped a message Crane couldn't read from Codex: ${reason}`));
 
       const fail = (message: string) => reject(new AgentRunError(message, { transient: isTransientFailure(message), sessionId }));
 

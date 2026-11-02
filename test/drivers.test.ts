@@ -1,8 +1,8 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { fakeCodex } from "./support/fake-agents.js";
+import { fakeClaude, fakeCodex } from "./support/fake-agents.js";
 import { sh } from "./support/git.js";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "../src/core/store.js";
@@ -11,6 +11,8 @@ import { Factory } from "../src/factory/orchestrator.js";
 import { resolveDefaultDriver } from "../src/factory/drivers.js";
 import { SimulatedDriver } from "../src/agents/simulated.js";
 import { CodexDriver, codexArgs, unwrapShell, usageFromTurn } from "../src/agents/codex.js";
+import { ClaudeCodeDriver } from "../src/agents/claude-code.js";
+import { cliAnswers } from "../src/agents/cli.js";
 import { AgentRunError, type AgentDriver, type ResolveConflictsJob, type RunContext, type RunResult } from "@crane/agent-protocol";
 import type { CommandEvidence, RunUsage, Task } from "@crane/contracts";
 import { resumePrompt, systemPrompt } from "../src/agents/prompts.js";
@@ -251,6 +253,59 @@ test("codex: a run stopped by its signal is a plain failure, keeping its session
   assert.ok(err instanceof AgentRunError);
   assert.ok(!err.transient);
   assert.equal(err.sessionId, "thread-0");
+});
+
+test("drivers: a signal that aborted before the run starts never spawns the agent", async () => {
+  // Its abort event has already fired, so an agent spawned now could never be stopped.
+  const aborted = AbortSignal.abort();
+  const codex = fakeCodex("ok");
+  const claude = fakeClaude([{ type: "result", subtype: "success", result: "Done." }]);
+  for (const [driver, ran] of [
+    [new CodexDriver(codex.bin), () => existsSync(codex.log)],
+    [new ClaudeCodeDriver(claude.bin), () => { try { return !!claude.args(); } catch { return false; } }],
+  ] as const) {
+    const { ctx } = ctxFor({}, { signal: aborted, resumeSession: "session-0" });
+    const err = await driver.run(ctx).catch((e) => e);
+    assert.ok(err instanceof AgentRunError, driver.name);
+    assert.ok(!err.transient, driver.name);
+    assert.equal(err.sessionId, "session-0", driver.name);
+    assert.equal(ran(), false, `${driver.name} was spawned`);
+  }
+});
+
+test("codex: a message of an unexpected shape costs that message, not the factory", async () => {
+  const { bin } = fakeCodex("malformed");
+  const { ctx, notes, sessions } = ctxFor({});
+  const r = await new CodexDriver(bin).run(ctx);
+  assert.equal(r.report.summary, "Codex did it", "the messages after it still count");
+  assert.deepEqual(sessions, ["thread-1"]);
+  assert.equal(notes.filter((n) => /couldn't read/.test(n)).length, 1, "the feed hears about it once");
+});
+
+test("claude code: a message of an unexpected shape costs that message, not the factory", async () => {
+  const report = "Done.\n\n```crane-report\n" + JSON.stringify({ summary: "All good", findings: [], changedFiles: [] }) + "\n```";
+  const { bin } = fakeClaude([
+    null, 42, "text", [],
+    { type: "assistant", message: { content: [null] } },
+    { type: "assistant", message: { content: [{ type: "text", text: 7 }] } },
+    { type: "system", subtype: "init", session_id: "s-1", model: "fake" },
+    { type: "result", subtype: "success", result: report },
+  ] as object[]);
+  const { ctx, notes, sessions } = ctxFor({});
+  const r = await new ClaudeCodeDriver(bin).run(ctx);
+  assert.equal(r.report.summary, "All good", "the messages after it still count");
+  assert.deepEqual(sessions, ["s-1"]);
+  assert.equal(notes.filter((n) => /couldn't read/.test(n)).length, 1, "the feed hears about it once");
+});
+
+test("drivers: a CLI that never answers its version check counts as unavailable", async () => {
+  const bin = join(mkdtempSync(join(tmpdir(), "crane-hung-cli-")), "hung");
+  // Ignores SIGTERM, as a stuck process may.
+  writeFileSync(bin, "#!/bin/sh\ntrap '' TERM\nexec sleep 30\n");
+  chmodSync(bin, 0o755);
+  const started = Date.now();
+  assert.equal(await cliAnswers(bin, 100), false);
+  assert.ok(Date.now() - started < 5000, "it doesn't wait for the CLI to finish");
 });
 
 test("codex: sums estimated cost across completed turns", async () => {
