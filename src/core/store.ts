@@ -16,6 +16,7 @@ import {
   type MaintenanceRole,
   type CrewSchedule,
   type CrewScheduleInput,
+  type FollowUpState,
   type PrerequisiteState,
 } from "@crane/contracts";
 import { postmortemBrief } from "./postmortem.js";
@@ -77,6 +78,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   cost_usd REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   scheduled_at TEXT,
+  follow_up_of TEXT,
+  follow_up_finding INTEGER,
   started_at TEXT,
   finished_at TEXT
 );
@@ -247,6 +250,39 @@ function addMissingColumns(db: Database.Database) {
   }).immediate();
 }
 
+/**
+ * Follow-ups used to be linked to the finding they came from only by the
+ * "Started follow-up" event on the source task. Add the link columns and fill
+ * them from those events, matching each follow-up to the finding with its
+ * title (a follow-up takes its finding's title), so findings show the state of
+ * work already started from them.
+ */
+function migrateFollowUpLinks(db: Database.Database) {
+  const has = () => (db.prepare("PRAGMA table_info(tasks)").all() as Row[]).some((c) => c.name === "follow_up_of");
+  if (!has()) {
+    db.transaction(() => {
+      if (has()) return;
+      db.exec("ALTER TABLE tasks ADD COLUMN follow_up_of TEXT");
+      db.exec("ALTER TABLE tasks ADD COLUMN follow_up_finding INTEGER");
+      const started = db.prepare(
+        `SELECT e.task_id AS source, child.id AS id, child.title AS title, parent.report AS report
+         FROM events e
+         JOIN tasks child ON child.id = CASE WHEN json_valid(e.data) THEN json_extract(e.data, '$.taskId') END
+         JOIN tasks parent ON parent.id = e.task_id
+         WHERE e.type = 'operator' AND e.message LIKE 'Started follow-up %'
+         ORDER BY e.id`,
+      ).all() as Row[];
+      const link = db.prepare("UPDATE tasks SET follow_up_of = ?, follow_up_finding = ? WHERE id = ? AND follow_up_of IS NULL");
+      for (const r of started) {
+        const findings = r.report ? ((JSON.parse(r.report as string) as Report).findings ?? []) : [];
+        const finding = findings.findIndex((f) => f.title === r.title);
+        link.run(r.source, finding < 0 ? null : finding, r.id);
+      }
+    }).immediate();
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS tasks_follow_up ON tasks(follow_up_of)");
+}
+
 const now = () => new Date().toISOString();
 const TASK_DUE = "(scheduled_at IS NULL OR scheduled_at <= ?)";
 
@@ -290,6 +326,8 @@ function toTask(r: Row): Task {
     createdAt: r.created_at as string,
     scheduledAt: (r.scheduled_at as string) ?? null,
     scheduleId: (r.schedule_id as string) ?? null,
+    followUpOf: (r.follow_up_of as string) ?? null,
+    followUpFinding: (r.follow_up_finding as number) ?? null,
     startedAt: (r.started_at as string) ?? null,
     finishedAt: (r.finished_at as string) ?? null,
   };
@@ -371,6 +409,7 @@ export class Store {
     migrateMissionsToTasks(this.db);
     this.db.exec(SCHEMA);
     addMissingColumns(this.db);
+    migrateFollowUpLinks(this.db);
     migrateCostsToRuns(this.db);
     migrateCostStatus(this.db);
   }
@@ -554,7 +593,11 @@ export class Store {
   }
 
   // ── tasks ─────────────────────────────────────────────────
-  createTask(input: NewTask & { driverSettings?: DriverSettings | null }): Task {
+  createTask(input: NewTask & {
+    driverSettings?: DriverSettings | null;
+    /** The task and finding (0-based) this one follows up on. */
+    followUp?: { of: string; finding: number };
+  }): Task {
     return this.db.transaction(() => {
       const id = shortId("t");
       const ts = now();
@@ -563,13 +606,14 @@ export class Store {
       this.db
         .prepare(
           `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, driver_settings,
-             prerequisites, acceptance, lookouts, status, created_at, scheduled_at, pre_approved_at)
-           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?)`,
+             prerequisites, acceptance, lookouts, status, created_at, scheduled_at, pre_approved_at, follow_up_of, follow_up_finding)
+           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)`,
         )
         .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null,
           input.model ?? null, input.effort ?? null, input.assignee ?? null,
           input.driverSettings ? JSON.stringify(input.driverSettings) : null,
-          list(input.prerequisites), list(input.acceptance), list(input.lookouts), ts, scheduledAt, input.preApprove ? ts : null);
+          list(input.prerequisites), list(input.acceptance), list(input.lookouts), ts, scheduledAt, input.preApprove ? ts : null,
+          input.followUp?.of ?? null, input.followUp?.finding ?? null);
       this.addEvent(id, "status", scheduledAt ? `Scheduled for ${scheduledAt}` : "Queued", {
         status: "queued", ...(scheduledAt ? { scheduledAt } : {}),
       });
@@ -604,6 +648,19 @@ export class Store {
       // A prerequisite that's gone can never land; it holds the task until the operator waives it.
       return t ? { id: t.id, title: t.title, status: t.status, met: prerequisiteMet(t) } : { id, title: "Unknown task", status: "failed", met: false };
     });
+  }
+
+  /** Tasks started from this task's findings, oldest first. */
+  followUps(taskId: string): FollowUpState[] {
+    return (this.db
+      .prepare("SELECT id, title, status, follow_up_finding FROM tasks WHERE follow_up_of = ? ORDER BY created_at, rowid")
+      .all(taskId) as Row[])
+      .map((r) => ({
+        id: r.id as string,
+        title: r.title as string,
+        status: r.status as TaskStatus,
+        finding: (r.follow_up_finding as number) ?? null,
+      }));
   }
 
   /** Prerequisites still holding the task back: not landed, and not waived by the operator. */

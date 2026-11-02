@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { followUpFor, type TaskDetail } from "@crane/contracts";
 import { Store } from "../src/core/store.js";
 import { OperatorActions } from "../src/factory/actions.js";
 import { createApp } from "../src/server/app.js";
@@ -91,6 +92,70 @@ test("follow-up API: accepts scheduling choices and preserves the old request sh
       assert.equal(next.effort, "effort" in opts ? opts.effort : null);
     }
   } finally { store.close(); }
+});
+
+test("follow-up: the source task's page shows each finding's latest follow-up and its state", async () => {
+  const { store, actions, parent } = setup();
+  try {
+    const app = createApp(store);
+    const detail = async () => (await (await app.request(`/api/tasks/${parent.id}`)).json()) as TaskDetail;
+    assert.deepEqual((await detail()).followUps, []);
+
+    const first = actions.followUp(parent.id, 0);
+    assert.equal(first.followUpOf, parent.id);
+    assert.equal(first.followUpFinding, 0);
+    assert.ok(store.listEvents(parent.id).some(e => e.data?.taskId === first.id && e.data?.finding === 0));
+    assert.deepEqual((await detail()).followUps, [{ id: first.id, title: "Fix the cache", status: "queued", finding: 0 }]);
+
+    // Its state follows the follow-up as it moves on.
+    store.updateTask(first.id, { status: "failed" });
+    const again = actions.followUp(parent.id, 0);
+    store.updateTask(again.id, { status: "running" });
+    const { followUps } = await detail();
+    assert.deepEqual(followUps.map(f => [f.id, f.status]), [[first.id, "failed"], [again.id, "running"]]);
+    assert.equal(followUpFor(followUps, 0)?.id, again.id, "the latest attempt wins");
+    assert.equal(followUpFor(followUps, 1), undefined);
+
+    const created = actions.createTask({ kind: "maintenance", title: "Other", brief: "", repoId: parent.repoId, autonomy: "propose" });
+    assert.equal(created.followUpOf, null);
+    assert.equal(created.followUpFinding, null);
+  } finally { store.close(); }
+});
+
+test("follow-up: an older database links past follow-ups to their findings from history", () => {
+  const dir = mkdtempSync(join(tmpdir(), "crane-follow-up-migrate-"));
+  const file = join(dir, "crane.db");
+  let store = new Store(file);
+  try {
+    const actions = new OperatorActions(store);
+    const repo = store.addRepo({ path: "/repo" });
+    const parent = actions.createTask({ kind: "maintenance", title: "Review", brief: "", repoId: repo.id, autonomy: "observe" });
+    store.updateTask(parent.id, { status: "needs_review", report: { summary: "", changedFiles: [], findings: [
+      { title: "Fix the cache", detail: "", impact: "high", effort: "small" },
+      { title: "Name the flag", detail: "", impact: "low", effort: "small" },
+    ] } });
+    const second = actions.followUp(parent.id, 1);
+    const renamed = actions.followUp(parent.id, 0);
+    store.updateTask(renamed.id, { title: "Fix the cache key" });
+    const unrelated = actions.createTask({ kind: "maintenance", title: "Name the flag", brief: "", repoId: repo.id, autonomy: "propose" });
+    store.addEvent(parent.id, "operator", "Started follow-up with unreadable data");
+    store.db.prepare("INSERT INTO events(task_id, ts, type, message, data) VALUES(?, ?, 'operator', 'Started follow-up t-x', '{')")
+      .run(parent.id, new Date().toISOString());
+
+    store.db.exec("DROP INDEX tasks_follow_up");
+    store.db.exec("ALTER TABLE tasks DROP COLUMN follow_up_of");
+    store.db.exec("ALTER TABLE tasks DROP COLUMN follow_up_finding");
+    store.close();
+    store = new Store(file);
+
+    assert.deepEqual(store.followUps(parent.id), [
+      { id: second.id, title: "Name the flag", status: "queued", finding: 1 },
+      // Its title no longer matches a finding, so it's linked to the task without guessing which finding.
+      { id: renamed.id, title: "Fix the cache key", status: "queued", finding: null },
+    ]);
+    assert.equal(store.getTask(unrelated.id)!.followUpOf, null, "a task never started from a finding isn't linked");
+    assert.equal(store.getTask(parent.id)!.followUpOf, null);
+  } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("follow-up API: invalid scheduling choices and findings leave tasks and history unchanged", async () => {

@@ -10,6 +10,7 @@ export type {
   Report,
   AcceptanceResult,
   PrerequisiteState,
+  FollowUpState,
   TaskGates,
   Screenshot,
   ValidationRun,
@@ -74,6 +75,7 @@ export {
   lastMergeOutcome,
   acceptanceFor,
   prerequisiteMet,
+  followUpFor,
   unmetAcceptance,
 } from "./types.js";
 export type { DiffLine, DiffHunk, DiffFile, ParsedDiff, SplitRow } from "./diff.js";
