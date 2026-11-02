@@ -522,6 +522,164 @@ test("merge: a remote-moved retry requires authorization before checking its cha
   assert.equal(sh(checkout, "rev-parse", "HEAD"), before);
 });
 
+test("merge: a reviewed merge lands as is while it's up to date, without resolving its conflicts again", async () => {
+  const { root, repo, task, wt } = setup();
+  const origin = join(root, "origin.git");
+  commitFile(wt, "notes.md", "# Notes\n\nfirst\nfrom the task\n", "task edit");
+  landElsewhere(root, "notes.md", "# Notes\n\nfirst\nfrom main\n");
+  let resolved = 0;
+  const resolveConflicts: MergeRequest["resolveConflicts"] = async ({ cwd, files }) => {
+    resolved++;
+    for (const f of files) writeFileSync(join(cwd, f), `resolution ${resolved}\n`);
+  };
+
+  let candidate = "";
+  await assert.rejects(landTask({ repo, task, workdir: wt, emit, resolveConflicts,
+    verifyVisualReview: async (commit) => { candidate = commit; throw new Error("needs a decision"); } }), /needs a decision/);
+  assert.equal(resolved, 1);
+
+  const r = await landTask({ repo, task, workdir: wt, emit, resolveConflicts, reviewedCandidate: candidate });
+  assert.equal(resolved, 1, "the agent isn't asked again");
+  assert.equal(r.head, candidate);
+  assert.equal(sh(origin, "rev-parse", "main"), candidate);
+  assert.equal(sh(origin, "show", "main:notes.md"), "resolution 1");
+});
+
+test("merge: a reviewed merge is rebuilt once the default branch has moved past it", async () => {
+  const { root, repo, task, wt } = setup();
+  const origin = join(root, "origin.git");
+  commitFile(wt, "notes.md", "# Notes\n\nfirst\nfrom the task\n", "task edit");
+  landElsewhere(root, "notes.md", "# Notes\n\nfirst\nfrom main\n");
+  let resolved = 0;
+  const resolveConflicts: MergeRequest["resolveConflicts"] = async ({ cwd, files }) => {
+    resolved++;
+    for (const f of files) writeFileSync(join(cwd, f), keepBothSides(readFileSync(join(cwd, f), "utf8")));
+  };
+  let candidate = "";
+  await assert.rejects(landTask({ repo, task, workdir: wt, emit, resolveConflicts,
+    verifyVisualReview: async (commit) => { candidate = commit; throw new Error("needs a decision"); } }), /needs a decision/);
+
+  const other = join(root, "other");
+  sh(other, "pull", "-q", "origin", "main");
+  commitFile(other, "later.txt", "later\n", "later");
+  sh(other, "push", "-q", "origin", "main");
+
+  const r = await landTask({ repo, task, workdir: wt, emit, resolveConflicts, reviewedCandidate: candidate });
+  assert.equal(resolved, 2);
+  assert.notEqual(r.head, candidate);
+  assert.equal(sh(origin, "show", "main:later.txt"), "later", "the newer work isn't lost");
+});
+
+test("merge: a decision on the branch tip still lands as a merge commit", async () => {
+  const { repo, task, wt, checkout } = setup();
+  commitFile(wt, "feature.txt", "feature\n", "feature");
+  const tip = sh(wt, "rev-parse", "HEAD");
+  const r = await landTask({ repo, task, workdir: wt, emit, resolveConflicts: noResolve, reviewedCandidate: tip });
+  assert.notEqual(r.commit, tip);
+  assert.equal(sh(checkout, "rev-parse", "main^2"), tip);
+});
+
+/** A repo with a task waiting for review on a visual decision, and the factory that ran it. */
+async function taskAwaitingVisualDecision() {
+  process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
+  const { Store } = await import("../src/core/store.js");
+  const { OperatorActions } = await import("../src/factory/actions.js");
+  const { Factory } = await import("../src/factory/orchestrator.js");
+  const { SimulatedDriver } = await import("@crane/agent-drivers");
+
+  const root = mkdtempSync(join(tmpdir(), "crane-e2e-"));
+  const origin = join(root, "origin.git");
+  const checkout = join(root, "checkout");
+  sh(root, "init", "-q", "--bare", "-b", "main", origin);
+  sh(root, "clone", "-q", origin, checkout);
+  sh(checkout, "checkout", "-q", "-b", "main");
+  commitFile(checkout, "README.md", "hi\n", "start");
+  sh(checkout, "push", "-q", "-u", "origin", "main");
+  sh(root, "clone", "-q", origin, join(root, "other"));
+
+  const store = new Store();
+  const actions = new OperatorActions(store);
+  const repo = await actions.connectRepo(checkout, "e2e");
+  store.setRepoChecks(repo.id, ["true"]);
+  const factory = new Factory(store, new SimulatedDriver(2), { crewSize: 1, tickMs: 20 });
+  const until = async (ok: () => boolean, what: string) => {
+    for (let i = 0; i < 500 && !ok(); i++) await new Promise((r) => setTimeout(r, 20));
+    assert.ok(ok(), `timed out waiting for ${what}`);
+  };
+  const t = actions.createTask({ kind: "maintenance", title: "Restyle the page", brief: "", repoId: repo.id, autonomy: "propose" });
+  factory.start();
+  await until(() => store.getTask(t.id)?.status === "needs_review", "review");
+  /** The task's branch, as Crane would record it when the agent reported UI work. */
+  const holdForDecision = () => {
+    const wt = store.getTask(t.id)!.worktree!;
+    store.updateTask(t.id, { visualReview: { status: "pending", commit: sh(wt, "rev-parse", "HEAD"), tree: sh(wt, "rev-parse", "HEAD^{tree}"), note: "UI changed", decidedAt: null } });
+    return store.getTask(t.id)!.visualReview!.commit;
+  };
+  /** Someone else's work reaches origin's main. */
+  const landOnOrigin = (file: string, text: string) => {
+    const other = join(root, "other");
+    sh(other, "pull", "-q", "origin", "main");
+    mkdirSync(dirname(join(other, file)), { recursive: true });
+    commitFile(other, file, text, `elsewhere: ${file}`);
+    sh(other, "push", "-q", "origin", "main");
+  };
+  const decide = async (commit: string) => {
+    await actions.recordVisualReview(t.id, { status: "waived", commit, note: "Accepting the risk; page unreviewed at all sizes" });
+    await actions.approve(t.id);
+    await until(() => store.getTask(t.id)!.status !== "merging", "merge");
+  };
+  const waivers = () => store.listEvents(t.id).filter((e) => e.message === "Waived candidate visual review").length;
+  return { store, factory, t, origin, holdForDecision, landOnOrigin, decide, waivers };
+}
+
+test("factory: one waiver is enough when the default branch moved and the merge is clean", async () => {
+  const { store, factory, t, origin, holdForDecision, landOnOrigin, decide, waivers } = await taskAwaitingVisualDecision();
+  try {
+    const commit = holdForDecision();
+    landOnOrigin("unrelated.txt", "someone else's work\n");
+    await decide(commit);
+    const events = store.listEvents(t.id);
+    assert.equal(store.getTask(t.id)!.status, "merged", events.map((e) => e.message).join("\n"));
+    assert.equal(waivers(), 1);
+    assert.equal(sh(origin, "show", "main:unrelated.txt"), "someone else's work");
+    assert.equal(store.getTask(t.id)!.visualReview!.status, "waived");
+  } finally {
+    await factory.stop();
+    store.close();
+  }
+});
+
+test("factory: a UI conflict resolution asks once more, then lands exactly the merge that was decided on", async () => {
+  const { store, factory, t, origin, holdForDecision, landOnOrigin, decide, waivers } = await taskAwaitingVisualDecision();
+  try {
+    const wt = store.getTask(t.id)!.worktree!;
+    mkdirSync(join(wt, "web"), { recursive: true });
+    commitFile(wt, "web/app.css", "body { color: red; }\n", "restyle");
+    const commit = holdForDecision();
+    landOnOrigin("web/app.css", "body { color: blue; }\n");
+    const before = sh(origin, "rev-parse", "main");
+    await decide(commit);
+
+    const held = store.getTask(t.id)!;
+    assert.equal(held.status, "needs_review", store.listEvents(t.id).map((e) => e.message).join("\n"));
+    assert.equal(held.visualReview!.status, "pending");
+    assert.match(held.visualReview!.note, /resolving conflicts/);
+    assert.equal(sh(origin, "rev-parse", "main"), before, "nothing lands before the decision");
+
+    const candidate = held.visualReview!.commit;
+    assert.notEqual(candidate, commit);
+    await decide(candidate);
+    const events = store.listEvents(t.id);
+    assert.equal(store.getTask(t.id)!.status, "merged", events.map((e) => e.message).join("\n"));
+    assert.equal(waivers(), 2);
+    assert.equal(sh(origin, "rev-parse", "main"), candidate);
+    assert.equal(events.filter((e) => /conflict with origin\/main/.test(e.message)).length, 1, "the agent resolved them once");
+  } finally {
+    await factory.stop();
+    store.close();
+  }
+});
+
 test("factory: a task goes from work to review to merged and pushed, through a conflict", async () => {
   process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
   const { Store } = await import("../src/core/store.js");
