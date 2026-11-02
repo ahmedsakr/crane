@@ -32,8 +32,9 @@
     "dev:server": "tsx watch src/cli/index.ts serve --port 4471",
     "dev:web": "npm run dev -w web",
     "build:packages": "node scripts/check-workspace-links.mjs && tsc -b tsconfig.packages.json",
-    "build": "npm run build:packages && tsc -p tsconfig.json && npm run build -w web",
-    "prepack": "npm run build",
+    "build:backend": "esbuild \"src/**/*.ts\" --outdir=dist --outbase=src --platform=node --format=esm --target=es2022 --sourcemap --log-level=warning",
+    "build": "npm run build:packages && npm run build:backend && npm run build -w web",
+    "prepack": "npm run typecheck && npm run build",
     "typecheck": "npm run build:packages && tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && npm run typecheck -w web",
     "pretest": "npm run build:packages",
     "test": "node --import tsx --test test/*.test.ts",
@@ -58,6 +59,7 @@
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20.19.0",
     "concurrently": "^9.2.1",
+    "esbuild": "~0.28.2",
     "tsx": "^4.23.15",
     "typescript": "~5.9.3"
   }
