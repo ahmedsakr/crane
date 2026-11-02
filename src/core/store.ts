@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   effort TEXT,
   driver_settings TEXT,
   assignee TEXT,
+  postmortem_of TEXT,
   pre_approved_at TEXT,
   prerequisites TEXT,
   prerequisites_waived_at TEXT,
@@ -288,6 +289,26 @@ function migrateFollowUpLinks(db: Database.Database) {
   db.exec("CREATE INDEX IF NOT EXISTS tasks_follow_up ON tasks(follow_up_of)");
 }
 
+/**
+ * Post-mortems used to be linked to their merged task only by the note written
+ * when they were queued. Add the column and fill it from those notes, so reviews
+ * already waiting go to the crew the operator names.
+ */
+function migratePostmortemLinks(db: Database.Database) {
+  const has = () => (db.prepare("PRAGMA table_info(tasks)").all() as Row[]).some((c) => c.name === "postmortem_of");
+  if (has()) return;
+  db.transaction(() => {
+    if (has()) return;
+    db.exec("ALTER TABLE tasks ADD COLUMN postmortem_of TEXT");
+    db.exec(`UPDATE tasks SET postmortem_of = (
+      SELECT CASE WHEN json_valid(e.data) THEN json_extract(e.data, '$.sourceTaskId') END
+      FROM events e
+      WHERE e.task_id = tasks.id AND e.type = 'note' AND e.message LIKE 'Reviewing merged task %'
+      ORDER BY e.id LIMIT 1
+    )`);
+  }).immediate();
+}
+
 const now = () => new Date().toISOString();
 const TASK_DUE = "(scheduled_at IS NULL OR scheduled_at <= ?)";
 
@@ -320,6 +341,7 @@ function toTask(r: Row): Task {
     effort: (r.effort as string) ?? null,
     driverSettings: r.driver_settings ? JSON.parse(r.driver_settings as string) as DriverSettings : null,
     assignee: (r.assignee as string) ?? null,
+    postmortemOf: (r.postmortem_of as string) ?? null,
     preApprovedAt: (r.pre_approved_at as string) ?? null,
     visualReview: r.visual_review ? JSON.parse(r.visual_review as string) : null,
     prerequisites: r.prerequisites ? JSON.parse(r.prerequisites as string) as string[] : [],
@@ -387,7 +409,7 @@ export const crewSettingKey = {
 };
 
 /** An agent row. The operator's choices for it live in settings; see `Store.listAgents`. */
-function toAgent(r: Row): Omit<Agent, "active" | "defaultDriver" | "role"> {
+function toAgent(r: Row): Omit<Agent, "active" | "defaultDriver" | "role" | "runsPostmortems"> {
   return {
     id: r.id as string,
     name: r.name as string,
@@ -416,6 +438,7 @@ export class Store {
     this.db.exec(SCHEMA);
     addMissingColumns(this.db);
     migrateFollowUpLinks(this.db);
+    migratePostmortemLinks(this.db);
     migrateCostsToRuns(this.db);
     migrateCostStatus(this.db);
   }
@@ -470,9 +493,25 @@ export class Store {
       .run(key, value);
   }
 
-  postmortemSettings(): PostmortemSettings {
+  private savedPostmortemSettings(): Partial<PostmortemSettings> {
     const saved = this.getSetting("postmortem_settings");
-    return saved ? JSON.parse(saved) as PostmortemSettings : { driver: null, model: null, effort: null };
+    return saved ? JSON.parse(saved) as Partial<PostmortemSettings> : {};
+  }
+
+  postmortemSettings(): PostmortemSettings {
+    const saved = this.savedPostmortemSettings();
+    return { driver: saved.driver ?? null, model: saved.model ?? null, effort: saved.effort ?? null, crew: this.postmortemCrew() };
+  }
+
+  /**
+   * Who the operator named to run post-mortems; empty leaves them to any active
+   * member. Anyone who has left the crew drops out, so they can't strand a review.
+   */
+  postmortemCrew(): string[] {
+    const named = this.savedPostmortemSettings().crew ?? [];
+    if (!named.length) return [];
+    const crew = new Set((this.db.prepare("SELECT id FROM agents").all() as Row[]).map((a) => a.id));
+    return named.filter((id) => crew.has(id));
   }
 
   setPostmortemSettings(settings: PostmortemSettings) {
@@ -605,6 +644,8 @@ export class Store {
     scheduleId?: string;
     /** The task and finding (0-based) this one follows up on. */
     followUp?: { of: string; finding: number };
+    /** The merged task this post-mortem reviews. */
+    postmortemOf?: string | null;
   }): Task {
     return this.db.transaction(() => {
       const id = shortId("t");
@@ -614,14 +655,14 @@ export class Store {
       this.db
         .prepare(
           `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, driver_settings,
-             prerequisites, acceptance, lookouts, status, created_at, scheduled_at, pre_approved_at, follow_up_of, follow_up_finding, schedule_id)
-           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)`,
+             prerequisites, acceptance, lookouts, status, created_at, scheduled_at, pre_approved_at, follow_up_of, follow_up_finding, schedule_id, postmortem_of)
+           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null,
           input.model ?? null, input.effort ?? null, input.assignee ?? null,
           input.driverSettings ? JSON.stringify(input.driverSettings) : null,
           list(input.prerequisites), list(input.acceptance), list(input.lookouts), ts, scheduledAt, input.preApprove ? ts : null,
-          input.followUp?.of ?? null, input.followUp?.finding ?? null, input.scheduleId ?? null);
+          input.followUp?.of ?? null, input.followUp?.finding ?? null, input.scheduleId ?? null, input.postmortemOf ?? null);
       this.addEvent(id, "status", scheduledAt ? `Scheduled for ${scheduledAt}` : "Queued", {
         status: "queued", ...(scheduledAt ? { scheduledAt } : {}),
       });
@@ -704,9 +745,14 @@ export class Store {
     return r ? toTask(r) : null;
   }
 
-  /** Unassigned queued work that is no longer waiting for its start time. */
+  /**
+   * Unassigned queued work that is no longer waiting for its start time. Post-mortems
+   * count only while any active member can run them: activating someone else
+   * wouldn't help one that's waiting for the crew the operator named.
+   */
   queuedForAnyone(): number {
-    return (this.db.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE status = 'queued' AND assignee IS NULL AND ${TASK_DUE}`)
+    const named = this.postmortemCrew().length ? "AND postmortem_of IS NULL" : "";
+    return (this.db.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE status = 'queued' AND assignee IS NULL ${named} AND ${TASK_DUE}`)
       .get(now()) as { n: number }).n;
   }
 
@@ -782,6 +828,7 @@ export class Store {
         autonomy: "observe",
         driver: defaults.driver ?? task.driver,
         driverSettings: defaults.driver ? { model: defaults.model, effort: defaults.effort } : null,
+        postmortemOf: id,
       });
       this.addEvent(id, "note", "Queued a post-mortem to look for task friction", { postmortemTaskId: review.id });
       this.addEvent(review.id, "note", `Reviewing merged task ${id}`, { sourceTaskId: id });
@@ -839,18 +886,27 @@ export class Store {
 
   /**
    * Atomically take the oldest queued task this agent may work: one assigned
-   * to it, or one assigned to nobody unless `onlyAssigned`. Skips tasks whose
+   * to it, or one assigned to nobody unless `onlyAssigned`. Once the operator
+   * names a post-mortem crew, post-mortems go to them alone, whatever their role;
+   * `onlyPostmortems` is how a named member who's on-call gets called in. Skips tasks whose
    * start time hasn't arrived or prerequisites haven't landed (unless waived). Safe if two
    * factories race. Immediate because it reads, then writes: a deferred transaction
    * fails at once, without waiting for busy_timeout, if another process commits between them.
    */
-  claimNextTask(agentId: string, opts: { onlyAssigned?: boolean } = {}): Task | null {
+  claimNextTask(agentId: string, opts: { onlyAssigned?: boolean; onlyPostmortems?: boolean } = {}): Task | null {
+    const crew = this.postmortemCrew();
+    const named = crew.includes(agentId);
+    if (opts.onlyPostmortems && !named) return null;
     const mine = opts.onlyAssigned ? "assignee = ?" : "(assignee IS NULL OR assignee = ?)";
+    const eligible = opts.onlyPostmortems ? "postmortem_of IS NOT NULL"
+      : !crew.length ? mine
+      : named ? `(postmortem_of IS NOT NULL OR ${mine})`
+      : `(postmortem_of IS NULL AND ${mine})`;
     return this.db.transaction(() => {
       const rows = this.db
-        .prepare(`SELECT * FROM tasks WHERE status = 'queued' AND ${mine}
+        .prepare(`SELECT * FROM tasks WHERE status = 'queued' AND ${eligible}
           AND ${TASK_DUE} ORDER BY created_at ASC`)
-        .all(agentId, now()) as Row[];
+        .all(...(opts.onlyPostmortems ? [now()] : [agentId, now()])) as Row[];
       const next = rows.map(toTask).find((t) => !this.unmetPrerequisites(t).length);
       if (!next) return null;
       const changed = this.db
@@ -1105,6 +1161,7 @@ export class Store {
 
   // ── agents ────────────────────────────────────────────────
   listAgents(): Agent[] {
+    const postmortemCrew = this.postmortemCrew();
     return (this.db.prepare("SELECT * FROM agents ORDER BY name").all() as Row[]).map((r) => {
       const agent = toAgent(r);
       return {
@@ -1112,11 +1169,15 @@ export class Store {
         active: this.crewActive(agent.id),
         defaultDriver: this.crewDefaultDriver(agent.id),
         role: this.crewRole(agent.id),
+        runsPostmortems: postmortemCrew.includes(agent.id),
       };
     });
   }
 
-  /** Whether a crew member takes work. Members are active unless the operator put them on-call. */
+  /**
+   * Whether a crew member takes work. Members are active unless the operator put
+   * them on-call, where they take only the post-mortems they're named for.
+   */
   crewActive(agentId: string): boolean {
     return this.getSetting(crewSettingKey.active(agentId)) !== "false";
   }

@@ -162,8 +162,33 @@ function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: Dr
   );
 }
 
-/** Independent defaults for the read-only review queued after a merge. */
+/** Tick who runs post-mortems, on-call members included. Nobody ticked leaves them to any active member. */
+function PostmortemCrewField({ agents, crew, disabled, onChange }: { agents: Agent[]; crew: string[]; disabled: boolean; onChange: (crew: string[]) => void }) {
+  return (
+    <fieldset className="postmortem-crew" disabled={disabled}>
+      <legend>Who can run them</legend>
+      <div className="postmortem-crew-list">
+        {agents.map((a) => (
+          <label key={a.id}>
+            <input type="checkbox" checked={crew.includes(a.id)}
+              onChange={(e) => onChange(e.target.checked ? [...crew, a.id] : crew.filter((id) => id !== a.id))} />
+            {a.name}<span className="muted">{a.active ? "Active" : "On-call"}</span>
+          </label>
+        ))}
+      </div>
+      <span className="crew-field-note">
+        {crew.length
+          ? "Only these members run post-mortems. On-call members come in for them and take no other work."
+          : "No one ticked: any active member can run them."}
+      </span>
+    </fieldset>
+  );
+}
+
+/** Who runs the read-only review queued after a merge, and its independent defaults. */
 function PostmortemDefaults({ drivers }: { drivers: DriverInfo[] }) {
+  const { overview, refresh } = useApp();
+  const agents = overview?.agents ?? [];
   const toast = useToast();
   const [saved, setSaved] = useState<PostmortemSettings | null>(null);
   const [draft, setDraft] = useState<PostmortemSettings | null>(null);
@@ -181,25 +206,28 @@ function PostmortemDefaults({ drivers }: { drivers: DriverInfo[] }) {
     try {
       setSaved(await api.configurePostmortem(draft));
       setDraft(null);
-      toast({ text: "Defaults saved for newly queued post-mortems" });
+      toast({ text: "Post-mortem settings saved" });
+      refresh();
     } catch (e) { toast({ text: (e as Error).message }); }
     finally { setSaving(false); }
   };
+  const named = agents.filter((a) => saved?.crew.includes(a.id)).map((a) => `${a.name}${a.active ? "" : " (on-call)"}`);
   return (
     <section className="section">
       <div className="section-head"><h2 className="section-title">Post-mortems</h2></div>
       <p className="muted" style={{ maxWidth: "60ch", margin: "0 0 12px", fontSize: 14 }}>
-        After each merge, Crane queues a read-only review of task friction. These defaults apply when that review is queued.
+        After each merge, Crane queues a read-only review of task friction. Who can run them applies right away, including to reviews already waiting. The agent, model, and effort apply when a review is queued.
       </p>
       <div className="card" style={{ padding: 18 }}>
         {error ? <span role="alert">{error} <button className="tuning-change" onClick={load}>Retry</button></span> : !saved ? (
           <span className="muted">Loading defaults…</span>
         ) : draft ? (
-          <form className="tuning" onSubmit={(e) => { e.preventDefault(); void save(); }} aria-label="Post-mortem defaults">
+          <form className="tuning" onSubmit={(e) => { e.preventDefault(); void save(); }} aria-label="Post-mortem settings">
+            <PostmortemCrewField agents={agents} crew={draft.crew} disabled={saving} onChange={(crew) => setDraft({ ...draft, crew })} />
             <label className="tuning-field">
               <span>Agent</span>
               <select className="input" aria-label="Post-mortem agent" value={draft.driver ?? ""} disabled={saving}
-                onChange={(e) => setDraft({ driver: (e.target.value || null) as PostmortemSettings["driver"], model: null, effort: null })}>
+                onChange={(e) => setDraft({ ...draft, driver: (e.target.value || null) as PostmortemSettings["driver"], model: null, effort: null })}>
                 <option value="">Merged task's agent</option>
                 {drivers.map((d) => <option key={d.name} value={d.name} disabled={!d.available}>{d.label}{!d.available ? " (not installed)" : ""}</option>)}
               </select>
@@ -226,9 +254,9 @@ function PostmortemDefaults({ drivers }: { drivers: DriverInfo[] }) {
             </span>
           </form>
         ) : <>
-          <span className="row-title">{saved.driver ? driverLabel(saved.driver) : "Merged task's agent"}</span>
+          <span className="row-title">Run by {named.length ? named.join(", ") : "any active member"}</span>
           <span className="row-meta" style={{ display: "block", whiteSpace: "normal", marginTop: 4 }}>
-            {settingsLabel(saved) ?? "Agent settings"} · <button className="tuning-change" aria-label="Change post-mortem defaults" onClick={() => setDraft(saved)}>Change</button>
+            {saved.driver ? driverLabel(saved.driver) : "Merged task's agent"} · {settingsLabel(saved) ?? "Agent settings"} · <button className="tuning-change" aria-label="Change post-mortem settings" onClick={() => setDraft(saved)}>Change</button>
           </span>
         </>}
       </div>
@@ -293,14 +321,18 @@ interface Member {
 const memberRank = (m: Member) => (m.doing ? 0 : m.waiting ? 1 : 2);
 
 /** The short line under a member's name: their state, in the operator's words. */
-function memberStatus({ a, role, waiting }: Member): string {
+function memberStatus({ a, role, doing, waiting }: Member): string {
   const own = a.defaultDriver ? ` · ${driverLabel(a.defaultDriver)}` : "";
-  if (a.state === "working") return a.active ? `Working on ${driverLabel(a.driver)}` : "Finishing current work, then on-call";
-  if (!a.active) return `On-call${role ? ` · ${role.label}` : ""}${own}`;
+  const postmortems = a.runsPostmortems ? " · Runs post-mortems" : "";
+  if (a.state === "working") {
+    if (a.active) return `Working on ${driverLabel(a.driver)}`;
+    return doing?.postmortemOf ? `Called in for a post-mortem on ${driverLabel(a.driver)}` : "Finishing current work, then on-call";
+  }
+  if (!a.active) return `On-call${postmortems}${role ? ` · ${role.label}` : ""}${own}`;
   if (a.state === "paused") return "Paused";
   // The run button already says what an idle maintainer is waiting for.
-  if (role) return `${role.label}${waiting ? " · run queued" : ""}${own}`;
-  return `Waiting for work${own}`;
+  if (role) return `${role.label}${waiting ? " · run queued" : ""}${postmortems}${own}`;
+  return `Waiting for work${postmortems}${own}`;
 }
 
 /** A member's maintenance role, default agent, and on-call switch, opened from their row. */
@@ -332,7 +364,7 @@ function MemberSettings({
             {MAINTENANCE_ROLES.map((r) => <option key={r} value={r}>{MAINTENANCE_ROLE[r].label}</option>)}
           </select>
           <span className="crew-field-note">
-            {role ? `${role.summary} ${AUTONOMY_LABEL[role.autonomy]}. Works only the runs you start.` : "Picks up the oldest queued task when free."}
+            {role ? `${role.summary} ${AUTONOMY_LABEL[role.autonomy]}. Works only the runs you start${a.runsPostmortems ? " and post-mortems" : ""}.` : "Picks up the oldest queued task when free."}
           </span>
         </label>
         <label className="tuning-field">
@@ -530,7 +562,9 @@ export function Crew() {
                 <h2 className="section-title" id="crew-on-call">
                   On-call <span className="count">{onCall.length}</span>
                 </h2>
-                <span className="muted crew-section-note">No new work until you activate them</span>
+                <span className="muted crew-section-note">
+                  {onCall.some((m) => m.a.runsPostmortems) ? "Named members run post-mortems only" : "No new work until you activate them"}
+                </span>
               </div>
               <ul className="rows card crew-list">{onCall.map(row)}</ul>
             </section>

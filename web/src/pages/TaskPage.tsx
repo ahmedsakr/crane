@@ -165,7 +165,7 @@ function useTaskDiff(id: string, on: boolean, live: boolean) {
 
 export function TaskPage() {
   const { id = "" } = useParams();
-  const { refresh: refreshApp } = useApp();
+  const { overview, refresh: refreshApp } = useApp();
   const toast = useToast();
   const nav = useNavigate();
   const { data, error, refresh } = usePoll<TaskDetail>(() => api.task(id), 3000, [id]);
@@ -334,7 +334,9 @@ export function TaskPage() {
                 ? `Waiting for ${waitingOn.map((p) => p.id).join(", ")} to land.`
                 : m.assignee && agent
                   ? agent.active ? `Waiting for ${agent.name}, who picks it up when free.` : `Waiting for ${agent.name}, who is on-call. Activate them on the Crew page.`
-                  : "Waiting for a free agent."}
+                  : m.postmortemOf && overview?.agents.some((a) => a.runsPostmortems)
+                    ? `Waiting for a crew member who runs post-mortems: ${overview.agents.filter((a) => a.runsPostmortems).map((a) => a.name).join(", ")}.`
+                    : "Waiting for a free agent."}
             </p>
           ) : null}
           {m.status === "queued" && (

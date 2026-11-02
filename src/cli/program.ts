@@ -384,7 +384,10 @@ program
     const agent = m.driver ?? ran;
     const on = agent && agent !== "unknown" ? ` · on ${driverLabel(agent)}` : "";
     const member = m.assignee ? store.listAgents().find((a) => a.id === m.assignee) : null;
-    const forMember = member ? ` · for ${member.name}${m.status === "queued" && !member.active ? " (on-call)" : ""}` : "";
+    const reviewers = m.status === "queued" && m.postmortemOf ? store.postmortemCrew() : [];
+    const forMember = member
+      ? ` · for ${member.name}${m.status === "queued" && !member.active ? " (on-call)" : ""}`
+      : reviewers.length ? ` · for ${postmortemCrewLabel(reviewers)}` : "";
     const preApproved = m.preApprovedAt && ["queued", "running"].includes(m.status) ? " · pre-approved" : "";
     console.log(`  ${ui.statusText(m.status)}${ui.dim(forMember + on + cost + preApproved)}`);
     if (m.branch) {
@@ -907,7 +910,8 @@ const agents = program
     for (const a of list) {
       const title = a.taskId ? store.getTask(a.taskId)?.title : undefined;
       const role = a.role ? ` · role: ${MAINTENANCE_ROLE[a.role].label}` : "";
-      console.log(`  ${a.active ? "Active" : "On-call"} · default: ${a.defaultDriver ? driverLabel(a.defaultDriver) : "factory default"}${role}`);
+      const postmortems = a.runsPostmortems ? " · runs post-mortems" : "";
+      console.log(`  ${a.active ? "Active" : "On-call"} · default: ${a.defaultDriver ? driverLabel(a.defaultDriver) : "factory default"}${role}${postmortems}`);
       console.log(ui.agentLine(a, title ? `${title}  ${ui.dim(`on ${driverLabel(a.driver)}`)}` : undefined));
     }
     const catalog = await actions.drivers();
@@ -923,6 +927,7 @@ const agents = program
     const postmortem = actions.postmortemSettings();
     console.log(ui.section("Post-mortems"));
     console.log(`  ${postmortem.driver ? driverLabel(postmortem.driver) : "Merged task's agent"} · ${settingsLabel(postmortem) ?? "agent settings"}`);
+    console.log(`  Run by ${postmortemCrewLabel(postmortem.crew)}`);
     console.log("");
     const other = catalog.find((d) => d.available && !d.isDefault && d.name !== "simulated");
     const tunable = catalog.find((d) => d.isDefault && d.efforts.length) ?? catalog.find((d) => d.available && d.efforts.length);
@@ -947,6 +952,20 @@ const crewMember = (member: string) => {
   if (!a) throw new Error(`No crew member ${member}`);
   return a;
 };
+
+/** Who runs post-mortems, in the words the Crew page uses. */
+function postmortemCrewLabel(crew: string[]): string {
+  const named = store.listAgents().filter((a) => crew.includes(a.id));
+  return named.length ? named.map((a) => `${a.name}${a.active ? "" : " (on-call)"}`).join(", ") : "any active member";
+}
+
+/** `--crew hoist,boom`, or `default` to leave post-mortems to any active member. */
+function parsePostmortemCrew(value: string): string[] {
+  if (value.trim().toLowerCase() === "default") return [];
+  const names = value.split(",").map((name) => name.trim()).filter(Boolean);
+  if (!names.length) throw new Error("Name at least one crew member, or use default for any active member");
+  return names.map((name) => crewMember(name).id);
+}
 
 agents
   .command("configure <member>")
@@ -1100,16 +1119,20 @@ agents
 
 agents
   .command("postmortem")
-  .description("Show or set defaults for all new post-mortems")
+  .description("Show or set who runs post-mortems and the defaults for new ones")
   .option("--agent <agent>", "agent name, or default to keep the merged task's agent")
   .option("--model <model>", "model name or alias, or default to follow the agent's settings")
   .option("--effort <level>", "effort level for the chosen agent, or default to follow its settings")
-  .action((opts: { agent?: string; model?: string; effort?: string }) => {
+  .option("--crew <members>", "comma-separated crew members who run them, active or on-call, or default for any active member")
+  .action((opts: { agent?: string; model?: string; effort?: string; crew?: string }) => {
     try {
-      const change = opts.agent !== undefined || opts.model !== undefined || opts.effort !== undefined;
-      const s = change ? actions.configurePostmortem({ driver: opts.agent, model: opts.model, effort: opts.effort }) : actions.postmortemSettings();
+      const defaults = opts.agent !== undefined || opts.model !== undefined || opts.effort !== undefined;
+      const crew = opts.crew === undefined ? undefined : parsePostmortemCrew(opts.crew);
+      const s = defaults || crew ? actions.configurePostmortem({ driver: opts.agent, model: opts.model, effort: opts.effort, crew }) : actions.postmortemSettings();
       console.log(`  Post-mortems: ${s.driver ? driverLabel(s.driver) : "merged task's agent"} · ${settingsLabel(s) ?? "agent settings"}`);
-      if (change) ui.ok("Defaults saved for newly queued post-mortems.");
+      console.log(`  Run by ${postmortemCrewLabel(s.crew)}`);
+      if (defaults) ui.ok("Defaults saved for newly queued post-mortems.");
+      if (crew) ui.ok("Saved who runs post-mortems. It applies to those already waiting too.");
     } catch (err) { ui.fail((err as Error).message); }
   });
 
