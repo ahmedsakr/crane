@@ -1,5 +1,5 @@
 import { crewSettingKey, type Store } from "../core/store.js";
-import { driverLabel, isDriverName, unmetAcceptance, type EventType, type RunUsage, type Task, type TaskStatus } from "@crane/contracts";
+import { completionReviewReason, driverLabel, isDriverName, unmetAcceptance, type EventType, type RunUsage, type Task, type TaskStatus } from "@crane/contracts";
 import { AgentRunError, combinedCost, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -606,10 +606,11 @@ export class Factory {
       }
       if (task.autonomy !== "observe") {
         const changed = await finalizeWorktree(repo, task, cwd);
+        result.report.hasContribution = changed.length > 0;
         result.report.changedFiles = [...new Set([...changed, ...result.report.changedFiles])];
         this.store.updateTask(task.id, { visualReview: await candidateVisualReview(cwd, result.report) });
         this.store.updateTask(task.id, { report: result.report });
-        await runChecks(cwd, this.store.repoChecks(repo.id), "review", (run) => {
+        if (!completionReviewReason({ autonomy: task.autonomy, report: result.report })) await runChecks(cwd, this.store.repoChecks(repo.id), "review", (run) => {
           result.report.validation!.push(run);
           this.store.updateTask(task.id, { report: result.report });
           emit("note", `Review check ${run.status}: ${run.command ?? "configuration"}`, { validation: run });

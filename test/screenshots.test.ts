@@ -146,7 +146,7 @@ test("screenshots: factory collects a modifying task's attachments before review
         writeFileSync(join(ctx.cwd, ".crane", "view.png"), png);
         writeFileSync(join(ctx.cwd, "ui.txt"), "Updated view");
       }
-      return { report: { summary: "Done", findings: [], changedFiles: [], screenshots: [{ path: ".crane/view.png", caption: "View" }] } };
+      return { report: { summary: "Done", findings: [], changedFiles: [], completion: { status: "completed", reason: "View updated", evidence: "ui.txt" }, screenshots: [{ path: ".crane/view.png", caption: "View" }] } };
     },
   };
   const factory = new Factory(store, driver, { crewSize: 1, tickMs: 10, buildDashboard: false });

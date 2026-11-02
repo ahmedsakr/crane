@@ -14,6 +14,7 @@ import {
   ruleLabel,
   unmetAcceptance,
   visualReviewPending,
+  completionReviewReason,
   type MaintenanceRole,
   type CrewSchedule,
   type CrewScheduleInput,
@@ -860,7 +861,12 @@ export class Store {
     return this.db.transaction(() => {
       const task = this.getTask(id);
       if (!task || task.status === "cancelled") return null;
-      // Passing checks don't show the asked-for scope is done; only the acceptance criteria do.
+      const completionHold = completionReviewReason(task);
+      if (completionHold) {
+        this.setStatus(id, "needs_review", `Implementation requires operator review: ${completionHold}`, { completionHold });
+        return "needs_review" as const;
+      }
+      // Completion alone doesn't satisfy separately requested acceptance criteria.
       const unmet = unmetAcceptance(task);
       if (task.preApprovedAt && task.autonomy !== "observe" && visualReviewPending(task)) {
         this.setStatus(id, "needs_review", "Pre-approved, but candidate visual inspection or an explicit operator waiver is required", { visualReviewPending: true });
