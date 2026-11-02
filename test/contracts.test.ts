@@ -85,6 +85,12 @@ test("package build and watch use the same graph after workspace preflight", () 
   assert.ok(scripts.dev.includes('"npm:dev:packages"'), "development runs the graph watcher");
 });
 
+test("the backend compile leaves out browser and React types", () => {
+  const { lib, types } = readJson(join(root, "tsconfig.json")).compilerOptions;
+  assert.deepEqual(lib, ["ES2022"], "an unset lib loads lib.dom.d.ts");
+  assert.deepEqual(types, ["node"], "unset types loads every hoisted @types package, including react");
+});
+
 test("the dashboard bundles only contracts, the one package whose changes stale it", () => {
   const bad = walk(web).flatMap((file) => specifiers(file)
     .filter((spec) => spec.startsWith("@crane/") && spec !== "@crane/contracts" && !spec.startsWith("@crane/contracts/"))
