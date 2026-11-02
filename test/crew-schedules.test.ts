@@ -98,6 +98,30 @@ test("crew schedules: exact slot, pre-approval, origin survives removal, and cat
   } finally { store.close(); }
 });
 
+test("crew schedules: role runs insert their validated schedule origin with the task", async () => {
+  const { store, actions, input } = setup();
+  try {
+    await assert.rejects(actions.runRole("a-tests", { repoId: input.repoId, scheduleId: "missing" }), /No such crew schedule/);
+    assert.equal(store.listTasks().length, 0);
+    store.upsertAgent({ id: "a-other", name: "Other", driver: "simulated" });
+    store.setSetting("crew_role_a-other", "tests");
+    const otherSchedule = actions.saveCrewSchedule("a-other", input);
+    await assert.rejects(actions.runRole("a-tests", { repoId: input.repoId, scheduleId: otherSchedule.id }), /No such crew schedule/);
+    assert.equal(store.listTasks().length, 0);
+
+    const schedule = actions.saveCrewSchedule("a-tests", input);
+    // An after-insert update cannot satisfy this constraint: provenance must exist at insertion.
+    store.db.exec(`CREATE TRIGGER require_schedule_origin BEFORE INSERT ON tasks
+      WHEN NEW.schedule_id IS NULL BEGIN
+        SELECT RAISE(ABORT, 'schedule origin missing at insertion');
+      END`);
+    const task = await actions.runRole("a-tests", { repoId: input.repoId, scheduleId: schedule.id });
+    assert.equal(task.scheduleId, schedule.id);
+    assert.equal(store.getTask(task.id)!.scheduleId, schedule.id);
+    assert.ok(store.listEvents(task.id).some((e) => e.data?.scheduleId === schedule.id));
+  } finally { store.close(); }
+});
+
 test("crew schedules: on-call, paused, open runs, missing role and invalid pre-approval skip with a reason", async (t) => {
   t.mock.timers.enable({ apis: ["Date"], now: monday - 60_000 });
   for (const reason of ["on-call", "paused", "factory paused", "open", "role", "pre-approval"] as const) {
