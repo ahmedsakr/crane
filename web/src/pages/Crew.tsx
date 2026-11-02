@@ -1,52 +1,34 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../lib/app-context";
 import {
   api,
-  AUTONOMY_LABEL,
   driverLabel,
   MAINTENANCE_ROLE,
-  MAINTENANCE_ROLES,
   settingsLabel,
   type Agent,
   type DriverInfo,
-  type MaintenanceRole,
-  type MaintenanceRoleInfo,
   type PostmortemSettings,
-  type Task,
 } from "../lib/api";
+import type { CrewSchedule } from "@crane/contracts";
 import { ago, plural } from "../lib/format";
-import { useDrivers, useTick } from "../lib/hooks";
+import { useDrivers, usePoll, useTick } from "../lib/hooks";
+import { nextSchedule, whenLabel } from "../lib/schedule";
 import { Chevron, Empty, useToast } from "../components/bits";
-import { ScheduleFields } from "../components/ScheduleFields";
-import { parseStartTime } from "../lib/schedule";
-import { CrewSchedules } from "../components/CrewSchedules";
-
-/** What an agent runs on, with the editor one tap away. */
-function TuningSummary({ driver: d, onEdit }: { driver: DriverInfo; onEdit: () => void }) {
-  const label = settingsLabel(d);
-  return (
-    <span className="row-meta" style={{ display: "block", whiteSpace: "normal", marginTop: 4 }}>
-      <span style={{ color: label ? "var(--ink)" : undefined }}>{label ?? "Default model and effort"}</span>
-{" "}
-      <span style={{ whiteSpace: "nowrap" }}>
-        ·{" "}
-        <button className="tuning-change" onClick={onEdit} aria-label={`Change ${d.label} model and effort`}>
-          Change
-        </button>
-      </span>
-    </span>
-  );
-}
+import { Avatar, MemberSheet, memberStatus, type CrewInput, type Member } from "../components/MemberSheet";
+import { Sheet, SheetBody, SheetFoot, SheetHead } from "../components/Sheet";
 
 /** Choose the model and effort one agent runs with. */
-function TuningForm({ driver: d, onChange, onClose }: { driver: DriverInfo; onChange: (d: DriverInfo[]) => void; onClose: () => void }) {
+function TuningSheet({ driver: d, onChange, onClose }: { driver: DriverInfo; onChange: (d: DriverInfo[]) => void; onClose: () => void }) {
   const toast = useToast();
+  const formId = useId();
   const [model, setModel] = useState(d.model ?? "");
   const [effort, setEffort] = useState(d.effort ?? "");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const save = async () => {
     setSaving(true);
+    setError(null);
     try {
       const next = await api.configureDriver(d.name, { model: model.trim() || null, effort: effort || null });
       onChange(next);
@@ -54,7 +36,7 @@ function TuningForm({ driver: d, onChange, onClose }: { driver: DriverInfo; onCh
       toast({ text: `${d.label} runs on ${(now && settingsLabel(now)) ?? "its default model and effort"} from its next run` });
       onClose();
     } catch (e) {
-      toast({ text: (e as Error).message });
+      setError((e as Error).message);
     } finally {
       setSaving(false);
     }
@@ -62,35 +44,34 @@ function TuningForm({ driver: d, onChange, onClose }: { driver: DriverInfo; onCh
 
   const listId = `models-${d.name}`;
   return (
-    <form
-      className="tuning"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void save();
-      }}
-    >
-      <label className="tuning-field">
-        <span>Model</span>
-        <input className="input" list={listId} value={model} placeholder="Its default" autoFocus
-          onChange={(e) => setModel(e.target.value)} aria-label={`${d.label} model`} />
-        {d.models.length > 0 && (
-          <datalist id={listId}>
-            {d.models.map((m) => <option key={m} value={m} />)}
-          </datalist>
-        )}
-      </label>
-      <label className="tuning-field">
-        <span>Effort</span>
-        <select className="input" value={effort} onChange={(e) => setEffort(e.target.value)} aria-label={`${d.label} effort`}>
-          <option value="">Its default</option>
-          {d.efforts.map((e) => <option key={e} value={e}>{e}</option>)}
-        </select>
-      </label>
-      <span className="tuning-actions">
-        <button className="btn btn-primary btn-sm" type="submit" disabled={saving}>Save</button>
+    <Sheet onClose={onClose}>
+      <SheetHead title={d.label} subtitle={d.hint} />
+      <SheetBody>
+        <form id={formId} className="sheet-fields" onSubmit={(e) => { e.preventDefault(); void save(); }}>
+          <label className="tuning-field">
+            <span>Model</span>
+            <input className="input" list={listId} value={model} placeholder="Its default" disabled={saving}
+              onChange={(e) => setModel(e.target.value)} aria-label={`${d.label} model`} />
+            {d.models.length > 0 && (
+              <datalist id={listId}>
+                {d.models.map((m) => <option key={m} value={m} />)}
+              </datalist>
+            )}
+          </label>
+          <label className="tuning-field">
+            <span>Effort</span>
+            <select className="input" value={effort} disabled={saving} onChange={(e) => setEffort(e.target.value)} aria-label={`${d.label} effort`}>
+              <option value="">Its default</option>
+              {d.efforts.map((e) => <option key={e} value={e}>{e}</option>)}
+            </select>
+          </label>
+        </form>
+      </SheetBody>
+      <SheetFoot note={error ? <span className="error-text" role="alert">{error}</span> : undefined}>
         <button className="btn btn-ghost btn-sm" type="button" disabled={saving} onClick={onClose}>Cancel</button>
-      </span>
-    </form>
+        <button className="btn btn-primary btn-sm" type="submit" form={formId} disabled={saving}>Save</button>
+      </SheetFoot>
+    </Sheet>
   );
 }
 
@@ -112,52 +93,40 @@ function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: Dr
       setBusy(null);
     }
   };
+  const open = drivers.find((d) => d.name === editing);
 
   return (
-    <section className="section">
+    <section className="section crew-section" aria-labelledby="crew-runs-on">
       <div className="section-head">
-        <h2 className="section-title">Runs on</h2>
+        <h2 className="section-title" id="crew-runs-on">Runs on</h2>
+        <span className="muted crew-section-note">Crew members use the default unless you choose an agent for them</span>
       </div>
-      <p className="muted" style={{ maxWidth: "60ch", margin: "0 0 12px", fontSize: 14 }}>
-        Crew members use the default unless you choose an agent for them. Each agent runs on the model and effort you set here.
-        {drivers.some((d) => d.isDefault && d.name === "simulated") && " Simulated agents don't call a model; they're for trying Crane out."}
-      </p>
-      <ul className="rows card" style={{ padding: "0 18px" }}>
-        {drivers.map((d) => (
-          <li key={d.name}>
-            <div className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
-              <span style={{ minWidth: 0 }}>
-                <span className="row-title" style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <span style={{ color: d.available ? undefined : "var(--graphite)" }}>{d.label}</span>
-                  {d.isDefault && <span className="chip chip-crane">default</span>}
+      <ul className="rows card crew-list">
+        {drivers.map((d) => {
+          const tunable = d.available && d.efforts.length > 0;
+          return (
+            <li key={d.name}>
+              <div className="crew-row crew-row-plain">
+                <span className="crew-who">
+                  {tunable ? (
+                    <button type="button" className="crew-open agent-name" aria-haspopup="dialog" aria-label={`Change ${d.label} model and effort`} onClick={() => setEditing(d.name)}>{d.label}</button>
+                  ) : (
+                    <span className="agent-name" style={d.available ? undefined : { color: "var(--graphite)" }}>{d.label}</span>
+                  )}
+                  <span className="row-meta">{tunable ? settingsLabel(d) ?? "Default model and effort" : d.hint}</span>
                 </span>
-                <span className="row-meta" style={{ display: "block", whiteSpace: "normal" }}>
-                  {d.hint}
+                <span className="crew-actions">
+                  {d.isDefault ? <span className="chip chip-crane">default</span> : d.available && (
+                    <button className="btn btn-quiet btn-sm" disabled={!!busy} onClick={() => void choose(d)}>Make default</button>
+                  )}
+                  {tunable && <Chevron />}
                 </span>
-                {d.available && d.efforts.length > 0 && editing !== d.name && (
-                  <TuningSummary driver={d} onEdit={() => setEditing(d.name)} />
-                )}
-              </span>
-              <span>
-                {d.isDefault ? null : d.available ? (
-                  <button className="btn btn-quiet btn-sm" disabled={!!busy} onClick={() => choose(d)}>
-                    Make default
-                  </button>
-                ) : (
-                  <span className="muted" style={{ fontSize: 13 }}>
-                    Not installed
-                  </span>
-                )}
-              </span>
-              {editing === d.name && (
-                <div style={{ gridColumn: "1 / -1", marginTop: -6 }}>
-                  <TuningForm driver={d} onChange={onChange} onClose={() => setEditing(null)} />
-                </div>
-              )}
-            </div>
-          </li>
-        ))}
+              </div>
+            </li>
+          );
+        })}
       </ul>
+      {open && <TuningSheet driver={open} onChange={onChange} onClose={() => setEditing(null)} />}
     </section>
   );
 }
@@ -190,10 +159,12 @@ function PostmortemDefaults({ drivers }: { drivers: DriverInfo[] }) {
   const { overview, refresh } = useApp();
   const agents = overview?.agents ?? [];
   const toast = useToast();
+  const formId = useId();
   const [saved, setSaved] = useState<PostmortemSettings | null>(null);
   const [draft, setDraft] = useState<PostmortemSettings | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const load = () => {
     setError(null);
     api.postmortemSettings().then(setSaved).catch((e: Error) => setError(e.message));
@@ -203,224 +174,108 @@ function PostmortemDefaults({ drivers }: { drivers: DriverInfo[] }) {
   const save = async () => {
     if (!draft) return;
     setSaving(true);
+    setSaveError(null);
     try {
       setSaved(await api.configurePostmortem(draft));
       setDraft(null);
       toast({ text: "Post-mortem settings saved" });
       refresh();
-    } catch (e) { toast({ text: (e as Error).message }); }
+    } catch (e) { setSaveError((e as Error).message); }
     finally { setSaving(false); }
   };
   const named = agents.filter((a) => saved?.crew.includes(a.id)).map((a) => `${a.name}${a.active ? "" : " (on-call)"}`);
   return (
-    <section className="section">
-      <div className="section-head"><h2 className="section-title">Post-mortems</h2></div>
-      <p className="muted" style={{ maxWidth: "60ch", margin: "0 0 12px", fontSize: 14 }}>
-        After each merge, Crane queues a read-only review of task friction. Who can run them applies right away, including to reviews already waiting. The agent, model, and effort apply when a review is queued.
-      </p>
-      <div className="card" style={{ padding: 18 }}>
-        {error ? <span role="alert">{error} <button className="tuning-change" onClick={load}>Retry</button></span> : !saved ? (
-          <span className="muted">Loading defaults…</span>
-        ) : draft ? (
-          <form className="tuning" onSubmit={(e) => { e.preventDefault(); void save(); }} aria-label="Post-mortem settings">
-            <PostmortemCrewField agents={agents} crew={draft.crew} disabled={saving} onChange={(crew) => setDraft({ ...draft, crew })} />
-            <label className="tuning-field">
-              <span>Agent</span>
-              <select className="input" aria-label="Post-mortem agent" value={draft.driver ?? ""} disabled={saving}
-                onChange={(e) => setDraft({ ...draft, driver: (e.target.value || null) as PostmortemSettings["driver"], model: null, effort: null })}>
-                <option value="">Merged task's agent</option>
-                {drivers.map((d) => <option key={d.name} value={d.name} disabled={!d.available}>{d.label}{!d.available ? " (not installed)" : ""}</option>)}
-              </select>
-            </label>
-            {!!selected?.efforts.length && <>
+    <section className="section crew-section" aria-labelledby="crew-postmortems">
+      <div className="section-head">
+        <h2 className="section-title" id="crew-postmortems">Post-mortems</h2>
+        <span className="muted crew-section-note">A read-only review of task friction, queued after each merge</span>
+      </div>
+      <div className="rows card crew-list">
+        <div className="crew-row crew-row-plain">
+          {error ? (
+            <span role="alert">{error} <button className="tuning-change" onClick={load}>Retry</button></span>
+          ) : !saved ? (
+            <span className="muted">Loading defaults…</span>
+          ) : (
+            <>
+              <span className="crew-who">
+                <button type="button" className="crew-open agent-name" aria-haspopup="dialog" aria-label="Change post-mortem settings"
+                  onClick={() => { setSaveError(null); setDraft(saved); }}>
+                  Run by {named.length ? named.join(", ") : "any active member"}
+                </button>
+                <span className="row-meta">{saved.driver ? driverLabel(saved.driver) : "Merged task's agent"} · {settingsLabel(saved) ?? "Agent settings"}</span>
+              </span>
+              <span className="crew-actions"><Chevron /></span>
+            </>
+          )}
+        </div>
+      </div>
+      {draft && (
+        <Sheet onClose={() => setDraft(null)}>
+          <SheetHead title="Post-mortem settings" subtitle="Who can run them applies right away, including to reviews already waiting. The agent, model, and effort apply when a review is queued." />
+          <SheetBody>
+            <form id={formId} className="sheet-fields" aria-label="Post-mortem settings" onSubmit={(e) => { e.preventDefault(); void save(); }}>
+              <PostmortemCrewField agents={agents} crew={draft.crew} disabled={saving} onChange={(crew) => setDraft({ ...draft, crew })} />
               <label className="tuning-field">
-                <span>Model</span>
-                <input className="input" aria-label="Post-mortem model" list="postmortem-models" value={draft.model ?? ""}
-                  placeholder="Agent setting" disabled={saving} onChange={(e) => setDraft({ ...draft, model: e.target.value || null })} />
-                <datalist id="postmortem-models">{selected.models.map((m) => <option key={m} value={m} />)}</datalist>
-              </label>
-              <label className="tuning-field">
-                <span>Effort</span>
-                <select className="input" aria-label="Post-mortem effort" value={draft.effort ?? ""} disabled={saving}
-                  onChange={(e) => setDraft({ ...draft, effort: e.target.value || null })}>
-                  <option value="">Agent setting</option>
-                  {selected.efforts.map((effort) => <option key={effort} value={effort}>{effort}</option>)}
+                <span>Agent</span>
+                <select className="input" aria-label="Post-mortem agent" value={draft.driver ?? ""} disabled={saving}
+                  onChange={(e) => setDraft({ ...draft, driver: (e.target.value || null) as PostmortemSettings["driver"], model: null, effort: null })}>
+                  <option value="">Merged task's agent</option>
+                  {drivers.map((d) => <option key={d.name} value={d.name} disabled={!d.available}>{d.label}{!d.available ? " (not installed)" : ""}</option>)}
                 </select>
               </label>
-            </>}
-            <span className="tuning-actions">
-              <button className="btn btn-primary btn-sm" type="submit" disabled={saving}>Save</button>
-              <button className="btn btn-ghost btn-sm" type="button" disabled={saving} onClick={() => setDraft(null)}>Cancel</button>
-            </span>
-          </form>
-        ) : <>
-          <span className="row-title">Run by {named.length ? named.join(", ") : "any active member"}</span>
-          <span className="row-meta" style={{ display: "block", whiteSpace: "normal", marginTop: 4 }}>
-            {saved.driver ? driverLabel(saved.driver) : "Merged task's agent"} · {settingsLabel(saved) ?? "Agent settings"} · <button className="tuning-change" aria-label="Change post-mortem settings" onClick={() => setDraft(saved)}>Change</button>
-          </span>
-        </>}
-      </div>
+              {!!selected?.efforts.length && <>
+                <label className="tuning-field">
+                  <span>Model</span>
+                  <input className="input" aria-label="Post-mortem model" list="postmortem-models" value={draft.model ?? ""}
+                    placeholder="Agent setting" disabled={saving} onChange={(e) => setDraft({ ...draft, model: e.target.value || null })} />
+                  <datalist id="postmortem-models">{selected.models.map((m) => <option key={m} value={m} />)}</datalist>
+                </label>
+                <label className="tuning-field">
+                  <span>Effort</span>
+                  <select className="input" aria-label="Post-mortem effort" value={draft.effort ?? ""} disabled={saving}
+                    onChange={(e) => setDraft({ ...draft, effort: e.target.value || null })}>
+                    <option value="">Agent setting</option>
+                    {selected.efforts.map((effort) => <option key={effort} value={effort}>{effort}</option>)}
+                  </select>
+                </label>
+              </>}
+            </form>
+          </SheetBody>
+          <SheetFoot note={saveError ? <span className="error-text" role="alert">{saveError}</span> : undefined}>
+            <button className="btn btn-ghost btn-sm" type="button" disabled={saving} onClick={() => setDraft(null)}>Cancel</button>
+            <button className="btn btn-primary btn-sm" type="submit" form={formId} disabled={saving}>Save</button>
+          </SheetFoot>
+        </Sheet>
+      )}
     </section>
   );
-}
-
-type CrewInput = { active?: boolean; defaultDriver?: string | null; role?: MaintenanceRole | null };
-
-function RoleRunForm({ member, onClose }: { member: Agent; onClose: () => void }) {
-  const { overview, refresh } = useApp();
-  const toast = useToast();
-  const [repoId, setRepoId] = useState("");
-  const [start, setStart] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const repo = repoId || overview?.repos.find((r) => r.isFactory)?.id;
-  const pending = overview?.inFlight.find((t) => t.repoId === repo && t.assignee === member.id && ["queued", "running"].includes(t.status));
-  const submit = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const task = await api.runRole(member.id, { repoId: repoId || undefined, scheduledAt: parseStartTime(start) });
-      toast({ text: `${task.scheduledAt ? "Scheduled" : "Queued"}: ${task.title}`, link: { to: `/tasks/${task.id}`, label: "Open" } });
-      refresh();
-      onClose();
-    } catch (e) { setError((e as Error).message); }
-    finally { setSaving(false); }
-  };
-  return (
-    <form className="crew-settings" id={`crew-settings-${member.id}`} aria-label={`Maintenance run for ${member.name}`} onSubmit={(e) => { e.preventDefault(); void submit(); }}>
-      <label className="tuning-field">
-        <span>Repository</span>
-        <select className="input" aria-label={`Run repository for ${member.name}`} value={repoId} disabled={saving}
-          onChange={(e) => { setRepoId(e.target.value); setError(null); }}>
-          <option value="">Crane's own repo (default)</option>
-          {overview?.repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-        </select>
-      </label>
-      <ScheduleFields value={start} onChange={setStart} disabled={saving} />
-      {pending && <p className="muted">{member.name} already has a run in this repo: <Link to={`/tasks/${pending.id}`}>{pending.title}</Link>. Choose another repo to start another run.</p>}
-      {error && <p role="alert">{error}</p>}
-      <div className="tuning-actions">
-        <button className="btn btn-primary btn-sm" type="submit" disabled={saving || !!pending}>{start === null ? "Start run" : "Schedule run"}</button>
-        <button className="btn btn-ghost btn-sm" type="button" disabled={saving} onClick={onClose}>Cancel</button>
-      </div>
-    </form>
-  );
-}
-
-/** One member as the page shows it: what they're on, and what's waiting for them. */
-interface Member {
-  a: Agent;
-  role: MaintenanceRoleInfo | null;
-  /** The task they're working right now. */
-  doing: Task | null;
-  /** A run started for this member that they haven't picked up yet. */
-  waiting: Task | null;
 }
 
 /** Working members first, then those with a run waiting, then the free ones. */
 const memberRank = (m: Member) => (m.doing ? 0 : m.waiting ? 1 : 2);
 
-/** The short line under a member's name: their state, in the operator's words. */
-function memberStatus({ a, role, doing, waiting }: Member): string {
-  const own = a.defaultDriver ? ` · ${driverLabel(a.defaultDriver)}` : "";
-  const postmortems = a.runsPostmortems ? " · Runs post-mortems" : "";
-  if (a.state === "working") {
-    if (a.active) return `Working on ${driverLabel(a.driver)}`;
-    return doing?.postmortemOf ? `Called in for a post-mortem on ${driverLabel(a.driver)}` : "Finishing current work, then on-call";
-  }
-  if (!a.active) return `On-call${postmortems}${role ? ` · ${role.label}` : ""}${own}`;
-  if (a.state === "paused") return "Paused";
-  // The run button already says what an idle maintainer is waiting for.
-  if (role) return `${role.label}${waiting ? " · run queued" : ""}${postmortems}${own}`;
-  return `Waiting for work${postmortems}${own}`;
-}
-
-/** A member's maintenance role, default agent, and on-call switch, opened from their row. */
-function MemberSettings({
-  m,
-  drivers,
-  factoryDriver,
-  saving,
-  configure,
-}: {
+/** One crew member: who, what they're on, and the one action that matters now. Everything else is in their sheet. */
+function MemberRow({ m, schedules, compact, saving, configure, onOpen, onRun }: {
   m: Member;
-  drivers: DriverInfo[] | null;
-  factoryDriver: string;
+  schedules: CrewSchedule[];
+  compact?: boolean;
   saving: boolean;
   configure: (input: CrewInput) => void;
-}) {
-  const { a, role } = m;
-  // On-call members who aren't working already have Activate on their row.
-  const toggle = a.active || a.state === "working";
-  const last = ago(a.lastActiveAt);
-  return (
-    <div className="crew-settings" id={`crew-settings-${a.id}`}>
-      <div className="crew-fields">
-        <label className="tuning-field">
-          <span>Maintenance role</span>
-          <select className="input" aria-label={`Maintenance role for ${a.name}`} value={a.role ?? ""} disabled={saving}
-            onChange={(e) => configure({ role: (e.target.value || null) as MaintenanceRole | null })}>
-            <option value="">None: takes any queued task</option>
-            {MAINTENANCE_ROLES.map((r) => <option key={r} value={r}>{MAINTENANCE_ROLE[r].label}</option>)}
-          </select>
-          <span className="crew-field-note">
-            {role ? `${role.summary} ${AUTONOMY_LABEL[role.autonomy]}. Works only the runs you start${a.runsPostmortems ? " and post-mortems" : ""}.` : "Picks up the oldest queued task when free."}
-          </span>
-        </label>
-        <label className="tuning-field">
-          <span>Default agent</span>
-          <select className="input" aria-label={`Default agent for ${a.name}`} value={a.defaultDriver ?? ""} disabled={saving || !drivers}
-            onChange={(e) => configure({ defaultDriver: e.target.value || null })}>
-            <option value="">Factory default ({factoryDriver})</option>
-            {drivers?.map((d) => <option key={d.name} value={d.name} disabled={!d.available}>{d.label}{!d.available ? " (not installed)" : ""}</option>)}
-          </select>
-          <span className="crew-field-note">A task’s own agent choice and resumed sessions come first.</span>
-        </label>
-      </div>
-      <div className="crew-settings-foot">
-        <span className="muted">
-          <span className="tabular">{a.tasksCompleted}</span> finished{last ? ` · last active ${last}` : ""}
-        </span>
-        {toggle && (
-          <button className="btn btn-ghost btn-sm" disabled={saving} onClick={() => configure({ active: !a.active })}>
-            {a.active ? "Put on-call" : "Activate"}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-/** One crew member: who, what they're on, and the one action that matters now. Settings open in place. */
-function MemberRow({
-  m,
-  open,
-  onToggle,
-  saving,
-  configure,
-  run,
-  children,
-  schedules,
-}: {
-  m: Member;
-  open: boolean;
-  onToggle: () => void;
-  saving: boolean;
-  configure: (input: CrewInput) => void;
-  run: () => void;
-  children: ReactNode;
-  schedules: ReactNode;
+  onOpen: () => void;
+  onRun: () => void;
 }) {
   const { a, role, doing, waiting } = m;
   const pending = doing ?? waiting;
   const onCall = !a.active && a.state !== "working";
+  const next = nextSchedule(schedules);
   return (
     <li>
-      <div className={`crew-row${open ? " open" : ""}`}>
-        <span className={`avatar ${a.state === "working" ? "working" : ""}`}>{a.name[0]}</span>
+      <div className={`crew-row${compact ? " crew-row-compact" : ""}`}>
+        <Avatar a={a} />
         <span className="crew-who">
-          <span className="agent-name crew-name">
-            {a.name}
+          <span className="crew-name">
+            <button type="button" className="crew-open agent-name" aria-haspopup="dialog" aria-label={`${a.name}: open details`} onClick={onOpen}>{a.name}</button>
             {a.state === "working" && <span className="dot dot-running" aria-label="Working" />}
           </span>
           <span className="row-meta">{memberStatus(m)}</span>
@@ -429,15 +284,17 @@ function MemberRow({
           {pending ? (
             <>
               <Link to={`/tasks/${pending.id}`} className="crew-task">{pending.title}</Link>
-              {!doing && <span className="muted"> · queued for {a.name}</span>}
+              <span className="row-meta">{doing ? `Started ${ago(doing.startedAt)}` : `Queued for ${a.name}`}</span>
             </>
-          ) : a.active && a.state !== "paused" && !role ? (
-            <span className="muted">Nothing assigned</span>
+          ) : !onCall && next ? (
+            <span className="muted">Next run: {whenLabel(Date.parse(next.nextFireAt), { timeZone: next.timezone })}</span>
+          ) : !onCall && schedules.length > 0 ? (
+            <span className="muted">Schedules paused</span>
           ) : null}
         </span>
         <span className="crew-actions">
           {role && a.active && (
-            <button className="btn btn-quiet btn-sm" title={role.summary} aria-label={`Start maintenance run for ${a.name}`} disabled={saving} onClick={run}>
+            <button className="btn btn-quiet btn-sm" title={role.summary} aria-label={`Start maintenance run for ${a.name}`} disabled={saving} onClick={onRun}>
               {role.action}
             </button>
           )}
@@ -446,14 +303,9 @@ function MemberRow({
               Activate
             </button>
           )}
-          <button className="crew-toggle" onClick={onToggle} aria-expanded={open} aria-controls={`crew-settings-${a.id}`}
-            aria-label={`${open ? "Hide" : "Show"} settings for ${a.name}`} title="Role, agent, and on-call">
-            <Chevron />
-          </button>
+          <Chevron />
         </span>
       </div>
-      {schedules}
-      {open && children}
     </li>
   );
 }
@@ -462,21 +314,24 @@ export function Crew() {
   const { overview: o, refresh } = useApp();
   const toast = useToast();
   const [saving, setSaving] = useState<string | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
-  const [running, setRunning] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<{ member: string; start: "settings" | "run" } | null>(null);
   const configure = async (a: Agent, input: CrewInput) => {
     setSaving(a.id);
     try {
       await api.configureCrew(a.id, input);
       if (input.active !== undefined) toast({ text: input.active ? `${a.name} is active` : a.state === "working" ? `${a.name} goes on-call after this task` : `${a.name} is on-call` });
+      else if (input.role !== undefined) toast({ text: input.role ? `${a.name} now handles ${MAINTENANCE_ROLE[input.role].label.toLowerCase()}` : `${a.name} takes any queued task` });
+      else if (input.defaultDriver !== undefined) toast({ text: input.defaultDriver ? `${a.name} runs on ${driverLabel(input.defaultDriver)}` : `${a.name} follows the factory default` });
       refresh();
     } catch (e) { toast({ text: (e as Error).message }); }
     finally { setSaving(null); }
   };
   const { drivers, set } = useDrivers();
+  const schedules = usePoll(api.crewSchedules, 10_000);
   useTick();
   if (!o) return null;
   const driver = driverLabel(drivers?.find((d) => d.isDefault)?.name ?? o.factory.driver);
+  const schedulesFor = (id: string) => schedules.data?.filter((s) => s.agentId === id) ?? [];
 
   const members: Member[] = o.agents.map((a) => {
     const doing = a.taskId ? o.inFlight.find((m) => m.id === a.taskId) ?? null : null;
@@ -493,15 +348,13 @@ export function Crew() {
   const queuedForAnyone = o.queuedForAnyone ?? 0;
   const spare = onCall.find((m) => !m.role);
   const short = o.factory.running && !o.factory.paused && queuedForAnyone > 0 && free.length === 0 && spare;
+  const opened = sheet && members.find((m) => m.a.id === sheet.member);
 
-  const row = (m: Member) => (
-    <MemberRow key={m.a.id} m={m} open={open === m.a.id || running === m.a.id} onToggle={() => { setRunning(null); setOpen(open === m.a.id || running === m.a.id ? null : m.a.id); }}
-      schedules={<CrewSchedules member={m.a} repos={o.repos} />}
-      saving={!!saving} configure={(input) => configure(m.a, input)} run={() => { setOpen(null); setRunning(running === m.a.id ? null : m.a.id); }}>
-      {running === m.a.id && m.a.role && m.a.active ? <RoleRunForm member={m.a} onClose={() => setRunning(null)} /> :
-      <MemberSettings m={m} drivers={drivers} factoryDriver={driver} saving={!!saving} configure={(input) => configure(m.a, input)} />
-      }
-    </MemberRow>
+  const row = (m: Member, compact?: boolean) => (
+    <MemberRow key={m.a.id} m={m} compact={compact} schedules={schedulesFor(m.a.id)} saving={!!saving}
+      configure={(input) => void configure(m.a, input)}
+      onOpen={() => setSheet({ member: m.a.id, start: "settings" })}
+      onRun={() => setSheet({ member: m.a.id, start: "run" })} />
   );
 
   return (
@@ -529,7 +382,7 @@ export function Crew() {
           <span>
             <strong>{plural(queuedForAnyone, "task")} waiting</strong> and no one is free to take {queuedForAnyone === 1 ? "it" : "them"}.
           </span>
-          <button className="btn btn-primary btn-sm notice-action" disabled={!!saving} onClick={() => configure(spare.a, { active: true })}>
+          <button className="btn btn-primary btn-sm notice-action" disabled={!!saving} onClick={() => void configure(spare.a, { active: true })}>
             Activate {spare.a.name}
           </button>
         </div>
@@ -550,7 +403,7 @@ export function Crew() {
               </h2>
             </div>
             {active.length > 0 ? (
-              <ul className="rows card crew-list">{active.map(row)}</ul>
+              <ul className="rows card crew-list">{active.map((m) => row(m))}</ul>
             ) : (
               <Empty title="No one is active">Activate an on-call member to start taking work.</Empty>
             )}
@@ -566,7 +419,7 @@ export function Crew() {
                   {onCall.some((m) => m.a.runsPostmortems) ? "Named members run post-mortems only" : "No new work until you activate them"}
                 </span>
               </div>
-              <ul className="rows card crew-list">{onCall.map(row)}</ul>
+              <ul className="rows card crew-list crew-bench">{onCall.map((m) => row(m, true))}</ul>
             </section>
           )}
         </>
@@ -574,6 +427,13 @@ export function Crew() {
 
       {drivers && drivers.length > 0 && <RunsOn drivers={drivers} onChange={set} />}
       {drivers && drivers.length > 0 && <PostmortemDefaults drivers={drivers} />}
+
+      {opened && (
+        <MemberSheet key={sheet.member} m={opened} start={sheet.start} drivers={drivers} factoryDriver={driver} saving={!!saving}
+          configure={(input) => void configure(opened.a, input)}
+          schedules={schedules.data ? schedulesFor(opened.a.id) : null} schedulesError={schedules.error} reloadSchedules={schedules.refresh}
+          onClose={() => setSheet(null)} />
+      )}
     </>
   );
 }

@@ -34,6 +34,14 @@ The Home hero is a solid crane-yellow slab with a big number (tasks shipped in t
 
 Below the decisions on Home, "On site" shows the work in motion: a tower crane carries each task, as a crate, between six pads (Queued, Working, Needs you, Merging, Shipped, Didn't ship) as its status changes. It is ambient, not a control. Crates take their colour from their pad (blue for working, yellow only for Needs you, green for shipped, red for didn't ship), a legend names the pads, pointing at a crate shows the task, and tapping opens it. Like the slab, the crane goes graphite when the factory is off. It draws only while something moves, and lands every move at once for reduced motion. The model lives in `web/src/lib/site.ts`; the drawing in `web/src/components/site-view.ts`.
 
+## Sheets
+
+A page row shows who or what, its state, and the one action that matters now. The rest opens in a sheet (`web/src/components/Sheet.tsx`): head and foot pinned, the body scrolling between them, and a bottom sheet on phones. It holds focus while open and returns it to what opened it. Don't expand forms inside a row, and don't stack sheets: a form opened from a sheet replaces its contents and has a back button. Escape and tapping outside step back one view; the close button always leaves.
+
+## Choosing a time
+
+Offer the times people mean before asking for a date. `ScheduleFields` leads with presets (In 1 hour, Tonight, Tomorrow, Monday), then **Pick a time**, already filled in with a sensible default, so no field ever starts blank. A line underneath always says what the choice means ("Tomorrow at 9:00 AM · in 20 hours"), so a wrong date is visible before anything is saved. Forms that create a recurring schedule start ready to save too.
+
 ## CLI
 
 Same vocabulary, same hierarchy. `▟ crane` is the mark. Yellow marks what needs you; cyan marks live work; everything else is default or dim. Every screen ends with one to three suggested next commands (`›`).

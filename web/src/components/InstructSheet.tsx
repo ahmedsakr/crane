@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
 import { ScheduleFields } from "./ScheduleFields";
-import { parseStartTime } from "../lib/schedule";
+import { parseStartTime, startSummary } from "../lib/schedule";
 import { api, AUTONOMY_LABEL, KIND_LABEL, choosableDrivers, type Autonomy, type Lookout, type TaskDraft, type TaskKind, type Repo } from "../lib/api";
 import { placeMenu, type MenuPlace } from "../lib/placement";
 import { useDrivers } from "../lib/hooks";
@@ -310,7 +310,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
               </div>
               <LookoutFields value={lookouts} onChange={setLookouts} disabled={busy} />
               <details className="gates">
-                <summary>Start time <span className="muted">· {startTime === null ? "Now" : "Later"}</span></summary>
+                <summary>Start time <span className="muted">· {startSummary(startTime)}</span></summary>
                 <ScheduleFields value={startTime} onChange={setStartTime} disabled={busy} />
               </details>
               {final.autonomy !== "observe" && (

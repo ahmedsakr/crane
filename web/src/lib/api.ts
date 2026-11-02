@@ -130,7 +130,8 @@ export const api = {
   /** Start a crew member's maintenance run. Only that member picks it up. */
   runRole: (id: string, opts: RoleRunOptions = {}) => post<Task>(`/agents/${id}/run`, opts),
   agents: () => req<Agent[]>("/agents"),
-  crewSchedules: (id: string) => req<CrewSchedule[]>(`/agents/${id}/schedules`),
+  /** Every member's schedules in one request, so the crew page polls once rather than per member. */
+  crewSchedules: () => req<CrewSchedule[]>("/crew/schedules"),
   saveCrewSchedule: (id: string, input: CrewScheduleInput, scheduleId?: string) =>
     post<CrewSchedule>(`/agents/${id}/schedules${scheduleId ? `/${scheduleId}` : ""}`, input),
   removeCrewSchedule: (id: string, scheduleId: string) => req<{ ok: true }>(`/agents/${id}/schedules/${scheduleId}`, { method: "DELETE" }),

@@ -1,66 +1,204 @@
-import { useEffect, useState } from "react";
-import { crewScheduleLabel, MAINTENANCE_ROLE, type Agent, type CrewSchedule, type CrewScheduleInput, type Repo } from "@crane/contracts";
+import { useId, useState } from "react";
+import { MAINTENANCE_ROLE, type Agent, type CrewSchedule, type CrewScheduleInput, type Repo } from "@crane/contracts";
 import { api } from "../lib/api";
+import {
+  browserTimezone,
+  DAY_PRESETS,
+  daysLabel,
+  newScheduleInput,
+  schedulePreview,
+  timeOfDayLabel,
+  WEEK,
+  whenLabel,
+} from "../lib/schedule";
 import { useToast } from "./bits";
+import { SheetBody, SheetFoot, SheetHead } from "./Sheet";
 
-/** Schedule summary stays on the member row; configuration is one tap away. */
-export function CrewSchedules({ member, repos }: { member: Agent; repos: Repo[] }) {
+const canPreApprove = (member: Agent) => !!member.role && MAINTENANCE_ROLE[member.role].autonomy !== "observe";
+
+/** Only what the API saves, leaving out next-fire and outcome fields. */
+function toInput({ repoId, daysMask, localTime, timezone, preApprove, enabled }: CrewSchedule): CrewScheduleInput {
+  return { repoId, daysMask, localTime, timezone, preApprove, enabled };
+}
+
+/** A member's schedules as they stand, each with its next run. Editing opens its own view. */
+export function ScheduleList({ member, repos, schedules, error, reload, onEdit }: {
+  member: Agent;
+  repos: Repo[];
+  schedules: CrewSchedule[] | null;
+  error: string | null;
+  reload: () => Promise<void>;
+  onEdit: (schedule: CrewSchedule) => void;
+}) {
   const toast = useToast();
-  const [list, setList] = useState<CrewSchedule[]>([]);
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<CrewScheduleInput | null>(null);
-  const [editing, setEditing] = useState<string>();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const load = () => api.crewSchedules(member.id).then((s) => { setList(s); setError(null); }).catch((e: Error) => setError(e.message));
-  useEffect(() => { void load(); const timer = setInterval(() => void load(), 10_000); return () => clearInterval(timer); }, [member.id]);
-  const next = list.find((s) => s.enabled);
-  const run = async (fn: () => Promise<unknown>) => {
-    setBusy(true);
-    try { await fn(); await load(); setDraft(null); }
-    catch (e) { toast({ text: (e as Error).message }); }
-    finally { setBusy(false); }
+  const [busy, setBusy] = useState<string | null>(null);
+  const toggle = async (s: CrewSchedule) => {
+    setBusy(s.id);
+    try {
+      await api.saveCrewSchedule(member.id, { ...toInput(s), enabled: !s.enabled }, s.id);
+      await reload();
+    } catch (e) {
+      toast({ text: (e as Error).message });
+    } finally {
+      setBusy(null);
+    }
   };
-  const canApprove = !!member.role && MAINTENANCE_ROLE[member.role].autonomy !== "observe";
+  if (error && !schedules) {
+    return <p role="alert" className="crew-note">{error} <button type="button" className="tuning-change" onClick={() => void reload()}>Retry</button></p>;
+  }
+  if (!schedules) return <p className="muted crew-note">Loading schedules…</p>;
+  if (schedules.length === 0) return <p className="muted crew-note">Nothing recurring yet.</p>;
   return (
-    <div className="crew-schedules">
-      <button type="button" className="tuning-change" aria-expanded={open} aria-label={`Schedules for ${member.name}`} onClick={() => setOpen(!open)}>
-        {next ? `Next: ${new Date(next.nextFireAt).toLocaleString(undefined, { timeZone: next.timezone, weekday: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })}`
-          : list.length ? "Schedules paused" : "Add schedule"}
-      </button>
-      {open && <div className="crew-schedule-editor">
-        <p className="muted">Runs use the member's maintenance role. Missed slots catch up once; on-call, paused, and open runs skip the slot.</p>
-        {!member.role && <p className="muted">Choose a maintenance role in this member's settings before adding a schedule.</p>}
-        {error && <p role="alert">{error} <button type="button" className="tuning-change" onClick={() => void load()}>Retry</button></p>}
-        {list.map((s) => <div className="crew-schedule-item" key={s.id}>
-          <div><strong>{crewScheduleLabel(s)}</strong> · {repos.find((r) => r.id === s.repoId)?.name ?? s.repoId}
-            <div className="muted">{s.enabled ? "Enabled" : "Paused"} · {s.preApprove ? "Pre-approved" : "Waits for review"}</div>
-            {s.lastOutcome && <div className="muted">{s.lastOutcome}</div>}
-          </div>
-          <div className="crew-schedule-actions">
-            <button type="button" className="btn btn-quiet btn-sm" disabled={busy} onClick={() => { setDraft(s); setEditing(s.id); }}>Edit</button>
-            <button type="button" className="btn btn-quiet btn-sm" disabled={busy} onClick={() => void run(() => api.saveCrewSchedule(member.id, { ...s, enabled: !s.enabled }, s.id))}>{s.enabled ? "Pause" : "Resume"}</button>
-            <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void run(() => api.removeCrewSchedule(member.id, s.id))}>Remove</button>
-          </div>
-        </div>)}
-        {draft ? <form aria-label={`Schedule for ${member.name}`} onSubmit={(e) => { e.preventDefault(); void run(() => api.saveCrewSchedule(member.id, draft, editing)); }}>
-          <fieldset disabled={busy} className="crew-schedule-fields">
-            <label className="tuning-field">Repo<select className="input" value={draft.repoId} required onChange={(e) => setDraft({ ...draft, repoId: e.target.value })}>
-              <option value="">Choose a repo</option>{repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </select></label>
-            <div className="tuning-field"><span>Days</span><div className="crew-schedule-days">{["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d, i) =>
-              <label key={d}><input type="checkbox" checked={!!(draft.daysMask & (1 << i))} onChange={() => setDraft({ ...draft, daysMask: draft.daysMask ^ (1 << i) })} />{d}</label>)}</div></div>
-            <label className="tuning-field">Local time<input type="time" className="input" required value={draft.localTime} onChange={(e) => setDraft({ ...draft, localTime: e.target.value })} /></label>
-            <label className="tuning-field">Timezone<input className="input" required value={draft.timezone} placeholder="America/Toronto" onChange={(e) => setDraft({ ...draft, timezone: e.target.value })} /></label>
-            <label><input type="checkbox" checked={draft.preApprove} disabled={!canApprove && !draft.preApprove} onChange={(e) => setDraft({ ...draft, preApprove: e.target.checked })} /> Pre-approve each run</label>
-            <p className="muted">{canApprove ? "Pre-approved runs merge after their checks pass. Other runs wait for review." : "Investigate-only roles have nothing to merge."} Spring clock gaps skip that day; repeated times run once at the earlier instant.</p>
-            <div className="crew-schedule-actions"><button className="btn btn-primary btn-sm" disabled={!draft.daysMask}>Save schedule</button><button className="btn btn-ghost btn-sm" type="button" onClick={() => setDraft(null)}>Cancel</button></div>
+    <ul className="schedule-list">
+      {schedules.map((s) => {
+        const tz = s.timezone === browserTimezone() ? "" : ` ${s.timezone}`;
+        return (
+          <li key={s.id} className="schedule-item">
+            <div className="schedule-item-main">
+              <strong>{daysLabel(s.daysMask)} at {timeOfDayLabel(s.localTime)}{tz}</strong>
+              <span className="muted">
+                {repos.find((r) => r.id === s.repoId)?.name ?? s.repoId}
+                {" · "}{s.enabled ? `Next run: ${whenLabel(Date.parse(s.nextFireAt), { timeZone: s.timezone })}` : "Paused"}
+                {" · "}{s.preApprove ? "Pre-approved" : "Waits for review"}
+              </span>
+              {s.preApprove && !canPreApprove(member) && <span className="error-text">This run gets skipped: investigate-only roles can't be pre-approved. Edit it to turn pre-approval off.</span>}
+              {s.lastOutcome && <span className="muted">Last: {s.lastOutcome}</span>}
+            </div>
+            <div className="schedule-item-actions">
+              <button type="button" className="btn btn-quiet btn-sm" disabled={!!busy} onClick={() => onEdit(s)} aria-label={`Edit ${daysLabel(s.daysMask)} schedule`}>Edit</button>
+              <button type="button" className="btn btn-quiet btn-sm" disabled={!!busy} onClick={() => void toggle(s)}>{s.enabled ? "Pause" : "Resume"}</button>
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+let timezones: string[] | null = null;
+const allTimezones = () => (timezones ??= Intl.supportedValuesOf("timeZone"));
+
+/** Add or change a recurring run. Starts ready to save, and previews the next run as it changes. */
+export function ScheduleForm({ member, repos, schedule, existing, reload, onDone, onBack }: {
+  member: Agent;
+  repos: Repo[];
+  schedule: CrewSchedule | null;
+  existing: CrewSchedule[];
+  reload: () => Promise<void>;
+  onDone: () => void;
+  onBack: () => void;
+}) {
+  const toast = useToast();
+  const formId = useId();
+  const [draft, setDraft] = useState<CrewScheduleInput>(() => (schedule ? toInput(schedule) : newScheduleInput(repos, existing)));
+  const [changingZone, setChangingZone] = useState(() => draft.timezone !== browserTimezone());
+  const [busy, setBusy] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const preview = schedulePreview(draft);
+  const role = member.role ? MAINTENANCE_ROLE[member.role] : null;
+  const act = async (fn: () => Promise<string>) => {
+    setBusy(true);
+    setError(null);
+    try {
+      toast({ text: await fn() });
+      await reload();
+      onDone();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const save = () => act(async () => {
+    const saved = await api.saveCrewSchedule(member.id, draft, schedule?.id);
+    return saved.enabled ? `Schedule saved. Next run: ${whenLabel(Date.parse(saved.nextFireAt), { timeZone: saved.timezone })}` : "Schedule saved";
+  });
+  const remove = () => act(async () => {
+    await api.removeCrewSchedule(member.id, schedule!.id);
+    return "Schedule removed";
+  });
+
+  return (
+    <>
+      <SheetHead onBack={onBack} title={schedule ? "Edit schedule" : "New schedule"} subtitle={`${member.name}${role ? ` · ${role.label}` : ""}`} />
+      <SheetBody>
+        <form id={formId} onSubmit={(e) => { e.preventDefault(); if ("next" in preview) void save(); }}>
+          <fieldset disabled={busy} className="schedule-fields">
+            {repos.length > 1 && (
+              <label className="tuning-field">
+                <span>Repository</span>
+                <select className="input" value={draft.repoId} required onChange={(e) => setDraft({ ...draft, repoId: e.target.value })}>
+                  {!draft.repoId && <option value="">Choose a repo</option>}
+                  {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              </label>
+            )}
+            <div className="tuning-field">
+              <span id={`${formId}-days`}>Repeats</span>
+              <div className="pills" role="group" aria-labelledby={`${formId}-days`}>
+                {DAY_PRESETS.map((p) => (
+                  <button type="button" key={p.mask} className={`pill-btn${draft.daysMask === p.mask ? " on" : ""}`} aria-pressed={draft.daysMask === p.mask}
+                    onClick={() => setDraft({ ...draft, daysMask: p.mask })}>{p.label}</button>
+                ))}
+              </div>
+              <div className="week" role="group" aria-label="Days of the week">
+                {WEEK.map((d) => (
+                  <label className="pill week-day" key={d.bit}>
+                    <input type="checkbox" checked={!!(draft.daysMask & (1 << d.bit))} onChange={() => setDraft({ ...draft, daysMask: draft.daysMask ^ (1 << d.bit) })} />
+                    <span>{d.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <label className="tuning-field schedule-time">
+              <span>Time</span>
+              <input type="time" className="input" required value={draft.localTime} onChange={(e) => setDraft({ ...draft, localTime: e.target.value })} />
+            </label>
+            {changingZone ? (
+              <label className="tuning-field">
+                <span>Timezone</span>
+                <input className="input" required list={`${formId}-zones`} value={draft.timezone} placeholder={browserTimezone()}
+                  onChange={(e) => setDraft({ ...draft, timezone: e.target.value })} />
+                <datalist id={`${formId}-zones`}>{allTimezones().map((z) => <option key={z} value={z} />)}</datalist>
+              </label>
+            ) : (
+              <p className="muted crew-note">In {draft.timezone}. <button type="button" className="tuning-change" onClick={() => setChangingZone(true)} aria-label="Change timezone">Change</button></p>
+            )}
+            {(canPreApprove(member) || draft.preApprove) && (
+              <label className="check">
+                <input type="checkbox" checked={draft.preApprove} onChange={(e) => setDraft({ ...draft, preApprove: e.target.checked })} />
+                <span>
+                  Pre-approve each run
+                  <small>Runs merge after their checks pass. Without this, each one waits for your review.</small>
+                </span>
+              </label>
+            )}
+            {"next" in preview ? (
+              <p className="when-summary"><span className="muted">Next run:</span> <strong>{preview.next}</strong></p>
+            ) : (
+              <p className="when-summary error-text" role="alert">{preview.problem}</p>
+            )}
+            <details className="gates schedule-rules">
+              <summary>When a slot gets skipped</summary>
+              <p className="muted">Missed slots catch up once. A slot is skipped while this member is on-call, the factory is paused, or their last run is still open. Spring clock gaps skip that day; repeated times run once at the earlier instant.</p>
+            </details>
           </fieldset>
-        </form> : <button type="button" className="btn btn-quiet btn-sm" disabled={busy || !member.role} onClick={() => {
-          setEditing(undefined);
-          setDraft({ repoId: repos.find((r) => r.isFactory)?.id ?? repos[0]?.id ?? "", daysMask: 62, localTime: "09:00", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, preApprove: false, enabled: true });
-        }}>Add schedule</button>}
-      </div>}
-    </div>
+        </form>
+      </SheetBody>
+      {removing ? (
+        <SheetFoot note={error ? <span className="error-text" role="alert">{error}</span> : "Remove this schedule?"}>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setRemoving(false)}>Keep</button>
+          <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void remove()}>Remove</button>
+        </SheetFoot>
+      ) : (
+        <SheetFoot note={error ? <span className="error-text" role="alert">{error}</span> : schedule ? (
+          <button type="button" className="btn btn-ghost btn-sm schedule-remove" disabled={busy} onClick={() => setRemoving(true)}>Remove</button>
+        ) : undefined}>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={onBack}>Cancel</button>
+          <button type="submit" form={formId} className="btn btn-primary btn-sm" disabled={busy || !("next" in preview)}>Save schedule</button>
+        </SheetFoot>
+      )}
+    </>
   );
 }

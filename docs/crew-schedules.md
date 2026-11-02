@@ -1,11 +1,12 @@
 # Recurring crew maintenance
 
-Give a member a maintenance role on Crew, then choose **Add schedule** under
-their row. Select a repo, days, local time, and IANA timezone. **Pre-approve
-each run** allows runs that can change code to enter the merge queue after
-their checks pass; investigate-only roles cannot be pre-approved. Editing or
-removing a schedule affects future runs; use the task page to undo an existing
-run's pre-approval.
+Open a member on Crew, give them a maintenance role, then choose **Add
+schedule**. It starts ready to save: weekday mornings in your timezone, on a
+repo they don't already cover. Change the repo, days, or time as needed, and
+the form shows when the next run would be. **Pre-approve each run** allows runs
+that can change code to enter the merge queue after their checks pass;
+investigate-only roles cannot be pre-approved. Editing or removing a schedule
+affects future runs; use the task page to undo an existing run's pre-approval.
 
 The CLI exposes the same controls:
 
@@ -55,17 +56,18 @@ approval or merge; typecheck and unit tests do not provide visual validation.
    ```sh
    CRANE_HOME=/tmp/crane-crew-review node --import tsx src/cli/index.ts agents configure jib --role tests
    CRANE_HOME=/tmp/crane-crew-review node --import tsx src/cli/index.ts agents schedule add jib --repo payments-api --days 1,2,3,4,5 --time 09:00 --timezone America/Toronto --pre-approve
-   npm run screenshot -- /crew --url http://127.0.0.1:4472 --size 1280x800 --click '[aria-label="Schedules for Jib"]' --out .crane/screenshots/crew-wide.png
-   npm run screenshot -- /crew --url http://127.0.0.1:4472 --size 1280x600 --click '[aria-label="Schedules for Jib"]' --out .crane/screenshots/crew-short.png
-   npm run screenshot -- /crew --url http://127.0.0.1:4472 --size 390x844 --click '[aria-label="Schedules for Jib"]' --out .crane/screenshots/crew-phone.png
+   npm run screenshot -- /crew --url http://127.0.0.1:4472 --size 1280x800 --wait-for '.crew-row' --click '[aria-label="Jib: open details"]' --wait-for '.schedule-item' --out .crane/screenshots/crew-wide.png
+   npm run screenshot -- /crew --url http://127.0.0.1:4472 --size 1280x600 --wait-for '.crew-row' --click '[aria-label="Jib: open details"]' --wait-for '.schedule-item' --out .crane/screenshots/crew-short.png
+   npm run screenshot -- /crew --url http://127.0.0.1:4472 --size 390x844 --wait-for '.crew-row' --click '[aria-label="Jib: open details"]' --wait-for '.schedule-item' --out .crane/screenshots/crew-phone.png
    ```
 
    Use another unused temporary directory if that demo path already exists.
-   On `/crew`, inspect the collapsed Next summary, open schedules, Edit, all day
-   checkboxes, time/timezone fields, pre-approval on/off, validation errors,
-   Save/Cancel, Pause/Resume, and Remove. Capture the open edit form too, adding
-   `--click '.crew-schedule-item button'` before `--out` in each command above
-   and using `crew-edit-wide.png`, `crew-edit-short.png`, `crew-edit-phone.png`.
+   On `/crew`, inspect the next-run line on the row, the member sheet's schedule
+   list, Edit, the day presets and day pills, time/timezone fields, pre-approval
+   on/off, validation errors, Save/Cancel, Pause/Resume, and Remove. Capture the
+   open edit form too, adding `--click '.schedule-item button'` before `--out` in
+   each command above and using `crew-edit-wide.png`, `crew-edit-short.png`,
+   `crew-edit-phone.png`.
    Verify paused and last-outcome text. Choose a near-future schedule slot in
    the editor and wait for its run (ensure Jib has no open assigned run); inspect
    the task's origin and pre-approval. Capture `/tasks/<actual-task-id>` with:
