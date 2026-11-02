@@ -4,14 +4,31 @@ import type { Store } from "../core/store.js";
 
 const hasUiFiles = (files: string[]) => files.some(file => /(^|\/)(web|public)\/|\.(tsx|jsx|css|scss|html|vue|svelte)$/i.test(file));
 
-export function requireCandidateVisualReview(store: Store, taskId: string, commit: string, tree: string, branchCommit: string, changedFiles: string[]): void {
+/** The operator recorded a decision, as opposed to Crane classifying the work or still waiting for one. */
+export function hasVisualDecision(review: VisualReview | null | undefined): review is VisualReview {
+  return review?.status === "inspected" || review?.status === "waived";
+}
+
+/**
+ * Whether a merge candidate may land. A decision covers the task's own work, so
+ * it carries across a clean merge onto a newer default branch: that adds only
+ * what has already landed. It stops covering the candidate when the branch gets
+ * new commits, or when `conflictChangedUi` says an agent changed UI files while
+ * resolving conflicts, since nobody has seen that result.
+ */
+export function requireCandidateVisualReview(store: Store, taskId: string, commit: string, tree: string, branchCommit: string, changedFiles: string[], conflictChangedUi = false): void {
   const review = store.getTask(taskId)?.visualReview;
-  // A non-UI classification applies only to the branch Crane classified, not subsequent edits.
-  if (review?.status === "not_required" && review.commit === branchCommit && !hasUiFiles(changedFiles)) return;
-  if (review && (review.status === "inspected" || review.status === "waived") && review.tree === tree) return;
+  if (hasVisualDecision(review) && review.tree === tree) return;
+  if (!conflictChangedUi) {
+    // A non-UI classification applies only to the branch Crane classified, not subsequent edits.
+    if (review?.status === "not_required" && review.commit === branchCommit && !hasUiFiles(changedFiles)) return;
+    if (hasVisualDecision(review) && (review.branchCommit ?? review.commit) === branchCommit) return;
+  }
   store.updateTask(taskId, { visualReview: {
-    status: "pending", commit, tree, decidedAt: null,
-    note: "Inspect this candidate before merging, or explicitly waive visual review. The candidate may have changed during merging.",
+    status: "pending", commit, tree, branchCommit, decidedAt: null,
+    note: conflictChangedUi
+      ? "An agent changed UI files while resolving conflicts. Inspect this merge before it lands, or explicitly waive visual review."
+      : "No visual decision covers these changes. Inspect this candidate before merging, or explicitly waive visual review.",
   } });
   throw new Error("Candidate visual inspection or an explicit operator waiver is required before merging");
 }

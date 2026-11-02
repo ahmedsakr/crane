@@ -52,6 +52,8 @@ export interface MergeRequest {
   resolveConflicts: (ctx: { cwd: string; base: string; files: string[]; deferredDependencies?: string[] }) => Promise<void>;
   /** How many times to start over when the remote moves under us. */
   maxAttempts?: number;
+  /** The commit the operator's visual decision is on. If it's a merge that still fits, it lands as is. */
+  reviewedCandidate?: string;
 }
 
 export interface MergeResult {
@@ -219,6 +221,14 @@ async function buildMerge(req: MergeRequest, base: { sha: string; label: string 
   const { workdir: cwd, task, emit } = req;
   const branch = task.branch!;
   const branchSha = (await revParse(cwd, `refs/heads/${branch}`))!;
+  // Resolving the same conflicts again could give a result the operator never saw.
+  const reviewed = req.reviewedCandidate;
+  if (reviewed && reviewed !== branchSha && (await revParse(cwd, reviewed))
+    && (await isAncestor(cwd, branchSha, reviewed)) && (await isAncestor(cwd, base.sha, reviewed))) {
+    await g(cwd, ["checkout", "--quiet", "--detach", reviewed]);
+    emit("note", `Using the merge you reviewed, ${reviewed.slice(0, 7)}, which is still up to date with ${base.label}`);
+    return reviewed;
+  }
   await g(cwd, ["checkout", "--quiet", "--detach", base.sha]);
   const message = `Merge branch '${branch}'\n\nTask ${task.id}: ${task.title}`;
   const id = await identity(cwd);

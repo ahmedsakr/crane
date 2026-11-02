@@ -15,7 +15,7 @@ import { worktreesDir } from "../core/paths.js";
 import { retainScreenshots } from "../core/screenshots.js";
 import { siblingTasksFor } from "./task-context.js";
 import { OperatorActions } from "./actions.js";
-import { candidateVisualReview, requireCandidateVisualReview, visualReviewRequired } from "./visual-review.js";
+import { candidateVisualReview, hasVisualDecision, requireCandidateVisualReview, visualReviewRequired } from "./visual-review.js";
 
 const CREW = ["Jib", "Boom", "Hoist", "Trolley", "Rigger", "Winch", "Gantry", "Mast"];
 
@@ -462,6 +462,7 @@ export class Factory {
       if (!task.branch) throw new MergeError("This task has no branch to merge");
       const workdir = task.worktree ?? join(worktreesDir(), task.id);
       this.store.updateTask(task.id, { worktree: workdir });
+      let conflictChangedUi = false;
 
       const result = await landTask({
         repo,
@@ -470,7 +471,8 @@ export class Factory {
         emit,
         signal: ac.signal,
         checks: this.store.repoChecks(repo.id),
-        verifyVisualReview: async (commit, tree, branchCommit, changedFiles) => requireCandidateVisualReview(this.store, task.id, commit, tree, branchCommit, changedFiles),
+        reviewedCandidate: hasVisualDecision(task.visualReview) ? task.visualReview.commit : undefined,
+        verifyVisualReview: async (commit, tree, branchCommit, changedFiles) => requireCandidateVisualReview(this.store, task.id, commit, tree, branchCommit, changedFiles, conflictChangedUi),
         recordValidation: (run) => {
           const report = this.store.getTask(task.id)?.report ?? { summary: "", findings: [], changedFiles: [] };
           this.store.updateTask(task.id, { report: { ...report, validation: [...(report.validation ?? []), run] } });
@@ -488,10 +490,7 @@ export class Factory {
             // landTask runs these as merge checks once the conflicts are resolved.
             checks: this.store.repoChecks(repo.id),
           });
-          if (current.visualReview?.status === "not_required" && visualReviewRequired({ ...r.report, changedFiles: [...r.report.changedFiles, ...files] })) {
-            this.store.updateTask(task.id, { visualReview: { ...current.visualReview, status: "pending",
-              note: "Conflict resolution requires a visual decision for the resulting candidate." } });
-          }
+          conflictChangedUi = visualReviewRequired({ ...r.report, changedFiles: [...r.report.changedFiles, ...files] });
           if (r.report.screenshots?.length) {
             const screenshots = retainScreenshots(task.id, cwd, r.report.screenshots, message => emit("note", message));
             const report = this.store.getTask(task.id)?.report;

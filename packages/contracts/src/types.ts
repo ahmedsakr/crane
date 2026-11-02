@@ -201,6 +201,8 @@ export interface VisualReview {
   status: "pending" | "not_required" | "inspected" | "waived";
   commit: string;
   tree: string;
+  /** The task branch this candidate came from, when `commit` is a merge of it rather than its tip. */
+  branchCommit?: string;
   note: string;
   decidedAt: string | null;
 }
