@@ -63,7 +63,13 @@ export async function installDependencies(
   await checkDependencyDirs(path);
   const fingerprint = await dependencyFingerprint(path);
   const prepared = await readFile(join(path, PREPARED), "utf8").catch(() => null);
-  if (prepared === fingerprint && await localLinksMatch(path)) return null;
+  const invalidation = prepared === null
+    ? "the preparation marker is missing or unreadable"
+    : prepared !== fingerprint
+      ? "dependency inputs changed since preparation (package manifests, lockfiles, or package manager settings)"
+      : await localLinksMismatch(path);
+  if (!invalidation) return null;
+  const refresh = ` · preparation not reusable: ${invalidation}`;
   const started = Date.now();
   // A failed refresh must not leave a previous preparation marked as valid.
   await rm(join(path, PREPARED), { force: true });
@@ -72,9 +78,9 @@ export async function installDependencies(
     try {
       skipped = await copyRejection(opts.from, path, lock, fingerprint);
       if (!skipped) {
-        opts.onProgress?.("Copying dependencies from your checkout");
+        opts.onProgress?.(`Copying dependencies from your checkout${refresh}`);
         const copied = await copyInto(opts.from, path, fingerprint, opts.signal);
-        return `Copied dependencies from your checkout (${copied.join(", ")}) in ${elapsed(Date.now() - started)}`;
+        return `Copied dependencies from your checkout (${copied.join(", ")}) in ${elapsed(Date.now() - started)}${refresh}`;
       }
     } catch (err) {
       if (opts.signal?.aborted) throw err;
@@ -83,7 +89,7 @@ export async function installDependencies(
     }
   }
   const command = [lock.cmd, ...lock.args].join(" ");
-  const because = skipped ? ` · didn't copy from your checkout: ${skipped}` : "";
+  const because = refresh + (skipped ? ` · didn't copy from your checkout: ${skipped}` : "");
   opts.onProgress?.(`Installing dependencies (${command})${because}`);
   await run(lock.cmd, lock.args, {
     cwd: path,
@@ -148,22 +154,31 @@ async function dependencyFingerprint(path: string): Promise<string> {
 
 /** npm records workspace/local links in the lockfile, including their exact destinations. */
 async function localLinksMatch(path: string): Promise<boolean> {
-  if (lockfileFor(path)?.file !== "package-lock.json") return true;
+  return await localLinksMismatch(path) === null;
+}
+
+/** Explain the same link verification used for reuse, without trusting a stale marker. */
+async function localLinksMismatch(path: string): Promise<string | null> {
+  if (lockfileFor(path)?.file !== "package-lock.json") return null;
   try {
     const root = await realpath(path);
     const lock: NpmLock = JSON.parse(await readFile(join(path, "package-lock.json"), "utf8"));
-    if (!lock.packages) return true; // npm v1 locks have no workspace link entries.
+    if (!lock.packages) return null; // npm v1 locks have no workspace link entries.
     for (const [file, pkg] of Object.entries(lock.packages)) {
       if (!pkg.link) continue;
-      if (!pkg.resolved || !file.includes("node_modules/")) return false;
+      if (!pkg.resolved || !file.includes("node_modules/")) return `invalid local package link entry: ${file}`;
       const expected = resolve(root, pkg.resolved);
-      if (!within(root, expected)) return false;
-      const [target, linked] = await Promise.all([realpath(expected), realpath(join(root, file))]);
-      if (!within(root, target) || target !== linked) return false;
+      if (!within(root, expected)) return `local package link ${file} resolves outside the worktree`;
+      try {
+        const [target, linked] = await Promise.all([realpath(expected), realpath(join(root, file))]);
+        if (!within(root, target) || target !== linked) return `local package link ${file} does not point to ${pkg.resolved} inside the worktree`;
+      } catch (err) {
+        return `local package link ${file} or its target ${pkg.resolved} is missing or unreadable: ${firstLine(err)}`;
+      }
     }
-    return true;
-  } catch {
-    return false;
+    return null;
+  } catch (err) {
+    return `could not verify local package links: ${firstLine(err)}`;
   }
 }
 
