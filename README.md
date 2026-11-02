@@ -87,7 +87,7 @@ Reports classify UI work with `visualReview: { "required": true, "reason": "chan
 
 - [ ] In an approved environment, use an isolated checkout of the candidate commit shown in **Visual review** or `crane show <id>` (which can be a merge candidate rather than the branch tip). Build that candidate's UI (`npm run build -w web` for Crane), then run the repository's existing screenshot tool against every changed view and relevant state. Crane's tool boots a demo serving that checkout's `web/dist`; if using `--url` instead, verify the server serves the candidate build and has the needed review data.
 - [ ] Capture and open the images at wide **1280x800**, short **1280x600**, and phone **390x844** sizes (plus any sizes required by the task). Inspect clipping, overflow, layout, and the changed behavior; taking a screenshot alone is not inspection.
-- [ ] Record the candidate commit, reviewed routes and states, sizes, screenshot paths, and inspection result in the task's approval note or review record. If inspection is waived, explicitly record the operator's waiver, reason, and unreviewed views and sizes. Recheck affected views if the candidate changes, including during conflict resolution.
+- [ ] Use the task page's **Visual review** form or `crane visual-review` to record the candidate commit, reviewed routes and states, sizes, screenshot paths, and inspection result in the structured visual-review record. If inspection is waived, use the form's waiver option or the command's `--waive` flag to record the operator's waiver, reason, and unreviewed views and sizes. Recheck affected views and record a fresh decision if the candidate changes, including during conflict resolution.
 
 For example, run these commands in the candidate checkout in the approved environment, replacing `/tasks` and adding interaction steps for the changed states:
 
@@ -98,7 +98,21 @@ npm run screenshot -- /tasks --size 1280x600 --out .crane/screenshots/tasks-shor
 npm run screenshot -- /tasks --size 390x844 --out .crane/screenshots/tasks-phone.png
 ```
 
-For a task waiting for review, `crane approve <id> --message "Visual review complete: candidate <sha>; /tasks; 1280x800, 1280x600, 390x844; images <paths>; no clipping or overflow"` records the review in the task's activity when approving. To waive it, use a note such as `Visual review waived by operator: candidate <sha>; <reason>; unreviewed: <views and sizes>`. Keep screenshot files available at the recorded paths; an approval note does not upload or retain operator-created images automatically. An agent must leave the checklist pending until the operator records completion or a waiver.
+For a task waiting for review, record inspection of the full candidate commit shown in **Visual review** or `crane show <id>`, then approve:
+
+```bash
+crane visual-review <id> --commit <full-sha> -m "/tasks; 1280x800, 1280x600, 390x844; images <paths>; no clipping or overflow" &&
+crane approve <id>
+```
+
+Alternatively, explicitly waive inspection for that candidate, then approve:
+
+```bash
+crane visual-review <id> --commit <full-sha> --waive -m "<reason>; unreviewed: <views and sizes>" &&
+crane approve <id>
+```
+
+Keep screenshot files available at the recorded paths; the visual-review record does not upload or retain operator-created images automatically. An agent must leave the checklist pending until the operator records inspection or a waiver in the structured visual-review record.
 
 ## Quick start
 
