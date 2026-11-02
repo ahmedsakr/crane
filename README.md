@@ -215,6 +215,10 @@ npm run typecheck
 npm test
 ```
 
+`npm run build` transpiles `src/` to `dist/` with esbuild and doesn't check
+backend types, so run `npm run typecheck` to catch type errors. `prepack` runs it
+before packing.
+
 The private workspaces compile to ESM and declarations before build, typecheck,
 tests, dev, and the source CLI. `npm run build:packages` checks workspace links,
 then runs `tsc -b tsconfig.packages.json` to build packages in dependency order;
