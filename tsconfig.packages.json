@@ -4,6 +4,7 @@
     { "path": "./packages/contracts" },
     { "path": "./packages/agent-protocol" },
     { "path": "./packages/agent-policy" },
-    { "path": "./packages/worktree-deps" }
+    { "path": "./packages/worktree-deps" },
+    { "path": "./packages/agent-drivers" }
   ]
 }

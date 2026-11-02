@@ -1,7 +1,5 @@
 import type { AgentDriver } from "@crane/agent-protocol";
-import { ClaudeCodeDriver } from "../agents/claude-code.js";
-import { CodexDriver } from "../agents/codex.js";
-import { SimulatedDriver } from "../agents/simulated.js";
+import { ClaudeCodeDriver, CodexDriver, SimulatedDriver } from "@crane/agent-drivers";
 import {
   DRIVER_LABEL,
   DRIVER_NAMES,

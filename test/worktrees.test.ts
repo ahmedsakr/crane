@@ -8,7 +8,7 @@ import { Store } from "../src/core/store.js";
 import { OperatorActions } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import { createWorktree } from "../src/factory/git.js";
-import { SimulatedDriver } from "../src/agents/simulated.js";
+import { SimulatedDriver } from "@crane/agent-drivers";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
 

@@ -663,7 +663,7 @@ export interface TaskDraft {
   why: { kind: string; repo: string; autonomy: string };
 }
 
-/** The agents Crane can run tasks on. Each one is a driver in `src/agents/`. */
+/** The agents Crane can run tasks on. Each one is a driver in `@crane/agent-drivers`. */
 export const DRIVER_NAMES = ["claude-code", "codex", "simulated"] as const;
 export type DriverName = (typeof DRIVER_NAMES)[number];
 

@@ -4,9 +4,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CommandEvidence } from "@crane/contracts";
-import { CommandTracker, safeCommand } from "../src/core/command-evidence.js";
+import { CommandTracker, safeCommand } from "../packages/agent-drivers/src/command-evidence.js";
 import { Store } from "../src/core/store.js";
-import { resumePrompt, userPrompt } from "../src/agents/prompts.js";
+import { resumePrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
 
 test("command evidence correlates completions, distinguishes failures and bounds retention", () => {
   const events: CommandEvidence[] = [];

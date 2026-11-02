@@ -9,7 +9,7 @@ import { AgentRunError, type AgentDriver, type RunContext, type SiblingTask } fr
 import { Store } from "../src/core/store.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import { siblingTasksFor } from "../src/factory/task-context.js";
-import { resumePrompt, userPrompt } from "../src/agents/prompts.js";
+import { resumePrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-context-home-"));
 

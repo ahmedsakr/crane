@@ -7,7 +7,7 @@ import { LOOKOUTS, lookoutsLabel, type Autonomy, type NewTask } from "@crane/con
 import { Store } from "../src/core/store.js";
 import { OperatorActions, checkLookouts } from "../src/factory/actions.js";
 import { createApp } from "../src/server/app.js";
-import { resumePrompt, userPrompt } from "../src/agents/prompts.js";
+import { resumePrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-lookouts-home-"));
 

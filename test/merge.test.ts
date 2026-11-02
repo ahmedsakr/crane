@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { dependencyInputs, landTask as land, MergeError, type MergeRequest } from "../src/factory/merge.js";
 const landTask = (req: MergeRequest) => land({ checks: ["true"], ...req });
-import { keepBothSides } from "../src/agents/simulated.js";
+import { keepBothSides } from "../packages/agent-drivers/src/simulated.js";
 import { installDependencies } from "@crane/worktree-deps";
 import type { Repo, Task } from "@crane/contracts";
 
@@ -460,7 +460,7 @@ test("factory: a task goes from work to review to merged and pushed, through a c
   const { Store } = await import("../src/core/store.js");
   const { OperatorActions } = await import("../src/factory/actions.js");
   const { Factory } = await import("../src/factory/orchestrator.js");
-  const { SimulatedDriver } = await import("../src/agents/simulated.js");
+  const { SimulatedDriver } = await import("@crane/agent-drivers");
 
   const root = mkdtempSync(join(tmpdir(), "crane-e2e-"));
   const origin = join(root, "origin.git");
@@ -530,7 +530,7 @@ test("factory: a pre-approved task skips review and lands once its checks pass",
   const { Store } = await import("../src/core/store.js");
   const { OperatorActions } = await import("../src/factory/actions.js");
   const { Factory } = await import("../src/factory/orchestrator.js");
-  const { SimulatedDriver } = await import("../src/agents/simulated.js");
+  const { SimulatedDriver } = await import("@crane/agent-drivers");
 
   const root = mkdtempSync(join(tmpdir(), "crane-e2e-"));
   const origin = join(root, "origin.git");
