@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installDependencies, type InstallDependenciesOptions } from "@crane/worktree-deps";
-import { copyDependencies, npmInstallMatches } from "../packages/worktree-deps/src/deps.js";
+import { copyDependencies, dependencyFingerprint, npmInstallMatches } from "../packages/worktree-deps/src/deps.js";
 import { elapsed } from "../src/factory/elapsed.js";
 
 function fixture(t: { after(fn: () => void): void }) {
@@ -68,6 +68,183 @@ test("dependencies: manifests and workspace configuration invalidate preparation
     assert.match((await installDependencies(root))!, /Installed dependencies/, file);
     assert.ok(!existsSync(sentinel), "the clean install removed the old tree");
   }
+});
+
+type Manifest = Record<string, unknown> & { scripts?: Record<string, string> };
+
+function editManifest(root: string, file: string, edit: (manifest: Manifest) => void) {
+  const path = join(root, file);
+  const manifest = JSON.parse(readFileSync(path, "utf8")) as Manifest;
+  edit(manifest);
+  writeFileSync(path, JSON.stringify(manifest));
+}
+
+/** Runs `edit` on a prepared tree and returns whether the install survived it. */
+async function reusedAfter(root: string, edit: () => void): Promise<boolean> {
+  const sentinel = join(root, "node_modules/sentinel");
+  writeFileSync(sentinel, "from the earlier install");
+  edit();
+  await installDependencies(root);
+  return existsSync(sentinel);
+}
+
+test("dependencies: build and dev script edits keep the prepared install", async t => {
+  const { root, addWorkspace } = fixture(t);
+  addWorkspace();
+  editManifest(root, "package.json", m => {
+    m.scripts = {
+      test: "node --test",
+      predev: "npm run build:packages",
+      dev: "concurrently \"npm:dev:contracts\"",
+      "dev:contracts": "npm run dev -w @fixture/contracts",
+      "build:contracts": "npm run build -w @fixture/contracts",
+      "build:packages": "npm run build:contracts",
+      build: "npm run build:packages",
+    };
+  });
+  await installDependencies(root);
+
+  assert.ok(await reusedAfter(root, () => {
+    // The shape of a real commit: entries replaced, added and removed across manifests.
+    editManifest(root, "package.json", m => {
+      const { test, predev } = m.scripts!;
+      m.scripts = {
+        test: test!,
+        predev: predev!,
+        dev: "concurrently \"npm:dev:packages\"",
+        "dev:packages": "tsc -b tsconfig.packages.json --watch",
+        "build:packages": "tsc -b tsconfig.packages.json",
+        build: "npm run build:packages && tsc",
+      };
+    });
+    editManifest(root, "packages/contracts/package.json", m => {
+      m.scripts = { build: "tsc -b tsconfig.json", dev: "tsc -b tsconfig.json --watch" };
+    });
+  }), "edited scripts, and a workspace's first scripts");
+  assert.ok(await reusedAfter(root, () => {
+    editManifest(root, "packages/contracts/package.json", m => { delete m.scripts; });
+  }), "a workspace's only scripts removed");
+});
+
+test("dependencies: every other manifest change still invalidates alongside build scripts", async t => {
+  const edits: [string, (m: Manifest) => void][] = [
+    ["other script", m => { m.scripts!.test = "node --test --watch"; }],
+    ["pre hook of a build script", m => { m.scripts!.prebuild = "node generate.js"; }],
+    ["post hook of a build script", m => { m.scripts!.postbuild = "node clean.js"; }],
+    ["lookalike key", m => { m.scripts!.builder = "node builder.js"; }],
+    ["non-string build script", m => { (m.scripts as Record<string, unknown>).build = ["tsc"]; }],
+    ["dependencies", m => { m.dependencies = {}; }],
+    ["devDependencies", m => { m.devDependencies = {}; }],
+    ["optionalDependencies", m => { m.optionalDependencies = {}; }],
+    ["peerDependencies", m => { m.peerDependencies = {}; }],
+    ["overrides", m => { m.overrides = {}; }],
+    ["workspaces", m => { m.workspaces = ["packages/*", "web"]; }],
+    ["name", m => { m.name = "renamed"; }],
+    ["version", m => { m.version = "1.0.1"; }],
+    ["packageManager", m => { m.packageManager = "npm@10.0.0"; }],
+    ["unknown field", m => { m.somethingNew = true; }],
+  ];
+  const { root } = fixture(t);
+  editManifest(root, "package.json", m => { m.scripts = { build: "tsc", test: "node --test" }; });
+  const original = readFileSync(join(root, "package.json"), "utf8");
+  const before = await dependencyFingerprint(root);
+  for (const [label, edit] of edits) {
+    editManifest(root, "package.json", edit);
+    assert.notEqual(await dependencyFingerprint(root), before, label);
+    writeFileSync(join(root, "package.json"), original);
+  }
+  assert.equal(await dependencyFingerprint(root), before);
+});
+
+test("dependencies: locks and package manager settings still invalidate alongside build scripts", async t => {
+  const { root } = fixture(t);
+  const before = await dependencyFingerprint(root);
+  editManifest(root, "package.json", m => { m.scripts = { build: "tsc" }; });
+  assert.equal(await dependencyFingerprint(root), before);
+
+  for (const file of [".npmrc", ".yarnrc.yml", "pnpm-workspace.yaml", "yarn.lock"]) {
+    writeFileSync(join(root, file), "# changed\n");
+    assert.notEqual(await dependencyFingerprint(root), before, file);
+    rmSync(join(root, file));
+  }
+  const lockPath = join(root, "package-lock.json");
+  const lock = readFileSync(lockPath, "utf8");
+  writeFileSync(lockPath, lock.replace('"fixture"', '"relocked"'));
+  assert.notEqual(await dependencyFingerprint(root), before, "package-lock.json");
+});
+
+test("dependencies: an install hook in any package makes build scripts count", async t => {
+  const hooks = [
+    "preinstall", "install", "postinstall", "prepublish", "preprepare", "prepare", "postprepare",
+    "predependencies", "dependencies", "postdependencies",
+  ];
+  const { root, addWorkspace } = fixture(t);
+  addWorkspace();
+  for (const hook of hooks) {
+    editManifest(root, "packages/contracts/package.json", m => { m.scripts = { [hook]: "npm run build -w fixture" }; });
+    editManifest(root, "package.json", m => { m.scripts = { build: "tsc" }; });
+    const before = await dependencyFingerprint(root);
+    editManifest(root, "package.json", m => { m.scripts = { build: "tsc -b" }; });
+    assert.notEqual(await dependencyFingerprint(root), before, hook);
+  }
+
+  await installDependencies(root);
+  assert.ok(!await reusedAfter(root, () => {
+    editManifest(root, "package.json", m => { m.scripts = { build: "tsc" }; });
+  }), "a real install refreshes too");
+});
+
+test("dependencies: a manifest that can't be read as an object keeps exact hashing", async t => {
+  const { root, addWorkspace } = fixture(t);
+  addWorkspace();
+  const contents = join(root, "packages/contracts/package.json");
+  for (const unreadable of ["{conflicted", "[]", '{"scripts":"tsc"}', '{"scripts":["tsc"]}']) {
+    writeFileSync(contents, unreadable);
+    editManifest(root, "package.json", m => { m.scripts = { build: "tsc" }; });
+    const before = await dependencyFingerprint(root);
+    editManifest(root, "package.json", m => { m.scripts = { build: "tsc -b" }; });
+    assert.notEqual(await dependencyFingerprint(root), before, unreadable);
+  }
+});
+
+test("dependencies: a build script edit does not excuse a broken workspace link", async t => {
+  const { root, addWorkspace } = fixture(t);
+  addWorkspace();
+  await installDependencies(root);
+  const link = join(root, "node_modules/@fixture/contracts");
+  assert.ok(!await reusedAfter(root, () => {
+    editManifest(root, "package.json", m => { m.scripts = { build: "tsc" }; });
+    rmSync(link);
+  }));
+  assert.equal(realpathSync(link), join(root, "packages/contracts"));
+});
+
+test("dependencies: a checkout whose build scripts differ can still be copied", async t => {
+  const from = fixture(t);
+  const to = fixture(t);
+  from.addWorkspace();
+  to.addWorkspace();
+  editManifest(from.root, "package.json", m => { m.scripts = { build: "tsc -p ." }; });
+  await installDependencies(from.root);
+  editManifest(to.root, "package.json", m => { m.scripts = { build: "tsc -b ." }; });
+  assert.deepEqual(await copyDependencies(from.root, to.root), { copied: ["node_modules"] });
+  assert.equal(await installDependencies(to.root, { from: from.root }), null);
+});
+
+test("dependencies: other lockfiles keep hashing complete manifests", async t => {
+  const from = fixture(t);
+  const to = fixture(t);
+  for (const { root } of [from, to]) {
+    rmSync(join(root, "package-lock.json"));
+    writeFileSync(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+  }
+  mkdirSync(join(from.root, "node_modules"));
+  editManifest(from.root, "package.json", m => { m.scripts = { build: "tsc -p ." }; });
+  editManifest(to.root, "package.json", m => { m.scripts = { build: "tsc -b ." }; });
+  assert.deepEqual(
+    await copyDependencies(from.root, to.root),
+    { skipped: "its package.json files or package manager settings differ from the worktree's" },
+  );
 });
 
 test("dependencies: an existing install without a marker explains why it cannot be reused", async t => {
