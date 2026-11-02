@@ -36,6 +36,13 @@ const workspace = (file: string) => [...packages.map((p) => p.path), web].find((
 
 test("every package is packaged the same way and ships in the root tarball", async (t) => {
   const rootManifest = readJson(join(root, "package.json"));
+  const graph = readJson(join(root, "tsconfig.packages.json"));
+  assert.deepEqual(graph.files, [], "solution config compiles only referenced projects");
+  assert.deepEqual(
+    graph.references.map((ref: { path: string }) => resolve(root, ref.path)).sort(),
+    packages.map((p) => p.path).sort(),
+    "build graph covers exactly packages/*",
+  );
   const entry = (name: string) => ({ types: `./dist/${name}.d.ts`, default: `./dist/${name}.js` });
   for (const { dir, path, manifest } of packages) {
     await t.test(dir, () => {
@@ -54,7 +61,14 @@ test("every package is packaged the same way and ships in the root tarball", asy
       assert.equal(rootManifest.dependencies[manifest.name], manifest.version, "pinned in root dependencies");
       assert.ok(rootManifest.bundledDependencies.includes(manifest.name), "listed in root bundledDependencies");
       assert.ok(rootManifest.workspaces.includes(`packages/${dir}`), "listed in root workspaces");
-      assert.ok(rootManifest.scripts["build:packages"].includes(`npm run build:${dir}`), "built by build:packages");
+      const config = readJson(join(path, "tsconfig.json"));
+      assert.equal(config.compilerOptions.composite, true, "supports project references");
+      assert.ok(within(join(path, "dist"), resolve(path, config.compilerOptions.tsBuildInfoFile)), "build cache is cleaned with dist");
+      assert.deepEqual(
+        (config.references ?? []).map((ref: { path: string }) => resolve(path, ref.path)).sort(),
+        packages.filter((p) => p.manifest.name in (manifest.dependencies ?? {})).map((p) => p.path).sort(),
+        "project references match workspace dependencies",
+      );
     });
   }
   assert.deepEqual(
@@ -62,6 +76,13 @@ test("every package is packaged the same way and ships in the root tarball", asy
     packages.map((p) => p.manifest.name).sort(),
     "root bundledDependencies match packages/*",
   );
+});
+
+test("package build and watch use the same graph after workspace preflight", () => {
+  const { scripts } = readJson(join(root, "package.json"));
+  assert.match(scripts["build:packages"], /^node scripts\/check-workspace-links\.mjs && tsc -b tsconfig\.packages\.json$/);
+  assert.equal(scripts["dev:packages"], `${scripts["build:packages"]} --watch`);
+  assert.ok(scripts.dev.includes('"npm:dev:packages"'), "development runs the graph watcher");
 });
 
 test("the dashboard bundles only contracts, the one package whose changes stale it", () => {
