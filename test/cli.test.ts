@@ -201,6 +201,44 @@ test("cli: allow saves the rule for the repo, notes it on the task, and refuses 
   }
 });
 
+test("cli: show presents each finding's latest follow-up ID and current status", async () => {
+  const { store, repo, task } = setup();
+  try {
+    const source = task("needs_review");
+    store.updateTask(source.id, { report: { summary: "Review results", changedFiles: [], findings: [
+      { title: "Fix the cache", detail: "Include the locale in the key.", impact: "high", effort: "small" },
+      { title: "Name the flag", detail: "Explain what the flag controls.", impact: "low", effort: "small" },
+      { title: "Add a timeout", detail: "Bound the wait.", impact: "medium", effort: "small" },
+    ] } });
+    const before = await crane(store, "show", source.id);
+    assert.equal(before.code, 0, before.err);
+    assert.doesNotMatch(before.out, /Follow-up /);
+
+    // Create them out of finding order so presentation must use the finding index.
+    const followUp = (finding: number) => store.createTask({ kind: "maintenance", title: "Follow-up work", brief: "",
+      repoId: repo.id, autonomy: "propose", followUp: { of: source.id, finding } });
+    const flag = followUp(1);
+    const first = followUp(0);
+    const queued = await crane(store, "show", source.id);
+    assert.equal(queued.code, 0, queued.err);
+    assert.match(queued.out, new RegExp(`1  Fix the cache[^\\n]*\\n[^\\n]*\\n     Follow-up ${first.id}  Queued`));
+    assert.match(queued.out, new RegExp(`2  Name the flag[^\\n]*\\n[^\\n]*\\n     Follow-up ${flag.id}  Queued`));
+    assert.equal(queued.out.split("\n").filter(line => line.trimStart().startsWith("Follow-up ")).length, 2);
+
+    store.updateTask(first.id, { status: "failed" });
+    const latest = followUp(0);
+    store.updateTask(latest.id, { status: "running" });
+    store.updateTask(flag.id, { status: "needs_review" });
+    const updated = await crane(store, "show", source.id);
+    assert.equal(updated.code, 0, updated.err);
+    assert.match(updated.out, new RegExp(`1  Fix the cache[^\\n]*\\n[^\\n]*\\n     Follow-up ${latest.id}  Working`));
+    assert.match(updated.out, new RegExp(`2  Name the flag[^\\n]*\\n[^\\n]*\\n     Follow-up ${flag.id}  Needs you`));
+    assert.ok(!updated.out.includes(first.id), "the older attempt is no longer presented");
+    assert.equal(updated.out.split("\n").filter(line => line.trimStart().startsWith("Follow-up ")).length, 2,
+      "findings without follow-ups have no follow-up row");
+  } finally { store.close(); }
+});
+
 test("cli: show links a follow-up back to its source task and finding", async () => {
   const { store, repo, task } = setup();
   try {
