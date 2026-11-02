@@ -152,6 +152,7 @@ export class Factory {
     const run = async (resumeSession = ctx.resumeSession) => driver.run({
       ...ctx,
       resumeSession,
+      commandEvidence: this.store.commandEvidence(ctx.task.id),
       siblingTasks: ctx.repo && !ctx.job ? await siblingTasksFor(this.store, ctx.task, ctx.repo) : undefined,
       prerequisites: !ctx.job && ctx.task.prerequisites.length ? this.store.prerequisiteStates(ctx.task) : undefined,
     });
@@ -196,6 +197,7 @@ export class Factory {
   }
 
   start() {
+    this.store.closeUnresolvedCommands();
     // Keep the operator's saved default if this factory can run it.
     const saved = this.store.getSetting(DEFAULT_DRIVER_KEY);
     if (!saved || !this.drivers.has(saved)) this.store.setSetting(DEFAULT_DRIVER_KEY, this.defaultDriver().name);
@@ -250,6 +252,7 @@ export class Factory {
   /** Put a running task back in the queue, keeping its worktree and session for the next agent. */
   private requeue(taskId: string, message: string) {
     if (this.store.getTask(taskId)?.status !== "running") return;
+    this.store.closeUnresolvedCommands(taskId);
     this.store.updateTask(taskId, { status: "queued", agentId: null });
     this.store.addEvent(taskId, "status", message, { status: "queued" });
   }

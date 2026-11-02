@@ -11,7 +11,8 @@ import { Factory } from "../src/factory/orchestrator.js";
 import { SimulatedDriver } from "../src/agents/simulated.js";
 import { ClaudeCodeDriver } from "../src/agents/claude-code.js";
 import type { RunContext, RunResult } from "@crane/agent-protocol";
-import type { Task } from "@crane/contracts";
+import type { CommandEvidence, Task } from "@crane/contracts";
+import { CommandTracker } from "../src/core/command-evidence.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
 
@@ -41,8 +42,10 @@ const until = async (ok: () => boolean, what: string) => {
 /** The simulated driver, plus a record of what each run was asked to resume. */
 class RecordingDriver extends SimulatedDriver {
   resumed: (string | undefined)[] = [];
+  commands: (readonly CommandEvidence[] | undefined)[] = [];
   override run(ctx: RunContext): Promise<RunResult> {
     this.resumed.push(ctx.resumeSession);
+    this.commands.push(ctx.commandEvidence);
     return super.run(ctx);
   }
 }
@@ -90,6 +93,10 @@ test("restart: tasks left running by a factory that died are resumed by the next
   // What a killed factory leaves behind: running, claimed by an agent, with a session.
   store.claimNextTask("a-gone");
   store.updateTask(t.id, { sessionId: "earlier-session" });
+  const tracker = new CommandTracker((command) => store.addEvent(t.id, "tool", "command", { tool: "shell", command }));
+  tracker.record("started", { id: "done" }, "npm run typecheck", "earlier-session");
+  tracker.record("completed", { id: "done", status: "completed", exit_code: 0 }, "npm run typecheck", "earlier-session");
+  tracker.record("started", { id: "lost" }, "npm test", "earlier-session");
 
   const driver = new RecordingDriver(2);
   const factory = new Factory(store, driver, { crewSize: 1, tickMs: 10 });
@@ -98,6 +105,9 @@ test("restart: tasks left running by a factory that died are resumed by the next
     await until(() => !["queued", "running"].includes(store.getTask(t.id)!.status), "it to finish");
     const events = store.listEvents(t.id).map((e) => e.message);
     assert.ok(events.some((m) => /stopped unexpectedly/.test(m)), events.join("\n"));
+    assert.deepEqual(driver.commands[0]?.map((c) => [c.command, c.status, c.exitCode]), [
+      ["npm run typecheck", "completed", 0], ["npm test", "unknown", null],
+    ]);
     assert.deepEqual(driver.resumed, ["earlier-session"]);
     assert.equal(store.getTask(t.id)!.status, "needs_review");
   } finally {

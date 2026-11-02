@@ -20,6 +20,7 @@ import {
   type FollowUpSource,
   type FollowUpState,
   type PrerequisiteState,
+  type CommandEvidence,
 } from "@crane/contracts";
 import { postmortemBrief } from "./postmortem.js";
 import type {
@@ -897,6 +898,39 @@ export class Store {
     return (
       this.db.prepare("SELECT * FROM events WHERE task_id = ? AND id > ? ORDER BY id ASC").all(taskId, afterId) as Row[]
     ).map(toEvent);
+  }
+
+  /** Latest lifecycle event per command, bounded for the next agent's prompt. */
+  commandEvidence(taskId: string): CommandEvidence[] {
+    const rows = this.db.prepare(`
+      SELECT e.data FROM events e
+      WHERE e.task_id = ? AND e.type = 'tool' AND json_extract(e.data, '$.command.commandId') IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM events later WHERE later.task_id = e.task_id AND later.id > e.id
+            AND json_extract(later.data, '$.command.commandId') = json_extract(e.data, '$.command.commandId')
+        )
+      ORDER BY e.id DESC LIMIT 40
+    `).all(taskId) as Row[];
+    return rows.reverse().map((r) => (JSON.parse(r.data as string) as { command: CommandEvidence }).command);
+  }
+
+  /** A lost stream is not proof that its command failed (or even stopped). */
+  closeUnresolvedCommands(taskId?: string) {
+    const rows = this.db.prepare(`
+      SELECT e.task_id, e.data FROM events e
+      WHERE e.type = 'tool' AND json_extract(e.data, '$.command.status') = 'running'
+        AND (? IS NULL OR e.task_id = ?)
+        AND NOT EXISTS (
+          SELECT 1 FROM events later WHERE later.task_id = e.task_id AND later.id > e.id
+            AND json_extract(later.data, '$.command.commandId') = json_extract(e.data, '$.command.commandId')
+        )
+    `).all(taskId ?? null, taskId ?? null) as Row[];
+    for (const r of rows) {
+      const command = (JSON.parse(r.data as string) as { command: CommandEvidence }).command;
+      this.addEvent(r.task_id as string, "tool", "Command outcome unknown after the agent stream stopped", {
+        tool: "shell", command: { ...command, status: "unknown", exitCode: null },
+      });
+    }
   }
 
   /** Events across every task, for the live factory feed. */

@@ -1,4 +1,4 @@
-import type { EventType, PrerequisiteState, Task, Report, Repo, RunUsage } from "@crane/contracts";
+import type { CommandEvidence, EventType, PrerequisiteState, Task, Report, Repo, RunUsage } from "@crane/contracts";
 
 /** A sibling task's state when the agent starts; never includes another worktree's path. */
 export interface SiblingTask extends Pick<Task, "id" | "title" | "status" | "branch"> {
@@ -22,6 +22,8 @@ export interface RunContext {
    * starts a fresh session.
    */
   resumeSession?: string;
+  /** Recent durable command results, including unresolved commands from earlier runs. */
+  commandEvidence?: readonly CommandEvidence[];
   /** Called with the driver's session id as soon as it has one, so an interrupted run can be resumed. */
   onSession?: (sessionId: string) => void;
   /**
