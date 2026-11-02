@@ -785,7 +785,7 @@ export class Store {
       this.addEvent(id, "note", "Queued a post-mortem to look for task friction", { postmortemTaskId: review.id });
       this.addEvent(review.id, "note", `Reviewing merged task ${id}`, { sourceTaskId: id });
       return review;
-    })();
+    }).immediate();
   }
 
   /**
@@ -840,11 +840,12 @@ export class Store {
    * Atomically take the oldest queued task this agent may work: one assigned
    * to it, or one assigned to nobody unless `onlyAssigned`. Skips tasks whose
    * start time hasn't arrived or prerequisites haven't landed (unless waived). Safe if two
-   * factories race.
+   * factories race. Immediate because it reads, then writes: a deferred transaction
+   * fails at once, without waiting for busy_timeout, if another process commits between them.
    */
   claimNextTask(agentId: string, opts: { onlyAssigned?: boolean } = {}): Task | null {
     const mine = opts.onlyAssigned ? "assignee = ?" : "(assignee IS NULL OR assignee = ?)";
-    const tx = this.db.transaction(() => {
+    return this.db.transaction(() => {
       const rows = this.db
         .prepare(`SELECT * FROM tasks WHERE status = 'queued' AND ${mine}
           AND ${TASK_DUE} ORDER BY created_at ASC`)
@@ -854,12 +855,10 @@ export class Store {
       const changed = this.db
         .prepare("UPDATE tasks SET status = 'running', agent_id = ?, started_at = ? WHERE id = ? AND status = 'queued'")
         .run(agentId, now(), next.id).changes;
-      return changed ? next.id : null;
-    });
-    const id = tx();
-    if (!id) return null;
-    this.addEvent(id, "status", "Picked up", { status: "running", agentId });
-    return this.getTask(id);
+      if (!changed) return null;
+      this.addEvent(next.id, "status", "Picked up", { status: "running", agentId });
+      return this.getTask(next.id);
+    }).immediate();
   }
 
   /**
@@ -867,7 +866,7 @@ export class Store {
    * have a merge in progress, so two merges never race for the same branch.
    */
   claimNextMerge(agentId: string, busyRepoIds: string[] = []): Task | null {
-    const tx = this.db.transaction(() => {
+    return this.db.transaction(() => {
       const skip = busyRepoIds.length ? `AND repo_id NOT IN (${busyRepoIds.map(() => "?").join(",")})` : "";
       const r = this.db
         .prepare(`SELECT id FROM tasks WHERE status = 'merging' AND agent_id IS NULL ${skip} ORDER BY finished_at ASC LIMIT 1`)
@@ -876,12 +875,10 @@ export class Store {
       const changed = this.db
         .prepare("UPDATE tasks SET agent_id = ? WHERE id = ? AND status = 'merging' AND agent_id IS NULL")
         .run(agentId, r.id).changes;
-      return changed ? (r.id as string) : null;
-    });
-    const id = tx();
-    if (!id) return null;
-    this.addEvent(id, "note", "Picked up to merge", { agentId });
-    return this.getTask(id);
+      if (!changed) return null;
+      this.addEvent(r.id as string, "note", "Picked up to merge", { agentId });
+      return this.getTask(r.id as string);
+    }).immediate();
   }
 
   // ── events ────────────────────────────────────────────────

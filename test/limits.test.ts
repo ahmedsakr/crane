@@ -277,6 +277,20 @@ test("driver: running out of turns says so, and isn't retried", async () => {
   assert.match(err.message, /Stopped after 7 turns/);
 });
 
+test("driver: a CLI that exits before reading its prompt fails the run, not the factory", async () => {
+  const dir = scratch("crane-fake-claude-");
+  const bin = join(dir, "claude");
+  writeFileSync(bin, "#!/bin/sh\nexit 3\n");
+  chmodSync(bin, 0o755);
+  // Far past what a pipe buffers, so writing it hits EPIPE once the CLI is gone.
+  const brief = "x".repeat(4 * 1024 * 1024);
+  const err = await new ClaudeCodeDriver(bin)
+    .run({ task: { ...task(), brief }, repo, cwd: scratch("crane-cwd-"), signal: new AbortController().signal, emit: () => {} })
+    .catch((e) => e);
+  assert.ok(err instanceof AgentRunError);
+  assert.match(err.message, /exited with code 3/);
+});
+
 // ── the factory: retries and the time limit ─────────────
 
 /** A driver that plays one scripted behaviour per call. */
@@ -320,6 +334,98 @@ async function runOne(driver: AgentDriver, opts: { timeLimitMin?: number } = {})
   await factory.stop();
   return { store, task: store.getTask(t.id)!, events: store.listEvents(t.id) };
 }
+
+// ── the factory: staying up when a write fails ──────────
+
+function resilienceSetup(driver: AgentDriver) {
+  const store = newStore();
+  const r = store.addRepo({ path: scratch("crane-repo-") });
+  const newTask = (title: string) => store.createTask({ kind: "maintenance", title, brief: "", repoId: r.id, autonomy: "observe" });
+  const logs: string[] = [];
+  const factory = new Factory(store, driver, { crewSize: 1, tickMs: 5, retryDelayMs: 5, log: (l) => void logs.push(l) });
+  const until = async (ok: () => boolean, what: string) => {
+    for (let i = 0; i < 500 && !ok(); i++) await new Promise((res) => setTimeout(res, 10));
+    assert.ok(ok(), `timed out waiting for ${what}`);
+  };
+  return { store, newTask, logs, factory, until };
+}
+
+test("factory: a store error during a tick is logged once, and the next tick carries on", async () => {
+  const { store, newTask, logs, factory, until } = resilienceSetup(new ScriptedDriver([ok]));
+  const t = newTask("x");
+  const setSetting = store.setSetting.bind(store);
+  let failures = 5;
+  store.setSetting = (key, value) => {
+    if (key === "factory_heartbeat" && failures-- > 0) throw new Error("database is locked");
+    setSetting(key, value);
+  };
+  factory.start();
+  await until(() => store.getTask(t.id)!.status === "done", "the task to finish after the store recovers");
+  await factory.stop();
+  assert.equal(logs.filter((l) => l.includes("database is locked")).length, 1, logs.join("\n"));
+});
+
+test("factory: a task whose failure can't be recorded doesn't take the factory with it", async () => {
+  const failing = async (): Promise<RunResult> => {
+    throw new Error("the agent broke");
+  };
+  const { store, newTask, logs, factory, until } = resilienceSetup(new ScriptedDriver([failing, ok]));
+  const stuck = newTask("stuck");
+  const setStatus = store.setStatus.bind(store);
+  store.setStatus = (id, status, ...rest) => {
+    if (id === stuck.id) throw new Error("database or disk is full");
+    setStatus(id, status, ...rest);
+  };
+  factory.start();
+  await until(() => logs.some((l) => l.includes(`Couldn't record how ${stuck.id} ended`)), "the failure to be logged");
+  const next = newTask("next");
+  await until(() => store.getTask(next.id)!.status === "done", "the crew member to take the next task");
+  await factory.stop();
+  store.setStatus = setStatus;
+
+  // What the log line promises: a restart picks the task up again.
+  store.setPaused(true);
+  const restarted = new Factory(store, new ScriptedDriver([ok]), { crewSize: 1, tickMs: 5 });
+  restarted.start();
+  assert.equal(store.getTask(stuck.id)!.status, "queued");
+  await restarted.stop();
+});
+
+test("factory: a driver callback whose write fails costs that update, not the run", async () => {
+  const chatty = async (ctx: RunContext): Promise<RunResult> => {
+    ctx.onSession?.("s-lost");
+    ctx.emit("note", "lost");
+    return ok(ctx);
+  };
+  const { store, newTask, logs, factory, until } = resilienceSetup(new ScriptedDriver([chatty]));
+  const t = newTask("x");
+  const addEvent = store.addEvent.bind(store);
+  store.addEvent = (...args: Parameters<Store["addEvent"]>) => {
+    if (args[2] === "lost") throw new Error("database or disk is full");
+    return addEvent(...args);
+  };
+  const updateTask = store.updateTask.bind(store);
+  store.updateTask = (id, patch) => {
+    if (patch.sessionId === "s-lost") throw new Error("database or disk is full");
+    updateTask(id, patch);
+  };
+  factory.start();
+  await until(() => store.getTask(t.id)!.status === "done", "the run to finish");
+  await factory.stop();
+  assert.equal(logs.filter((l) => l.startsWith("Couldn't record a task update")).length, 2, logs.join("\n"));
+});
+
+test("factory: a malformed CRANE_AGENTS keeps the default crew instead of benching everyone", (t) => {
+  const before = process.env.CRANE_AGENTS;
+  t.after(() => {
+    if (before === undefined) delete process.env.CRANE_AGENTS;
+    else process.env.CRANE_AGENTS = before;
+  });
+  process.env.CRANE_AGENTS = "lots";
+  const store = newStore();
+  new Factory(store, new ScriptedDriver([]));
+  assert.deepEqual(["a-jib", "a-boom", "a-hoist"].map((id) => store.crewActive(id)), [true, true, false]);
+});
 
 test("factory: a transient failure is retried once, resuming the session", async () => {
   const driver = new ScriptedDriver([overloaded, ok]);

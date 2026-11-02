@@ -10,7 +10,7 @@ import { Factory } from "../src/factory/orchestrator.js";
 import { resolveDefaultDriver } from "../src/factory/drivers.js";
 import { SimulatedDriver } from "../src/agents/simulated.js";
 import { CodexDriver, codexArgs, unwrapShell, usageFromTurn } from "../src/agents/codex.js";
-import type { AgentDriver, ResolveConflictsJob, RunContext, RunResult } from "@crane/agent-protocol";
+import { AgentRunError, type AgentDriver, type ResolveConflictsJob, type RunContext, type RunResult } from "@crane/agent-protocol";
 import type { RunUsage, Task } from "@crane/contracts";
 import { resumePrompt, systemPrompt } from "../src/agents/prompts.js";
 
@@ -22,7 +22,7 @@ const REPORT = '```crane-report\\n{\\"summary\\":\\"Codex did it\\",\\"findings\
  * A stand-in `codex` that logs its arguments and stdin, then plays back the
  * JSON events `codex exec --json` sends. `mode` picks the story.
  */
-function fakeCodex(mode: "ok" | "lost-session" | "turn-failed" | "multi-turn"): { bin: string; log: string } {
+function fakeCodex(mode: "ok" | "lost-session" | "turn-failed" | "overloaded" | "multi-turn"): { bin: string; log: string } {
   const dir = mkdtempSync(join(tmpdir(), "crane-fake-codex-"));
   const log = join(dir, "calls.log");
   const bin = join(dir, "codex");
@@ -45,6 +45,10 @@ process.stdin.on("end", () => {
   say({ type: "turn.started" });
   if (${JSON.stringify(mode)} === "turn-failed") {
     say({ type: "turn.failed", error: { message: "You've hit your usage limit." } });
+    process.exit(1);
+  }
+  if (${JSON.stringify(mode)} === "overloaded") {
+    say({ type: "turn.failed", error: { message: "API Error: 529 overloaded_error" } });
     process.exit(1);
   }
   say({ type: "item.started", item: { id: "i1", type: "command_execution", command: "bash -lc 'npm test'", status: "in_progress" } });
@@ -263,7 +267,30 @@ test("codex: resumes its session, and starts fresh if the old one can't be loade
 
 test("codex: a failed turn fails the run with Codex's reason", async () => {
   const { bin } = fakeCodex("turn-failed");
-  await assert.rejects(new CodexDriver(bin).run(ctxFor({}).ctx), /usage limit/);
+  const err = await new CodexDriver(bin).run(ctxFor({}).ctx).catch((e) => e);
+  assert.ok(err instanceof AgentRunError, "retries check instanceof, so every driver fails with this class");
+  assert.match(err.message, /usage limit/);
+  assert.ok(!err.transient, "a plan's usage limit resets hours later, so trying again won't help");
+});
+
+test("codex: an overloaded API is a transient failure that keeps its session", async () => {
+  const { bin } = fakeCodex("overloaded");
+  const err = await new CodexDriver(bin).run(ctxFor({}).ctx).catch((e) => e);
+  assert.ok(err instanceof AgentRunError);
+  assert.ok(err.transient);
+  assert.equal(err.sessionId, "thread-1");
+});
+
+test("codex: a run stopped by its signal is a plain failure, keeping its session", async () => {
+  const { bin } = fakeCodex("ok");
+  const ac = new AbortController();
+  const { ctx } = ctxFor({}, { signal: ac.signal, resumeSession: "thread-0" });
+  const running = new CodexDriver(bin).run(ctx).catch((e) => e);
+  ac.abort();
+  const err = await running;
+  assert.ok(err instanceof AgentRunError);
+  assert.ok(!err.transient);
+  assert.equal(err.sessionId, "thread-0");
 });
 
 test("codex: sums estimated cost across completed turns", async () => {
