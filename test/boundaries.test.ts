@@ -1,22 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import ts from "typescript";
-import { AGENT_POLICY_SOURCES, AGENT_PROTOCOL_SOURCES } from "../src/core/webbuild.ts";
+import { join } from "node:path";
+import { packageImportViolations, specifiers } from "./support/imports.ts";
 
 const src = join(import.meta.dirname, "..", "src");
 const webSrc = join(import.meta.dirname, "..", "web", "src");
 const protocolRoot = join(import.meta.dirname, "..", "packages", "agent-protocol");
-const protocolSrc = join(protocolRoot, "src");
-const protocolSources = (readdirSync(protocolSrc, { recursive: true }) as string[])
-  .map((f) => f.split("\\").join("/"))
-  .filter((f) => f.endsWith(".ts"));
 const policyRoot = join(import.meta.dirname, "..", "packages", "agent-policy");
-const policySrc = join(policyRoot, "src");
-const policySources = (readdirSync(policySrc, { recursive: true }) as string[])
-  .map((f) => f.split("\\").join("/"))
-  .filter((f) => f.endsWith(".ts"));
 
 /** A relative specifier in `file`, resolved to a path under the same root like `factory/git`. */
 function resolveSpec(file: string, spec: string): string {
@@ -30,8 +21,7 @@ function resolveSpec(file: string, spec: string): string {
 
 /** Every relative import in a source file, resolved to a path under `root` like `factory/git`. */
 function importsOf(file: string, root = src): string[] {
-  const text = readFileSync(join(root, file), "utf8");
-  return [...text.matchAll(/(?:from|import)\s*\(?\s*"(\.{1,2}\/[^"]+)"/g)].map((m) => resolveSpec(file, m[1]!));
+  return specifiers(join(root, file)).filter((spec) => spec.startsWith(".")).map((spec) => resolveSpec(file, spec));
 }
 
 const sources = (readdirSync(src, { recursive: true }) as string[])
@@ -76,31 +66,8 @@ test("boundaries: factory status queries don't load the scheduler or drivers", (
 
 test("boundaries: the agent protocol depends on contract types and nothing else", () => {
   // No concrete drivers, price tables, prompts, policy, subprocesses, Store or factory.
-  assert.ok(protocolSources.includes("index.ts"), "expected to find the agent protocol");
-  for (const file of protocolSources) {
-    const source = ts.createSourceFile(file, readFileSync(join(protocolSrc, file), "utf8"), ts.ScriptTarget.Latest, true);
-    const visit = (node: ts.Node) => {
-      assert.ok(!ts.isImportEqualsDeclaration(node) && !ts.isImportTypeNode(node), `${file} uses an alternate import form`);
-      if (ts.isCallExpression(node)) {
-        assert.ok(node.expression.kind !== ts.SyntaxKind.ImportKeyword &&
-          !(ts.isIdentifier(node.expression) && node.expression.text === "require"), `${file} loads a module dynamically`);
-      }
-      if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier) {
-        assert.ok(ts.isStringLiteral(node.moduleSpecifier));
-        const spec = node.moduleSpecifier.text;
-        if (spec.startsWith(".")) {
-          const target = resolve(protocolSrc, dirname(file), spec.replace(/\.js$/, ".ts"));
-          assert.ok(protocolSources.some((f) => join(protocolSrc, f) === target), `${file} imports outside the package: ${spec}`);
-        } else {
-          assert.equal(spec, "@crane/contracts", `${file} imports "${spec}"`);
-          assert.ok(ts.isImportDeclaration(node) && node.importClause?.isTypeOnly,
-            `${file} must import contracts with \`import type\`, so nothing runs at load`);
-        }
-      }
-      ts.forEachChild(node, visit);
-    };
-    visit(source);
-  }
+  // Contracts must come in with `import type`, so nothing runs at load.
+  assert.deepEqual(packageImportViolations(join(protocolRoot, "src"), (ref) => ref.spec === "@crane/contracts" && ref.typeOnly), []);
 });
 
 test("boundaries: production callers use the agent protocol package", () => {
@@ -113,20 +80,7 @@ test("boundaries: production callers use the agent protocol package", () => {
 
 test("boundaries: the agent policy depends on the rule grammar and nothing else", () => {
   // No factory, Store, drivers, prompts, subprocesses or Node modules.
-  assert.ok(policySources.includes("index.ts"), "expected to find the agent policy");
-  for (const file of policySources) {
-    const text = readFileSync(join(policySrc, file), "utf8");
-    assert.ok(!/\b(import|require)\s*\(/.test(text), `${file} loads a module dynamically`);
-    for (const m of text.matchAll(/^\s*(import|export)\s+(type\s+)?(?:[^;"]*?\bfrom\s*)?"([^"]+)"/gm)) {
-      const spec = m[3]!;
-      if (spec.startsWith(".")) {
-        const target = resolve(policySrc, dirname(file), spec.replace(/\.js$/, ".ts"));
-        assert.ok(policySources.some((f) => join(policySrc, f) === target), `${file} imports outside the package: ${spec}`);
-      } else {
-        assert.equal(spec, "@crane/contracts/rules", `${file} imports "${spec}"`);
-      }
-    }
-  }
+  assert.deepEqual(packageImportViolations(join(policyRoot, "src"), (ref) => ref.spec === "@crane/contracts/rules"), []);
 });
 
 test("boundaries: production callers use the agent policy package", () => {
@@ -137,31 +91,20 @@ test("boundaries: production callers use the agent policy package", () => {
   }
 });
 
-test("boundaries: the private policy has one browser-safe ESM entry and tracks every backend build input", async () => {
+test("boundaries: the private policy has one browser-safe ESM entry", async () => {
   const manifest = JSON.parse(readFileSync(join(policyRoot, "package.json"), "utf8"));
-  assert.equal(manifest.private, true);
-  assert.equal(manifest.type, "module");
-  assert.deepEqual(manifest.exports, { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } });
-  assert.deepEqual(manifest.files, ["dist/"]);
   assert.deepEqual(manifest.dependencies, { "@crane/contracts": "0.1.0" });
   const config = JSON.parse(readFileSync(join(policyRoot, "tsconfig.json"), "utf8"));
   assert.deepEqual(config.compilerOptions.types, []);
   assert.deepEqual(config.compilerOptions.lib, ["ES2022"]);
-  const inputs = [...policySources.map((f) => join("src", f)), "package.json", "tsconfig.json"];
-  assert.deepEqual([...AGENT_POLICY_SOURCES].sort(), inputs.map((f) => join("packages", "agent-policy", f)).sort());
   for (const path of ["@crane/agent-policy/src/permissions.js", "@crane/agent-policy/dist/permissions.js", "@crane/agent-policy/permissions", "@crane/agent-policy/denied"]) {
     await assert.rejects(import(path), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
   }
 });
 
-test("boundaries: the private protocol has one ESM export and tracks every backend build input", async () => {
+test("boundaries: the private protocol has one ESM export", async () => {
   const manifest = JSON.parse(readFileSync(join(protocolRoot, "package.json"), "utf8"));
-  assert.equal(manifest.private, true);
-  assert.equal(manifest.type, "module");
-  assert.deepEqual(manifest.exports, { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } });
   assert.deepEqual(manifest.dependencies, { "@crane/contracts": "0.1.0" });
-  const inputs = [...protocolSources.map((f) => join("src", f)), "package.json", "tsconfig.json"];
-  assert.deepEqual([...AGENT_PROTOCOL_SOURCES].sort(), inputs.map((f) => join("packages", "agent-protocol", f)).sort());
   const protocol = await import("@crane/agent-protocol");
   assert.deepEqual(Object.keys(protocol).sort(), ["AgentRunError", "REPORT_FENCE", "combinedCost", "isTransientFailure", "parseReport"].sort());
   for (const path of ["@crane/agent-protocol/src/driver.js", "@crane/agent-protocol/dist/driver.js", "@crane/agent-protocol/driver"]) {

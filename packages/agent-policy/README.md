@@ -17,6 +17,6 @@ run `npm run build:agent-policy`. Normal build, typecheck, test, dev, and source
 CLI commands build the packages first, and dev watches their sources.
 
 This package is private and versioned with Crane. The root npm tarball bundles
-its compiled JavaScript and declarations. Update `AGENT_POLICY_SOURCES` in
-`src/core/webbuild.ts` when adding build inputs so the running factory notices
-when it needs rebuilding and restarting.
+its compiled JavaScript and declarations. The running factory watches every
+package's `src/`, `package.json`, and `tsconfig.json` to notice when it needs
+rebuilding and restarting, so new files need no registration.

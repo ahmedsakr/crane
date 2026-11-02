@@ -21,4 +21,6 @@ directly (for example, `node --import tsx scripts/seed-demo.ts`).
 This package is private and versioned with Crane. Crane declares and bundles it
 as a dependency in its npm tarball; it does not need a separate registry release.
 Do not import another workspace's source or use TypeScript path aliases to bypass
-the exports map. Update `SHARED_SOURCES` in `src/core/webbuild.ts` when adding inputs.
+the exports map. Build staleness watches this package's `src/`, `package.json`, and
+`tsconfig.json`, so new files need no registration. It's the only package the
+dashboard bundles; `src/core/webbuild.ts` names it for that reason.
