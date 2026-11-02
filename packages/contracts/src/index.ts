@@ -12,6 +12,7 @@ export type {
   AcceptanceResult,
   PrerequisiteState,
   FollowUpState,
+  FollowUpSource,
   TaskGates,
   Screenshot,
   ValidationRun,

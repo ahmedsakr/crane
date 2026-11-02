@@ -201,6 +201,24 @@ test("cli: allow saves the rule for the repo, notes it on the task, and refuses 
   }
 });
 
+test("cli: show links a follow-up back to its source task and finding", async () => {
+  const { store, repo, task } = setup();
+  try {
+    const source = task("needs_review");
+    store.updateTask(source.id, { report: { summary: "", changedFiles: [], findings: [
+      { title: "Fix the cache", detail: "Include the locale in the key.", impact: "high", effort: "small" },
+    ] } });
+    const next = store.createTask({ kind: "maintenance", title: "Fix the cache", brief: "", repoId: repo.id, autonomy: "propose",
+      followUp: { of: source.id, finding: 0 } });
+
+    const r = await crane(store, "show", next.id);
+    assert.equal(r.code, 0, r.err);
+    assert.match(r.out, new RegExp(`Follow-up to ${source.id}  needs_review task  Needs you`));
+    assert.match(r.out, /Finding Fix the cache/);
+    assert.doesNotMatch((await crane(store, "show", source.id)).out, /Follow-up to/);
+  } finally { store.close(); }
+});
+
 test("cli: tasks --json lists open tasks by default, with branch, worktree and repo name", async () => {
   const { store, task } = setup();
   try {

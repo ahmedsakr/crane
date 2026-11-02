@@ -17,6 +17,7 @@ import {
   type MaintenanceRole,
   type CrewSchedule,
   type CrewScheduleInput,
+  type FollowUpSource,
   type FollowUpState,
   type PrerequisiteState,
 } from "@crane/contracts";
@@ -667,6 +668,15 @@ export class Store {
         status: r.status as TaskStatus,
         finding: (r.follow_up_finding as number) ?? null,
       }));
+  }
+
+  /** The task and finding this one was started from, or null when it isn't a follow-up. */
+  followUpSource(task: Pick<Task, "followUpOf" | "followUpFinding">): FollowUpSource | null {
+    if (!task.followUpOf) return null;
+    const t = this.getTask(task.followUpOf);
+    if (!t) return { id: task.followUpOf, title: "Unknown task", status: "failed", finding: null };
+    const finding = task.followUpFinding === null ? undefined : t.report?.findings[task.followUpFinding];
+    return { id: t.id, title: t.title, status: t.status, finding: finding?.title ?? null };
   }
 
   /** Prerequisites still holding the task back: not landed, and not waived by the operator. */

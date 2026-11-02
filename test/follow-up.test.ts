@@ -122,6 +122,30 @@ test("follow-up: the source task's page shows each finding's latest follow-up an
   } finally { store.close(); }
 });
 
+test("follow-up: its own page links back to the task and finding it came from", async () => {
+  const { store, actions, parent } = setup();
+  try {
+    const app = createApp(store);
+    const detail = async (id: string) => (await (await app.request(`/api/tasks/${id}`)).json()) as TaskDetail;
+    assert.equal((await detail(parent.id)).followUpSource, null, "a task not started from a finding links nowhere");
+
+    const next = actions.followUp(parent.id, 0);
+    assert.deepEqual((await detail(next.id)).followUpSource,
+      { id: parent.id, title: "Review", status: "needs_review", finding: "Fix the cache" });
+
+    // The source's state is read live, and a finding Crane can't match still links to the task.
+    store.updateTask(parent.id, { status: "done" });
+    store.db.prepare("UPDATE tasks SET follow_up_finding = NULL WHERE id = ?").run(next.id);
+    assert.deepEqual(store.followUpSource(store.getTask(next.id)!),
+      { id: parent.id, title: "Review", status: "done", finding: null });
+
+    // A finding index past the source's report names no finding rather than the wrong one.
+    assert.equal(store.followUpSource({ followUpOf: parent.id, followUpFinding: 5 })?.finding, null);
+    assert.deepEqual(store.followUpSource({ followUpOf: "t-gone", followUpFinding: 0 }),
+      { id: "t-gone", title: "Unknown task", status: "failed", finding: null });
+  } finally { store.close(); }
+});
+
 test("follow-up: an older database links past follow-ups to their findings from history", () => {
   const dir = mkdtempSync(join(tmpdir(), "crane-follow-up-migrate-"));
   const file = join(dir, "crane.db");

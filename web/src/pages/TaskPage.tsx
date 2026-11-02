@@ -220,6 +220,8 @@ export function TaskPage() {
   const acceptanceGate = acceptance.length ? " and its report shows every acceptance criterion met" : "";
   // Tasks started from this task's findings; each finding shows the state of its latest one.
   const followUps = data.followUps ?? [];
+  // The task and finding this one came from. A backend older than this page sends none.
+  const source = data.followUpSource ?? null;
 
   const run = async (label: string, fn: () => Promise<unknown>, done: string | ((r: unknown) => Parameters<typeof toast>[0]),
     after?: (r: unknown) => void) => {
@@ -586,6 +588,19 @@ export function TaskPage() {
                 <>
                   <dt>Branch</dt>
                   <dd className="mono">{m.branch}</dd>
+                </>
+              )}
+              {source && (
+                <>
+                  <dt>Follow-up to</dt>
+                  <dd>
+                    <Link className="mono" to={`/tasks/${source.id}`} title={STATUS_LABEL[source.status]}>{source.id}</Link>
+                    <span className="muted"> · {source.title}</span>
+                  </dd>
+                  {source.finding && <>
+                    <dt>Finding</dt>
+                    <dd>{source.finding}</dd>
+                  </>}
                 </>
               )}
               {prerequisites.length > 0 && (
