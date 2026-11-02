@@ -180,7 +180,7 @@ const SCRIPTS: Record<TaskKind, { steps: Step[]; summary: string; findings: Find
     steps: [
       ["note", "Reading how Crane schedules and runs agents today."],
       ["tool", "Read src/factory/orchestrator.ts"],
-      ["tool", "Read src/agents/driver.ts"],
+      ["tool", "Read packages/agent-protocol/src/driver.ts"],
       ["note", "Drivers are pluggable, so new capabilities can land without touching the scheduler."],
       ["tool", "Searched for “claimNextTask”"],
       ["finding", "Add task priorities to the queue"],
