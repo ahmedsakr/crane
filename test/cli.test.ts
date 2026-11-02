@@ -289,3 +289,18 @@ test("cli: tasks --json lists open tasks by default, with branch, worktree and r
     store.close();
   }
 });
+
+test("cli: serve refuses a crew size or port that isn't a number, before starting anything", async () => {
+  const { store } = setup();
+  try {
+    const crew = await crane(store, "serve", "--agents", "lots", "--port", "4471");
+    assert.equal(crew.code, 1);
+    assert.match(crew.err, /--agents takes a number/);
+    const port = await crane(store, "serve", "--agents", "2", "--port", "dashboard");
+    assert.equal(port.code, 1);
+    assert.match(port.err, /--port takes a number/);
+    assert.equal(store.getSetting("crew_active_a-jib"), null, "the bad value was never saved over the crew");
+  } finally {
+    store.close();
+  }
+});

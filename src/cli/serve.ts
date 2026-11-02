@@ -1,4 +1,4 @@
-import { serve as honoServe } from "@hono/node-server";
+import { serve as honoServe, type ServerType } from "@hono/node-server";
 import pc from "picocolors";
 import type { Store } from "../core/store.js";
 import { createApp, isLoopbackAddress } from "../server/app.js";
@@ -9,6 +9,17 @@ import { isAvailable, resolveDefaultDriver, sharedDrivers } from "../factory/dri
 import { factoryBuildOutdated, servedDashboard } from "../core/webbuild.js";
 import { DEFAULT_HOST } from "../core/paths.js";
 import * as ui from "./ui.js";
+
+/** Take the dashboard's port. A port in use rejects here, rather than as an uncaught `error` event later. */
+function listen(options: Parameters<typeof honoServe>[0]): Promise<ServerType> {
+  return new Promise((resolve, reject) => {
+    const server = honoServe(options, () => {
+      server.off("error", reject);
+      resolve(server);
+    });
+    server.once("error", reject);
+  });
+}
 
 export async function serve(
   store: Store,
@@ -26,6 +37,19 @@ export async function serve(
   const others = drivers.filter((d) => d !== driver);
   const time = () => ui.dim(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
   const buildDashboard = opts.buildDashboard ?? true;
+
+  // Before the factory starts: without its port it would claim tasks, then die under them.
+  const hostname = opts.host ?? DEFAULT_HOST;
+  const exposed = !isLoopbackAddress(hostname);
+  const app = createApp(store, { exposed });
+  const server = await listen({ fetch: app.fetch, port: opts.port, hostname }).catch((err: NodeJS.ErrnoException) =>
+    ui.fail(
+      err.code === "EADDRINUSE"
+        ? `Port ${opts.port} is already in use. Stop what's using it, or choose another with --port.`
+        : `Couldn't listen on ${hostname}:${opts.port}: ${err.message}`,
+    ),
+  );
+
   const factory = new Factory(store, [driver, ...others], {
     crewSize: opts.agents,
     maxTurns: opts.maxTurns,
@@ -34,11 +58,6 @@ export async function serve(
     buildDashboard,
   });
   factory.start();
-
-  const hostname = opts.host ?? DEFAULT_HOST;
-  const exposed = !isLoopbackAddress(hostname);
-  const app = createApp(store, { exposed });
-  const server = honoServe({ fetch: app.fetch, port: opts.port, hostname });
 
   console.log(`\n${ui.brand()}  ${pc.green("◉")} Factory is running\n`);
   console.log(`  ${ui.dim("Dashboard")}  ${pc.bold(`http://localhost:${opts.port}`)}`);

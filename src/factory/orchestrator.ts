@@ -109,6 +109,8 @@ export class Factory {
   private retryDelayMs: number;
   private sweeping: Promise<void> | null = null;
   private lastSweep = 0;
+  /** Why the last tick failed, so a store that stays broken is reported once rather than every tick. */
+  private tickError: string | null = null;
   /** Worktrees left in place this run, so each is reported once rather than every sweep. */
   private keptWorktrees = new Set<string>();
   /** Every agent this factory can run, by name. The first is the default until the operator picks one. */
@@ -122,7 +124,7 @@ export class Factory {
     const list = Array.isArray(drivers) ? drivers : [drivers];
     if (!list.length) throw new Error("The factory needs at least one agent driver");
     this.drivers = new Map(list.map((d) => [d.name, d]));
-    const size = Math.max(1, Math.min(CREW.length, opts.crewSize ?? Number(process.env.CRANE_AGENTS ?? 2)));
+    const size = Math.max(1, Math.min(CREW.length, opts.crewSize ?? envNumber("CRANE_AGENTS") ?? 2));
     this.crew = CREW.map((name) => ({ id: `a-${name.toLowerCase()}`, name }));
     for (const [i, a] of this.crew.entries()) {
       if (this.store.getSetting(crewSettingKey.active(a.id)) === null) {
@@ -257,13 +259,19 @@ export class Factory {
     this.store.addEvent(taskId, "status", message, { status: "queued" });
   }
 
-  /** Track a job so `stop()` can wait for it. */
-  private track(job: Promise<void>, agentId: string) {
+  /**
+   * Track a job so `stop()` can wait for it. Jobs record their own failures, so
+   * one only rejects when recording failed too. The other agents keep working;
+   * `start()` recovers this task, whose status is out of date until then.
+   */
+  private track(job: Promise<void>, agentId: string, taskId: string) {
     this.busy.add(agentId);
-    const p = job.finally(() => {
-      this.busy.delete(agentId);
-      this.inflight.delete(p);
-    });
+    const p = job
+      .catch((err) => this.log(`Couldn't record how ${taskId} ended: ${(err as Error).message}. Restart the factory to pick it up again`))
+      .finally(() => {
+        this.busy.delete(agentId);
+        this.inflight.delete(p);
+      });
     this.inflight.add(p);
   }
 
@@ -318,7 +326,19 @@ export class Factory {
     }
   }
 
+  /** One bad tick (a locked or full database, say) mustn't end every agent's run. The next one tries again. */
   private tick() {
+    try {
+      this.assignWork();
+      this.tickError = null;
+    } catch (err) {
+      const message = (err as Error).message;
+      if (message !== this.tickError) this.log(`Couldn't check for work: ${message}. Trying again`);
+      this.tickError = message;
+    }
+  }
+
+  private assignWork() {
     this.store.setSetting(HEARTBEAT_KEY, String(Date.now()));
     new OperatorActions(this.store).fireCrewSchedules();
 
@@ -336,13 +356,13 @@ export class Factory {
       // Approved merges first: the operator has already said yes and is waiting on them.
       const merge = this.store.claimNextMerge(agent.id, [...this.mergingRepos]);
       if (merge) {
-        this.track(this.merge(agent, merge), agent.id);
+        this.track(this.merge(agent, merge), agent.id, merge.id);
         continue;
       }
       // A member with a maintenance role is kept for the runs the operator starts for it.
       const task = this.store.claimNextTask(agent.id, { onlyAssigned: this.store.crewRole(agent.id) !== null });
       if (!task) continue;
-      this.track(this.work(agent, task), agent.id);
+      this.track(this.work(agent, task), agent.id, task.id);
     }
   }
 
@@ -406,10 +426,23 @@ export class Factory {
     }
   }
 
+  /**
+   * A write made for a driver callback. Drivers call these from child-process
+   * listeners, where a throw is uncaught and ends the factory, so a failed write
+   * costs that one update and nothing else.
+   */
+  private recording(write: () => void) {
+    try {
+      write();
+    } catch (err) {
+      this.log(`Couldn't record a task update: ${(err as Error).message}`);
+    }
+  }
+
   /** Record events on one task's feed. */
   private emitter(taskId: string) {
     return (type: EventType, message: string, data?: Record<string, unknown>) =>
-      this.store.addEvent(taskId, type, message, data ?? null);
+      this.recording(() => this.store.addEvent(taskId, type, message, data ?? null));
   }
 
   /** Land an approved task on its repo's default branch, with an agent on hand for conflicts. */
@@ -556,7 +589,7 @@ export class Factory {
         signal: ac.signal,
         emit,
         resumeSession: resumable ? task.sessionId! : undefined,
-        onSession: (sessionId) => this.store.updateTask(task.id, { sessionId }),
+        onSession: (sessionId) => this.recording(() => this.store.updateTask(task.id, { sessionId })),
         // Run below as review checks. Investigate-only runs get none.
         checks: task.autonomy !== "observe" ? this.store.repoChecks(repo.id) : undefined,
       });

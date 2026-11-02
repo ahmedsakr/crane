@@ -247,6 +247,7 @@ export class ClaudeCodeDriver implements AgentDriver {
       };
       signal.addEventListener("abort", onAbort, { once: true });
 
+      child.stdin.on("error", () => {}); // it exited before reading the prompt; `close` reports why
       child.stdin.end(resume ? resumePrompt(ctx) : userPrompt(task, job, ctx));
       child.stderr.on("data", (d) => {
         stderr = (stderr + String(d)).slice(-4000);

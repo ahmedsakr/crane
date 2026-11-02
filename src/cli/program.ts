@@ -1224,16 +1224,18 @@ program
       if (!Number.isFinite(n) || n < 0) ui.fail(`${flag} takes a number, 0 or more`);
       return n;
     };
-    const { serve } = await import("./serve.js");
-    await serve(store, {
-      port: Number(opts.port),
+    const settings = {
+      port: num(opts.port, "--port")!,
       host: opts.host,
-      agents: Number(opts.agents),
+      // A bad size would otherwise save every crew member as on-call.
+      agents: num(opts.agents, "--agents")!,
       driver: opts.driver,
       buildDashboard: opts.buildDashboard,
       maxTurns: num(opts.maxTurns, "--max-turns"),
       timeLimit: num(opts.timeLimit, "--time-limit"),
-    });
+    };
+    const { serve } = await import("./serve.js");
+    await serve(store, settings);
   });
 
 /** Runs one CLI command against `target`. `argv` is shaped like `process.argv`: node, script, then arguments. */

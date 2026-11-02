@@ -1,7 +1,15 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { relative, isAbsolute } from "node:path";
-import { combinedCost, parseReport, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
+import {
+  AgentRunError,
+  combinedCost,
+  isTransientFailure,
+  parseReport,
+  type AgentDriver,
+  type RunContext,
+  type RunResult,
+} from "@crane/agent-protocol";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
 import type { RunUsage } from "@crane/contracts";
 import { codexCost } from "./codex-pricing.js";
@@ -127,12 +135,12 @@ export class CodexDriver implements AgentDriver {
       const child = spawn(this.bin, args, { cwd, env: process.env, stdio: ["pipe", "pipe", "pipe"] });
       let lastText = "";
       let started = false;
+      let sessionId: string | null = resume ?? null;
       let turns = 0;
       let usage: RunUsage | null = null;
       let failed: string | null = null; // the turn failed
       let errored: string | null = null; // the last stream error, which may have been recovered from
       let stderr = "";
-      let sessionId: string | null = resume ?? null;
       const commands = new CommandTracker((command) => {
         const label = command.status === "running" ? "Started" : `Command ${command.status}`;
         emit("tool", `${label} ${command.command.split("\n")[0]?.slice(0, 120)}${command.exitCode === null ? "" : ` (exit ${command.exitCode})`}`, {
@@ -198,8 +206,10 @@ export class CodexDriver implements AgentDriver {
         switch (msg.type) {
           case "thread.started": {
             started = true;
-            if (typeof msg.thread_id === "string") sessionId = msg.thread_id;
-            if (typeof msg.thread_id === "string") ctx.onSession?.(msg.thread_id);
+            if (typeof msg.thread_id === "string") {
+              sessionId = msg.thread_id;
+              ctx.onSession?.(msg.thread_id);
+            }
             const verb = resume ? "resumed" : "started";
             const tuned = [model, ctx.effort ? `${ctx.effort} effort` : null].filter(Boolean).join(", ");
             emit("note", `Agent session ${verb} on Codex${tuned ? ` (${tuned})` : ""}`, { sessionId: msg.thread_id });
@@ -234,6 +244,8 @@ export class CodexDriver implements AgentDriver {
         }
       });
 
+      const fail = (message: string) => reject(new AgentRunError(message, { transient: isTransientFailure(message), sessionId }));
+
       child.on("error", (err) => {
         signal.removeEventListener("abort", onAbort);
         reject(new Error(`Could not start Codex (${this.bin}): ${err.message}`));
@@ -243,24 +255,21 @@ export class CodexDriver implements AgentDriver {
         commands.close(signal.aborted);
         // Reported before we decide whether the run succeeded: a failed run still used tokens.
         if (usage) ctx.onUsage?.(usage);
-        if (signal.aborted) return reject(new Error("Cancelled by operator"));
+        if (signal.aborted) return reject(new AgentRunError("Cancelled by operator", { sessionId }));
         if (resume && !started) {
           return reject(new SessionNotResumed(failed ?? errored ?? (stderr.trim().slice(-500) || `exit code ${code}`)));
         }
-        if (failed) return reject(new Error(failed));
+        if (failed) return fail(failed);
         // A turn that completed is a success, even if a recovered error came before it.
-        if (turns === 0 && errored) return reject(new Error(errored));
+        if (turns === 0 && errored) return fail(errored);
         if (!started && !lastText) {
-          const tail = stderr.trim().slice(-500);
-          return reject(
-            new Error(
-              code === 0
-                ? "Codex finished without sending any events Crane understands. Update Codex (npm i -g @openai/codex) and try again."
-                : `Codex exited with code ${code}. ${tail}`,
-            ),
+          return fail(
+            code === 0
+              ? "Codex finished without sending any events Crane understands. Update Codex (npm i -g @openai/codex) and try again."
+              : `Codex exited with code ${code}. ${stderr.trim().slice(-500)}`,
           );
         }
-        if (code !== 0 && !lastText) return reject(new Error(`Codex exited with code ${code}. ${stderr.trim().slice(-500)}`));
+        if (code !== 0 && !lastText) return fail(`Codex exited with code ${code}. ${stderr.trim().slice(-500)}`);
         resolve({ report: parseReport(lastText) });
       });
     });
