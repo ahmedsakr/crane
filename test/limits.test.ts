@@ -122,6 +122,42 @@ function collect() {
   return { events, emit: (type: EventType, message: string, data?: Record<string, unknown>) => void events.push({ type, message, data }) };
 }
 
+test("driver: persists Claude multiline commands and ordinary results with tool-use IDs", async () => {
+  const command = 'node -e "\nconsole.log(1);\nprocess.exit(2);\n"';
+  const fake = fakeClaude([
+    { type: "system", subtype: "init", session_id: "evidence-session" },
+    { type: "assistant", message: { content: [
+      { type: "tool_use", id: "regression", name: "Bash", input: { command } },
+      { type: "tool_use", id: "compiler", name: "Bash", input: { command: `API_TOKEN=hide-me npm run typecheck\n${"x".repeat(9000)}` } },
+      { type: "tool_use", id: "missing-result", name: "Bash", input: { command: "npm test" } },
+    ] } },
+    { type: "user", message: { content: [
+      { type: "tool_result", tool_use_id: "regression", is_error: true, content: "Expected failure\nAPI_TOKEN=hide-me" },
+    ] }, tool_use_result: { exit_code: 2, stderr: "Expected failure", stdout: "1\n" } },
+    { type: "user", message: { content: [
+      { type: "tool_result", tool_use_id: "compiler", is_error: false, content: "Typecheck passed" },
+    ] }, tool_use_result: { exitCode: 0 } },
+    { type: "user", message: { content: [
+      { type: "tool_result", tool_use_id: "unmatched", content: "diagnostic without a call" },
+    ] } },
+    { type: "result", subtype: "success", result: "Done" },
+  ]);
+  const { events, emit } = collect();
+  await new ClaudeCodeDriver(fake.bin).run({ task: task(), repo, cwd: scratch("crane-cwd-"), signal: new AbortController().signal, emit });
+  const commands = events.filter((e) => e.data?.command).map((e) => e.data!.command as import("@crane/contracts").CommandEvidence);
+  const regression = commands.filter((c) => c.itemId === "regression");
+  assert.equal(regression.length, 2);
+  assert.equal(regression[0]!.command, command);
+  assert.equal(regression[1]!.commandId, regression[0]!.commandId);
+  assert.equal(regression[1]!.status, "failed");
+  assert.equal(regression[1]!.exitCode, 2);
+  assert.equal(commands.find((c) => c.itemId === "compiler" && c.status === "completed")!.truncated, true);
+  assert.equal(commands.at(-1)!.status, "unknown", "a missing result never implies success");
+  assert.equal(events.filter((e) => e.data?.result).length, 3, "ordinary and unmatched results are retained");
+  assert.ok(!JSON.stringify(events).includes("hide-me"));
+  assert.equal(events.filter((e) => e.type === "blocked").length, 0, "regression failures aren't refusals");
+});
+
 test("driver: reports each blocked call once, with the rules that would allow it", async () => {
   const command = "npm ci && npm test 2>&1 | tail -5";
   const fake = fakeClaude([

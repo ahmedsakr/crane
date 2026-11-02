@@ -27,6 +27,7 @@ agent CLIs or listen on ports.
 | Configured checks and factory-owned evidence | `node --import tsx test/checks.test.ts` |
 | Token pricing and cost ledger | `node --import tsx test/codex-costs.test.ts` |
 | Command lifecycle evidence, redaction, and recovery prompts | `node --import tsx test/command-evidence.test.ts` |
+| Claude tool result metadata and diagnostic redaction | `node --import tsx test/claude-evidence.test.ts` |
 
 This is a conservative starting selection, not an exhaustive list of runnable
 files. For other task-relevant tests, inspect their setup and dependencies
@@ -80,6 +81,15 @@ the complete file directly still starts incompatible subprocess tests. Leave
 those complete suites to the unchanged `npm test` review and merge checks.
 Changes to driver streaming or resume behavior therefore need external test
 results even when the local checks pass.
+
+Claude tool events retain Bash commands up to 8192 characters in `data.command`
+and correlate calls and results with `data.toolUseId`. Result events keep textual
+content up to 8192 characters, stdout and stderr up to 4096 each, and available
+error, exit-code, and interruption metadata in `data.result`. Each text field
+has an explicit `truncated` flag. Credential redaction runs before truncation;
+it is best effort, so diagnostic evidence still needs the same access controls
+as task logs. Images and unrecognized SDK fields are not retained. Missing exit
+codes stay null, and a lost stream never implies a successful command.
 
 For example, report: “Typecheck and the direct permission tests passed. `npm
 test`, including limits, drivers, and restart, was not run locally because of

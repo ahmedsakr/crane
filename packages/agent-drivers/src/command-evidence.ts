@@ -3,10 +3,8 @@ import type { CommandEvidence } from "@crane/contracts";
 
 const COMMAND_LIMIT = 8192;
 
-/** Redact before truncating so a cut cannot expose the start of a secret value.
- * Output is deliberately not retained: it can contain arbitrary credentials.
- */
-export function safeCommand(raw: string): Pick<CommandEvidence, "command" | "truncated"> {
+/** Best-effort credential redaction before truncation, shared by commands and diagnostics. */
+export function safeEvidenceText(raw: string, limit = COMMAND_LIMIT): { text: string; truncated: boolean } {
   const value = String.raw`(?:"(?:\\.|[^"\\])*"|'[^']*'|\\[\s\S]|[^\s;&|"'\\])+`;
   const sensitive = String.raw`[\w.-]*(?:token|secret|password|passwd|credential|api[_-]?key|private[_-]?key|authorization|cookie)[\w.-]*`;
   const redacted = raw
@@ -17,7 +15,12 @@ export function safeCommand(raw: string): Pick<CommandEvidence, "command" | "tru
     .replace(new RegExp(String.raw`\b((?:--?)?${sensitive}["']?\s*(?:=|:|\s)\s*)${value}`, "gi"), "$1[REDACTED]")
     .replace(/(https?:\/\/)[^\s/@]+@/gi, "$1[REDACTED]@")
     .replace(/(https?:\/\/[^\s'"?]+)\?[^\s'"]+/gi, "$1?[REDACTED]");
-  return { command: redacted.slice(0, COMMAND_LIMIT), truncated: redacted.length > COMMAND_LIMIT };
+  return { text: redacted.slice(0, limit), truncated: redacted.length > limit };
+}
+
+export function safeCommand(raw: string): Pick<CommandEvidence, "command" | "truncated"> {
+  const { text, truncated } = safeEvidenceText(raw);
+  return { command: text, truncated };
 }
 
 /** One CLI invocation; item IDs alone can repeat in later sessions/runs. */
@@ -33,6 +36,7 @@ export class CommandTracker {
     const previous = this.pending.get(commandId);
     const exitCode = typeof item.exit_code === "number" && Number.isInteger(item.exit_code) ? item.exit_code : null;
     const status = phase === "started" ? "running"
+      : item.status === "interrupted" ? "interrupted"
       : item.status === "failed" || (exitCode !== null && exitCode !== 0) ? "failed"
       : item.status === "completed" && exitCode === 0 ? "completed" : "unknown";
     const evidence: CommandEvidence = {

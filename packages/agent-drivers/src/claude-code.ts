@@ -11,6 +11,8 @@ import { cliAnswers, readMessages } from "./cli.js";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
 import { ALWAYS_DENIED, overlapsDenied, suggestRules } from "@crane/agent-policy";
 import type { Autonomy, BlockedCall, RunUsage } from "@crane/contracts";
+import { CommandTracker, safeEvidenceText } from "./command-evidence.js";
+import { claudeToolResult } from "./claude-evidence.js";
 
 const READ_ONLY_TOOLS = [
   "Read",
@@ -119,8 +121,6 @@ function describeTool(name: string, input: Record<string, unknown>): string {
       return `Searched for “${s(input.pattern)}”`;
     case "Glob":
       return `Listed ${s(input.pattern)}`;
-    case "Bash":
-      return `Ran ${s(input.command).split("\n")[0]?.slice(0, 120)}`;
     case "WebSearch":
       return `Searched the web for “${s(input.query)}”`;
     case "WebFetch":
@@ -229,6 +229,12 @@ export class ClaudeCodeDriver implements AgentDriver {
       let started = false;
       // Tool calls by id, so a refusal can be reported with what was asked for.
       const calls = new Map<string, { name: string; input: Record<string, unknown> }>();
+      const commands = new CommandTracker((command) => {
+        const label = command.status === "running" ? "Ran" : `Command ${command.status}`;
+        emit("tool", `${label} ${command.command.split("\n")[0]?.slice(0, 120)}${command.exitCode === null ? "" : ` (exit ${command.exitCode})`}`, {
+          tool: "Bash", toolUseId: command.itemId, sessionId: command.sessionId, command,
+        });
+      });
       const reported = new Set<string>();
       const blocked = (id: string, name: string, input: Record<string, unknown>, refusal: NonNullable<BlockedCall["refusal"]>) => {
         if (reported.has(id)) return;
@@ -270,16 +276,35 @@ export class ClaudeCodeDriver implements AgentDriver {
               if (visible) emit("note", visible.slice(0, 1200));
             } else if (block.type === "tool_use") {
               if (block.id) calls.set(block.id, { name: block.name, input: block.input ?? {} });
-              emit("tool", describeTool(block.name, block.input ?? {}), { tool: block.name });
+              if (block.name === "Bash") {
+                commands.record("started", { id: block.id }, typeof block.input?.command === "string" ? block.input.command : "", sessionId);
+              } else {
+                emit("tool", safeEvidenceText(describeTool(block.name, block.input ?? {}), 240).text, {
+                  tool: block.name, toolUseId: block.id ?? null, sessionId,
+                });
+              }
             }
           }
         } else if (msg.type === "user") {
           // Report refusals as they happen. The result's permission_denials, below, is the full record.
-          for (const block of Array.isArray(msg.message?.content) ? msg.message.content : []) {
-            if (block.type !== "tool_result" || !block.is_error || !block.tool_use_id) continue;
+          const results = (Array.isArray(msg.message?.content) ? msg.message.content : [])
+            .filter((block: Record<string, unknown>) => block.type === "tool_result");
+          for (const block of results) {
+            if (!block.tool_use_id) continue;
             const text = typeof block.content === "string" ? block.content : JSON.stringify(block.content ?? "");
             const call = calls.get(block.tool_use_id);
-            if (call && DENIAL_TEXT.test(text)) blocked(block.tool_use_id, call.name, call.input, {
+            // Top-level SDK metadata describes a single result; don't assign it to several parallel calls.
+            const result = claudeToolResult(block, results.length === 1 ? msg.tool_use_result : undefined);
+            emit("tool", `${call?.name ?? "Tool"} returned${result.isError ? " an error" : " a result"}`, {
+              tool: call?.name ?? null, toolUseId: block.tool_use_id, sessionId, result,
+            });
+            if (call?.name === "Bash") {
+              commands.record("completed", {
+                id: block.tool_use_id, exit_code: result.exitCode,
+                status: result.interrupted ? "interrupted" : result.isError ? "failed" : "completed",
+              }, "", sessionId);
+            }
+            if (block.is_error && call && DENIAL_TEXT.test(text)) blocked(block.tool_use_id, call.name, call.input, {
               source: "claude-code.tool_result", reason: text,
             });
           }
@@ -315,10 +340,12 @@ export class ClaudeCodeDriver implements AgentDriver {
         );
 
       child.on("error", (err) => {
+        commands.close(signal.aborted);
         signal.removeEventListener("abort", onAbort);
         reject(new Error(`Could not start Claude Code (${this.bin}): ${err.message}`));
       });
       child.on("close", (code) => {
+        commands.close(signal.aborted);
         signal.removeEventListener("abort", onAbort);
         if (signal.aborted) return reject(new AgentRunError("Cancelled by operator", { sessionId }));
         if (resume && !started) {
