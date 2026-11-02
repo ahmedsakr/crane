@@ -34,6 +34,23 @@ per-file subprocess wrapper used by `node --test`; it does not remove child
 processes or socket operations inside the tests themselves. Do not use a
 wildcard to run every test file directly.
 
+## CLI output tests
+
+For CLI output tests, start with the existing in-process harness in
+[`test/cli.test.ts`](../test/cli.test.ts) before setting up a separately seeded
+demo home. Its `setup()` creates a `Store(":memory:")`, and its `crane()` helper
+calls `runCli` with that store, captures console output with ANSI colors removed,
+and intercepts exit codes. Extend these tests to assert output, errors, and
+store changes; the follow-up `show` test is an example of checking displayed
+task and finding links. The helper temporarily replaces console methods and
+`process.exit`, so keep its calls sequential.
+
+After the successful package build described above, run this file directly with
+`node --import tsx test/cli.test.ts`. It needs no seeded `CRANE_HOME` or separate
+CLI process. It does **not** validate process startup or persistent-home
+behavior; those still need separate validation when relevant. This harness
+does not broaden permissions or replace incomplete manual CLI validation.
+
 ## Checks delegated to Crane
 
 In this known restricted sandbox, defer these checks without first attempting
