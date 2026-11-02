@@ -153,9 +153,12 @@ button {
 }
 .nav {
   display: flex;
+  align-items: center;
   gap: 4px;
 }
 .nav a {
+  flex: none;
+  white-space: nowrap;
   padding: 7px 12px;
   border-radius: 999px;
   color: var(--graphite);
@@ -197,7 +200,11 @@ button {
   .nav {
     order: 3;
     width: 100%;
+    gap: 2px;
     overflow-x: auto;
+  }
+  .nav a {
+    padding-inline: 10px;
   }
   .factory-pill .label-long {
     display: none;
