@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { sh } from "./support/git.js";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,10 +15,6 @@ import {
 import { Store } from "../src/core/store.ts";
 import { createApp } from "../src/server/app.ts";
 import type { Repo } from "@crane/contracts";
-
-const ID = ["-c", "user.name=Test", "-c", "user.email=test@localhost", "-c", "commit.gpgsign=false"];
-const sh = (cwd: string, ...args: string[]) =>
-  execFileSync("git", [...ID, ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 
 /** Stands in for `npm run build -w web`: "bundles" web/index.html, so the output shows which commit was built. */
 const fakeBuild: BuildWeb = async (cwd, outDir) => {

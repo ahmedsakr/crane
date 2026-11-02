@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { sh } from "./support/git.js";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,10 +10,6 @@ import { OperatorActions } from "../src/factory/actions.js";
 import { createWorktree, diffForTask, MAX_NEW_FILES } from "../src/factory/git.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
-
-const ID = ["-c", "user.name=Test", "-c", "user.email=test@localhost", "-c", "commit.gpgsign=false"];
-const sh = (cwd: string, ...args: string[]) =>
-  execFileSync("git", [...ID, ...args], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
 
 async function setup() {
   const root = mkdtempSync(join(tmpdir(), "crane-live-diff-"));

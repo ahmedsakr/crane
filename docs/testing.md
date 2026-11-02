@@ -35,6 +35,16 @@ per-file subprocess wrapper used by `node --test`; it does not remove child
 processes or socket operations inside the tests themselves. Do not use a
 wildcard to run every test file directly.
 
+## Shared test helpers
+
+Keep repo-local helpers in `test/support/`; the `test/*.test.ts` runner glob
+excludes them, and `tsconfig.test.json` typechecks them. `git.ts` exports `sh`
+for git commands with a fixed test identity and signing disabled.
+`fake-agents.ts` holds the Claude event-replay, Claude lost-session, and Codex
+CLI fixtures. Add stream fixture changes there so callers share the same
+protocol examples. Keep suite-specific setup in its test file until another
+suite needs the same behavior; these helpers do not need a workspace package.
+
 ## CLI output tests
 
 For CLI output tests, start with the existing in-process harness in
