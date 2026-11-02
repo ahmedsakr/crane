@@ -104,8 +104,9 @@ test("boundaries: the agent protocol depends on contract types and nothing else"
 });
 
 test("boundaries: production callers use the agent protocol package", () => {
+  const oldPaths = new Set(["agents/driver", "agents/report"]);
   for (const file of sources) {
-    const bad = importsOf(file).filter((i) => i.startsWith("agent-protocol/"));
+    const bad = importsOf(file).filter((i) => i.startsWith("agent-protocol/") || oldPaths.has(i));
     assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
   }
 });
@@ -129,24 +130,11 @@ test("boundaries: the agent policy depends on the rule grammar and nothing else"
 });
 
 test("boundaries: production callers use the agent policy package", () => {
-  // The old paths are re-exports for older branches only.
   const oldPaths = new Set(["agents/policy", "core/permissions"]);
   for (const file of sources) {
     const bad = importsOf(file).filter((i) => i.startsWith("agent-policy/") || oldPaths.has(i));
     assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
   }
-});
-
-test("boundaries: old policy paths re-export the agent policy", async () => {
-  const policy = await import("@crane/agent-policy");
-  const legacy = await import("../src/agent-policy/index.ts");
-  const oldPolicy = await import("../src/agents/policy.ts");
-  const oldPermissions = await import("../src/core/permissions.ts");
-  assert.deepEqual(legacy, policy);
-  assert.equal(oldPolicy.ALWAYS_DENIED, policy.ALWAYS_DENIED);
-  assert.equal(oldPermissions.isAllowed, policy.isAllowed);
-  assert.equal(oldPermissions.overlapsDenied, policy.overlapsDenied);
-  assert.equal(oldPermissions.suggestRules, policy.suggestRules);
 });
 
 test("boundaries: the private policy has one browser-safe ESM entry and tracks every backend build input", async () => {
@@ -187,22 +175,6 @@ test("boundaries: provider price tables stay with their drivers", () => {
     const bad = importsOf(file).filter((i) => /^agents\/.*pricing$/.test(i));
     assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
   }
-});
-
-test("boundaries: old agent paths re-export the protocol's one AgentRunError", async () => {
-  // Retry handling checks instanceof, so a second class at an old path would silently stop retries.
-  const protocol = await import("@crane/agent-protocol");
-  const legacy = await import("../src/agent-protocol/index.ts");
-  const driver = await import("../src/agents/driver.ts");
-  const report = await import("../src/agents/report.ts");
-  const pricing = await import("../src/agents/codex-pricing.ts");
-  assert.equal(driver.AgentRunError, protocol.AgentRunError);
-  assert.deepEqual(legacy, protocol);
-  assert.equal(driver.isTransientFailure, protocol.isTransientFailure);
-  assert.equal(report.parseReport, protocol.parseReport);
-  assert.equal(report.REPORT_FENCE, protocol.REPORT_FENCE);
-  assert.equal(pricing.combinedCost, protocol.combinedCost);
-  assert.ok(new protocol.AgentRunError("x") instanceof driver.AgentRunError);
 });
 
 test("boundaries: only the web entry point imports App", () => {
