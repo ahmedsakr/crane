@@ -11,7 +11,7 @@ Capture is deferred in the agent sandbox, where local servers and browsers are u
 Run from the candidate checkout. The native input setters below send normal input/change events so React receives the chosen start time. Each viewport gets its own disposable demo and a time one day ahead; no production task data is used.
 
 ```bash
-npm run build -w web
+npm run build -w web &&
 for size in 1280x800 1280x600 390x844; do
   npm run screenshot -- '/?instruct=Investigate%20tests%20in%20payments-api' \
     --size "$size" \

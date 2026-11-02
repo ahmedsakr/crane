@@ -92,9 +92,9 @@ Reports classify UI work with `visualReview: { "required": true, "reason": "chan
 For example, run these commands in the candidate checkout in the approved environment, replacing `/tasks` and adding interaction steps for the changed states:
 
 ```bash
-npm run build -w web
-npm run screenshot -- /tasks --size 1280x800 --out .crane/screenshots/tasks-wide.png
-npm run screenshot -- /tasks --size 1280x600 --out .crane/screenshots/tasks-short.png
+npm run build -w web &&
+npm run screenshot -- /tasks --size 1280x800 --out .crane/screenshots/tasks-wide.png &&
+npm run screenshot -- /tasks --size 1280x600 --out .crane/screenshots/tasks-short.png &&
 npm run screenshot -- /tasks --size 390x844 --out .crane/screenshots/tasks-phone.png
 ```
 
