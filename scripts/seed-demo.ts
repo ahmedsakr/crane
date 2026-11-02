@@ -224,9 +224,20 @@ store.createTask({
   acceptance: ["src/webhooks imports only from @payments/client's entry point", "The webhook retry tests pass"],
 });
 
+// A follow-up the operator started from the review task's second finding.
+const finding = store.getTask(client.id)!.report!.findings[1]!;
+store.createTask({
+  kind: "maintenance",
+  title: finding.title,
+  brief: `${finding.detail}\n\nFollow-up to task ${client.id}: “${client.title}”.`,
+  repoId: api.id,
+  autonomy: "propose",
+  followUp: { of: client.id, finding: 1 },
+});
+
 // One crew member dedicated to security reviews of Crane, waiting for the operator to start one.
 store.setSetting("crew_role_a-hoist", "security");
 store.setSetting("crew_active_a-hoist", "true");
 
-console.log(`Seeded ${n} historical tasks, 4 queued ones (one waiting on a prerequisite), and 1 for review into ${home}`);
+console.log(`Seeded ${n} historical tasks, 5 queued ones (one waiting on a prerequisite, one a follow-up), and 1 for review into ${home}`);
 store.close();

@@ -395,6 +395,11 @@ program
     if (settingsLabel(m)) console.log(ui.dim(`  Model settings: ${settingsLabel(m)}`));
     if (m.lookouts.length) console.log(ui.dim(`  Also looks for: ${lookoutsLabel(m.lookouts)}`));
     if (m.scheduledAt) console.log(ui.dim(`  Start no earlier than: ${new Date(m.scheduledAt).toLocaleString()} (${m.scheduledAt})`));
+    const source = store.followUpSource(m);
+    if (source) {
+      console.log(`  ${ui.dim("Follow-up to")} ${source.id}  ${source.title}  ${ui.statusText(source.status)}`);
+      if (source.finding) console.log(`  ${ui.dim("Finding")} ${source.finding}`);
+    }
 
     const prerequisites = store.prerequisiteStates(m);
     const waiting = store.unmetPrerequisites(m);

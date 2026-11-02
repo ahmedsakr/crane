@@ -402,6 +402,12 @@ export interface FollowUpState extends Pick<Task, "id" | "title" | "status"> {
   finding: number | null;
 }
 
+/** The task and finding a follow-up came from, as the follow-up's page and CLI show it. */
+export interface FollowUpSource extends Pick<Task, "id" | "title" | "status"> {
+  /** The finding's title, or null when Crane couldn't tell which finding, or the source's report no longer has it. */
+  finding: string | null;
+}
+
 /** The most recent follow-up started from finding `index`, if any. */
 export const followUpFor = (followUps: readonly FollowUpState[], index: number): FollowUpState | undefined =>
   followUps.filter((f) => f.finding === index).at(-1);
@@ -623,6 +629,8 @@ export interface TaskDetail {
   prerequisites: PrerequisiteState[];
   /** Tasks started from this task's findings, oldest first. */
   followUps: FollowUpState[];
+  /** The task whose finding this one was started from, or null when it isn't a follow-up. */
+  followUpSource: FollowUpSource | null;
 }
 
 /** What a task changed: `GET /api/tasks/:id/diff`. */
