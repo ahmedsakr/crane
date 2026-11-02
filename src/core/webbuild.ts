@@ -5,27 +5,17 @@ import { buildsDir, factoryRoot } from "./paths.js";
 
 /** UI source the build depends on, relative to `web/`. */
 const SOURCES = ["src", "index.html", "vite.config.ts", "package.json"];
-/**
- * Shared package inputs, relative to the root. Both builds depend on these.
- * Keep the source list in sync with packages/contracts/src (checked in tests).
- */
-export const SHARED_SOURCES = ["src/index.ts", "src/types.ts", "src/diff.ts", "src/rules.ts", "src/crew-schedules.ts", "package.json", "tsconfig.json"]
-  .map((f) => join("packages", "contracts", f));
+/** What a workspace package is compiled from, relative to its directory. */
+const PACKAGE_INPUTS = ["src", "package.json", "tsconfig.json"];
+/** The only package the dashboard bundles (checked in tests), relative to the root. */
+const DASHBOARD_PACKAGE_INPUTS = PACKAGE_INPUTS.map((f) => join("packages", "contracts", f));
 
-/** Backend-only package inputs; the dashboard doesn't bundle the agent protocol. */
-export const AGENT_PROTOCOL_SOURCES = [
-  "src/index.ts", "src/driver.ts", "src/report.ts", "src/usage.ts", "package.json", "tsconfig.json",
-].map((f) => join("packages", "agent-protocol", f));
-
-/** Backend-only package inputs; the dashboard doesn't bundle permission handling. */
-export const AGENT_POLICY_SOURCES = [
-  "src/index.ts", "src/denied.ts", "src/permissions.ts", "package.json", "tsconfig.json",
-].map((f) => join("packages", "agent-policy", f));
-
-/** Backend-only dependency preparation inputs; the dashboard doesn't bundle them. */
-export const WORKTREE_DEPS_SOURCES = [
-  "src/index.ts", "src/deps.ts", "package.json", "tsconfig.json",
-].map((f) => join("packages", "worktree-deps", f));
+/** Every package's inputs, as absolute paths. An installed tarball has no `packages/`, so none. */
+function factoryPackageInputs(root: string): string[] {
+  const packages = join(root, "packages");
+  if (!existsSync(packages)) return [];
+  return readdirSync(packages).flatMap((name) => PACKAGE_INPUTS.map((f) => join(packages, name, f)));
+}
 
 function newestMtime(path: string): number {
   if (!existsSync(path)) return 0;
@@ -53,7 +43,7 @@ export function webBuildOutdated(root = factoryRoot(), now = Date.now()): boolea
   if (existsSync(built) && existsSync(join(web, "src"))) {
     const source = Math.max(
       ...SOURCES.map((s) => newestMtime(join(web, s))),
-      ...SHARED_SOURCES.map((s) => newestMtime(join(root, s))),
+      ...DASHBOARD_PACKAGE_INPUTS.map((s) => newestMtime(join(root, s))),
     );
     value = source > statSync(built).mtimeMs;
   }
@@ -71,10 +61,7 @@ export function createFactoryBuildCheck(root: string, compiled: boolean): (now?:
     if (cached && now - cached.at < 5_000) return cached.value;
     const value = Math.max(
       newestMtime(join(root, "src")),
-      ...SHARED_SOURCES.map((s) => newestMtime(join(root, s))),
-      ...AGENT_PROTOCOL_SOURCES.map((s) => newestMtime(join(root, s))),
-      ...AGENT_POLICY_SOURCES.map((s) => newestMtime(join(root, s))),
-      ...WORKTREE_DEPS_SOURCES.map((s) => newestMtime(join(root, s))),
+      ...factoryPackageInputs(root).map(newestMtime),
     ) > loadedAt;
     cached = { at: now, value };
     return value;

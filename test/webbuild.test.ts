@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { AGENT_POLICY_SOURCES, AGENT_PROTOCOL_SOURCES, WORKTREE_DEPS_SOURCES, createFactoryBuildCheck, webBuildOutdated } from "../src/core/webbuild.ts";
+import { createFactoryBuildCheck, webBuildOutdated } from "../src/core/webbuild.ts";
 
 function checkout() {
   const root = mkdtempSync(join(tmpdir(), "crane-webbuild-"));
@@ -106,7 +106,7 @@ test("source-mode factories and builds with no source to compare don't report ba
     c.rootAt("src/agents/prompts.ts", 10);
     assert.equal(createFactoryBuildCheck(c.root, false)(), false, "tsx runs source directly");
     rmSync(join(c.root, "src"), { recursive: true });
-    assert.equal(createFactoryBuildCheck(c.root, true)(), false, "installed package without source");
+    assert.equal(createFactoryBuildCheck(c.root, true)(), false, "installed package with no src or packages directory");
     rmSync(join(c.root, "dist"), { recursive: true });
     assert.equal(createFactoryBuildCheck(c.root, true)(), false, "no compiled build to compare");
   } finally {
@@ -128,8 +128,16 @@ test("a running factory notices shared contract changes", () => {
   }
 });
 
-test("backend package inputs stale the factory without staling the dashboard", () => {
-  for (const file of [...AGENT_PROTOCOL_SOURCES, ...AGENT_POLICY_SOURCES, ...WORKTREE_DEPS_SOURCES]) {
+test("every package's inputs stale the factory; only contracts stale the dashboard too", () => {
+  const cases: [file: string, stalesDashboard: boolean][] = [
+    ["packages/contracts/src/nested/new.ts", true],
+    ["packages/agent-protocol/src/driver.ts", false],
+    ["packages/agent-policy/package.json", false],
+    ["packages/worktree-deps/tsconfig.json", false],
+    // Nothing lists a package, so one no code here has heard of counts as well.
+    ["packages/not-yet-written/src/nested/new.ts", false],
+  ];
+  for (const [file, stalesDashboard] of cases) {
     const c = checkout();
     try {
       c.at("src/components/Sheet.tsx", 100);
@@ -140,9 +148,27 @@ test("backend package inputs stale the factory without staling the dashboard", (
       assert.equal(outdated(0), false, file);
       c.rootAt(file, 10);
       assert.equal(outdated(5_000), true, file);
-      assert.equal(webBuildOutdated(c.root), false, file);
+      assert.equal(webBuildOutdated(c.root), stalesDashboard, file);
     } finally {
       c.done();
     }
+  }
+});
+
+test("a package added while the factory runs stales it; a package's own build output doesn't", () => {
+  const c = checkout();
+  try {
+    c.rootAt("src/agents/prompts.ts", 100);
+    c.rootAt("dist/cli/index.js", 50);
+    const outdated = createFactoryBuildCheck(c.root, true);
+    assert.equal(outdated(0), false);
+    c.rootAt("packages/agent-policy/dist/index.js", 10);
+    c.rootAt("packages/agent-policy/node_modules/x/index.js", 10);
+    c.rootAt("packages/stray-file", 10);
+    assert.equal(outdated(5_000), false);
+    c.rootAt("packages/new-package/src/index.ts", 10);
+    assert.equal(outdated(10_000), true);
+  } finally {
+    c.done();
   }
 });
