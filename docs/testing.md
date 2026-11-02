@@ -28,6 +28,7 @@ agent CLIs or listen on ports.
 | Token pricing and cost ledger | `node --import tsx test/codex-costs.test.ts` |
 | Command lifecycle evidence, redaction, and recovery prompts | `node --import tsx test/command-evidence.test.ts` |
 | Claude tool result metadata and diagnostic redaction | `node --import tsx test/claude-evidence.test.ts` |
+| Dependency install progress, diagnostic bounds, and process outcomes (in-process fixtures) | `node --import tsx test/install-process.test.ts` |
 
 This is a conservative starting selection, not an exhaustive list of runnable
 files. For other task-relevant tests, inspect their setup and dependencies
@@ -81,6 +82,20 @@ the complete file directly still starts incompatible subprocess tests. Leave
 those complete suites to the unchanged `npm test` review and merge checks.
 Changes to driver streaming or resume behavior therefore need external test
 results even when the local checks pass.
+
+Dependency installs keep their ten-minute limit and emit progress every 30
+seconds even when the package manager is silent. Each note identifies the
+command and elapsed time, with the last four complete lines per stdout/stderr
+stream (512 characters each), byte counts, and time since the last output.
+Omitted output is marked; lines exceeding 8192 characters are discarded in
+full, and a partial line is retained only for
+redaction when completed or when the process closes. Credentials are redacted
+before line truncation, including URL credentials/query strings, common secret
+assignments, authorization headers, and private-key blocks. This is best effort;
+install diagnostics need the same access controls as task logs. Completion and
+failure notes distinguish exit codes, signals, cancellation, timeout, and spawn
+errors. These tails can guide investigation but do not establish whether a slow
+install was caused by downloads, lifecycle scripts, or resource contention.
 
 Claude tool events retain Bash commands up to 8192 characters in `data.command`
 and correlate calls and results with `data.toolUseId`. Result events keep textual

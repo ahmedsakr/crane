@@ -64,7 +64,7 @@ function why(err: unknown): string {
 export async function buildDashboard(
   repo: Repo,
   sha: string,
-  opts: { builds?: string; signal?: AbortSignal; build?: BuildWeb } = {},
+  opts: { builds?: string; signal?: AbortSignal; build?: BuildWeb; onProgress?: (note: string) => void } = {},
 ): Promise<string> {
   const builds = opts.builds ?? buildsDir();
   const out = join(builds, sha);
@@ -77,7 +77,7 @@ export async function buildDashboard(
   await mkdir(join(builds, ".work"), { recursive: true });
   await git(repo.path, "worktree", "add", "--detach", "--quiet", work, sha);
   try {
-    await installDependencies(work, { from: repo.path, signal: opts.signal });
+    await installDependencies(work, { from: repo.path, signal: opts.signal, onProgress: opts.onProgress });
     const tmp = join(out, "dist.tmp");
     await mkdir(out, { recursive: true });
     await (opts.build ?? npmBuild)(work, tmp, opts.signal);
@@ -205,7 +205,7 @@ export class DashboardBuilder {
       };
       tell(`Building the dashboard from ${short}`);
       try {
-        await buildDashboard(repo, sha, { builds: this.opts.builds, signal: this.ac.signal, build: this.opts.build });
+        await buildDashboard(repo, sha, { builds: this.opts.builds, signal: this.ac.signal, build: this.opts.build, onProgress: tell });
         await pruneDashboardBuilds({ builds: this.opts.builds }).catch(() => {});
         tell(`The dashboard now shows ${short}. Reload it to see the latest UI`);
       } catch (err) {

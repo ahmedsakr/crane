@@ -257,12 +257,13 @@ test("dependencies: an existing install without a marker explains why it cannot 
   const note = await installDependencies(root, {
     from: root,
     onProgress(n) {
-      assert.ok(existsSync(sentinel), "the reason is emitted before the clean install");
+      if (!progress.length) assert.ok(existsSync(sentinel), "the reason is emitted before the clean install");
       progress.push(n);
     },
   });
   const reason = " · preparation not reusable: the preparation marker is missing or unreadable · didn't copy from your checkout: the worktree already has node_modules";
-  assert.deepEqual(progress, [`Installing dependencies (npm ci --no-audit --no-fund)${reason}`]);
+  assert.equal(progress[0], `Installing dependencies (npm ci --no-audit --no-fund)${reason}`);
+  assert.match(progress.at(-1)!, /completed \(exit 0\)/);
   assert.ok(note!.endsWith(reason), note!);
   assert.ok(!existsSync(sentinel), "verification still requires a clean install");
 });
@@ -334,7 +335,8 @@ test("dependencies: a skipped copy is explained before the install starts and on
   const options: InstallDependenciesOptions = { from: from.root, onProgress: (n) => progress.push(n) };
   const note = await installDependencies(to.root, options);
   const reason = "didn't copy from your checkout: its package-lock.json differs from the worktree's";
-  assert.deepEqual(progress, [`Installing dependencies (npm ci --no-audit --no-fund) · preparation not reusable: the preparation marker is missing or unreadable · ${reason}`]);
+  assert.equal(progress[0], `Installing dependencies (npm ci --no-audit --no-fund) · preparation not reusable: the preparation marker is missing or unreadable · ${reason}`);
+  assert.match(progress.at(-1)!, /completed \(exit 0\)/);
   assert.match(note!, /^Installed dependencies \(npm ci --no-audit --no-fund\) in \d+(\.\d)?s · /);
   assert.ok(note!.endsWith(reason), note!);
 });

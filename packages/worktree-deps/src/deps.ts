@@ -4,6 +4,7 @@ import { constants, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { cp, lstat, mkdir, readFile, readdir, readlink, realpath, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { runInstall } from "./install-process.js";
 
 const run = promisify(execFile);
 
@@ -52,7 +53,8 @@ export interface InstallDependenciesOptions {
  * `onProgress` hears about the slow part (a copy or a clean install) before it
  * starts, including why the copy was skipped, so a long setup is explained
  * while it runs rather than after. The returned note carries the same reason
- * and how long the setup took.
+ * and how long the setup took. Installs also report elapsed time and bounded,
+ * best-effort redacted stdout/stderr tails every 30 seconds and on completion.
  */
 export async function installDependencies(
   path: string,
@@ -91,11 +93,10 @@ export async function installDependencies(
   const command = [lock.cmd, ...lock.args].join(" ");
   const because = refresh + (skipped ? ` · didn't copy from your checkout: ${skipped}` : "");
   opts.onProgress?.(`Installing dependencies (${command})${because}`);
-  await run(lock.cmd, lock.args, {
+  await runInstall(lock.cmd, lock.args, {
     cwd: path,
     signal: opts.signal,
-    timeout: 10 * 60 * 1000,
-    maxBuffer: 64 * 1024 * 1024,
+    onProgress: opts.onProgress,
   });
   if (!(await localLinksMatch(path))) throw new Error("Installed local package links do not point inside the worktree");
   // npm can omit node_modules entirely when the lock has no dependencies.
