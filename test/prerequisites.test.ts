@@ -23,7 +23,8 @@ function setup() {
   return { store, actions, repo, other, make };
 }
 
-const report = (acceptance?: Report["acceptance"]): Report => ({ summary: "Done", findings: [], changedFiles: [], acceptance });
+const report = (acceptance?: Report["acceptance"]): Report => ({ summary: "Done", findings: [], changedFiles: [], acceptance,
+  completion: { status: "completed", reason: "Implemented", evidence: "Implementation tests" }, hasContribution: true });
 
 test("prerequisites: landed means merged, or finished with nothing left to merge", () => {
   assert.equal(prerequisiteMet({ status: "merged", branch: "crane/x" }), true);

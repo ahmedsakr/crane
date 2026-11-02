@@ -70,6 +70,7 @@ export class SimulatedDriver implements AgentDriver {
         findings: script.findings,
         changedFiles: [],
         visualReview: { required: false, reason: "The simulated driver only writes a Markdown note, with no UI changes." },
+        completion: { status: "completed", reason: "Simulated task delivered", evidence: "Markdown note written" },
       },
     };
   }

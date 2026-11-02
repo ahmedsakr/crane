@@ -81,6 +81,7 @@ export {
   followUpFor,
   unmetAcceptance,
   visualReviewPending,
+  completionReviewReason,
 } from "./types.js";
 export type { DiffLine, DiffHunk, DiffFile, ParsedDiff, SplitRow } from "./diff.js";
 export { parseDiff, diffFiles, splitRows } from "./diff.js";

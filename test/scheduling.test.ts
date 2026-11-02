@@ -54,6 +54,7 @@ test("scheduling: creation can pre-approve future work without bypassing time or
     assert.equal(store.claimNextTask("a-jib"), null, "pre-approval does not waive prerequisites");
     store.setStatus(prerequisite.id, "done");
     assert.equal(store.claimNextTask("a-jib")?.id, task.id);
+    store.updateTask(task.id, { report: { summary: "Done", findings: [], changedFiles: [], completion: { status: "completed", reason: "Implemented", evidence: "Tests" }, hasContribution: true } });
     store.updateTask(task.id, { branch: `crane/${task.id}`, visualReview: { status: "not_required", commit: "test", tree: "test", note: "No UI changes", decidedAt: null } });
     assert.equal(store.finishWork(task.id, "needs_review"), "merging");
     const retry = actions.retry(task.id);

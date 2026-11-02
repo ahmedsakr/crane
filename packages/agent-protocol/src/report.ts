@@ -15,8 +15,8 @@ function pick<T extends string>(value: unknown, allowed: readonly T[], fallback:
  * end with a fenced `crane-report` JSON block; if it's missing or malformed we
  * still return something useful built from the raw text.
  *
- * Only the fields agents own are read. `validation` is factory-owned evidence
- * Crane records itself, so an agent that supplies it is ignored.
+ * Only the fields agents own are read. `validation` and `hasContribution` are
+ * factory-owned evidence Crane records itself; agent claims are ignored.
  */
 export function parseReport(finalText: string): Report {
   const block = reportBlock(finalText);
@@ -36,6 +36,18 @@ export function parseReport(finalText: string): Report {
       return {
         summary: String(raw.summary ?? "").trim() || firstParagraph(block.rest),
         findings,
+        ...(raw.completion && typeof raw.completion === "object"
+          && typeof (raw.completion as Record<string, unknown>).status === "string"
+          && ["completed", "blocked", "incomplete", "already_satisfied"].includes(String((raw.completion as Record<string, unknown>).status))
+          && typeof (raw.completion as Record<string, unknown>).reason === "string"
+          && String((raw.completion as Record<string, unknown>).reason).trim()
+          && typeof (raw.completion as Record<string, unknown>).evidence === "string"
+          && ((raw.completion as Record<string, unknown>).status !== "already_satisfied" || String((raw.completion as Record<string, unknown>).evidence).trim())
+          ? { completion: {
+            status: (raw.completion as NonNullable<Report["completion"]>).status,
+            reason: String((raw.completion as Record<string, unknown>).reason).trim().slice(0, 2000),
+            evidence: String((raw.completion as Record<string, unknown>).evidence).trim().slice(0, 4000),
+          } } : {}),
         ...(raw.visualReview && typeof raw.visualReview === "object"
           && typeof (raw.visualReview as Record<string, unknown>).required === "boolean"
           && typeof (raw.visualReview as Record<string, unknown>).reason === "string"

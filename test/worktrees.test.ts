@@ -9,6 +9,8 @@ import { OperatorActions } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import { createWorktree } from "../src/factory/git.js";
 import { SimulatedDriver } from "@crane/agent-drivers";
+import type { AgentDriver } from "@crane/agent-protocol";
+import type { Report } from "@crane/contracts";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
 
@@ -30,6 +32,38 @@ const until = async (ok: () => boolean, what: string) => {
   for (let i = 0; i < 500 && !ok(); i++) await new Promise((r) => setTimeout(r, 10));
   assert.ok(ok(), `timed out waiting for ${what}`);
 };
+
+test("worktrees: missing prerequisite and unchanged pre-approved branch stop before checks and automatic merge", async () => {
+  for (const status of ["blocked", "incomplete", "completed", "already_satisfied"] as const) {
+    const { store, actions, repo, checkout } = await setup();
+    const main = sh(checkout, "rev-parse", "main");
+    const task = actions.createTask({ kind: "maintenance", title: "Needs absent setup", brief: "", repoId: repo.id, autonomy: "propose", preApprove: true });
+    const completion: NonNullable<Report["completion"]> = { status,
+      reason: status === "already_satisfied" ? "Existing README delivers the requested note" : "Required package is absent; implementation stopped",
+      evidence: status === "already_satisfied" ? `README.md at ${main}` : "No required package in this checkout" };
+    const driver: AgentDriver = { name: "test", label: "Test", available: async () => true,
+      run: async () => ({ report: { summary: "No changes", findings: [], changedFiles: ["invented.ts"], completion,
+        visualReview: { required: false, reason: "No UI changes" }, hasContribution: true } }) };
+    // A check would fail if reached. Completion holds must skip it entirely.
+    store.setRepoChecks(repo.id, ["exit 42"]);
+    const factory = new Factory(store, driver, { crewSize: 1, tickMs: 10, buildDashboard: false });
+    factory.start();
+    try {
+      await until(() => store.getTask(task.id)?.status === "needs_review", "completion hold");
+      const held = store.getTask(task.id)!;
+      assert.equal(held.report?.hasContribution, false, "Git overrides invented agent contribution evidence");
+      assert.deepEqual(held.report?.completion, completion);
+      assert.deepEqual(held.report?.validation, [], "review checks were skipped");
+      assert.equal(sh(checkout, "rev-parse", held.branch!), main, "the branch made no new commit");
+      assert.equal(store.claimNextMerge("a-boom"), null);
+      assert.ok(store.listEvents(task.id).some(e => e.data?.completionHold));
+      assert.equal(store.listEvents(task.id).some(e => e.message.startsWith("Review check")), false);
+      if (status === "already_satisfied") {
+        assert.equal((await actions.approve(task.id, `Accepted README evidence at ${main}`, { merge: false })).status, "approved");
+      }
+    } finally { await factory.stop(); store.close(); }
+  }
+});
 
 test("worktrees: a cancelled task's unfinished work goes to its branch, and its worktree is removed", async () => {
   const { store, actions, repo, checkout } = await setup();

@@ -295,10 +295,12 @@ function reportInstructions(task?: Task): string {
     : {};
   return [
     `When you are finished, end your final message with a fenced code block tagged \`${REPORT_FENCE}\` containing JSON with this shape:`,
+    "Always classify completion: completed only when all requested implementation is delivered; blocked when a prerequisite prevents it; incomplete for unfinished scope; already_satisfied when existing work fulfills the request (include specific evidence). Preserve the blocking reason here independently of advisory findings. Blocked, incomplete, missing outcomes, and branches without a new Git contribution go to operator review before checks or automatic merge. Already-satisfied work requires explicit operator acceptance, even with evidence.",
     "```" + REPORT_FENCE,
     JSON.stringify(
       {
         summary: "Two or three sentences the operator can read in ten seconds.",
+        completion: { status: "completed | blocked | incomplete | already_satisfied", reason: "What was delivered or what remains blocked or unfinished", evidence: "Specific implementation or already-delivered evidence" },
         findings: [
           {
             title: "Short, specific title",

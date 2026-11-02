@@ -13,7 +13,8 @@ import { requireCandidateVisualReview, visualReviewRequired } from "../src/facto
 const commit = "a".repeat(40);
 const tree = "b".repeat(40);
 const pending: VisualReview = { status: "pending", commit, tree, note: "UI changed; browser review outstanding", decidedAt: null };
-const report: Report = { summary: "Done", findings: [], changedFiles: ["src/server.ts"] };
+const report: Report = { summary: "Done", findings: [], changedFiles: ["src/server.ts"],
+  completion: { status: "completed", reason: "Implemented", evidence: "Implementation tests" }, hasContribution: true };
 
 function setup(path = ":memory:") {
   const store = new Store(path);

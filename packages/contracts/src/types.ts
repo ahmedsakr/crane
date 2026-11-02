@@ -79,6 +79,10 @@ export interface Finding {
 }
 
 export interface Report {
+  /** Missing or non-completed outcomes require operator review for implementation work. */
+  completion?: { status: "completed" | "blocked" | "incomplete" | "already_satisfied"; reason: string; evidence: string };
+  /** Factory-owned Git evidence, never read from agent output. */
+  hasContribution?: boolean;
   /** Agent classification only; operator decisions live on Task.visualReview. Missing means unknown. */
   visualReview?: { required: boolean; reason: string };
   /** Factory-owned evidence; never accepted from agent output. The API's task lists leave it out; a task's own detail has it. */
@@ -91,6 +95,16 @@ export interface Report {
   screenshots?: Screenshot[];
   /** The agent's account of each of the task's acceptance criteria. See `unmetAcceptance`. */
   acceptance?: AcceptanceResult[];
+}
+
+/** A dedicated completion hold, independent of advisory findings and acceptance lists. */
+export function completionReviewReason(task: Pick<Task, "autonomy" | "report">): string | null {
+  if (task.autonomy === "observe") return null;
+  const completion = task.report?.completion;
+  if (!completion) return "The report has no valid completion outcome.";
+  if (completion.status !== "completed") return `${completion.status}: ${completion.reason}${completion.evidence ? ` Evidence: ${completion.evidence}` : ""}`;
+  if (task.report?.hasContribution !== true) return "Git shows no new contribution, or contribution evidence is unavailable. Review whether the task is already satisfied.";
+  return null;
 }
 
 /** One acceptance criterion, as the agent reported it. */
