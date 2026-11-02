@@ -78,7 +78,9 @@ test("workspace preflight: directory globs skip folders without manifests and de
 test("workspace preflight: all root entry points retain the build:packages gate", () => {
   const { scripts } = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
   assert.ok(scripts["build:packages"].startsWith("node scripts/check-workspace-links.mjs && "));
-  for (const command of ["build", "typecheck", "pretest", "predev", "predev:server", "precrane"]) {
+  for (const command of ["typecheck", "pretest", "predev", "predev:server", "precrane"]) {
     assert.ok(scripts[command].startsWith("npm run build:packages"), command);
   }
+  // Build runs build:packages without starting npm. test/build.test.ts proves it stops at a bad link.
+  assert.equal(scripts.build, "node scripts/build.mjs");
 });
