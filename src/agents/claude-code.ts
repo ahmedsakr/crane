@@ -1,5 +1,4 @@
 import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
 import {
   AgentRunError,
   isTransientFailure,
@@ -8,6 +7,7 @@ import {
   type RunContext,
   type RunResult,
 } from "@crane/agent-protocol";
+import { cliAnswers, readMessages } from "./cli.js";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
 import { ALWAYS_DENIED, overlapsDenied, suggestRules } from "@crane/agent-policy";
 import type { Autonomy, BlockedCall, RunUsage } from "@crane/contracts";
@@ -169,11 +169,7 @@ export class ClaudeCodeDriver implements AgentDriver {
   constructor(private bin = process.env.CRANE_CLAUDE_BIN ?? "claude") {}
 
   available(): Promise<boolean> {
-    return new Promise((resolve) => {
-      const p = spawn(this.bin, ["--version"], { stdio: "ignore" });
-      p.on("error", () => resolve(false));
-      p.on("exit", (code) => resolve(code === 0));
-    });
+    return cliAnswers(this.bin);
   }
 
   async run(ctx: RunContext): Promise<RunResult> {
@@ -220,6 +216,8 @@ export class ClaudeCodeDriver implements AgentDriver {
     delete env.CLAUDE_CODE_ENTRYPOINT;
 
     return new Promise<RunResult>((resolve, reject) => {
+      // Aborted while the factory got ready: that event has fired, so the listener below would never hear it.
+      if (signal.aborted) return reject(new AgentRunError("Cancelled by operator", { sessionId: resume ?? null }));
       const child = spawn(this.bin, args, { cwd, env, stdio: ["pipe", "pipe", "pipe"] });
       let finalText = "";
       let lastText = "";
@@ -253,14 +251,7 @@ export class ClaudeCodeDriver implements AgentDriver {
         stderr = (stderr + String(d)).slice(-4000);
       });
 
-      const rl = createInterface({ input: child.stdout });
-      rl.on("line", (line) => {
-        let msg: Record<string, any>;
-        try {
-          msg = JSON.parse(line);
-        } catch {
-          return;
-        }
+      readMessages(child.stdout, (msg) => {
         if (msg.type === "system" && msg.subtype === "init") {
           started = true;
           model = typeof msg.model === "string" ? msg.model : null;
@@ -312,7 +303,7 @@ export class ClaudeCodeDriver implements AgentDriver {
             errored = (typeof msg.result === "string" && msg.result) || detail || `Agent stopped: ${msg.subtype ?? "error"}`;
           }
         }
-      });
+      }, (reason) => emit("note", `Skipped a message Crane couldn't read from Claude Code: ${reason}`));
 
       const fail = (message: string) =>
         reject(

@@ -4,7 +4,7 @@ import { getMimeType } from "hono/utils/mime";
 import { readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import type { Store } from "../core/store.js";
-import { lastMergeOutcome, type TaskStatus, type NewTask, type TaskDetail, type TaskDiff, type TaskDraft, type TaskGates, type TaskRunOptions, type RoleRunOptions } from "@crane/contracts";
+import { lastMergeOutcome, type Task, type TaskStatus, type NewTask, type TaskDetail, type TaskDiff, type TaskDraft, type TaskGates, type TaskRunOptions, type RoleRunOptions } from "@crane/contracts";
 import { OperatorActions } from "../factory/actions.js";
 import { draftTask } from "../factory/instruct.js";
 import { diffForTask } from "../factory/git.js";
@@ -18,6 +18,17 @@ async function optionalJsonObject<T extends object>(request: Request): Promise<T
   const body: unknown = text === "" ? {} : JSON.parse(text);
   if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("Expected a JSON object");
   return body as T;
+}
+
+/**
+ * A task as a list sends it. Check logs are most of what a report weighs, the
+ * dashboard polls these lists every few seconds on the thread that runs the
+ * factory, and only the task page shows them, from /tasks/:id.
+ */
+function listed(task: Task): Task {
+  if (!task.report?.validation) return task;
+  const { validation: _validation, ...report } = task.report;
+  return { ...task, report };
 }
 
 const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
@@ -71,12 +82,20 @@ export function createApp(store: Store, opts: { exposed?: boolean } = {}) {
 
   const api = new Hono();
 
-  api.get("/overview", (c) => c.json(store.overview(factoryState())));
+  api.get("/overview", (c) => {
+    const overview = store.overview(factoryState());
+    return c.json({
+      ...overview,
+      needsReview: overview.needsReview.map(listed),
+      inFlight: overview.inFlight.map(listed),
+      recent: overview.recent.map(listed),
+    });
+  });
 
   api.get("/tasks", (c) => {
     const status = c.req.query("status")?.split(",").filter(Boolean) as TaskStatus[] | undefined;
     const repoId = c.req.query("repo") || undefined;
-    return c.json(store.listTasks({ status, repoId }));
+    return c.json(store.listTasks({ status, repoId }).map(listed));
   });
 
   api.get("/tasks/:id", (c) => {
