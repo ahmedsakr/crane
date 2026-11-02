@@ -168,7 +168,7 @@ export class OperatorActions {
     return this.store.addRepo({ path: root, name, defaultBranch: await inferDefaultBranch(root) });
   }
 
-  createTask(input: NewTask): Task {
+  createTask(input: NewTask & { scheduleId?: string }): Task {
     if (input.preApprove !== undefined && typeof input.preApprove !== "boolean") throw new Error("Pre-approval must be a boolean");
     if (input.preApprove && input.autonomy === "observe") throw new Error("This task is investigate-only, so it has nothing to merge");
     if (input.kind !== "factory_feature" && !input.repoId) throw new Error("Choose a repo for this task");
@@ -497,6 +497,8 @@ export class OperatorActions {
     })[0];
     if (open) throw new Error(`${member.name} already has a run under way: ${open.id} · ${open.title}`);
 
+    const schedule = opts.scheduleId ? this.store.listCrewSchedules(id).find((s) => s.id === opts.scheduleId) : undefined;
+    if (opts.scheduleId && !schedule) throw new Error("No such crew schedule");
     const role = MAINTENANCE_ROLE[member.role];
     const task = this.createTask({
       kind: "maintenance",
@@ -506,16 +508,14 @@ export class OperatorActions {
       autonomy: role.autonomy,
       assignee: member.id,
       scheduledAt: opts.scheduledAt,
+      scheduleId: schedule?.id,
     });
     this.store.addEvent(task.id, "operator", `Started ${member.name}'s ${role.label.toLowerCase()} run`, {
       agentId: member.id,
       role: member.role,
       repoId: repo.id,
     });
-    if (opts.scheduleId) {
-      const schedule = this.store.listCrewSchedules(id).find((s) => s.id === opts.scheduleId);
-      if (!schedule) throw new Error("No such crew schedule");
-      this.store.db.prepare("UPDATE tasks SET schedule_id = ? WHERE id = ?").run(schedule.id, task.id);
+    if (schedule) {
       this.store.addEvent(task.id, "operator", `Started by ${member.name}'s ${crewScheduleLabel(schedule)} schedule`, { scheduleId: schedule.id });
     }
     return opts.preApprove ? this.preApprove(task.id) : this.store.getTask(task.id)!;

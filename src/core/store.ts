@@ -599,6 +599,8 @@ export class Store {
   // ── tasks ─────────────────────────────────────────────────
   createTask(input: NewTask & {
     driverSettings?: DriverSettings | null;
+    /** The recurring crew schedule that started this task. */
+    scheduleId?: string;
     /** The task and finding (0-based) this one follows up on. */
     followUp?: { of: string; finding: number };
   }): Task {
@@ -610,14 +612,14 @@ export class Store {
       this.db
         .prepare(
           `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, driver_settings,
-             prerequisites, acceptance, lookouts, status, created_at, scheduled_at, pre_approved_at, follow_up_of, follow_up_finding)
-           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?)`,
+             prerequisites, acceptance, lookouts, status, created_at, scheduled_at, pre_approved_at, follow_up_of, follow_up_finding, schedule_id)
+           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)`,
         )
         .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null,
           input.model ?? null, input.effort ?? null, input.assignee ?? null,
           input.driverSettings ? JSON.stringify(input.driverSettings) : null,
           list(input.prerequisites), list(input.acceptance), list(input.lookouts), ts, scheduledAt, input.preApprove ? ts : null,
-          input.followUp?.of ?? null, input.followUp?.finding ?? null);
+          input.followUp?.of ?? null, input.followUp?.finding ?? null, input.scheduleId ?? null);
       this.addEvent(id, "status", scheduledAt ? `Scheduled for ${scheduledAt}` : "Queued", {
         status: "queued", ...(scheduledAt ? { scheduledAt } : {}),
       });
