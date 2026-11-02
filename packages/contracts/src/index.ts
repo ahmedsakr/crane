@@ -1,4 +1,6 @@
 /** Shared domain/HTTP shapes and pure presentation helpers. No runtime dependencies. */
+export { nextCrewFire, validateCrewSchedule, crewScheduleLabel } from "./crew-schedules.js";
+export type { CrewSchedule, CrewScheduleInput } from "./crew-schedules.js";
 export type {
   TaskKind,
   Autonomy,

@@ -14,6 +14,8 @@ import {
   ruleLabel,
   unmetAcceptance,
   type MaintenanceRole,
+  type CrewSchedule,
+  type CrewScheduleInput,
   type PrerequisiteState,
 } from "@crane/contracts";
 import { postmortemBrief } from "./postmortem.js";
@@ -101,6 +103,20 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS crew_schedules (
+  id TEXT PRIMARY KEY,
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  repo_id TEXT NOT NULL REFERENCES repos(id),
+  days_mask INTEGER NOT NULL,
+  local_time TEXT NOT NULL,
+  timezone TEXT NOT NULL,
+  pre_approve INTEGER NOT NULL,
+  enabled INTEGER NOT NULL,
+  next_fire_at TEXT NOT NULL,
+  last_fired_at TEXT,
+  last_outcome TEXT
+);
+CREATE INDEX IF NOT EXISTS crew_schedules_due ON crew_schedules(enabled, next_fire_at);
 `;
 
 /** Created by migrateCostsToRuns, so the first open can backfill it from older tasks. */
@@ -216,6 +232,7 @@ const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
   ["acceptance", "TEXT"],
   ["lookouts", "TEXT"],
   ["scheduled_at", "TEXT"],
+  ["schedule_id", "TEXT"],
 ];
 
 /** Add any missing columns to an older database. Safe if two processes open it at once. */
@@ -272,6 +289,7 @@ function toTask(r: Row): Task {
     costUsd: (r.cost_usd as number) ?? 0,
     createdAt: r.created_at as string,
     scheduledAt: (r.scheduled_at as string) ?? null,
+    scheduleId: (r.schedule_id as string) ?? null,
     startedAt: (r.started_at as string) ?? null,
     finishedAt: (r.finished_at as string) ?? null,
   };
@@ -359,6 +377,40 @@ export class Store {
 
   close() {
     this.db.close();
+  }
+
+  listCrewSchedules(agentId?: string): CrewSchedule[] {
+    const rows = this.db.prepare(`SELECT * FROM crew_schedules ${agentId ? "WHERE agent_id = ?" : ""} ORDER BY next_fire_at, id`)
+      .all(...(agentId ? [agentId] : [])) as Row[];
+    return rows.map((r) => ({
+      id: r.id as string, agentId: r.agent_id as string, repoId: r.repo_id as string,
+      daysMask: r.days_mask as number, localTime: r.local_time as string, timezone: r.timezone as string,
+      preApprove: !!r.pre_approve, enabled: !!r.enabled, nextFireAt: r.next_fire_at as string,
+      lastFiredAt: r.last_fired_at as string | null, lastOutcome: r.last_outcome as string | null,
+    }));
+  }
+
+  saveCrewSchedule(id: string, agentId: string, input: CrewScheduleInput, nextFireAt: string): CrewSchedule {
+    this.db.prepare(`INSERT INTO crew_schedules(id, agent_id, repo_id, days_mask, local_time, timezone, pre_approve, enabled, next_fire_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET
+      repo_id=excluded.repo_id, days_mask=excluded.days_mask, local_time=excluded.local_time,
+      timezone=excluded.timezone, pre_approve=excluded.pre_approve, enabled=excluded.enabled, next_fire_at=excluded.next_fire_at`)
+      .run(id, agentId, input.repoId, input.daysMask, input.localTime, input.timezone, +input.preApprove, +input.enabled, nextFireAt);
+    return this.listCrewSchedules(agentId).find((s) => s.id === id)!;
+  }
+
+  removeCrewSchedule(id: string): void {
+    this.db.prepare("DELETE FROM crew_schedules WHERE id = ?").run(id);
+  }
+
+  /** Must run inside the same transaction as task creation and outcome recording. */
+  claimCrewSchedule(s: CrewSchedule, next: string, firedAt: string): boolean {
+    return !!this.db.prepare(`UPDATE crew_schedules SET next_fire_at = ?, last_fired_at = ?
+      WHERE id = ? AND enabled = 1 AND next_fire_at = ?`).run(next, firedAt, s.id, s.nextFireAt).changes;
+  }
+
+  crewScheduleOutcome(id: string, outcome: string): void {
+    this.db.prepare("UPDATE crew_schedules SET last_outcome = ? WHERE id = ?").run(outcome, id);
   }
 
   // ── settings ──────────────────────────────────────────────

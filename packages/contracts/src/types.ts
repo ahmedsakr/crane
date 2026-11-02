@@ -180,6 +180,8 @@ export interface Task {
   createdAt: string;
   /** Earliest pickup time, in UTC. Null means immediately eligible; prerequisites still apply. */
   scheduledAt: string | null;
+  /** Recurring crew schedule that started this run, retained after removal. */
+  scheduleId: string | null;
   startedAt: string | null;
   finishedAt: string | null;
 }

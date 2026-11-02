@@ -65,6 +65,7 @@ function setup(opts: { remote?: boolean } = {}) {
     costUsd: 0,
     createdAt: "",
     scheduledAt: null,
+    scheduleId: null,
     startedAt: null,
     finishedAt: null,
   };

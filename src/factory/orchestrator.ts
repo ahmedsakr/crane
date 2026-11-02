@@ -14,6 +14,7 @@ import { DEFAULT_DRIVER_KEY, DEFAULT_MAX_TURNS, DEFAULT_TIME_LIMIT_MIN, HEARTBEA
 import { worktreesDir } from "../core/paths.js";
 import { retainScreenshots } from "../core/screenshots.js";
 import { siblingTasksFor } from "./task-context.js";
+import { OperatorActions } from "./actions.js";
 
 const CREW = ["Jib", "Boom", "Hoist", "Trolley", "Rigger", "Winch", "Gantry", "Mast"];
 
@@ -315,6 +316,7 @@ export class Factory {
 
   private tick() {
     this.store.setSetting(HEARTBEAT_KEY, String(Date.now()));
+    new OperatorActions(this.store).fireCrewSchedules();
 
     // Honour cancellations made from another process (e.g. the CLI).
     for (const [taskId, ac] of this.running) {

@@ -55,6 +55,38 @@ function setup() {
   return { store, repo, task };
 }
 
+test("cli: recurring crew schedules add, list, update pre-approval, pause, resume and remove", async () => {
+  const { store } = setup();
+  store.upsertAgent({ id: "a-jib", name: "Jib", driver: "simulated" });
+  store.setSetting("crew_role_a-jib", "tests");
+  try {
+    const added = await crane(store, "agents", "schedule", "add", "jib", "--repo", "app", "--days", "1,2,3,4,5", "--time", "09:00", "--timezone", "America/Toronto", "--pre-approve");
+    assert.equal(added.code, 0, added.err);
+    const s = store.listCrewSchedules()[0]!;
+    assert.equal(s.daysMask, 62);
+    assert.equal(s.preApprove, true);
+    const list = await crane(store, "agents", "schedule", "list", "jib", "--json");
+    assert.equal(list.code, 0, list.err);
+    assert.equal(JSON.parse(list.out)[0].id, s.id);
+    for (const [operation, enabled] of [["pause", false], ["resume", true]] as const) {
+      const result = await crane(store, "agents", "schedule", operation, "jib", s.id);
+      assert.equal(result.code, 0, result.err);
+      assert.equal(store.listCrewSchedules()[0]!.enabled, enabled);
+    }
+    const update = await crane(store, "agents", "schedule", "update", "jib", s.id, "--no-pre-approve", "--time", "10:00");
+    assert.equal(update.code, 0, update.err);
+    assert.equal(store.listCrewSchedules()[0]!.preApprove, false);
+    const unchanged = await crane(store, "agents", "schedule", "update", "jib", s.id, "--days", "1");
+    assert.equal(unchanged.code, 0, unchanged.err);
+    assert.equal(store.listCrewSchedules()[0]!.preApprove, false, "omitted flags preserve saved pre-approval");
+    assert.equal(store.listCrewSchedules()[0]!.localTime, "10:00");
+    assert.equal((await crane(store, "agents", "schedule", "remove", "jib", s.id)).code, 0);
+    assert.equal(store.listCrewSchedules().length, 0);
+    const invalid = await crane(store, "agents", "schedule", "add", "jib", "--repo", "app", "--days", "7", "--time", "09:00", "--timezone", "UTC");
+    assert.equal(invalid.code, 1);
+  } finally { store.close(); }
+});
+
 test("cli: approve merges by default, --no-merge approves only, and options don't leak between runs", async () => {
   const { store, task } = setup();
   try {
