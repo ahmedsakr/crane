@@ -169,7 +169,7 @@ For Codex commands, Crane persists correlated start and completion records in ta
 
 The dashboard has no login, so `crane serve` listens on `127.0.0.1` only, answers only to `localhost`, `127.0.0.1` and `[::1]`, and refuses changes sent from any other origin. To reach it from another machine, pass `--host 0.0.0.0` (or a LAN address) on a network you trust: anyone who can reach it can approve and merge tasks.
 
-When a change to Crane itself is merged, Crane builds the dashboard from that commit in its own directory (`$CRANE_HOME/builds/<sha>`, never your checkout) and serves it, so UI fixes show up without you running `npm run build`. Open pages offer to reload. If you run `npm run build` yourself, your newer `web/dist` is served instead. `crane serve --no-build-dashboard` turns this off.
+When a change to Crane itself is merged, Crane builds the dashboard from that commit in its own directory (`$CRANE_HOME/builds/<sha>`, never your checkout) and serves it, so UI fixes show up without you running `npm run build`. Open pages offer to reload. If you run `npm run build -w web` yourself, your newer `web/dist` is served instead. `crane serve --no-build-dashboard` turns this off.
 
 ## Configuration
 
