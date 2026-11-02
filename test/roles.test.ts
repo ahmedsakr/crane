@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Store } from "../src/core/store.js";
 import { OperatorActions } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
-import { SimulatedDriver } from "../src/agents/simulated.js";
+import { SimulatedDriver } from "@crane/agent-drivers";
 import { MAINTENANCE_ROLE, MAINTENANCE_ROLES } from "@crane/contracts";
 
 const until = async (ok: () => boolean, what: string) => {

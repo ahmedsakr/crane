@@ -17,9 +17,10 @@
     "packages/contracts",
     "packages/agent-protocol",
     "packages/agent-policy",
-    "packages/worktree-deps"
+    "packages/worktree-deps",
+    "packages/agent-drivers"
   ],
-  "bundledDependencies": ["@crane/contracts", "@crane/agent-protocol", "@crane/agent-policy", "@crane/worktree-deps"],
+  "bundledDependencies": ["@crane/contracts", "@crane/agent-protocol", "@crane/agent-policy", "@crane/worktree-deps", "@crane/agent-drivers"],
   "engines": {
     "node": ">=20.19"
   },
@@ -42,6 +43,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",
+    "@crane/agent-drivers": "0.1.0",
     "@crane/agent-policy": "0.1.0",
     "@crane/agent-protocol": "0.1.0",
     "@crane/contracts": "0.1.0",

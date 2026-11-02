@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseReport } from "@crane/agent-protocol";
-import { resumePrompt, systemPrompt } from "../src/agents/prompts.js";
+import { resumePrompt, systemPrompt } from "../packages/agent-drivers/src/prompts.js";
 import { readScreenshot, retainScreenshots, screenshotPath } from "../src/core/screenshots.js";
 import { Store } from "../src/core/store.js";
 import { Factory } from "../src/factory/orchestrator.js";

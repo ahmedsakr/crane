@@ -193,7 +193,6 @@ When an agent is blocked from a command, the task shows it, and once the same co
 ```
 src/
   core/      domain types and the SQLite store (the single source of truth)
-  agents/    drivers: Claude Code (headless), Codex (exec), and simulated
   factory/   orchestrator, git worktrees, operator actions, instruction parsing
   server/    HTTP API + server-sent events
   cli/       the `crane` command
@@ -202,6 +201,8 @@ packages/
   contracts/       shared types, labels, helpers, and rule grammar
   agent-protocol/  factory/driver interface, reports, and combined costs
   agent-policy/    deny list and shared permission-rule handling
+  agent-drivers/   concrete drivers, prompts, CLI helpers, and provider pricing
+  worktree-deps/   lockfile-based dependency installation and verified copies
 ```
 
 Every process opens the same SQLite database in WAL mode. That's why the CLI works whether or not the factory is running, and why live views just tail the events table.
@@ -223,9 +224,12 @@ with `packages/*`; package boundary tests check both lists. Build caches live
 inside each package's `dist/`, so deleting that directory also clears its cache.
 `npm run dev` uses one `tsc -b` watcher for the package graph. Import policy helpers from
 `@crane/agent-policy`; its only runtime dependency is `@crane/contracts/rules`,
-and its command splitter stays internal. The root npm tarball bundles all four
+and its command splitter stays internal. Import concrete drivers from
+`@crane/agent-drivers`; prompts, CLI helpers, command-evidence tracking, and
+provider pricing stay private. Only `src/factory/drivers.ts` loads the drivers
+in production. The root npm tarball bundles all private workspace
 packages for installed CLI use without separate registry releases. Changes to
-protocol or policy inputs mark the running factory as outdated; rebuild and
+package inputs mark the running factory as outdated; rebuild and
 restart it to load them.
 
 For Codex's restricted agent sandbox, use the documented

@@ -82,12 +82,12 @@ test("no build, or no source to compare against, is never outdated", () => {
 test("a running compiled factory notices source changes and stays outdated after rebuilding until restart", () => {
   const c = checkout();
   try {
-    c.rootAt("src/agents/prompts.ts", 100);
+    c.rootAt("src/factory/drivers.ts", 100);
     c.rootAt("dist/cli/index.js", 50);
     const outdated = createFactoryBuildCheck(c.root, true);
     assert.equal(outdated(0), false);
 
-    c.rootAt("src/agents/prompts.ts", 20);
+    c.rootAt("src/factory/drivers.ts", 20);
     assert.equal(outdated(1_000), false, "cache avoids walking the source tree on every poll");
     assert.equal(outdated(5_000), true, "merged backend changes are noticed without restarting");
 
@@ -103,7 +103,7 @@ test("source-mode factories and builds with no source to compare don't report ba
   const c = checkout();
   try {
     c.rootAt("dist/cli/index.js", 100);
-    c.rootAt("src/agents/prompts.ts", 10);
+    c.rootAt("src/factory/drivers.ts", 10);
     assert.equal(createFactoryBuildCheck(c.root, false)(), false, "tsx runs source directly");
     rmSync(join(c.root, "src"), { recursive: true });
     assert.equal(createFactoryBuildCheck(c.root, true)(), false, "installed package with no src or packages directory");
@@ -132,6 +132,7 @@ test("every package's inputs stale the factory; only contracts stale the dashboa
   const cases: [file: string, stalesDashboard: boolean][] = [
     ["packages/contracts/src/nested/new.ts", true],
     ["packages/agent-protocol/src/driver.ts", false],
+    ["packages/agent-drivers/src/prompts.ts", false],
     ["packages/agent-policy/package.json", false],
     ["packages/worktree-deps/tsconfig.json", false],
     // Nothing lists a package, so one no code here has heard of counts as well.
@@ -158,7 +159,7 @@ test("every package's inputs stale the factory; only contracts stale the dashboa
 test("a package added while the factory runs stales it; a package's own build output doesn't", () => {
   const c = checkout();
   try {
-    c.rootAt("src/agents/prompts.ts", 100);
+    c.rootAt("src/factory/drivers.ts", 100);
     c.rootAt("dist/cli/index.js", 50);
     const outdated = createFactoryBuildCheck(c.root, true);
     assert.equal(outdated(0), false);

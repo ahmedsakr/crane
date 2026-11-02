@@ -9,13 +9,12 @@ import { Store } from "../src/core/store.js";
 import { OperatorActions } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import { resolveDefaultDriver } from "../src/factory/drivers.js";
-import { SimulatedDriver } from "../src/agents/simulated.js";
-import { CodexDriver, codexArgs, unwrapShell, usageFromTurn } from "../src/agents/codex.js";
-import { ClaudeCodeDriver } from "../src/agents/claude-code.js";
-import { cliAnswers } from "../src/agents/cli.js";
+import { ClaudeCodeDriver, CodexDriver, SimulatedDriver } from "@crane/agent-drivers";
+import { codexArgs, unwrapShell, usageFromTurn } from "../packages/agent-drivers/src/codex.js";
+import { cliAnswers } from "../packages/agent-drivers/src/cli.js";
 import { AgentRunError, type AgentDriver, type ResolveConflictsJob, type RunContext, type RunResult } from "@crane/agent-protocol";
 import type { CommandEvidence, RunUsage, Task } from "@crane/contracts";
-import { resumePrompt, systemPrompt } from "../src/agents/prompts.js";
+import { resumePrompt, systemPrompt } from "../packages/agent-drivers/src/prompts.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
 

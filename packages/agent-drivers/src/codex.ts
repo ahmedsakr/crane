@@ -13,7 +13,7 @@ import { cliAnswers, readMessages } from "./cli.js";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
 import type { RunUsage } from "@crane/contracts";
 import { codexCost } from "./codex-pricing.js";
-import { CommandTracker } from "../core/command-evidence.js";
+import { CommandTracker } from "./command-evidence.js";
 
 /** Codex exited before it got going again on an earlier session. */
 class SessionNotResumed extends Error {}

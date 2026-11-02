@@ -11,7 +11,7 @@
  *
  * Shared rule grammar and labels stay in `@crane/contracts`; the tools each
  * driver allows and its CLI arguments stay in that driver. Codex has no deny
- * list: its guard is its sandbox (`codexArgs` in `src/agents/codex.ts`).
+ * list: its guard is its sandbox (`codexArgs` in `packages/agent-drivers/src/codex.ts`).
  *
  * The command splitter is a best-effort reading of Claude Code's own rule
  * matching, used to suggest rules and spot overlaps with the deny list. It is

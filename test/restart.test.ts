@@ -9,11 +9,10 @@ import Database from "better-sqlite3";
 import { Store } from "../src/core/store.js";
 import { OperatorActions } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
-import { SimulatedDriver } from "../src/agents/simulated.js";
-import { ClaudeCodeDriver } from "../src/agents/claude-code.js";
+import { ClaudeCodeDriver, SimulatedDriver } from "@crane/agent-drivers";
 import type { RunContext, RunResult } from "@crane/agent-protocol";
 import type { CommandEvidence, Task } from "@crane/contracts";
-import { CommandTracker } from "../src/core/command-evidence.js";
+import { CommandTracker } from "../packages/agent-drivers/src/command-evidence.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
 

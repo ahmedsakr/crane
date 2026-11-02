@@ -9,7 +9,7 @@ import { Store } from "../src/core/store.js";
 import { OperatorActions } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import { createApp } from "../src/server/app.js";
-import { systemPrompt, userPrompt } from "../src/agents/prompts.js";
+import { systemPrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-prereq-home-"));
 

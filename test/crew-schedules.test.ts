@@ -8,7 +8,7 @@ import { Store } from "../src/core/store.js";
 import { OperatorActions } from "../src/factory/actions.js";
 import { createApp } from "../src/server/app.js";
 import { Factory } from "../src/factory/orchestrator.js";
-import { SimulatedDriver } from "../src/agents/simulated.js";
+import { SimulatedDriver } from "@crane/agent-drivers";
 
 const policy: CrewScheduleInput = {
   repoId: "r-test", daysMask: 62, localTime: "09:00", timezone: "America/Toronto", preApprove: true, enabled: true,

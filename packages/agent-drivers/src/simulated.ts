@@ -1,10 +1,18 @@
+import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { git } from "../core/git.js";
+import { promisify } from "node:util";
 import type { AgentDriver, RunContext, RunResult } from "@crane/agent-protocol";
 import type { Finding, TaskKind } from "@crane/contracts";
 import { suggestRules } from "@crane/agent-policy";
+
+const run = promisify(execFile);
+
+/** Stage only a resolved file in the simulated driver's worktree. */
+async function stageFile(cwd: string, file: string): Promise<void> {
+  await run("git", ["add", "--", file], { cwd, maxBuffer: 16 * 1024 * 1024 });
+}
 
 /**
  * A stand-in driver that walks through a believable sequence of steps without
@@ -75,7 +83,7 @@ export class SimulatedDriver implements AgentDriver {
       const p = join(cwd, f);
       if (!existsSync(p)) continue;
       await writeFile(p, keepBothSides(await readFile(p, "utf8")));
-      await git(cwd, "add", "--", f);
+      await stageFile(cwd, f);
       emit("tool", `Edited ${f}`, { simulated: true });
     }
     return {

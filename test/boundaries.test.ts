@@ -8,6 +8,7 @@ const src = join(import.meta.dirname, "..", "src");
 const webSrc = join(import.meta.dirname, "..", "web", "src");
 const protocolRoot = join(import.meta.dirname, "..", "packages", "agent-protocol");
 const policyRoot = join(import.meta.dirname, "..", "packages", "agent-policy");
+const driversRoot = join(import.meta.dirname, "..", "packages", "agent-drivers");
 
 /** A relative specifier in `file`, resolved to a path under the same root like `factory/git`. */
 function resolveSpec(file: string, spec: string): string {
@@ -28,15 +29,14 @@ const sources = (readdirSync(src, { recursive: true }) as string[])
   .map((f) => f.split("\\").join("/"))
   .filter((f) => f.endsWith(".ts"));
 
-test("boundaries: agents never reach into the factory", () => {
-  for (const file of sources.filter((f) => f.startsWith("agents/"))) {
-    const bad = importsOf(file).filter((i) => i.startsWith("factory/") || i.startsWith("server/") || i.startsWith("cli/"));
-    assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
-  }
+test("boundaries: agent drivers depend only on contracts, protocol, policy and Node", () => {
+  const allowed = new Set(["@crane/contracts", "@crane/agent-protocol", "@crane/agent-policy"]);
+  assert.deepEqual(packageImportViolations(join(driversRoot, "src"), (ref) =>
+    ref.spec !== null && (allowed.has(ref.spec) || ref.spec.startsWith("node:"))), []);
 });
 
 test("boundaries: core depends on nothing above it", () => {
-  // Factory, server, CLI, and agents all build on core, so core importing any of them is a directory-level loop.
+  // Factory, server and CLI build on core, so core importing any of them is a directory-level loop.
   const core = sources.filter((f) => f.startsWith("core/"));
   assert.ok(core.includes("core/store.ts"), "expected to find core sources");
   for (const file of core) {
@@ -46,9 +46,11 @@ test("boundaries: core depends on nothing above it", () => {
 });
 
 test("boundaries: only the driver registry imports concrete agents", () => {
-  const concrete = new Set(["agents/claude-code", "agents/codex", "agents/simulated"]);
-  for (const file of sources.filter((f) => f !== "factory/drivers.ts" && !concrete.has(f.replace(/\.ts$/, "")))) {
-    const bad = importsOf(file).filter((i) => concrete.has(i));
+  const callers = sources.filter((file) => specifiers(join(src, file)).some((spec) =>
+    spec === "@crane/agent-drivers" || spec.startsWith("@crane/agent-drivers/")));
+  assert.deepEqual(callers, ["factory/drivers.ts"]);
+  for (const file of sources) {
+    const bad = importsOf(file).filter((i) => i.startsWith("agents/") || i.includes("packages/agent-drivers/"));
     assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
   }
 });
@@ -112,11 +114,19 @@ test("boundaries: the private protocol has one ESM export", async () => {
   }
 });
 
-test("boundaries: provider price tables stay with their drivers", () => {
-  // The scheduler combines costs through the protocol; it never prices a provider's tokens itself.
-  for (const file of sources.filter((f) => !f.startsWith("agents/"))) {
-    const bad = importsOf(file).filter((i) => /^agents\/.*pricing$/.test(i));
-    assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
+test("boundaries: concrete drivers have one ESM entry and keep helpers private", async () => {
+  const manifest = JSON.parse(readFileSync(join(driversRoot, "package.json"), "utf8"));
+  assert.deepEqual(manifest.dependencies, {
+    "@crane/agent-policy": "0.1.0", "@crane/agent-protocol": "0.1.0", "@crane/contracts": "0.1.0",
+  });
+  const config = JSON.parse(readFileSync(join(driversRoot, "tsconfig.json"), "utf8"));
+  assert.equal(config.compilerOptions.rootDir, "src");
+  assert.deepEqual(config.compilerOptions.types, ["node"]);
+  assert.deepEqual(config.compilerOptions.lib, ["ES2022"]);
+  const api = await import("@crane/agent-drivers");
+  assert.deepEqual(Object.keys(api).sort(), ["ClaudeCodeDriver", "CodexDriver", "SimulatedDriver"]);
+  for (const path of ["@crane/agent-drivers/src/codex.js", "@crane/agent-drivers/dist/codex.js", "@crane/agent-drivers/codex-pricing", "@crane/agent-drivers/prompts", "@crane/agent-drivers/command-evidence"]) {
+    await assert.rejects(import(path), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
   }
 });
 
