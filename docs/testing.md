@@ -6,6 +6,25 @@ both commands outside the agent sandbox for review and again for the merge
 candidate. The local selection below does not change those configured checks,
 skip tests in the full suite, or replace either gate.
 
+## Validation order
+
+Finish all relevant edits before starting builds, typechecks, or tests, and do
+not edit their inputs while they run. Workspace packages export compiled
+`dist` files: for example, `test/report.test.ts` imports `@crane/agent-protocol`,
+so running it directly after editing `packages/agent-protocol/src/report.ts`
+can exercise the previous parser unless the package is rebuilt first.
+
+After the final relevant edit, await a successful `npm run build:packages`
+(or the package build included in a successful `npm run typecheck`) before
+starting dependent direct tests. Run these steps sequentially; starting a
+build in the background does not satisfy the prerequisite. Stop dependent
+checks if the build fails or is blocked.
+
+Further edits invalidate affected local build, typecheck, and test results.
+Rebuild changed packages and rerun dependent checks before reporting a pass
+for the final code. Treat checks that overlapped relevant edits as invalid
+too: their results do not establish which version of the inputs was checked.
+
 ## Sandbox test selection
 
 In Codex's no-network sandbox, start with `npm run typecheck`. It builds the
