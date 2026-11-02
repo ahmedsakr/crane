@@ -186,6 +186,13 @@ export interface Task {
   scheduledAt: string | null;
   /** Recurring crew schedule that started this run, retained after removal. */
   scheduleId: string | null;
+  /** The task whose finding the operator turned into this one, or null. */
+  followUpOf: string | null;
+  /**
+   * Which of that task's findings (0-based) it acts on. Null when it isn't a
+   * follow-up, or for an older follow-up whose finding Crane couldn't match.
+   */
+  followUpFinding: number | null;
   startedAt: string | null;
   finishedAt: string | null;
 }
@@ -388,6 +395,16 @@ export const prerequisiteMet = (t: Pick<Task, "status" | "branch">): boolean =>
 export interface PrerequisiteState extends Pick<Task, "id" | "title" | "status"> {
   met: boolean;
 }
+
+/** A task started from one of another task's findings, as that task's page and CLI show it. */
+export interface FollowUpState extends Pick<Task, "id" | "title" | "status"> {
+  /** The finding it acts on (0-based), or null when Crane couldn't tell which. */
+  finding: number | null;
+}
+
+/** The most recent follow-up started from finding `index`, if any. */
+export const followUpFor = (followUps: readonly FollowUpState[], index: number): FollowUpState | undefined =>
+  followUps.filter((f) => f.finding === index).at(-1);
 
 const normalCriterion = (c: string) => c.trim().replace(/\s+/g, " ").toLowerCase();
 
@@ -604,6 +621,8 @@ export interface TaskDetail {
   blocked: BlockedTool[];
   /** The task's prerequisites, in the order it lists them, and whether each has landed. */
   prerequisites: PrerequisiteState[];
+  /** Tasks started from this task's findings, oldest first. */
+  followUps: FollowUpState[];
 }
 
 /** What a task changed: `GET /api/tasks/:id/diff`. */

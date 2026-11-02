@@ -1064,6 +1064,25 @@ a.row:hover .row-title {
   margin-top: 10px;
   flex-wrap: wrap;
 }
+.finding-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+.finding-follow-up {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-2);
+  font-size: 13px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.finding-follow-up:hover .mono,
+.finding-follow-up:focus-visible .mono {
+  text-decoration: underline;
+}
 .follow-up-form {
   grid-column: 1 / -1;
   min-width: 0;
@@ -1208,6 +1227,11 @@ a.row:hover .row-title {
 @media (max-width: 560px) {
   .finding {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .finding-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
   }
 }
 .files {

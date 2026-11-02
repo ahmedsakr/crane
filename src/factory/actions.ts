@@ -595,8 +595,9 @@ export class OperatorActions {
       ...settings,
       ...gates,
       lookouts,
+      followUp: { of: m.id, finding: findingIndex },
     });
-    this.store.addEvent(m.id, "operator", `Started follow-up ${next.id}: ${f.title}`, { taskId: next.id });
+    this.store.addEvent(m.id, "operator", `Started follow-up ${next.id}: ${f.title}`, { taskId: next.id, finding: findingIndex });
     return next;
   }
 

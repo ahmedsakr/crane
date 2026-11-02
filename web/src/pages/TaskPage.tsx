@@ -10,11 +10,13 @@ import {
   acceptanceFor,
   choosableDrivers,
   driverLabel,
+  followUpFor,
   settingsLabel,
   lastMergeOutcome,
   lookoutsLabel,
   isScheduled,
   unmetAcceptance,
+  UNSHIPPED_STATUSES,
   type AgentRun,
   type FollowUpOptions,
   type TaskDetail,
@@ -216,12 +218,15 @@ export function TaskPage() {
   const waitingOn = m.status === "queued" && !m.prerequisitesWaivedAt ? prerequisites.filter((p) => !p.met) : [];
   const unmet = report ? unmetAcceptance({ acceptance, report }) : [];
   const acceptanceGate = acceptance.length ? " and its report shows every acceptance criterion met" : "";
+  // Tasks started from this task's findings; each finding shows the state of its latest one.
+  const followUps = data.followUps ?? [];
 
-  const run = async (label: string, fn: () => Promise<unknown>, done: string, after?: (r: unknown) => void) => {
+  const run = async (label: string, fn: () => Promise<unknown>, done: string | ((r: unknown) => Parameters<typeof toast>[0]),
+    after?: (r: unknown) => void) => {
     setBusy(label);
     try {
       const r = await fn();
-      toast({ text: done });
+      toast(typeof done === "string" ? { text: done } : done(r));
       refresh();
       refreshApp();
       after?.(r);
@@ -232,8 +237,16 @@ export function TaskPage() {
     }
   };
 
+  // Stay here so the finding shows its follow-up's state, and the operator can act on the next finding.
   const followUp = (i: number, opts: FollowUpOptions) =>
-    run("f" + i, () => api.followUp(m.id, i, opts), "Follow-up queued", (r) => nav(`/tasks/${(r as { id: string }).id}`));
+    run("f" + i, async () => {
+      const next = await api.followUp(m.id, i, opts);
+      // Load its state before closing the form, so the finding goes straight from "Scheduling…" to it.
+      await refresh();
+      return next;
+    },
+      (r) => ({ text: "Follow-up queued", link: { to: `/tasks/${(r as { id: string }).id}`, label: "Open" } }),
+      () => setFinding(null));
 
   return (
     <article>
@@ -479,28 +492,42 @@ export function TaskPage() {
                 </h2>
               </div>
               <div className="card">
-                {report.findings.map((f, i) => (
-                  <div className="finding" key={i}>
-                    <div style={{ minWidth: 0 }}>
-                      <h4>{f.title}</h4>
-                      <p>{f.detail}</p>
-                      <div className="chips">
-                        <span className={`chip ${f.impact === "high" ? "chip-crane" : ""}`}>{f.impact} impact</span>
-                        <span className="chip">{f.effort} effort</span>
+                {report.findings.map((f, i) => {
+                  const started = followUpFor(followUps, i);
+                  // One that failed, was cancelled, or was declined shipped nothing, so the finding can be tried again.
+                  const canStart = !started || UNSHIPPED_STATUSES.includes(started.status);
+                  return (
+                    <div className="finding" key={i}>
+                      <div style={{ minWidth: 0 }}>
+                        <h4>{f.title}</h4>
+                        <p>{f.detail}</p>
+                        <div className="chips">
+                          <span className={`chip ${f.impact === "high" ? "chip-crane" : ""}`}>{f.impact} impact</span>
+                          <span className="chip">{f.effort} effort</span>
+                        </div>
                       </div>
+                      <div className="finding-actions">
+                        {started && (
+                          <Link className="finding-follow-up" to={`/tasks/${started.id}`} title={started.title}
+                            aria-label={`Follow-up ${started.id}: ${STATUS_LABEL[started.status]}`}>
+                            <StatusChip status={started.status} />
+                            <span>Follow-up <span className="mono">{started.id}</span></span>
+                          </Link>
+                        )}
+                        {canStart && (
+                          <button className="btn btn-quiet btn-sm" disabled={!!busy} aria-expanded={finding === i} onClick={() => setFinding(finding === i ? null : i)}>
+                            Make this change
+                          </button>
+                        )}
+                      </div>
+                      {canStart && finding === i && (
+                        drivers?.length ? <FollowUpForm key={`${m.id}-${i}`} task={m} drivers={drivers} busy={!!busy}
+                          onSubmit={opts => followUp(i, opts)} onClose={() => setFinding(null)} />
+                          : <p className="follow-up-form muted">{drivers ? "Couldn't load agents. Reload to try again." : "Loading agents…"}</p>
+                      )}
                     </div>
-                    <div>
-                      <button className="btn btn-quiet btn-sm" disabled={!!busy} aria-expanded={finding === i} onClick={() => setFinding(finding === i ? null : i)}>
-                        Make this change
-                      </button>
-                    </div>
-                    {finding === i && (
-                      drivers?.length ? <FollowUpForm key={`${m.id}-${i}`} task={m} drivers={drivers} busy={!!busy}
-                        onSubmit={opts => followUp(i, opts)} onClose={() => setFinding(null)} />
-                        : <p className="follow-up-form muted">{drivers ? "Couldn't load agents. Reload to try again." : "Loading agents…"}</p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           )}

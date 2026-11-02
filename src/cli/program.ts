@@ -18,6 +18,7 @@ import {
   choosableDrivers,
   crewScheduleLabel,
   driverLabel,
+  followUpFor,
   lastMergeOutcome,
   lookoutsLabel,
   parseDiff,
@@ -427,10 +428,13 @@ program
         }
       }
       if (m.report.findings.length) {
+        const followUps = store.followUps(m.id);
         console.log(ui.section("Findings", m.report.findings.length));
         m.report.findings.forEach((f, i) => {
           console.log(`  ${ui.accent(String(i + 1))}  ${pc.bold(f.title)}  ${ui.dim(`${f.impact} impact · ${f.effort} effort`)}`);
           console.log(ui.wrap(f.detail, 5));
+          const next = followUpFor(followUps, i);
+          if (next) console.log(`     ${ui.dim("Follow-up")} ${next.id}  ${ui.statusText(next.status)}`);
         });
       }
       if (m.report.changedFiles.length) {

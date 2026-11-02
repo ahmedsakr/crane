@@ -11,6 +11,7 @@ export type {
   VisualReview,
   AcceptanceResult,
   PrerequisiteState,
+  FollowUpState,
   TaskGates,
   Screenshot,
   ValidationRun,
@@ -75,6 +76,7 @@ export {
   lastMergeOutcome,
   acceptanceFor,
   prerequisiteMet,
+  followUpFor,
   unmetAcceptance,
   visualReviewPending,
 } from "./types.js";

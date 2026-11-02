@@ -65,6 +65,7 @@ export {
   acceptanceFor,
   choosableDrivers,
   driverLabel,
+  followUpFor,
   lastMergeOutcome,
   lookoutsLabel,
   isScheduled,

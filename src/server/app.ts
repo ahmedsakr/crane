@@ -90,7 +90,7 @@ export function createApp(store: Store, opts: { exposed?: boolean } = {}) {
     const blocked = store.blockedTools({ taskId: m.id, ...(m.repoId ? { repoId: m.repoId } : {}) });
     const detail: TaskDetail = {
       task: m, repo, agent, events: store.listEvents(m.id), runs: store.listRuns(m.id), blocked,
-      prerequisites: store.prerequisiteStates(m),
+      prerequisites: store.prerequisiteStates(m), followUps: store.followUps(m.id),
     };
     return c.json(detail);
   });
