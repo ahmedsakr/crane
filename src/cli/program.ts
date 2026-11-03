@@ -1222,44 +1222,57 @@ program
     ui.ok("Factory resumed.");
   });
 
-program
-  .command("serve")
-  .description("Start the factory: agents, API, and dashboard")
-  .option("-p, --port <port>", "port for the dashboard", String(DEFAULT_PORT))
-  .option(
-    "--host <address>",
-    "address to listen on. The dashboard has no login, so only use 0.0.0.0 or a LAN address on a network you trust",
-    DEFAULT_HOST,
-  )
-  .option("--agents <n>", "initial active crew size (saved member settings take priority)", process.env.CRANE_AGENTS ?? "2")
-  .option(
-    "--driver <driver>",
-    `default agent: auto | ${DRIVER_NAMES.join(" | ")}. auto keeps the one you chose with crane agents use`,
-    process.env.CRANE_DRIVER ?? "auto",
-  )
-  .option("--no-build-dashboard", "don't build the dashboard from merged changes to Crane; serve web/dist as it is")
-  .option("--max-turns <n>", `most turns one agent run may take, 0 for no limit (default ${DEFAULT_MAX_TURNS})`)
-  .option("--time-limit <minutes>", `most minutes a task may run, 0 for no limit (default ${DEFAULT_TIME_LIMIT_MIN})`)
-  .action(async (opts: { port: string; host: string; agents: string; driver: string; buildDashboard: boolean; maxTurns?: string; timeLimit?: string }) => {
-    const num = (v: string | undefined, flag: string) => {
-      if (v === undefined) return undefined;
-      const n = Number(v);
-      if (!Number.isFinite(n) || n < 0) ui.fail(`${flag} takes a number, 0 or more`);
-      return n;
-    };
-    const settings = {
-      port: num(opts.port, "--port")!,
-      host: opts.host,
-      // A bad size would otherwise save every crew member as on-call.
-      agents: num(opts.agents, "--agents")!,
-      driver: opts.driver,
-      buildDashboard: opts.buildDashboard,
-      maxTurns: num(opts.maxTurns, "--max-turns"),
-      timeLimit: num(opts.timeLimit, "--time-limit"),
-    };
-    const { serve } = await import("./serve.js");
-    await serve(store, settings);
-  });
+for (const command of ["serve", "start"] as const) {
+  program
+    .command(command)
+    .description(command === "start" ? "Build and run the factory, rebuilding and restarting when checkout HEAD changes" : "Start the factory: agents, API, and dashboard")
+    .option("-p, --port <port>", "port for the dashboard", String(DEFAULT_PORT))
+    .option(
+      "--host <address>",
+      "address to listen on. The dashboard has no login, so only use 0.0.0.0 or a LAN address on a network you trust",
+      DEFAULT_HOST,
+    )
+    .option("--agents <n>", "initial active crew size (saved member settings take priority)", process.env.CRANE_AGENTS ?? "2")
+    .option(
+      "--driver <driver>",
+      `default agent: auto | ${DRIVER_NAMES.join(" | ")}. auto keeps the one you chose with crane agents use`,
+      process.env.CRANE_DRIVER ?? "auto",
+    )
+    .option("--no-build-dashboard", "don't build the dashboard from merged changes to Crane; serve web/dist as it is")
+    .option("--max-turns <n>", `most turns one agent run may take, 0 for no limit (default ${DEFAULT_MAX_TURNS})`)
+    .option("--time-limit <minutes>", `most minutes a task may run, 0 for no limit (default ${DEFAULT_TIME_LIMIT_MIN})`)
+    .action(async (opts: { port: string; host: string; agents: string; driver: string; buildDashboard: boolean; maxTurns?: string; timeLimit?: string }) => {
+      const num = (v: string | undefined, flag: string) => {
+        if (v === undefined) return undefined;
+        const n = Number(v);
+        if (!Number.isFinite(n) || n < 0) ui.fail(`${flag} takes a number, 0 or more`);
+        return n;
+      };
+      const settings = {
+        port: num(opts.port, "--port")!,
+        host: opts.host,
+        // A bad size would otherwise save every crew member as on-call.
+        agents: num(opts.agents, "--agents")!,
+        driver: opts.driver,
+        buildDashboard: opts.buildDashboard,
+        maxTurns: num(opts.maxTurns, "--max-turns"),
+        timeLimit: num(opts.timeLimit, "--time-limit"),
+      };
+      if (command === "start") {
+        if (factoryIsRunning(store)) ui.fail("A factory is already running against this Crane home. Stop it first, or set CRANE_HOME to run another.");
+        store.close(); // Only the supervised serve process owns the database while running.
+        const { start } = await import("./start.js");
+        try {
+          process.exitCode = await start(settings);
+        } catch (error) {
+          ui.fail(`Couldn't start Crane: ${(error as Error).message}`);
+        }
+      } else {
+        const { serve } = await import("./serve.js");
+        await serve(store, settings);
+      }
+    });
+}
 
 /** Runs one CLI command against `target`. `argv` is shaped like `process.argv`: node, script, then arguments. */
 export async function runCli(argv: string[], target: Store): Promise<void> {
