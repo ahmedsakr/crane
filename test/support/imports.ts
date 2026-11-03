@@ -13,13 +13,18 @@ export interface ModuleRef {
   typeOnly: boolean;
 }
 
-/** Every module reference in a file, in source order, parsed rather than pattern-matched. */
-export function moduleRefs(file: string): ModuleRef[] {
-  const ast = parse(readFileSync(file, "utf8"), {
+/** Parses a source file the way every check in test/ reads one: TypeScript, with JSX in `.tsx`. */
+export function parseSource(source: string, file: string) {
+  return parse(source, {
     sourceType: "module",
     createImportExpressions: true,
     plugins: /x$/.test(file) ? ["typescript", "jsx"] : ["typescript"],
   });
+}
+
+/** Every module reference in a file, in source order, parsed rather than pattern-matched. */
+export function moduleRefs(file: string): ModuleRef[] {
+  const ast = parseSource(readFileSync(file, "utf8"), file);
   const literal = (node: Node | null | undefined) => (node?.type === "StringLiteral" ? node.value : null);
   const found: { at: number; ref: ModuleRef }[] = [];
   const add = (node: Node, ref: ModuleRef) => found.push({ at: node.start ?? 0, ref });

@@ -54,6 +54,7 @@ agent CLIs or listen on ports.
 | Permission rules and deny list | `node --import tsx test/agent-policy.test.ts` |
 | Agent report parsing | `node --import tsx test/report.test.ts` |
 | Source and package boundaries | `node --import tsx test/boundaries.test.ts` |
+| Code-shape limits and budgets | `node --import tsx test/code-shape.test.ts` |
 | Configured checks and factory-owned evidence | `node --import tsx test/checks.test.ts` |
 | Token pricing and cost ledger | `node --import tsx test/codex-costs.test.ts` |
 | Command lifecycle evidence, redaction, and recovery prompts | `node --import tsx test/command-evidence.test.ts` |
