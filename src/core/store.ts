@@ -1046,6 +1046,15 @@ export class Store {
     }).immediate();
   }
 
+  /** Read-only hint for one tick; claims still recheck under the write lock. */
+  pendingWork(): { queued: boolean; merging: boolean } {
+    const row = this.db.prepare(`SELECT
+      EXISTS(SELECT 1 FROM tasks WHERE status = 'queued' AND ${TASK_DUE}) AS queued,
+      EXISTS(SELECT 1 FROM tasks WHERE status = 'merging' AND agent_id IS NULL) AS merging`)
+      .get(now()) as { queued: number; merging: number };
+    return { queued: !!row.queued, merging: !!row.merging };
+  }
+
   /**
    * Atomically take the first queued task this agent may work: one assigned
    * to it, or one assigned to nobody unless `onlyAssigned`. Once the operator
@@ -1366,8 +1375,10 @@ export class Store {
 
   setAgentState(id: string, state: AgentState, taskId: string | null) {
     this.db
-      .prepare("UPDATE agents SET state = ?, task_id = ?, last_active_at = ? WHERE id = ?")
-      .run(state, taskId, now(), id);
+      .prepare(`UPDATE agents SET state = ?, task_id = ?, last_active_at =
+        CASE WHEN state = 'working' OR ? = 'working' THEN ? ELSE last_active_at END
+        WHERE id = ? AND (state IS NOT ? OR task_id IS NOT ?)`)
+      .run(state, taskId, state, now(), id, state, taskId);
   }
 
   /** Which agent a crew member is running on right now. It changes with each task's choice. */
