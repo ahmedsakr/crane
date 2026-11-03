@@ -2,6 +2,10 @@ import Database from "better-sqlite3";
 import { basename } from "node:path";
 import { dbPath } from "./paths.js";
 import { shortId } from "./ids.js";
+import { SCHEMA } from "./store/schema.js";
+import { addMissingColumns, migrateMissionsToTasks, migrateFollowUpLinks, migratePostmortemLinks,
+  migratePostmortemBriefs, migrateCostsToRuns, migrateCostStatus } from "./store/migrations.js";
+import { toRepo, toTask, toEvent, toRun, toAgent, localDayStart, type Row } from "./store/rows.js";
 import {
   errorMessage,
   ACTIVE_STATUSES,
@@ -9,7 +13,6 @@ import {
   FINISHED_STATUSES,
   SHIPPED_STATUSES,
   UNSHIPPED_STATUSES,
-  isLookout,
   isMaintenanceRole,
   lastMergeOutcome,
   prerequisiteMet,
@@ -50,7 +53,6 @@ import type {
   TaskStatus,
   NewTask,
   Overview,
-  Report,
   Repo,
   DriverSettings,
   PostmortemSettings,
@@ -64,127 +66,6 @@ export interface LandedCommit {
   commit: string;
 }
 
-const SCHEMA = `
-CREATE TABLE IF NOT EXISTS repos (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  path TEXT NOT NULL UNIQUE,
-  default_branch TEXT NOT NULL DEFAULT 'main',
-  is_factory INTEGER NOT NULL DEFAULT 0,
-  added_at TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS tasks (
-  id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL,
-  title TEXT NOT NULL,
-  brief TEXT NOT NULL,
-  repo_id TEXT REFERENCES repos(id),
-  autonomy TEXT NOT NULL,
-  status TEXT NOT NULL,
-  agent_id TEXT,
-  branch TEXT,
-  worktree TEXT,
-  session_id TEXT,
-  driver TEXT,
-  model TEXT,
-  effort TEXT,
-  driver_settings TEXT,
-  assignee TEXT,
-  postmortem_of TEXT,
-  pre_approved_at TEXT,
-  prerequisites TEXT,
-  prerequisites_waived_at TEXT,
-  acceptance TEXT,
-  lookouts TEXT,
-  report TEXT,
-  cost_usd REAL NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL,
-  scheduled_at TEXT,
-  follow_up_of TEXT,
-  follow_up_finding INTEGER,
-  started_at TEXT,
-  finished_at TEXT
-);
-DROP INDEX IF EXISTS tasks_status;
--- Lets task lists and shipped counts filter and sort without reading rows: briefs and reports run to tens of KB.
-CREATE INDEX IF NOT EXISTS tasks_status_times ON tasks(status, finished_at, created_at);
-CREATE INDEX IF NOT EXISTS tasks_finished ON tasks(finished_at);
-CREATE TABLE IF NOT EXISTS events (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  task_id TEXT NOT NULL REFERENCES tasks(id),
-  ts TEXT NOT NULL,
-  type TEXT NOT NULL,
-  message TEXT NOT NULL,
-  data TEXT
-);
-CREATE INDEX IF NOT EXISTS events_task ON events(task_id, id);
--- The overview polls these two every few seconds. Its queries must spell each WHERE the same way, or SQLite skips the index.
-CREATE INDEX IF NOT EXISTS events_activity ON events(ts, type) WHERE type IN ('note','tool','finding');
-CREATE INDEX IF NOT EXISTS events_blocked ON events(task_id) WHERE type = 'blocked';
-CREATE TABLE IF NOT EXISTS agents (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  state TEXT NOT NULL DEFAULT 'idle',
-  task_id TEXT,
-  driver TEXT NOT NULL,
-  tasks_completed INTEGER NOT NULL DEFAULT 0,
-  last_active_at TEXT
-);
-CREATE TABLE IF NOT EXISTS settings (
-  key TEXT PRIMARY KEY,
-  value TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS goals (
-  id TEXT PRIMARY KEY,
-  status TEXT NOT NULL,
-  data TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS goals_status ON goals(status);
-CREATE TABLE IF NOT EXISTS goal_tasks (
-  task_id TEXT PRIMARY KEY REFERENCES tasks(id),
-  goal_id TEXT NOT NULL REFERENCES goals(id)
-);
-CREATE INDEX IF NOT EXISTS goal_tasks_goal ON goal_tasks(goal_id);
-CREATE TABLE IF NOT EXISTS crew_schedules (
-  id TEXT PRIMARY KEY,
-  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
-  repo_id TEXT NOT NULL REFERENCES repos(id),
-  days_mask INTEGER NOT NULL,
-  local_time TEXT NOT NULL,
-  timezone TEXT NOT NULL,
-  pre_approve INTEGER NOT NULL,
-  enabled INTEGER NOT NULL,
-  next_fire_at TEXT NOT NULL,
-  last_fired_at TEXT,
-  last_outcome TEXT
-);
-CREATE INDEX IF NOT EXISTS crew_schedules_due ON crew_schedules(enabled, next_fire_at);
-`;
-
-/** Created by migrateCostsToRuns, so the first open can backfill it from older tasks. */
-const RUNS_SCHEMA = `
-CREATE TABLE IF NOT EXISTS runs (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  task_id TEXT NOT NULL REFERENCES tasks(id),
-  kind TEXT NOT NULL,
-  agent_id TEXT,
-  driver TEXT NOT NULL,
-  model TEXT,
-  outcome TEXT NOT NULL DEFAULT 'running',
-  cost_usd REAL NOT NULL DEFAULT 0,
-  input_tokens INTEGER NOT NULL DEFAULT 0,
-  output_tokens INTEGER NOT NULL DEFAULT 0,
-  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
-  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
-  turns INTEGER NOT NULL DEFAULT 0,
-  started_at TEXT NOT NULL,
-  finished_at TEXT
-);
-CREATE INDEX IF NOT EXISTS runs_task ON runs(task_id, id);
-CREATE INDEX IF NOT EXISTS runs_finished ON runs(finished_at);
-`;
-
-type Row = Record<string, unknown>;
 type TaskListOptions = { status?: TaskStatus[]; repoId?: string; assignee?: string; limit?: number };
 const TASK_SUMMARY_COLUMNS = `id, kind, title, repo_id AS repoId, status, branch, assignee,
   postmortem_of AS postmortemOf,
@@ -212,256 +93,8 @@ const TASK_UPDATE_COLUMNS = {
 
 type TaskPatch = Partial<Pick<Task, keyof typeof TASK_UPDATE_COLUMNS>>;
 
-const hasTable = (db: Database.Database, name: string) =>
-  !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
-
-/**
- * Costs used to live only on the task row. Give every task that already cost
- * something one run carrying that cost, so analytics include past spend.
- */
-function migrateCostsToRuns(db: Database.Database) {
-  if (hasTable(db, "runs")) return;
-  db.transaction(() => {
-    if (hasTable(db, "runs")) return;
-    db.exec(RUNS_SCHEMA);
-    db.exec(`
-      INSERT INTO runs(task_id, kind, agent_id, driver, outcome, cost_usd, started_at, finished_at)
-      SELECT id, 'work', agent_id, 'unknown',
-             CASE status WHEN 'failed' THEN 'failed' WHEN 'cancelled' THEN 'cancelled' ELSE 'succeeded' END,
-             cost_usd, COALESCE(started_at, created_at), COALESCE(finished_at, started_at, created_at)
-      FROM tasks WHERE cost_usd > 0`);
-  }).immediate();
-}
-
-function migrateCostStatus(db: Database.Database) {
-  const has = () => (db.prepare("PRAGMA table_info(runs)").all() as Row[]).some((c) => c.name === "cost_status");
-  if (has()) return;
-  db.transaction(() => {
-    if (has()) return;
-    db.exec("ALTER TABLE runs ADD COLUMN cost_status TEXT NOT NULL DEFAULT 'unknown'");
-    // Historical Codex zeros were placeholders, never evidence of free usage.
-    db.exec("UPDATE runs SET cost_status = 'reported' WHERE cost_usd > 0 OR (driver != 'codex' AND turns > 0)");
-  }).immediate();
-}
-
-/**
- * Crane used to call tasks "missions". Rename the old tables and columns in
- * place so existing history, ids, and branches carry over. Runs inside an
- * immediate transaction, so two processes opening the store at once can't
- * both try it.
- */
-function migrateMissionsToTasks(db: Database.Database) {
-  const has = (name: string) => hasTable(db, name);
-  const hasColumn = (table: string, col: string) =>
-    (db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).some((c) => c.name === col);
-
-  // Cheap check first, so normal opens never take the write lock.
-  if (!has("missions") || has("tasks")) return;
-  db.transaction(() => {
-    // Check again under the lock: another process may have just migrated.
-    if (!has("missions") || has("tasks")) return;
-    db.exec("DROP INDEX IF EXISTS missions_status; DROP INDEX IF EXISTS events_mission;");
-    db.exec("ALTER TABLE missions RENAME TO tasks");
-    if (hasColumn("events", "mission_id")) db.exec("ALTER TABLE events RENAME COLUMN mission_id TO task_id");
-    if (hasColumn("agents", "mission_id")) db.exec("ALTER TABLE agents RENAME COLUMN mission_id TO task_id");
-    if (hasColumn("agents", "missions_completed")) {
-      db.exec("ALTER TABLE agents RENAME COLUMN missions_completed TO tasks_completed");
-    }
-  }).immediate();
-}
-
-/** Columns added to `tasks` after its first release. */
-const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
-  ["session_id", "TEXT"],
-  ["driver", "TEXT"],
-  ["assignee", "TEXT"],
-  ["model", "TEXT"],
-  ["effort", "TEXT"],
-  ["driver_settings", "TEXT"],
-  ["pre_approved_at", "TEXT"],
-  ["prerequisites", "TEXT"],
-  ["prerequisites_waived_at", "TEXT"],
-  ["acceptance", "TEXT"],
-  ["lookouts", "TEXT"],
-  ["scheduled_at", "TEXT"],
-  ["schedule_id", "TEXT"],
-  ["visual_review", "TEXT"],
-  ["review_checkpoint", "TEXT"],
-  // Older tasks share 0 and keep their original FIFO order until moved.
-  ["queue_position", "INTEGER NOT NULL DEFAULT 0"],
-];
-
-/** Add any missing columns to an older database. Safe if two processes open it at once. */
-function addMissingColumns(db: Database.Database) {
-  const missing = () => {
-    const have = new Set((db.prepare("PRAGMA table_info(tasks)").all() as Row[]).map((c) => c.name));
-    return ADDED_TASK_COLUMNS.filter(([name]) => !have.has(name));
-  };
-  if (!missing().length) return;
-  db.transaction(() => {
-    for (const [name, type] of missing()) db.exec(`ALTER TABLE tasks ADD COLUMN ${name} ${type}`);
-  }).immediate();
-}
-
-/**
- * Follow-ups used to be linked to the finding they came from only by the
- * "Started follow-up" event on the source task. Add the link columns and fill
- * them from those events, matching each follow-up to the finding with its
- * title (a follow-up takes its finding's title), so findings show the state of
- * work already started from them.
- */
-function migrateFollowUpLinks(db: Database.Database) {
-  const has = () => (db.prepare("PRAGMA table_info(tasks)").all() as Row[]).some((c) => c.name === "follow_up_of");
-  if (!has()) {
-    db.transaction(() => {
-      if (has()) return;
-      db.exec("ALTER TABLE tasks ADD COLUMN follow_up_of TEXT");
-      db.exec("ALTER TABLE tasks ADD COLUMN follow_up_finding INTEGER");
-      const started = db.prepare(
-        `SELECT e.task_id AS source, child.id AS id, child.title AS title, parent.report AS report
-         FROM events e
-         JOIN tasks child ON child.id = CASE WHEN json_valid(e.data) THEN json_extract(e.data, '$.taskId') END
-         JOIN tasks parent ON parent.id = e.task_id
-         WHERE e.type = 'operator' AND e.message LIKE 'Started follow-up %'
-         ORDER BY e.id`,
-      ).all() as Row[];
-      const link = db.prepare("UPDATE tasks SET follow_up_of = ?, follow_up_finding = ? WHERE id = ? AND follow_up_of IS NULL");
-      for (const r of started) {
-        const findings = r.report ? ((JSON.parse(r.report as string) as Report).findings ?? []) : [];
-        const finding = findings.findIndex((f) => f.title === r.title);
-        link.run(r.source, finding < 0 ? null : finding, r.id);
-      }
-    }).immediate();
-  }
-  db.exec("CREATE INDEX IF NOT EXISTS tasks_follow_up ON tasks(follow_up_of)");
-}
-
-/**
- * Post-mortems used to be linked to their merged task only by the note written
- * when they were queued. Add the column and fill it from those notes, so reviews
- * already waiting go to the crew the operator names.
- */
-function migratePostmortemLinks(db: Database.Database) {
-  const has = () => (db.prepare("PRAGMA table_info(tasks)").all() as Row[]).some((c) => c.name === "postmortem_of");
-  if (has()) return;
-  db.transaction(() => {
-    if (has()) return;
-    db.exec("ALTER TABLE tasks ADD COLUMN postmortem_of TEXT");
-    db.exec(`UPDATE tasks SET postmortem_of = (
-      SELECT CASE WHEN json_valid(e.data) THEN json_extract(e.data, '$.sourceTaskId') END
-      FROM events e
-      WHERE e.task_id = tasks.id AND e.type = 'note' AND e.message LIKE 'Reviewing merged task %'
-      ORDER BY e.id LIMIT 1
-    )`);
-  }).immediate();
-}
-
-/**
- * Post-mortems used to store a rendered copy of their merged task's history as
- * their brief. Keep its first line, which is what they store now. Queued and
- * running ones wait for a later open, so a factory still on the older build
- * doesn't start one without its history; the prompt doesn't use their copy anyway.
- */
-function migratePostmortemBriefs(db: Database.Database) {
-  const legacy = `postmortem_of IS NOT NULL AND status NOT IN ('queued', 'running')
-    AND brief LIKE 'Evaluate the execution of successfully merged task %' AND instr(brief, char(10)) > 0`;
-  // Runs on every open, so don't take the write lock unless there's something to do.
-  if (!db.prepare(`SELECT 1 FROM tasks WHERE ${legacy} LIMIT 1`).get()) return;
-  db.exec(`UPDATE tasks SET brief = substr(brief, 1, instr(brief, char(10)) - 1) WHERE ${legacy}`);
-}
-
 const now = () => new Date().toISOString();
 const TASK_DUE = "(scheduled_at IS NULL OR scheduled_at <= ?)";
-
-function toRepo(r: Row): Repo {
-  return {
-    id: r.id as string,
-    name: r.name as string,
-    path: r.path as string,
-    defaultBranch: r.default_branch as string,
-    isFactory: !!r.is_factory,
-    addedAt: r.added_at as string,
-  };
-}
-
-function toTask(r: Row): Task {
-  return {
-    id: r.id as string,
-    kind: r.kind as Task["kind"],
-    title: r.title as string,
-    brief: r.brief as string,
-    repoId: (r.repo_id as string) ?? null,
-    autonomy: r.autonomy as Task["autonomy"],
-    status: r.status as TaskStatus,
-    agentId: (r.agent_id as string) ?? null,
-    branch: (r.branch as string) ?? null,
-    worktree: (r.worktree as string) ?? null,
-    sessionId: (r.session_id as string) ?? null,
-    driver: (r.driver as string) ?? null,
-    model: (r.model as string) ?? null,
-    effort: (r.effort as string) ?? null,
-    driverSettings: r.driver_settings ? JSON.parse(r.driver_settings as string) as DriverSettings : null,
-    assignee: (r.assignee as string) ?? null,
-    postmortemOf: (r.postmortem_of as string) ?? null,
-    preApprovedAt: (r.pre_approved_at as string) ?? null,
-    visualReview: r.visual_review ? JSON.parse(r.visual_review as string) : null,
-    reviewCheckpoint: r.review_checkpoint ? JSON.parse(r.review_checkpoint as string) : null,
-    prerequisites: r.prerequisites ? JSON.parse(r.prerequisites as string) as string[] : [],
-    prerequisitesWaivedAt: (r.prerequisites_waived_at as string) ?? null,
-    acceptance: r.acceptance ? JSON.parse(r.acceptance as string) as string[] : [],
-    // A lookout this build doesn't know (written by a newer one) is dropped rather than shown raw.
-    lookouts: r.lookouts ? (JSON.parse(r.lookouts as string) as unknown[]).filter(isLookout) : [],
-    report: r.report ? (JSON.parse(r.report as string) as Report) : null,
-    costUsd: (r.cost_usd as number) ?? 0,
-    createdAt: r.created_at as string,
-    scheduledAt: (r.scheduled_at as string) ?? null,
-    scheduleId: (r.schedule_id as string) ?? null,
-    followUpOf: (r.follow_up_of as string) ?? null,
-    followUpFinding: (r.follow_up_finding as number) ?? null,
-    startedAt: (r.started_at as string) ?? null,
-    finishedAt: (r.finished_at as string) ?? null,
-  };
-}
-
-function toEvent(r: Row): TaskEvent {
-  return {
-    id: r.id as number,
-    taskId: r.task_id as string,
-    ts: r.ts as string,
-    type: r.type as EventType,
-    message: r.message as string,
-    data: r.data ? JSON.parse(r.data as string) : null,
-  };
-}
-
-function toRun(r: Row): AgentRun {
-  return {
-    id: r.id as number,
-    taskId: r.task_id as string,
-    kind: r.kind as RunKind,
-    agentId: (r.agent_id as string) ?? null,
-    driver: r.driver as string,
-    model: (r.model as string) ?? null,
-    outcome: r.outcome as RunOutcome,
-    costUsd: r.cost_usd as number,
-    costStatus: r.cost_status as RunUsage["costStatus"],
-    inputTokens: r.input_tokens as number,
-    outputTokens: r.output_tokens as number,
-    cacheReadTokens: r.cache_read_tokens as number,
-    cacheWriteTokens: r.cache_write_tokens as number,
-    turns: r.turns as number,
-    startedAt: r.started_at as string,
-    finishedAt: (r.finished_at as string) ?? null,
-  };
-}
-
-/** Local midnight, `days` days before the one containing `ms`. */
-function localDayStart(ms: number, daysBack = 0): number {
-  const d = new Date(ms);
-  d.setHours(0, 0, 0, 0);
-  d.setDate(d.getDate() - daysBack);
-  return d.getTime();
-}
 
 /** The settings that hold the operator's choices for one crew member. */
 export const crewSettingKey = {
@@ -469,19 +102,6 @@ export const crewSettingKey = {
   defaultDriver: (agentId: string) => `crew_driver_${agentId}`,
   role: (agentId: string) => `crew_role_${agentId}`,
 };
-
-/** An agent row. The operator's choices for it live in settings; see `Store.listAgents`. */
-function toAgent(r: Row): Omit<Agent, "active" | "defaultDriver" | "role" | "runsPostmortems"> {
-  return {
-    id: r.id as string,
-    name: r.name as string,
-    state: r.state as AgentState,
-    taskId: (r.task_id as string) ?? null,
-    driver: r.driver as string,
-    tasksCompleted: r.tasks_completed as number,
-    lastActiveAt: (r.last_active_at as string) ?? null,
-  };
-}
 
 /**
  * The single source of truth. Every process (the factory server, the CLI)
@@ -510,6 +130,13 @@ export class Store {
     migratePostmortemBriefs(this.db);
     migrateCostsToRuns(this.db);
     migrateCostStatus(this.db);
+  }
+
+  /** Execute atomically; nested calls use SQLite savepoints. */
+  transaction<T>(fn: () => T, options: { immediate?: boolean } = {}): T {
+    const transaction = this.db.transaction(fn);
+    if (options.immediate) return transaction.immediate();
+    return transaction();
   }
 
   close() {
@@ -897,7 +524,8 @@ export class Store {
 
   repoChecks(repoId: string): string[] {
     const raw = this.getSetting(`checks:${repoId}`);
-    return raw ? JSON.parse(raw) as string[] : this.getRepo(repoId)?.isFactory ? ["npm run typecheck", "npm test"] : [];
+    if (raw) return JSON.parse(raw) as string[];
+    return this.getRepo(repoId)?.isFactory ? ["npm run typecheck", "npm test"] : [];
   }
 
   setRepoChecks(repoId: string, commands: string[]) {

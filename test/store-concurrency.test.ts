@@ -45,6 +45,37 @@ function otherProcessWritesBefore(file: string, store: Store, statement: string)
   return { seen, close: () => other.close() };
 }
 
+test("store: transaction returns values and rolls back nested savepoints independently", () => {
+  const store = new Store(":memory:");
+  try {
+    const result = store.transaction(() => {
+      store.setSetting("outer", "kept");
+      assert.throws(() => store.transaction(() => {
+        store.setSetting("inner", "discarded");
+        throw new Error("inner failed");
+      }), /inner failed/);
+      assert.equal(store.getSetting("inner"), null);
+      return 42;
+    }, { immediate: true });
+    assert.equal(result, 42);
+    assert.equal(store.getSetting("outer"), "kept");
+    assert.throws(() => store.transaction(() => {
+      store.setSetting("outer", "discarded");
+      throw new Error("outer failed");
+    }), /outer failed/);
+    assert.equal(store.getSetting("outer"), "kept");
+  } finally { store.close(); }
+});
+
+test("store: immediate transactions hold the write lock before their first read", () => {
+  const { file, store } = setup();
+  const other = otherProcessWritesBefore(file, store, "SELECT value FROM settings");
+  try {
+    store.transaction(() => store.getSetting("other"), { immediate: true });
+    assert.equal(other.seen.outcome, "SQLITE_BUSY");
+  } finally { other.close(); store.close(); }
+});
+
 test("store: claiming a task holds the write lock across its read, so another process can't break it", () => {
   const { file, store, task } = setup();
   const other = otherProcessWritesBefore(file, store, "UPDATE tasks SET status = 'running'");
