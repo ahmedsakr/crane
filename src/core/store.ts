@@ -5,18 +5,16 @@ import { shortId } from "./ids.js";
 import { SCHEMA } from "./store/schema.js";
 import { addMissingColumns, migrateMissionsToTasks, migrateFollowUpLinks, migratePostmortemLinks,
   migratePostmortemBriefs, migrateCostsToRuns, migrateCostStatus } from "./store/migrations.js";
-import { toRepo, toTask, toEvent, toRun, toAgent, localDayStart, type Row } from "./store/rows.js";
+import { toRepo, toTask, toEvent, toRun, toAgent, type Row } from "./store/rows.js";
+import { analytics } from "./store/analytics.js";
+import { overview } from "./store/overview.js";
+import { BlockedToolsReader } from "./store/blocked-tools.js";
 import {
   errorMessage,
-  ACTIVE_STATUSES,
-  ALL_STATUSES,
   FINISHED_STATUSES,
-  SHIPPED_STATUSES,
-  UNSHIPPED_STATUSES,
   isMaintenanceRole,
   lastMergeOutcome,
   prerequisiteMet,
-  ruleLabel,
   unmetAcceptance,
   completionReviewReason,
   validateGoalPlan,
@@ -44,7 +42,6 @@ import type {
   RunKind,
   RunOutcome,
   RunUsage,
-  TaskKind,
   EventType,
   RepoTools,
   Task,
@@ -110,7 +107,7 @@ export const crewSettingKey = {
  */
 export class Store {
   readonly db: Database.Database;
-  private refusalTotalsCache: { version: string; rows: Row[] } | null = null;
+  private readonly blockedToolsReader = new BlockedToolsReader();
 
   constructor(file = dbPath()) {
     this.db = new Database(file);
@@ -541,70 +538,9 @@ export class Store {
     this.setSetting(`tools:${repoId}`, JSON.stringify({ allowed: [...new Set(tools.allowed)], keptBlocked: [...new Set(tools.keptBlocked)] }));
   }
 
-  /**
-   * Every refused rule, added up per repo, most widespread first. Only a change
-   * to the blocked events can change the answer, and any process may write one,
-   * so each call asks the database whether they did. The count catches deletions
-   * the latest id can't see.
-   */
-  private refusalTotals(): Row[] {
-    const latest = this.db.prepare("SELECT COUNT(*) AS n, MAX(id) AS id FROM events WHERE type = 'blocked'").get() as Row;
-    const version = `${latest.n}:${latest.id}`;
-    if (this.refusalTotalsCache?.version === version) return this.refusalTotalsCache.rows;
-    // SQLite takes bare columns from the row holding the only MAX(), so ts and task_id both describe the latest refusal.
-    const rows = this.db
-      .prepare(
-        `SELECT t.repo_id AS repo_id, p.name AS repo_name, r.value AS rule,
-                COUNT(DISTINCT e.task_id) AS tasks, COUNT(*) AS times,
-                MAX(e.id) AS last_id, e.ts AS last_at, e.task_id AS last_task_id
-         FROM events e
-         JOIN tasks t ON t.id = e.task_id
-         JOIN repos p ON p.id = t.repo_id
-         , json_each(e.data, '$.rules') r
-         WHERE e.type = 'blocked'
-         GROUP BY t.repo_id, r.value
-         ORDER BY tasks DESC, last_at DESC`,
-      )
-      .all() as Row[];
-    this.refusalTotalsCache = { version, rows };
-    return rows;
-  }
-
-  /**
-   * Rules agents were refused, added up per repo across tasks. Leaves out
-   * rules the operator has already allowed or kept blocked for that repo.
-   */
+  /** Rules agents were refused, excluding the repo's existing decisions. */
   blockedTools(opts: { repoId?: string; taskId?: string; minTasks?: number } = {}): BlockedTool[] {
-    // Every task's count, but only for rules this task hit.
-    const taskRules = opts.taskId ? new Set(
-      (this.db
-        .prepare("SELECT r.value AS rule FROM events e, json_each(e.data, '$.rules') r WHERE e.task_id = ? AND e.type = 'blocked'")
-        .all(opts.taskId) as Row[]).map((r) => r.rule),
-    ) : null;
-    const rows = this.refusalTotals().filter((r) =>
-      (!opts.repoId || r.repo_id === opts.repoId)
-      && (r.tasks as number) >= (opts.minTasks ?? 1)
-      && (!taskRules || taskRules.has(r.rule)));
-    const decided = new Map<string, Set<string>>();
-    const isDecided = (repoId: string, rule: string) => {
-      if (!decided.has(repoId)) {
-        const t = this.repoTools(repoId);
-        decided.set(repoId, new Set([...t.allowed, ...t.keptBlocked]));
-      }
-      return decided.get(repoId)!.has(rule);
-    };
-    return rows
-      .filter((r) => !isDecided(r.repo_id as string, r.rule as string))
-      .map((r) => ({
-        repoId: r.repo_id as string,
-        repoName: r.repo_name as string,
-        rule: r.rule as string,
-        label: ruleLabel(r.rule as string),
-        tasks: r.tasks as number,
-        times: r.times as number,
-        lastAt: r.last_at as string,
-        lastTaskId: r.last_task_id as string,
-      }));
+    return this.blockedToolsReader.read(this.db, (id) => this.repoTools(id), opts);
   }
 
   // ── tasks ─────────────────────────────────────────────────
@@ -1119,114 +1055,7 @@ export class Store {
 
   /** Spend over the last `days` local days, today included, with the same span before it for comparison. */
   analytics(days = 30, nowMs = Date.now()): Analytics {
-    days = Math.max(1, Math.min(366, Math.floor(days) || 30));
-    const iso = (ms: number) => new Date(ms).toISOString();
-    const from = localDayStart(nowMs, days - 1);
-    const prevFrom = localDayStart(nowMs, 2 * days - 1);
-    const rows = this.db
-      .prepare(
-        `SELECT r.task_id, r.driver, r.cost_usd, r.cost_status, r.input_tokens, r.output_tokens, r.cache_read_tokens, r.cache_write_tokens,
-                r.finished_at, t.title, t.status, t.kind, t.repo_id
-         FROM runs r JOIN tasks t ON t.id = r.task_id
-         WHERE r.outcome != 'running' AND r.finished_at >= ?`,
-      )
-      .all(iso(prevFrom)) as Row[];
-
-    const daily = new Map<number, { usd: number; runs: number }>();
-    for (let i = days - 1; i >= 0; i--) daily.set(localDayStart(nowMs, i), { usd: 0, runs: 0 });
-    const tokens = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-    type TaskSpend = Analytics["topTasks"][number];
-    const perTask = new Map<string, TaskSpend>();
-    const perAgent = new Map<string, { usd: number; tasks: Set<string> }>();
-    let spendUsd = 0;
-    let prevSpendUsd = 0;
-    let runs = 0;
-    let unknownCostRuns = 0;
-
-    for (const r of rows) {
-      const at = Date.parse(r.finished_at as string);
-      const usd = r.cost_usd as number;
-      if (at < from) {
-        prevSpendUsd += usd;
-        continue;
-      }
-      spendUsd += usd;
-      runs++;
-      if (r.cost_status === "unknown") unknownCostRuns++;
-      tokens.input += r.input_tokens as number;
-      tokens.output += r.output_tokens as number;
-      tokens.cacheRead += r.cache_read_tokens as number;
-      tokens.cacheWrite += r.cache_write_tokens as number;
-      const b = daily.get(localDayStart(at));
-      if (b) {
-        b.usd += usd;
-        b.runs++;
-      }
-      const id = r.task_id as string;
-      const driver = r.driver as string;
-      const agent = perAgent.get(driver) ?? { usd: 0, tasks: new Set<string>() };
-      agent.usd += usd;
-      agent.tasks.add(id);
-      perAgent.set(driver, agent);
-      let t = perTask.get(id);
-      if (!t) {
-        t = {
-          id,
-          title: r.title as string,
-          status: r.status as TaskStatus,
-          kind: r.kind as TaskKind,
-          repoId: (r.repo_id as string) ?? null,
-          usd: 0,
-          runs: 0,
-        };
-        perTask.set(id, t);
-      }
-      t.usd += usd;
-      t.runs++;
-    }
-
-    const tasks = [...perTask.values()];
-    const slice = (list: TaskSpend[]) => ({ usd: list.reduce((s, t) => s + t.usd, 0), tasks: list.length });
-    const groupBy = <K extends string | null>(key: (t: TaskSpend) => K) => {
-      const groups = new Map<K, TaskSpend[]>();
-      for (const t of tasks) {
-        if (t.usd > 0) {
-          const k = key(t);
-          const group = groups.get(k);
-          if (group) group.push(t);
-          else groups.set(k, [t]);
-        }
-      }
-      return [...groups.entries()].map(([k, list]) => ({ key: k, ...slice(list) })).sort((a, b) => b.usd - a.usd);
-    };
-    const repoNames = new Map(this.listRepos().map((r) => [r.id, r.name]));
-
-    return {
-      days,
-      from: iso(from),
-      to: iso(nowMs),
-      spendUsd,
-      unknownCostRuns,
-      prevSpendUsd,
-      runs,
-      tasks: tasks.length,
-      shipped: slice(tasks.filter((t) => SHIPPED_STATUSES.includes(t.status))),
-      unshipped: slice(tasks.filter((t) => UNSHIPPED_STATUSES.includes(t.status))),
-      tokens,
-      daily: [...daily.entries()].map(([t, v]) => ({ day: iso(t), ...v })),
-      byRepo: groupBy((t) => t.repoId).map(({ key, ...s }) => ({
-        repoId: key,
-        name: key ? (repoNames.get(key) ?? "Disconnected repo") : "No repo",
-        ...s,
-      })),
-      byKind: groupBy((t) => t.kind).map(({ key, ...s }) => ({ kind: key, ...s })),
-      byAgent: [...perAgent].map(([driver, s]) => ({ driver, usd: s.usd, tasks: s.tasks.size }))
-        .sort((a, b) => b.usd - a.usd || a.driver.localeCompare(b.driver)),
-      topTasks: tasks
-        .filter((t) => t.usd > 0)
-        .sort((a, b) => b.usd - a.usd)
-        .slice(0, 10),
-    };
+    return analytics(this, days, nowMs);
   }
 
   // ── agents ────────────────────────────────────────────────
@@ -1299,82 +1128,6 @@ export class Store {
 
   // ── overview ──────────────────────────────────────────────
   overview(factory: Overview["factory"]): Overview {
-    const counts = Object.fromEntries(
-      ALL_STATUSES.map((s) => [s, 0]),
-    ) as Overview["counts"];
-    for (const r of this.db.prepare("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status").all() as Row[]) {
-      counts[r.status as TaskStatus] = r.n as number;
-    }
-
-    const weekMs = 7 * 24 * 3600 * 1000;
-    const t0 = Date.now();
-    const iso = (ms: number) => new Date(ms).toISOString();
-    const shippedIn = SHIPPED_STATUSES.map((s) => `'${s}'`).join(",");
-    const shipped = (from: number, to: number) =>
-      (
-        this.db
-          .prepare(
-            `SELECT COUNT(*) AS n FROM tasks WHERE status IN (${shippedIn}) AND finished_at >= ? AND finished_at < ?`,
-          )
-          .get(iso(from), iso(to)) as Row
-      ).n as number;
-
-    // Counted when the money was spent, not when the task was created.
-    const spend = (
-      this.db
-        .prepare("SELECT COALESCE(SUM(cost_usd), 0) AS s FROM runs WHERE outcome != 'running' AND finished_at >= ?")
-        .get(iso(t0 - weekMs)) as Row
-    ).s as number;
-
-    // Hourly activity buckets for the last 7 days.
-    const hour = 3600 * 1000;
-    const start = Math.floor((t0 - weekMs) / hour) * hour;
-    // Stored times are all UTC toISOString(), so "2026-11-02T14" names an hour, in SQL as well as here.
-    const hourOf = (ms: number) => iso(ms).slice(0, 13);
-    const buckets = new Map<string, { t: string; done: number; events: number }>();
-    for (let t = start; t <= t0; t += hour) buckets.set(hourOf(t), { t: iso(t), done: 0, events: 0 });
-    for (const r of this.db
-      .prepare(
-        "SELECT substr(ts, 1, 13) AS hour, COUNT(*) AS n FROM events WHERE ts >= ? AND type IN ('note','tool','finding') GROUP BY hour",
-      )
-      .all(iso(start)) as Row[]) {
-      const b = buckets.get(r.hour as string);
-      if (b) b.events = r.n as number;
-    }
-    for (const r of this.db
-      .prepare(
-        `SELECT substr(finished_at, 1, 13) AS hour, COUNT(*) AS n FROM tasks WHERE status IN (${shippedIn}) AND finished_at >= ? GROUP BY hour`,
-      )
-      .all(iso(start)) as Row[]) {
-      const b = buckets.get(r.hour as string);
-      if (b) b.done = r.n as number;
-    }
-
-    const openByRepo = new Map<string, number>();
-    for (const r of this.db
-      .prepare(
-        "SELECT repo_id, COUNT(*) AS n FROM tasks WHERE status IN ('queued','running','needs_review','merging') GROUP BY repo_id",
-      )
-      .all() as Row[]) {
-      openByRepo.set(r.repo_id as string, r.n as number);
-    }
-
-    return {
-      factory,
-      counts,
-      queuedForAnyone: this.queuedForAnyone(),
-      shippedThisWeek: shipped(t0 - weekMs, t0 + 1),
-      shippedLastWeek: shipped(t0 - 2 * weekMs, t0 - weekMs),
-      spendThisWeekUsd: spend,
-      activity: [...buckets.values()],
-      needsReview: this.listTaskSummaries({ status: ["needs_review"], limit: 20 }),
-      goalsNeedingReview: this.listGoalSummaries(true),
-      inFlight: this.listTaskSummaries({ status: ACTIVE_STATUSES, limit: 20 }),
-      recent: this.listTaskSummaries({ status: FINISHED_STATUSES, limit: 8 }),
-      agents: this.listAgents(),
-      repos: this.listRepos().map((r) => ({ ...r, openTasks: openByRepo.get(r.id) ?? 0, tools: this.repoTools(r.id) })),
-      // One refusal could be a fluke; the same one in a second task is a pattern worth a decision.
-      blocked: this.blockedTools({ minTasks: 2 }).slice(0, 5),
-    };
+    return overview(this, factory);
   }
 }
