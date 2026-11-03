@@ -130,7 +130,7 @@ program
   .option("-a, --autonomy <level>", "observe | propose | act")
   .option("--agent <agent>", `which agent works it: ${DRIVER_NAMES.join(" | ")} (default: the factory's default)`)
   .option("--at <timestamp>", "start no earlier than this ISO timestamp with timezone, e.g. 2030-06-15T09:00:00-04:00")
-  .option("--pre-approve", "merge after checks and acceptance pass; UI still requires a visual decision")
+  .option("--pre-approve", "merge after checks and acceptance pass; waive visual review including conflict resolutions")
   .option("--after <id>", AFTER_HELP, collect, [])
   .option("--accept <criterion>", ACCEPT_HELP, collect, [])
   .option("--look-for <what>", LOOK_FOR_HELP, collect, [])
@@ -232,7 +232,7 @@ program
           initialValue: preApprove,
           options: [
             { value: false, label: "Wait for approval" },
-            { value: true, label: "Pre-approve", hint: "Merge once its run, acceptance criteria, and checks pass" },
+            { value: true, label: "Pre-approve", hint: "Merge once its run, acceptance criteria, and checks pass; waive visual review including conflict resolutions" },
           ],
         });
         if (p.isCancel(merge)) return p.cancel("Nothing was created.");
@@ -301,7 +301,7 @@ program
       const waiting = store.unmetPrerequisites(m).map((t) => t.id);
       p.outro(
         `${pc.green("✓")} ${m.scheduledAt ? `Task scheduled for ${new Date(m.scheduledAt).toLocaleString()}. Prerequisites still apply` : waiting.length ? `Task queued. It starts once ${waiting.join(", ")} land${waiting.length === 1 ? "s" : ""}` : "Task queued"}  ${ui.dim(m.id)}\n   ${ui.dim("follow along:")} crane watch ${m.id}${
-          m.preApprovedAt ? "\n   Pre-approved: merges when its run and checks pass." : ""
+          m.preApprovedAt ? "\n   Pre-approved: merges when its run and checks pass; visual review is waived, including conflict resolutions." : ""
         }${
           factoryIsRunning(store) ? "" : `\n   ${ui.accent("!")} The factory is off. Run ${pc.bold("crane serve")} to start the agents.`
         }`,
@@ -391,9 +391,9 @@ program
     const preApproved = m.preApprovedAt && ["queued", "running"].includes(m.status) ? " · pre-approved" : "";
     console.log(`  ${ui.statusText(m.status)}${ui.dim(forMember + on + cost + preApproved)}`);
     if (m.branch) {
-      console.log(`  Visual review: ${m.visualReview?.status ?? "pending"}${m.visualReview ? ` · candidate ${m.visualReview.commit}` : ""}`);
+      console.log(`  Visual review: ${m.preApprovedAt && (!m.visualReview || m.visualReview.status === "pending") ? "waived by pre-approval" : m.visualReview?.status ?? "pending"}${m.visualReview ? ` · candidate ${m.visualReview.commit}` : ""}`);
       if (m.visualReview?.note) console.log(ui.wrap(m.visualReview.note, 2));
-      if (!m.visualReview || m.visualReview.status === "pending") console.log(`  Record inspection: crane visual-review ${m.id} --commit <full-sha> -m 'views, sizes, screenshot paths' (or --waive with reason and scope)`);
+      if (!m.preApprovedAt && (!m.visualReview || m.visualReview.status === "pending")) console.log(`  Record inspection: crane visual-review ${m.id} --commit <full-sha> -m 'views, sizes, screenshot paths' (or --waive with reason and scope)`);
     }
     if (settingsLabel(m)) console.log(ui.dim(`  Model settings: ${settingsLabel(m)}`));
     if (m.lookouts.length) console.log(ui.dim(`  Also looks for: ${lookoutsLabel(m.lookouts)}`));
@@ -573,7 +573,7 @@ const act = (name: string, desc: string, fn: (id: string, note?: string) => Prom
 
 program
   .command("visual-review")
-  .description("Record candidate visual inspection or an explicit waiver before approval or merge")
+  .description("Record candidate visual inspection or an explicit waiver (pre-approved tasks waive automatically)")
   .argument("<id>")
   .requiredOption("--commit <sha>", "full candidate commit inspected or waived")
   .requiredOption("-m, --message <note>", "reviewed views, sizes and screenshot paths, or waiver reason and unreviewed scope")
@@ -615,7 +615,7 @@ program
 
 program
   .command("pre-approve")
-  .description("Approve a queued or running task ahead of time, so it merges once its checks pass")
+  .description("Approve a queued or running task ahead of time and waive visual review, including conflict resolutions")
   .argument("<id>")
   .option("-m, --message <note>", "leave a note on the task")
   .option("--undo", "take the pre-approval back, so it waits for your review")
@@ -628,7 +628,7 @@ program
       }
       const m = actions.preApprove(id, opts.message);
       const main = (m.repoId && store.getRepo(m.repoId)?.defaultBranch) || "main";
-      ui.ok(`Pre-approved. Crane merges it into ${main} after its checks and acceptance pass; UI still requires a visual decision  ${ui.dim(m.id)}`);
+      ui.ok(`Pre-approved. Crane merges it into ${main} after its checks and acceptance pass; visual review is waived, including conflict resolutions  ${ui.dim(m.id)}`);
       console.log(ui.hint([`crane watch ${m.id}`, "follow along live"], [`crane pre-approve ${m.id} --undo`, "wait for review instead"]));
     } catch (err) {
       ui.fail((err as Error).message);
@@ -1012,7 +1012,7 @@ schedules.command("add <member>")
   .requiredOption("--days <days>", "comma-separated weekdays: 0=Sun through 6=Sat")
   .requiredOption("--time <HH:MM>", "local start time")
   .requiredOption("--timezone <zone>", "IANA timezone, e.g. America/Toronto")
-  .option("--pre-approve", "approve each run ahead of time so it merges after checks pass")
+  .option("--pre-approve", "approve each run ahead of time and waive visual review including conflict resolutions")
   .action((member: string, opts: { repo: string; days: string; time: string; timezone: string; preApprove?: boolean }) => {
     try {
       const days = opts.days.split(",");
@@ -1052,7 +1052,7 @@ schedules.command("update <member> <schedule>")
   .option("--days <days>", "comma-separated weekdays: 0=Sun through 6=Sat")
   .option("--time <HH:MM>", "local start time")
   .option("--timezone <zone>", "IANA timezone")
-  .option("--pre-approve", "pre-approve each run")
+  .option("--pre-approve", "pre-approve each run and waive visual review including conflict resolutions")
   .option("--no-pre-approve", "wait for review after each run")
   .action((member: string, id: string, opts: { repo?: string; days?: string; time?: string; timezone?: string; preApprove?: boolean }) => {
     try {

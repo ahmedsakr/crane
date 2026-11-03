@@ -170,7 +170,7 @@ export function ScheduleForm({ member, repos, schedule, existing, reload, onDone
                 <input type="checkbox" checked={draft.preApprove} onChange={(e) => setDraft({ ...draft, preApprove: e.target.checked })} />
                 <span>
                   Pre-approve each run
-                  <small>Runs merge after their checks pass. Without this, each one waits for your review.</small>
+                  <small>Runs merge after their checks pass. This also waives visual review for each run, including conflict resolutions. Without this, each one waits for your review.</small>
                 </span>
               </label>
             )}

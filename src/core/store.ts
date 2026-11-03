@@ -14,7 +14,6 @@ import {
   prerequisiteMet,
   ruleLabel,
   unmetAcceptance,
-  visualReviewPending,
   completionReviewReason,
   type MaintenanceRole,
   type CrewSchedule,
@@ -23,6 +22,7 @@ import {
   type FollowUpState,
   type PrerequisiteState,
   type CommandEvidence,
+  type VisualReview,
 } from "@crane/contracts";
 import { postmortemBrief } from "./postmortem.js";
 import type {
@@ -879,6 +879,19 @@ export class Store {
       .run(on ? now() : null, id).changes > 0;
   }
 
+  /** Record the candidate waiver authorized by the operator's task pre-approval. */
+  waivePreApprovedVisualReview(id: string, candidate: VisualReview): boolean {
+    return this.db.transaction(() => {
+      const task = this.getTask(id);
+      if (!task?.preApprovedAt || task.autonomy === "observe") return false;
+      const review: VisualReview = { ...candidate, status: "waived", decidedAt: now(),
+        note: "Visual review waived by operator pre-approval for this task, including conflict resolutions. All views and viewport sizes may remain unreviewed." };
+      this.updateTask(id, { visualReview: review });
+      this.addEvent(id, "note", "Visual review waived by pre-approval", { preApprovedAt: task.preApprovedAt, visualReview: review });
+      return true;
+    }).immediate();
+  }
+
   /**
    * Hand a task over once its work run passed: to review (`needs_review`), as
    * done, or, when the operator pre-approved it and it has a branch, straight to
@@ -890,6 +903,7 @@ export class Store {
     return this.db.transaction(() => {
       const task = this.getTask(id);
       if (!task || task.status === "cancelled") return null;
+      if (task.visualReview?.status === "pending") this.waivePreApprovedVisualReview(id, task.visualReview);
       const completionHold = completionReviewReason(task);
       if (completionHold) {
         this.setStatus(id, "needs_review", `Implementation requires operator review: ${completionHold}`, { completionHold });
@@ -897,10 +911,6 @@ export class Store {
       }
       // Completion alone doesn't satisfy separately requested acceptance criteria.
       const unmet = unmetAcceptance(task);
-      if (task.preApprovedAt && task.autonomy !== "observe" && visualReviewPending(task)) {
-        this.setStatus(id, "needs_review", "Pre-approved, but candidate visual inspection or an explicit operator waiver is required", { visualReviewPending: true });
-        return "needs_review" as const;
-      }
       if (task.preApprovedAt && task.branch && task.autonomy !== "observe" && unmet.length) {
         this.setStatus(id, "needs_review",
           `Pre-approved, but the report doesn't show ${unmet.length === 1 ? "an acceptance criterion" : `${unmet.length} acceptance criteria`} met. Ready for your review`,

@@ -321,7 +321,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
                       <input type="checkbox" checked={preApprove} onChange={(e) => setPreApprove(e.target.checked)} disabled={busy} />
                       {" "}Pre-approve this task
                     </label>
-                    <small>Crane merges it once its run, acceptance criteria, and checks pass. UI changes still wait for your candidate inspection or explicit waiver. You can undo pre-approval before the run finishes.</small>
+                    <small>Crane merges it once its run, acceptance criteria, and checks pass. Pre-approval also waives visual review, including conflict resolutions. You can undo pre-approval before the run finishes.</small>
                   </div>
                 </details>
               )}

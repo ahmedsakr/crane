@@ -56,6 +56,24 @@ function setup() {
   return { store, repo, task };
 }
 
+test("cli: pre-approval discloses its visual waiver and undo restores the pending decision", async () => {
+  const { store, task } = setup();
+  const candidate = task("running");
+  store.updateTask(candidate.id, { visualReview: { status: "pending", commit: "a".repeat(40), tree: "b".repeat(40), note: "UI changed", decidedAt: null } });
+  try {
+    const approved = await crane(store, "pre-approve", candidate.id);
+    assert.equal(approved.code, 0);
+    assert.match(approved.out, /visual review is waived, including conflict resolutions/);
+    const show = await crane(store, "show", candidate.id);
+    assert.match(show.out, /Visual review: waived by pre-approval/);
+    assert.doesNotMatch(show.out, /Record inspection:/);
+    assert.equal((await crane(store, "pre-approve", candidate.id, "--undo")).code, 0);
+    const undone = await crane(store, "show", candidate.id);
+    assert.match(undone.out, /Visual review: pending/);
+    assert.match(undone.out, /Record inspection:/);
+  } finally { store.close(); }
+});
+
 test("cli: visual decisions are separate from approval, candidate-bound and explicit", async () => {
   const { store, task } = setup();
   const candidate = task("needs_review");

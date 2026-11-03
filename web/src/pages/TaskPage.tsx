@@ -202,6 +202,7 @@ export function TaskPage() {
   const { task: m, repo, agent } = data;
   const report = m.report;
   const visualPending = visualReviewPending(m);
+  const visualWaivedByPreApproval = !!m.preApprovedAt && (!m.visualReview || m.visualReview.status === "pending");
   const main = repo?.defaultBranch ?? "main";
   const merge = lastMergeOutcome(events);
   // The agent that worked it, or the one it asked for. Before it starts with no choice, nothing to say.
@@ -266,9 +267,9 @@ export function TaskPage() {
           <h1 className="detail-title">{m.title}</h1>
 
           {m.branch && ["needs_review", "approved", "done"].includes(m.status) && <div className="card card-pad visual-review">
-            <h2 className="card-title">Visual review: {visualPending ? "Needs your decision" : m.visualReview?.status.replace("_", " ")}</h2>
-            <p>{visualPending ? "Approval and merging wait for candidate inspection or an explicit waiver. Pre-approval and passing checks do not complete visual review." : m.visualReview?.note}</p>
-            {!visualPending && m.visualReview && <details>
+            <h2 className="card-title">Visual review: {visualPending ? "Needs your decision" : visualWaivedByPreApproval ? "Waived by pre-approval" : m.visualReview?.status.replace("_", " ")}</h2>
+            <p>{visualPending ? "Approval and merging wait for candidate inspection or an explicit waiver." : visualWaivedByPreApproval ? "Your pre-approval waives visual review for this task, including conflict resolutions." : m.visualReview?.note}</p>
+            {!visualPending && !visualWaivedByPreApproval && m.visualReview && <details>
               <summary>Candidate decision</summary>
               <p className="mono" style={{ overflowWrap: "anywhere" }}>{m.visualReview.commit}</p>
               {m.visualReview.decidedAt && <p>Recorded {new Date(m.visualReview.decidedAt).toLocaleString()}</p>}
@@ -389,8 +390,8 @@ export function TaskPage() {
                 <strong>{m.preApprovedAt ? "Pre-approved" : "Merge when it passes"}</strong>
                 <span>
                   {m.preApprovedAt
-                    ? `Once its checks pass${acceptanceGate}, Crane merges it into ${main}. UI changes still wait for your candidate inspection or explicit waiver.`
-                    : `Pre-approve it and Crane merges it into ${main} once its checks pass${acceptanceGate}. UI changes still wait for your candidate inspection or explicit waiver.`}
+                    ? `Once its checks pass${acceptanceGate}, Crane merges it into ${main}. Your pre-approval also waives visual review, including conflict resolutions.`
+                    : `Pre-approve it and Crane merges it into ${main} once its checks pass${acceptanceGate}. This also waives visual review, including conflict resolutions.`}
                 </span>
               </div>
               {m.preApprovedAt ? (

@@ -14,7 +14,8 @@ export function hasVisualDecision(review: VisualReview | null | undefined): revi
  * it carries across a clean merge onto a newer default branch: that adds only
  * what has already landed. It stops covering the candidate when the branch gets
  * new commits, or when `conflictChangedUi` says an agent changed UI files while
- * resolving conflicts, since nobody has seen that result.
+ * resolving conflicts, since nobody has seen that result. Task pre-approval
+ * authorizes a fresh waiver for any such candidate, including UI conflicts.
  */
 export function requireCandidateVisualReview(store: Store, taskId: string, commit: string, tree: string, branchCommit: string, changedFiles: string[], conflictChangedUi = false): void {
   const review = store.getTask(taskId)?.visualReview;
@@ -24,6 +25,7 @@ export function requireCandidateVisualReview(store: Store, taskId: string, commi
     if (review?.status === "not_required" && review.commit === branchCommit && !hasUiFiles(changedFiles)) return;
     if (hasVisualDecision(review) && (review.branchCommit ?? review.commit) === branchCommit) return;
   }
+  if (store.waivePreApprovedVisualReview(taskId, { status: "pending", commit, tree, branchCommit, decidedAt: null, note: "" })) return;
   store.updateTask(taskId, { visualReview: {
     status: "pending", commit, tree, branchCommit, decidedAt: null,
     note: conflictChangedUi
