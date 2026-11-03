@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import type { spawn } from "node:child_process";
-import { InstallDiagnostics, INSTALL_PROGRESS_MS, INSTALL_TIMEOUT_MS, runInstall } from "../packages/worktree-deps/src/install-process.js";
+import { InstallDiagnostics, INSTALL_PROGRESS_MS, INSTALL_STOP_GRACE_MS, INSTALL_TIMEOUT_MS, runInstall } from "../packages/worktree-deps/src/install-process.js";
 
 function fixture() {
   const child = Object.assign(new EventEmitter(), {
@@ -100,6 +100,31 @@ test("install timeout keeps redacted diagnostics and cleans timers", async t => 
   const count = notes.length;
   t.mock.timers.tick(INSTALL_TIMEOUT_MS);
   assert.equal(notes.length, count);
+});
+
+test("install timeout stops the whole process group and force-kills what ignores it", async t => {
+  t.mock.timers.enable({ apis: ["setInterval", "setTimeout"] });
+  const { child, controller } = fixture();
+  const signals: [number, string][] = [];
+  const grouped = Object.assign(child, { pid: 4321 });
+  const kill = ((pid: number, signal: string) => { signals.push([pid, signal]); return true; }) as typeof process.kill;
+  const launch = ((_cmd: string, _args: string[], options: { detached: boolean }) => {
+    assert.equal(options.detached, process.platform !== "win32");
+    return grouped;
+  }) as unknown as typeof spawn;
+  const pending = runInstall("npm", ["ci"], { cwd: "/fixture", signal: controller.signal }, launch, kill);
+  t.mock.timers.tick(INSTALL_TIMEOUT_MS);
+  const term = process.platform === "win32" ? [] : [[-4321, "SIGTERM"]];
+  assert.deepEqual(signals, term);
+  controller.abort();
+  assert.deepEqual(signals, term, "a second reason to stop doesn't signal again");
+  t.mock.timers.tick(INSTALL_STOP_GRACE_MS);
+  assert.deepEqual(signals, process.platform === "win32" ? [] : [[-4321, "SIGTERM"], [-4321, "SIGKILL"]]);
+  assert.ok(child.stdout.destroyed && child.stderr.destroyed, "nothing else can hold its close back");
+  child.emit("close", null, "SIGKILL");
+  await assert.rejects(pending);
+  t.mock.timers.tick(INSTALL_TIMEOUT_MS);
+  assert.equal(signals.length, process.platform === "win32" ? 0 : 2);
 });
 
 test("install outcomes distinguish nonzero exit, spawn errors, and cancellation", async () => {
