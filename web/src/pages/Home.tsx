@@ -1,3 +1,4 @@
+import { errorMessage } from "@crane/contracts";
 import { Link, useNavigate } from "react-router-dom";
 import { useApp } from "../lib/app-context";
 import { api, type TaskSummary } from "../lib/api";
@@ -18,7 +19,7 @@ function ReviewItem({ m, repoName, onDone }: { m: TaskSummary; repoName?: string
       await api.approve(m.id);
       toast({ text: isChange ? "Approved. Merging it now." : "Marked as reviewed" });
     } catch (e) {
-      toast({ text: (e as Error).message });
+      toast({ text: errorMessage(e) });
     }
     onDone();
   };

@@ -1,3 +1,4 @@
+import { errorMessage } from "@crane/contracts";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "react-router-dom";
@@ -223,7 +224,7 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
       nav(`/tasks/${m.id}`);
       toast({ text: m.scheduledAt ? "Task scheduled" : "Task queued" });
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }

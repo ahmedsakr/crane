@@ -1,6 +1,6 @@
 import { crewSettingKey, type Store } from "../core/store.js";
-import { completionReviewReason, driverLabel, isDriverName, unmetAcceptance, type AgentState, type EventType, type Report, type ReviewCheckpoint, type RunUsage, type Task, type TaskStatus } from "@crane/contracts";
-import { AgentRunError, combinedCost, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
+import { errorMessage, completionReviewReason, driverLabel, isDriverName, unmetAcceptance, type AgentState, type EventType, type Report, type ReviewCheckpoint, type RunUsage, type Task, type TaskStatus } from "@crane/contracts";
+import { AgentRunError, addRunUsage, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { createWorktree, finalizeWorktree, PreparationHold, putAwayWorktree, removeWorktree, requireCommits } from "./git.js";
@@ -235,7 +235,7 @@ export class Factory {
 
     this.timer = setInterval(() => this.tick(), this.tickMs);
     this.tick();
-    this.dashboard?.start().catch((err) => this.log(`Couldn't check the dashboard build: ${(err as Error).message}`));
+    this.dashboard?.start().catch((err) => this.log(`Couldn't check the dashboard build: ${errorMessage(err)}`));
   }
 
   /**
@@ -279,7 +279,7 @@ export class Factory {
   private track(job: Promise<void>, agentId: string, taskId: string) {
     this.busy.add(agentId);
     const p = job
-      .catch((err) => this.log(`Couldn't record how ${taskId} ended: ${(err as Error).message}. Restart the factory to pick it up again`))
+      .catch((err) => this.log(`Couldn't record how ${taskId} ended: ${errorMessage(err)}. Restart the factory to pick it up again`))
       .finally(() => {
         this.busy.delete(agentId);
         this.inflight.delete(p);
@@ -292,7 +292,7 @@ export class Factory {
     if (this.sweeping || this.stopping || Date.now() - this.lastSweep < SWEEP_MS) return;
     this.lastSweep = Date.now();
     this.sweeping = this.putAwayWorktrees()
-      .catch((err) => this.log(`Couldn't clean up worktrees: ${(err as Error).message}`))
+      .catch((err) => this.log(`Couldn't clean up worktrees: ${errorMessage(err)}`))
       .finally(() => (this.sweeping = null));
   }
 
@@ -322,7 +322,7 @@ export class Factory {
       try {
         result = await putAwayWorktree(repo, task, path, { saveWork: SAVE_WORK_STATUSES.includes(task.status) });
       } catch (err) {
-        result = { removed: false as const, reason: (err as Error).message.split("\n")[0]! };
+        result = { removed: false as const, reason: errorMessage(err).split("\n")[0]! };
       }
       if (!result.removed) {
         this.keptWorktrees.add(path);
@@ -346,7 +346,7 @@ export class Factory {
       this.assignWork();
       this.tickError = null;
     } catch (err) {
-      const message = (err as Error).message;
+      const message = errorMessage(err);
       if (message !== this.tickError) this.log(`Couldn't check for work: ${message}. Trying again`);
       this.tickError = message;
     }
@@ -420,18 +420,7 @@ export class Factory {
     let usage: RunUsage | null = null;
     // A driver can report more than once in a run (a failed resume, then a fresh session), so add them up.
     const onUsage = (u: RunUsage) => {
-      const prev: RunUsage | null = usage;
-      usage = !prev
-        ? u
-        : {
-            ...combinedCost(prev, u),
-            inputTokens: prev.inputTokens + u.inputTokens,
-            outputTokens: prev.outputTokens + u.outputTokens,
-            cacheReadTokens: prev.cacheReadTokens + u.cacheReadTokens,
-            cacheWriteTokens: prev.cacheWriteTokens + u.cacheWriteTokens,
-            turns: prev.turns + u.turns,
-            model: u.model ?? prev.model,
-          };
+      usage = addRunUsage(usage, u);
     };
     // Read at the start of every run, so a change on the Crew page applies to the next one without a restart.
     const { model, effort } = driverSettings((k) => this.store.getSetting(k), driver.name);
@@ -464,7 +453,7 @@ export class Factory {
     try {
       write();
     } catch (err) {
-      this.log(`Couldn't record a task update: ${(err as Error).message}`);
+      this.log(`Couldn't record a task update: ${errorMessage(err)}`);
     }
   }
 
@@ -544,7 +533,7 @@ export class Factory {
       await removeWorktree(repo, workdir);
       if (!result.checkoutBehind) await deleteMergedBranch(repo, task.branch);
       // A change to Crane itself: build the dashboard from it, so it shows without anyone running npm run build.
-      if (repo.isFactory) this.dashboard?.request(result.head, task.id).catch((err) => this.log(`Couldn't start the dashboard build: ${(err as Error).message}`));
+      if (repo.isFactory) this.dashboard?.request(result.head, task.id).catch((err) => this.log(`Couldn't start the dashboard build: ${errorMessage(err)}`));
     } catch (err) {
       if (ac.signal.aborted && !limit.hit()) {
         // The factory is stopping. Leave it waiting; the next factory picks it up again.
@@ -553,9 +542,7 @@ export class Factory {
       }
       const message = limit.hit()
         ? `Merging took longer than ${minutes(this.timeLimitMin)}, the most a task may run`
-        : err instanceof Error
-          ? err.message
-          : String(err);
+        : errorMessage(err);
       emit("error", message, limit.hit() ? { limit: "time" } : undefined);
       this.store.setStatus(task.id, "needs_review", "Couldn't merge. Back with you", { merge: { error: message } });
       this.log(`${agent.name} couldn't merge ${task.id}: ${message}`);
@@ -607,7 +594,7 @@ export class Factory {
           if (ac.signal.aborted) throw err;
           // Not fatal: the agent can still read code and may be able to install itself.
           const after = elapsed(Date.now() - started);
-          emit("note", `Couldn't install dependencies after ${after}: ${(err as Error).message.split("\n")[0]}`);
+          emit("note", `Couldn't install dependencies after ${after}: ${errorMessage(err).split("\n")[0]}`);
         }
         if (task.reviewCheckpoint) {
           if (task.report && await candidateUnchanged(cwd, wt.branch, task.reviewCheckpoint)) {
@@ -703,7 +690,7 @@ export class Factory {
       this.store.bumpAgentCompleted(agent.id);
       this.log(`${agent.name} finished ${task.id}${next === "merging" ? ", pre-approved, so it's queued to merge" : ""}`);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       // What a failed run cost is already on the task, via the runs ledger.
       const status = this.store.getTask(task.id)?.status;
       if (status === "cancelled") {

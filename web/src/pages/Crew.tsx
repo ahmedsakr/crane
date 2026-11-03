@@ -1,3 +1,4 @@
+import { errorMessage } from "@crane/contracts";
 import { useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../lib/app-context";
@@ -37,7 +38,7 @@ function TuningSheet({ driver: d, onChange, onClose }: { driver: DriverInfo; onC
       toast({ text: `${d.label} runs on ${(now && settingsLabel(now)) ?? "its default model and effort"} from its next run` });
       onClose();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorMessage(e));
     } finally {
       setSaving(false);
     }
@@ -89,7 +90,7 @@ function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: Dr
       toast({ text: `Factory default set to ${d.label}` });
       refresh();
     } catch (e) {
-      toast({ text: (e as Error).message });
+      toast({ text: errorMessage(e) });
     } finally {
       setBusy(null);
     }
@@ -181,7 +182,7 @@ function PostmortemDefaults({ drivers }: { drivers: DriverInfo[] }) {
       setDraft(null);
       toast({ text: "Post-mortem settings saved" });
       refresh();
-    } catch (e) { setSaveError((e as Error).message); }
+    } catch (e) { setSaveError(errorMessage(e)); }
     finally { setSaving(false); }
   };
   const named = agents.filter((a) => saved?.crew.includes(a.id)).map((a) => `${a.name}${a.active ? "" : " (on-call)"}`);
@@ -324,7 +325,7 @@ export function Crew() {
       else if (input.role !== undefined) toast({ text: input.role ? `${a.name} now handles ${MAINTENANCE_ROLE[input.role].label.toLowerCase()}` : `${a.name} takes any queued task` });
       else if (input.defaultDriver !== undefined) toast({ text: input.defaultDriver ? `${a.name} runs on ${driverLabel(input.defaultDriver)}` : `${a.name} follows the factory default` });
       refresh();
-    } catch (e) { toast({ text: (e as Error).message }); }
+    } catch (e) { toast({ text: errorMessage(e) }); }
     finally { setSaving(null); }
   };
   const { drivers, set } = useDrivers();

@@ -109,7 +109,7 @@ test("boundaries: the private protocol has one ESM export", async () => {
   const manifest = JSON.parse(readFileSync(join(protocolRoot, "package.json"), "utf8"));
   assert.deepEqual(manifest.dependencies, { "@crane/contracts": "0.1.0" });
   const protocol = await import("@crane/agent-protocol");
-  assert.deepEqual(Object.keys(protocol).sort(), ["AgentRunError", "REPORT_FENCE", "combinedCost", "isTransientFailure", "parseReport"].sort());
+  assert.deepEqual(Object.keys(protocol).sort(), ["AgentRunError", "REPORT_FENCE", "addRunUsage", "combinedCost", "isTransientFailure", "parseReport"].sort());
   for (const path of ["@crane/agent-protocol/src/driver.js", "@crane/agent-protocol/dist/driver.js", "@crane/agent-protocol/driver"]) {
     await assert.rejects(import(path), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
   }

@@ -1,3 +1,4 @@
+import { errorMessage } from "@crane/contracts";
 import { randomUUID } from "node:crypto";
 import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { extname, isAbsolute, join, resolve, sep } from "node:path";
@@ -54,7 +55,7 @@ export function retainScreenshots(taskId: string, worktree: string, images: Scre
       writeFileSync(target, bytes, { flag: "wx" });
       retained.push({ path: name, caption: image.caption });
     } catch (err) {
-      note(`Couldn't attach screenshot ${image.path}: ${(err as Error).message}`);
+      note(`Couldn't attach screenshot ${image.path}: ${errorMessage(err)}`);
     }
   }
   return retained;

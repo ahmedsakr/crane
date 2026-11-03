@@ -1,4 +1,6 @@
 /** Shared domain/HTTP shapes and pure presentation helpers. No runtime dependencies. */
+export { errorMessage } from "./errors.js";
+export { runCostLabel, runTokens } from "./run-labels.js";
 export { validateGoalPlan, goalWaves } from "./goals.js";
 export type { Goal, GoalTask, GoalPlan, GoalDetail, GoalSummary, NewGoal } from "./goals.js";
 export { nextCrewFire, validateCrewSchedule, crewScheduleLabel } from "./crew-schedules.js";
@@ -86,6 +88,7 @@ export {
   followUpFor,
   unmetAcceptance,
   visualReviewPending,
+  visualReviewWaivedByPreApproval,
   completionReviewReason,
 } from "./types.js";
 export type { DiffLine, DiffHunk, DiffFile, ParsedDiff, SplitRow } from "./diff.js";

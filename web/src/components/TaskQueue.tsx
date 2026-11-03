@@ -1,3 +1,4 @@
+import { errorMessage } from "@crane/contracts";
 import { useCallback, useEffect, useId, useRef, useState, type PointerEvent } from "react";
 import { api, type TaskSummary } from "../lib/api";
 import { TaskRow } from "./bits";
@@ -31,7 +32,7 @@ export function TaskQueue({ repoName, instruct }: { repoName: (id: string | null
         setError(null);
       }
     } catch (e) {
-      if (mounted.current && version === revision.current) setError((e as Error).message);
+      if (mounted.current && version === revision.current) setError(errorMessage(e));
     }
   }, []);
 
@@ -123,7 +124,7 @@ export function TaskQueue({ repoName, instruct }: { repoName: (id: string | null
     } catch (e) {
       if (mounted.current) {
         setQueue(queue);
-        setMoveError(`Queue order wasn't saved: ${(e as Error).message}`);
+        setMoveError(`Queue order wasn't saved: ${errorMessage(e)}`);
         setMessage("");
       }
     } finally {

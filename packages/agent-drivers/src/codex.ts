@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { relative, isAbsolute } from "node:path";
 import {
   AgentRunError,
-  combinedCost,
+  addRunUsage,
   isTransientFailure,
   parseReport,
   type AgentDriver,
@@ -213,16 +213,7 @@ export class CodexDriver implements AgentDriver {
           case "turn.completed": {
             turns++;
             const u = usageFromTurn(msg.usage, model);
-            usage = !usage
-              ? u
-              : {
-                  ...usage,
-                  ...combinedCost(usage, u),
-                  inputTokens: usage.inputTokens + u.inputTokens,
-                  outputTokens: usage.outputTokens + u.outputTokens,
-                  cacheReadTokens: usage.cacheReadTokens + u.cacheReadTokens,
-                  turns,
-                };
+            usage = addRunUsage(usage, u);
             return;
           }
           case "turn.failed":

@@ -1,4 +1,4 @@
-import { nextCrewFire, validateCrewSchedule, type CrewSchedule, type CrewScheduleInput, type Repo } from "@crane/contracts";
+import { errorMessage, nextCrewFire, validateCrewSchedule, type CrewSchedule, type CrewScheduleInput, type Repo } from "@crane/contracts";
 
 /** Format an instant for the browser's date and time inputs: `YYYY-MM-DDTHH:mm`. */
 export function localStartTime(iso: string): string {
@@ -24,7 +24,7 @@ export function startProblem(value: string | null): string | null {
     parseStartTime(value);
     return null;
   } catch (e) {
-    return (e as Error).message;
+    return errorMessage(e);
   }
 }
 
@@ -161,6 +161,6 @@ export function schedulePreview(input: CrewScheduleInput, now = Date.now(), loca
     validateCrewSchedule(input);
     return { next: whenLabel(Date.parse(nextCrewFire(input, now)), { timeZone: input.timezone, now, locale }) };
   } catch (e) {
-    return { problem: `${(e as Error).message}.` };
+    return { problem: `${errorMessage(e)}.` };
   }
 }

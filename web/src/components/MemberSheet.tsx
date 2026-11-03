@@ -1,3 +1,4 @@
+import { errorMessage } from "@crane/contracts";
 import { useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { useApp } from "../lib/app-context";
@@ -80,7 +81,7 @@ function RunView({ member, role, onBack, onLeave }: {
       refresh();
       onLeave();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorMessage(e));
     } finally {
       setSaving(false);
     }

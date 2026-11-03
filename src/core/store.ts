@@ -3,6 +3,7 @@ import { basename } from "node:path";
 import { dbPath } from "./paths.js";
 import { shortId } from "./ids.js";
 import {
+  errorMessage,
   ACTIVE_STATUSES,
   ALL_STATUSES,
   FINISHED_STATUSES,
@@ -684,7 +685,7 @@ export class Store {
             goal.error = null;
           } catch (err) {
             goal.status = "blocked";
-            goal.error = (err as Error).message;
+            goal.error = errorMessage(err);
           }
           if (goal.status === "needs_review" && task?.status === "needs_review") {
             this.setStatus(task.id, "done", "Research complete; review the plan on its goal", { goalId: goal.id });

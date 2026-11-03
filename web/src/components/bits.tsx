@@ -1,3 +1,4 @@
+import { errorMessage } from "@crane/contracts";
 import { createContext, useCallback, useContext, useState, type HTMLAttributes, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api, isScheduled, KIND_LABEL, STATUS_LABEL, type BlockedTool, type TaskSummary, type TaskStatus } from "../lib/api";
@@ -108,7 +109,7 @@ export function BlockedItem({
       toast({ text: done });
       onDone();
     } catch (e) {
-      toast({ text: (e as Error).message });
+      toast({ text: errorMessage(e) });
     } finally {
       setBusy(false);
     }
