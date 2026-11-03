@@ -23,14 +23,19 @@ export type AgentRunRequest = Omit<RunContext, "onUsage" | "allowedTools" | "max
  */
 async function runWithRetry(deps: AgentRunnerDeps, driver: AgentDriver, ctx: RunContext): Promise<RunResult> {
   const { store } = deps;
-  const run = async (resumeSession = ctx.resumeSession) => driver.run({
-    ...ctx,
-    resumeSession,
-    commandEvidence: store.commandEvidence(ctx.task.id),
-    siblingTasks: ctx.repo && !ctx.job ? await siblingTasksFor(store, ctx.task, ctx.repo) : undefined,
-    prerequisites: !ctx.job && ctx.task.prerequisites.length ? store.prerequisiteStates(ctx.task) : undefined,
-    postmortemPrompt: !ctx.job && ctx.task.postmortemOf ? store.postmortemPrompt(ctx.task.postmortemOf) : undefined,
-  });
+  const run = async (resumeSession = ctx.resumeSession) => {
+    const current = store.getTask(ctx.task.id) ?? ctx.task;
+    return driver.run({
+      ...ctx,
+      // Operator authorization may change between resolver phases or retry attempts.
+      task: { ...ctx.task, preApprovedAt: current.preApprovedAt, visualReview: current.visualReview },
+      resumeSession,
+      commandEvidence: store.commandEvidence(ctx.task.id),
+      siblingTasks: ctx.repo && !ctx.job ? await siblingTasksFor(store, ctx.task, ctx.repo) : undefined,
+      prerequisites: !ctx.job && ctx.task.prerequisites.length ? store.prerequisiteStates(ctx.task) : undefined,
+      postmortemPrompt: !ctx.job && ctx.task.postmortemOf ? store.postmortemPrompt(ctx.task.postmortemOf) : undefined,
+    });
+  };
   try {
     return await run();
   } catch (err) {

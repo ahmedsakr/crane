@@ -188,7 +188,8 @@ test("prompts: prerequisites and acceptance criteria read as gates, and a waiver
     assert.match(landed, /generic checks does not by itself show a criterion is met/);
     assert.match(systemPrompt(t, null), /"acceptance": \[/, "the report shape asks for acceptance");
     assert.doesNotMatch(systemPrompt(make(), null), /"acceptance"/, "only when there are criteria");
-    assert.equal(userPrompt(make()), "# Task\n\nDo it", "no gates, no sections");
+    assert.ok(userPrompt(make()).startsWith("# Task\n\nDo it\n\n## Current visual-decision context"));
+    assert.doesNotMatch(userPrompt(make()), /## Prerequisites|## Acceptance criteria/, "no gates");
 
     const waiting = make({ prerequisites: [make().id] });
     store.waivePrerequisites(waiting.id);

@@ -158,7 +158,7 @@ crane visual-review <id> --commit <full-sha> --waive -m "<reason>; unreviewed: <
 crane approve <id>
 ```
 
-Keep screenshot files available at the recorded paths; the visual-review record does not upload or retain operator-created images automatically. An agent must leave the checklist pending until the operator records inspection or a waiver in the structured visual-review record.
+Keep screenshot files available at the recorded paths; the visual-review record does not upload or retain operator-created images automatically. Agents disclose missing inspection in every handoff. The checklist is required before approval or merge only when an operator visual decision remains outstanding without pre-approval. When pre-approval authorizes Crane to record an automatic candidate waiver, including conflict resolutions, or Crane confirms a covering decision, remaining capture instructions are optional. Agents cannot grant waivers or decide that an old decision covers new edits; Crane verifies candidate coverage.
 
 ## Quick start
 
