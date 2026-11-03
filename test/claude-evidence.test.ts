@@ -14,9 +14,11 @@ for (const fixture of claudeResultShapes) {
     assert.equal(result.exitCode, fixture.exitCode);
     assert.equal(result.exitCodeSource, fixture.source);
     assert.equal(result.isError, fixture.block.is_error);
+    let status = result.isError ? "failed" : "completed";
+    if (result.interrupted) status = "interrupted";
     tracker.record("completed", {
       id: "check", exit_code: result.exitCode,
-      status: result.interrupted ? "interrupted" : result.isError ? "failed" : "completed",
+      status,
     }, "", null);
     tracker.close(false);
     assert.equal(events.at(-1)!.status, fixture.status);

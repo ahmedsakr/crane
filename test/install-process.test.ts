@@ -128,7 +128,8 @@ test("install timeout stops the whole process group and force-kills what ignores
 });
 
 test("install outcomes distinguish nonzero exit, spawn errors, and cancellation", async () => {
-  for (const outcome of ["exit", "spawn", "cancel"]) {
+  const errors = { exit: /exit 7/, spawn: /ENOENT/, cancel: /cancelled/ };
+  for (const outcome of ["exit", "spawn", "cancel"] as const) {
     const { child, notes, controller, run } = fixture();
     const pending = run();
     if (outcome === "spawn") child.emit("error", Object.assign(new Error("raw secret"), { code: "ENOENT" }));
@@ -138,7 +139,7 @@ test("install outcomes distinguish nonzero exit, spawn errors, and cancellation"
     }
     child.emit("close", outcome === "exit" ? 7 : null, outcome === "cancel" ? "SIGTERM" : null);
     await assert.rejects(pending, err => {
-      assert.match(String(err), outcome === "exit" ? /exit 7/ : outcome === "spawn" ? /ENOENT/ : /cancelled/);
+      assert.match(String(err), errors[outcome]);
       assert.ok(!String(err).includes("raw secret"));
       if (outcome === "cancel") assert.equal((err as Error).name, "AbortError");
       return true;
