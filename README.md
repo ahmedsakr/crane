@@ -287,7 +287,9 @@ npm test
 `npm run build` transpiles `src/` to `dist/` with esbuild and doesn't check
 backend types, so run `npm run typecheck` to catch type errors. `prepack` runs it
 before packing. `scripts/build.mjs` runs the `build:packages`, `build:backend`,
-and web `build` scripts without starting npm for each one.
+and web `build` scripts without starting npm for each one. These use TypeScript
+7's native `tsc`, which has no compiler API, so the import checks in
+`test/support/imports.ts` parse with `@babel/parser` instead.
 
 The private workspaces compile to ESM and declarations before build, typecheck,
 tests, dev, and the source CLI. `npm run build:packages` checks workspace links,

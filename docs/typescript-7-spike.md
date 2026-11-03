@@ -1,121 +1,107 @@
 # TypeScript 7 spike
 
-Status: **blocked before candidate installation**, 2026-11-02. No compiler
-upgrade or performance improvement is delivered by this spike. Continue in an
-environment with a writable npm cache and access to the required packages.
-Do not treat the baseline below as evidence that TypeScript 7 works on Crane.
+Status: **evaluated, adoption recommended**, 2026-11-03. Crane moves from
+`typescript` 5.9.3 to 7.0.2 in both the root and `web`. No `tsconfig` or
+application source changed. The import helper in `test/support/imports.ts`
+moved from the compiler API to `@babel/parser`.
 
-## Evidence
+## Timings
 
-The starting commit was `4fba27df331819638aaee36616b506e6fef698ae`, running
-Node v20.19.4 on Linux x64. Both the root and `web/package.json` pin
-`typescript` to `~5.9.3`; changing only the root would leave web checking on
-the old compiler. The package graph, workspace package scripts, and
-`dev:packages` use `tsc -b`; all five packages emit declarations and keep their
-incremental caches under `dist/`.
+Measured on Node v20.19.4, npm 9.2.0, Linux x64, with 4 CPUs and 3.3 GB of
+memory, starting from `38e2103`. The machine was running other factory tasks,
+with a load average of about 5 to 6 when last sampled. Load wasn't controlled,
+so user CPU is the fairer comparison. Each row was timed with the shell's `time`.
 
-One unchanged baseline run of `/usr/bin/time -p npm run typecheck` passed
-(exit 0): **73.17 seconds elapsed**, 107.64 seconds user CPU, 4.44 seconds
-system CPU. This includes the package build, backend, tests/scripts, and web
-checks, including web's contracts precheck. It is a single observation under
-shared machine load, not a median or a comparison with the earlier task's
-roughly 50-second individual checks. Cache state was not controlled.
+| Measurement | 5.9.3 elapsed | 7.0.2 elapsed | 5.9.3 user CPU | 7.0.2 user CPU |
+| --- | --- | --- | --- | --- |
+| `npm run typecheck`, run 1 | 91.23 s | 23.60 s | 138.49 s | 30.26 s |
+| `npm run typecheck`, run 2 | 97.87 s | 26.95 s | 125.79 s | 31.16 s |
+| `npm run typecheck`, run 3 | 96.93 s | 20.00 s | 129.86 s | 25.71 s |
+| **Median** | **96.93 s** | **23.60 s** | **129.86 s** | **30.26 s** |
+| `tsc -b tsconfig.packages.json --force` | 30.11 s | 2.61 s | 50.99 s | 5.72 s |
 
-`npm cache ls typescript` listed the 7.0.2 tarball, but this did not establish
-that the candidate could be installed:
+The typecheck median is about 4 times faster, and the forced package build about
+11 times faster. A later 7.0.2 typecheck took 11.92 s, which shows how much the
+shared load moves these numbers.
 
-- `npm view --offline typescript@7.0.2 --json` failed with `ENOTCACHED` for
-  registry metadata (exit 1).
-- `npm pack --offline --ignore-scripts --pack-destination /tmp
-  https://registry.npmjs.org/typescript/-/typescript-7.0.2.tgz` failed with
-  `EROFS: read-only file system, mkdtemp
-  '/home/ahmed/.npm/_cacache/tmp/hWXOoa'` (exit 226). Its purpose was to inspect
-  the cached candidate without changing manifests. npm also could not write
-  its logs under `/home/ahmed/.npm/_logs`.
+The compiler is no longer most of `npm run typecheck`. Run directly, the three
+checking stages took 0.91 s (backend), 1.59 s (tests and scripts, 314 files,
+156 MB by `--extendedDiagnostics`), and 1.22 s (web), or 3.72 s together. The
+rest of the script's time wasn't broken down, but it includes three nested
+`npm run` starts: `build:packages`, `typecheck -w web`, and web's `pretypecheck`
+running `build -w @crane/contracts`.
 
-Installation attempts stopped at that filesystem restriction. No alternate
-cache, extraction script, or network download was attempted. Manifests,
-lockfile, compiler configuration, and the boundary helper remain unchanged.
-There is no TypeScript 7 timing, build, watch, declaration, or helper result.
+Two other attempts at a 5.9.3 typecheck ended with exit 137 and gave no timing.
+Each time the run was interrupted and later resumed, but the cause of the kill,
+including any part played by memory pressure, wasn't established. Run 1 on 5.9.3
+was the first in this checkout, so its cache state differs from runs 2 and 3.
+
+## Compatibility
+
+| Check | Result |
+| --- | --- |
+| Clean install with `npm ci` | Passed; root and web `tsc --version` both report 7.0.2 |
+| Lockfile platform coverage | All 20 native `@typescript/typescript-*` packages are listed |
+| Build over a 5.9.3 cache | Rebuilds, naming the version mismatch as the reason |
+| Unforced build after a forced build | Every project reports up to date |
+| Emitted files, 5.9.3 against 7.0.2 | 51 of 52 `.js` and `.d.ts` files are identical |
+| `tsc -b --watch` through `npm run dev:packages` | Passed: see below |
+| Deliberate errors in backend, test and web projects | Each reports both `TS2322` and `TS6133` and exits 1 |
+| `npm run build` | Passed in 4.84 s |
+| `test/contracts.test.ts`, `test/boundaries.test.ts` | Passed, 15 and 13 tests |
+| `npm run typecheck`, `npm test` | Passed; the suite has 469 tests |
+
+The one emitted difference is
+`packages/agent-drivers/dist/claude-evidence.d.ts`: an inferred return type lists
+the same properties in a different order. It means the same thing, and the file
+isn't part of the package's public entry point. Other inferred object types may
+reorder the same way, so don't compare declaration text across compilers.
+
+For watch mode, a new type exported from contracts and used in `agent-protocol`
+rebuilt both projects and updated their declarations. A type error in the
+consumer was reported within a second, and fixing it recovered. Restoring the
+edits with the watcher running gave a clean rebuild. Each edit caused a few
+extra rebuild cycles with 0 errors, and the watcher then stayed idle.
+
+Not checked: other platforms' native binaries, and editors. `typescript` 7's only
+bin is `tsc`, so an editor set to use the workspace TypeScript may need a new
+setting. The repository has no shared editor configuration.
 
 ## Compiler API decision
 
 [Microsoft's TypeScript 7 announcement](https://devblogs.microsoft.com/typescript/announcing-typescript-7-0/#running-side-by-side-with-typescript-60)
-confirms that 7.0 has no programmatic API, describes a different API planned
-for 7.1, and supplies `@typescript/typescript6` for compatibility. That package
-exposes `tsc6`, avoiding a collision with 7.0's `tsc`. The announcement also
-describes build parallelism and a rewritten watcher; those are upstream
-capabilities, not Crane validation results.
+says 7.0 has no programmatic API, that a different API is planned for 7.1, and
+offers `@typescript/typescript6` for compatibility.
 
-Crane's only direct compiler API import is `test/support/imports.ts`. Keep
-its AST traversal rather than replacing boundary enforcement with regular
-expressions. The proposed candidate uses `typescript` 7 for the CLI in both
-workspaces, adds `@typescript/typescript6` at the root, and changes that
-helper's default import to `@typescript/typescript6`. No alias is needed
-because Crane owns this import. This compatibility arrangement still needs
-installation, typechecking, and execution here.
+**Don't use `@typescript/typescript6` here.** Installed beside `typescript@~7.0.2`,
+its dependency `@typescript/old` (`npm:typescript@^6`, resolved to 6.0.3) owns
+`node_modules/.bin/tsc`, which links to `../@typescript/old/bin/tsc`. There's no
+error, so every script would keep running the old compiler and the upgrade would
+look finished with no speedup. An earlier plan in this file proposed that
+package; the probe disproved it. The test `build: tsc is TypeScript 7 and nothing
+else in the tree can take over its bin` now fails if the lockfile gains another
+`tsc` provider, or if root and web declare different versions.
 
-## Continue the experiment
+`test/support/imports.ts` keeps walking a syntax tree rather than matching
+patterns, now through `@babel/parser`. It stays on Babel 7 because Babel 8's
+parser requires Node `^22.18.0 || >=24.11.0`, above Crane's `>=20.19`.
+Before the change, the old helper's output was recorded for all 147 tracked
+source files (882 references). The Babel helper matches on 146 files, and the
+remaining difference is the helper's own import of `@babel/parser`.
 
-Time-box the continuation to 30 minutes. Make candidate edits only in an
-isolated checkout; retain failures and stop if compatibility cannot be
-established within the time box. Do not weaken configured checks to obtain
-a speed result.
+Babel throws on a syntax error where the compiler API returned a partial tree, so
+the helper now fails loudly on a file it can't parse.
 
-1. Before upgrading, repeat `/usr/bin/time -p npm run typecheck` three times
-   sequentially. Save each complete log and exit status, keeping the same
-   machine/load conditions as far as possible. Record compiler and Node
-   versions. Distinguish the first package build from subsequent incremental
-   runs; do not compare a cold run with a warm one.
-2. Run `./node_modules/.bin/tsc -b tsconfig.packages.json --force --verbose`
-   on 5.9.3 and save a copy of all five packages' emitted `.d.ts` files outside
-   their output directories for comparison. Keep this forced-build timing
-   separate from the normal typecheck timing.
-3. Install the candidate at both dependency declarations, updating the
-   lockfile through npm:
+## Landing it
 
-   ```sh
-   npm install --save-dev 'typescript@~7.0.2' '@typescript/typescript6@^6.0.2'
-   npm install --save-dev --workspace web 'typescript@~7.0.2'
-   ```
+Merging changes the lockfile, so the operator needs to run `npm install` in their
+checkout. Crane leaves a task note reminding them. Until then, that checkout's
+`tsc` stays on 5.9.3, and tests that use the import helper can't load it because
+`@babel/parser` isn't installed. Package caches rebuild once after the install.
 
-   Change the helper import as described above. Check the root and web `tsc`
-   resolution with `npm exec -- tsc --version` and
-   `npm exec --workspace web -- tsc --version`; both must report 7.0.2.
-   Confirm the compatibility package resolves and that lockfile entries cover
-   the native platform dependencies. Complete all edits before validation.
-4. Run `./node_modules/.bin/tsc -b tsconfig.packages.json --force --verbose`
-   and await success. Confirm that every declared entry point still emits
-   its `.js` and `.d.ts` files, inspect declaration differences against the
-   saved baseline, and check that an immediate unforced graph build is up to
-   date. Then repeat the same three timed `npm run typecheck` runs. Compare
-   medians and report raw times and exit statuses, including any failures.
-5. Run `npm run dev:packages` and wait for its initial successful build. In a
-   separate terminal, temporarily add an exported type to contracts and
-   import it from a dependent package to verify that both projects rebuild
-   and declarations update. Introduce a type error in that consumer, observe
-   a diagnostic, fix it, and observe recovery. Restore the temporary edits
-   while the watcher is running and observe a final clean rebuild before
-   stopping it. Record results; startup alone does not validate watch mode.
-6. After restoring watch fixtures, run `npm run build:packages` successfully
-   before the direct boundary checks:
+Don't use `npm ci --dry-run` to check a lockfile: on npm 9.2.0 it emptied
+`node_modules` during this evaluation despite the flag. A real `npm ci` restored
+the worktree.
 
-   ```sh
-   npm run build:packages && node --import tsx test/contracts.test.ts && node --import tsx test/boundaries.test.ts
-   ```
-
-   The contracts suite exercises the helper's static, dynamic, type-only,
-   import-equals, and require references, including comments and strings.
-   Run `npm run typecheck`, `npm run build`, and `npm test` separately in the
-   approved environment and retain each exit status. The ordinary build
-   covers backend transpilation and Vite, not just declaration emission.
-7. Recommend adoption only if compatibility checks pass and measured gains
-   justify the additional compatibility dependency. Otherwise retain 5.9.3
-   and document the specific failure or lack of gain. A failed or blocked
-   candidate check is not a completed migration.
-
-The full `npm test` command is deferred locally to Crane's unchanged external
-review and merge checks, as required by [sandbox test selection](testing.md#sandbox-test-selection).
-Those checks on this documentation-only branch cannot establish candidate
-compatibility: the compiler upgrade, watch exercise, declaration comparison,
-and before/after measurements above remain outstanding.
+Revisit the helper when 7.1's API is stable, if dropping the Babel dependencies
+is worth it. Stay on the `~7.0.2` pin until then: 7.1 is still in beta.
