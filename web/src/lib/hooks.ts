@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type DriverInfo, type TaskEvent } from "./api";
+import { createPollRequest } from "./poll";
 
 /**
  * The agents tasks can run on, and the default. Fetched once per mount:
@@ -25,27 +26,25 @@ export function useDrivers() {
 export function usePoll<T>(fetcher: () => Promise<T>, intervalMs = 2000, deps: unknown[] = []) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [request] = useState(() => createPollRequest<T>(setData, setError));
   const fetchRef = useRef(fetcher);
   fetchRef.current = fetcher;
 
-  const refresh = useCallback(async () => {
-    try {
-      setData(await fetchRef.current());
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }, []);
+  const refresh = useCallback(() => request.refresh(fetchRef.current), [request]);
 
   useEffect(() => {
     setData(null);
+    setError(null);
     refresh();
     const t = setInterval(() => {
       if (document.visibilityState === "visible") refresh();
     }, intervalMs);
-    return () => clearInterval(t);
+    return () => {
+      clearInterval(t);
+      request.invalidate();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [intervalMs, refresh, ...deps]);
+  }, [intervalMs, refresh, request, ...deps]);
 
   return { data, error, refresh };
 }
