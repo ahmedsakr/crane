@@ -12,11 +12,12 @@ No Node modules, SQLite, React, factory implementation, or external runtime
 dependencies belong here. Boundary tests and a separate TypeScript config
 without Node/DOM ambient types check that constraint.
 
-`npm run build:contracts` at the repository root emits ESM and declarations into
-`dist/`. Normal build, test, typecheck, and dev commands build it first, including
-standalone web builds used by dashboard publishing. `npm run dev` watches shared
-sources too. After a fresh install, build contracts before running source scripts
-directly (for example, `node --import tsx scripts/seed-demo.ts`).
+`npm run build:packages` at the repository root builds every shared package,
+emitting this one's ESM and declarations into `dist/`. Normal build, test,
+typecheck, and dev commands build it first, including standalone web builds used
+by dashboard publishing. `npm run dev` watches shared sources too. After a fresh
+install, run `npm run build:packages` before running source scripts directly (for
+example, `node --import tsx scripts/seed-demo.ts`).
 
 This package is private and versioned with Crane. Crane declares and bundles it
 as a dependency in its npm tarball; it does not need a separate registry release.
