@@ -138,6 +138,18 @@ it is best effort, so diagnostic evidence still needs the same access controls
 as task logs. Images and unrecognized SDK fields are not retained. Missing exit
 codes stay null, and a lost stream never implies a successful command.
 
+The [SDK result schema](https://code.claude.com/docs/en/agent-sdk/typescript#tool-output-types)
+types `tool_use_result` as unknown and documents Bash output with stdout, stderr,
+and interruption metadata, but no process exit code. Crane accepts numeric
+`exit_code` / `exitCode` fields when supplied and records their source; it never
+derives exit 0 from `is_error=false`, TAP counts, or text such as “Exit code 0”.
+Claude reports receive a driver-owned validation qualification listing commands
+without exit evidence (up to five bounded examples), including results lost when
+the stream closes. It describes only that invocation, does not override the
+agent's implementation completion, and does not replace or invalidate independent
+review and merge checks. These additions extend the existing command-details and
+diagnostic-outcomes tracking rather than introducing a second evidence store.
+
 For example, report: “Typecheck and the direct permission tests passed. `npm
 test`, including limits, drivers, and restart, was not run locally because of
 the known piped-subprocess limitation; left to Crane's external review and
