@@ -13,14 +13,14 @@ test("worktree dependencies import only their implementation, diagnostics and No
   assert.deepEqual(packageImportViolations(join(root, "src"), (ref) => allowed.has(ref.spec!)), []);
 });
 
-test("the private dependency package exposes only installation", async () => {
+test("the private dependency package exposes only installation and its identity", async () => {
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   assert.deepEqual(manifest.dependencies, { "@crane/diagnostics": "0.1.0" });
   for (const field of ["optionalDependencies", "peerDependencies"]) {
     assert.deepEqual(Object.keys(manifest[field] ?? {}), [], `no ${field}`);
   }
   const api = await import("@crane/worktree-deps");
-  assert.deepEqual(Object.keys(api), ["installDependencies"]);
+  assert.deepEqual(Object.keys(api), ["installDependencies", "preparedDependencyIdentity"]);
   for (const path of ["@crane/worktree-deps/src/deps.js", "@crane/worktree-deps/dist/deps.js", "@crane/worktree-deps/deps"]) {
     await assert.rejects(import(path), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
   }

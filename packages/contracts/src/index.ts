@@ -17,6 +17,7 @@ export type {
   TaskGates,
   Screenshot,
   ValidationRun,
+  ReviewCheckpoint,
   Task,
   TaskSummary,
   EventType,
