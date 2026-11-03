@@ -102,6 +102,14 @@ test("check verdicts: exit codes, a command that can't run, and the bound on out
     assert.ok(noisy.logs.length < 1.1 * 1024 * 1024, "bounded");
     assert.match(noisy.logs, /^\[\d+ earlier characters omitted\]\n/);
     assert.match(noisy.logs, /the-verdict\n$/);
+
+    const storage = await run("echo 'ENOSPC: write failed' >&2; head -c 3000000 /dev/zero | tr '\\0' x; echo; echo 'SQLITE_FULL: database or disk is full' >&2; exit 3");
+    assert.deepEqual([storage.status, storage.exitCode], ["failed", 3]);
+    assert.match(storage.logs, /^\[\d+ earlier characters omitted\]/);
+    assert.match(storage.logs, /Storage error evidence[\s\S]*\[stderr\] ENOSPC: write failed/);
+    assert.match(storage.logs, /\[stderr\] SQLITE_FULL: database or disk is full/);
+    assert.match(storage.logs, /availableBytes=\d+/);
+    assert.ok(storage.logs.length < 1.1 * 1024 * 1024);
   } finally { s.done(); }
 });
 

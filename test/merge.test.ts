@@ -1,8 +1,8 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
+import { temporaryRoot, onFixtureCleanup, testHome } from "./support/fixtures.js";
 import assert from "node:assert/strict";
 import { sh } from "./support/git.js";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { dependencyInputs, landTask as land, MergeError, type MergeRequest } from "../src/factory/merge.js";
 const landTask = (req: MergeRequest) => land({ checks: ["true"], ...req });
@@ -21,8 +21,8 @@ function commitFile(cwd: string, file: string, text: string, msg: string) {
  * A bare `origin`, the operator's clone of it with main checked out, and a
  * task branch with one commit, like Crane leaves after an agent has worked.
  */
-function setup(opts: { remote?: boolean } = {}) {
-  const root = mkdtempSync(join(tmpdir(), "crane-merge-"));
+function setup(ctx: TestContext, opts: { remote?: boolean } = {}) {
+  const root = temporaryRoot(ctx, "crane-merge-");
   const checkout = join(root, "checkout");
   if (opts.remote === false) {
     sh(root, "init", "-q", "-b", "main", checkout);
@@ -88,8 +88,8 @@ const noResolve = async () => {
   throw new Error("should not be asked to resolve conflicts");
 };
 
-test("merge: visual gate rejects the candidate before dependencies and checks", async () => {
-  const { root, checkout, repo, task, wt } = setup();
+test("merge: visual gate rejects the candidate before dependencies and checks", async (ctx) => {
+  const { root, checkout, repo, task, wt } = setup(ctx);
   commitFile(wt, "package.json", '{"name":"fixture","version":"1.0.0"}\n', "manifest");
   commitFile(wt, "package-lock.json", '{"lockfileVersion":3,"packages":{}}\n', "lock");
   const before = sh(join(root, "origin.git"), "rev-parse", "main");
@@ -118,8 +118,8 @@ test("merge: visual gate rejects the candidate before dependencies and checks", 
   assert.equal(sh(checkout, "rev-parse", "HEAD"), before);
 });
 
-test("merge: visual gate rechecks authorization after checks and prevents push and local default update", async () => {
-  const { root, checkout, repo, task, wt } = setup();
+test("merge: visual gate rechecks authorization after checks and prevents push and local default update", async (ctx) => {
+  const { root, checkout, repo, task, wt } = setup(ctx);
   commitFile(wt, "feature.txt", "feature\n", "feature");
   const before = sh(join(root, "origin.git"), "rev-parse", "main");
   const branchCommit = sh(wt, "rev-parse", "HEAD");
@@ -142,9 +142,9 @@ test("merge: visual gate rechecks authorization after checks and prevents push a
   assert.equal(sh(checkout, "rev-parse", "HEAD"), before);
 });
 
-test("merge: failed and unconfigured checks never push", async () => {
+test("merge: failed and unconfigured checks never push", async (ctx) => {
   for (const checks of [["echo broken; exit 1"], []]) {
-    const { root, repo, task, wt } = setup();
+    const { root, repo, task, wt } = setup(ctx);
     commitFile(wt, "feature.txt", "feature\n", "feature");
     const before = sh(join(root, "origin.git"), "rev-parse", "main");
     const evidence: import("@crane/contracts").ValidationRun[] = [];
@@ -157,9 +157,9 @@ test("merge: failed and unconfigured checks never push", async () => {
   }
 });
 
-test("merge: blocked execution and checks that edit the candidate never push", async () => {
+test("merge: blocked execution and checks that edit the candidate never push", async (ctx) => {
   for (const checks of [["exit 126"], ["echo changed >> notes.md"]]) {
-    const { root, repo, task, wt } = setup();
+    const { root, repo, task, wt } = setup(ctx);
     commitFile(wt, "feature.txt", "feature\n", "feature");
     const before = sh(join(root, "origin.git"), "rev-parse", "main");
     const evidence: import("@crane/contracts").ValidationRun[] = [];
@@ -170,8 +170,8 @@ test("merge: blocked execution and checks that edit the candidate never push", a
   }
 });
 
-test("merge: lands the branch on origin and the clean checkout with one merge commit", async () => {
-  const { root, checkout, repo, task, wt } = setup();
+test("merge: lands the branch on origin and the clean checkout with one merge commit", async (ctx) => {
+  const { root, checkout, repo, task, wt } = setup(ctx);
   commitFile(wt, "feature.txt", "feature\n", "add feature");
   landElsewhere(root, "other.txt", "other\n");
 
@@ -189,10 +189,10 @@ test("merge: lands the branch on origin and the clean checkout with one merge co
   assert.equal(readFileSync(join(checkout, "other.txt"), "utf8"), "other\n");
 });
 
-test("merge: dependency changes leave a shared task note to install in the operator's checkout", async () => {
+test("merge: dependency changes leave a shared task note to install in the operator's checkout", async (ctx) => {
   for (const file of ["package.json", "package-lock.json", "packages/new/package.json", "packages/new/package-lock.json", "notes.md"]) {
     for (const dirty of [false, true]) {
-      const { checkout, repo, task, wt } = setup({ remote: false });
+      const { checkout, repo, task, wt } = setup(ctx, { remote: false });
       mkdirSync(dirname(join(wt, file)), { recursive: true });
       commitFile(wt, file, "{}\n", "task change");
       if (dirty) writeFileSync(join(checkout, "notes.md"), "operator's edit\n");
@@ -216,8 +216,8 @@ test("merge: dependency changes leave a shared task note to install in the opera
   }
 });
 
-test("merge: conflicts go to the resolver and the resolution lands", async () => {
-  const { root, checkout, repo, task, wt } = setup();
+test("merge: conflicts go to the resolver and the resolution lands", async (ctx) => {
+  const { root, checkout, repo, task, wt } = setup(ctx);
   commitFile(wt, "notes.md", "# Notes\n\nfirst\nfrom the task\n", "task edit");
   landElsewhere(root, "notes.md", "# Notes\n\nfirst\nfrom main\n");
 
@@ -242,8 +242,8 @@ test("merge: conflicts go to the resolver and the resolution lands", async () =>
   assert.doesNotMatch(merged, /<<<<<<<|>>>>>>>/);
 });
 
-test("merge: interrupted resolver validation recovers committed edits and retains landing gates", async () => {
-  const { checkout, repo, task, wt } = setup({ remote: false });
+test("merge: interrupted resolver validation recovers committed edits and retains landing gates", async (ctx) => {
+  const { checkout, repo, task, wt } = setup(ctx, { remote: false });
   commitFile(wt, "notes.md", "task\n", "task edit");
   commitFile(checkout, "notes.md", "main\n", "main edit");
   const before = sh(checkout, "rev-parse", "HEAD");
@@ -288,8 +288,8 @@ test("merge: interrupted resolver validation recovers committed edits and retain
 });
 
 for (const changed of ["base", "task", "workspace"] as const) {
-  test(`merge: resolution checkpoint cannot bypass changed ${changed}`, async () => {
-    const { checkout, repo, task, wt } = setup({ remote: false });
+  test(`merge: resolution checkpoint cannot bypass changed ${changed}`, async (ctx) => {
+    const { checkout, repo, task, wt } = setup(ctx, { remote: false });
     commitFile(wt, "notes.md", "task\n", "task edit");
     commitFile(checkout, "notes.md", "main\n", "main edit");
     await assert.rejects(landTask({ repo, task, workdir: wt, emit,
@@ -318,9 +318,9 @@ for (const changed of ["base", "task", "workspace"] as const) {
   });
 }
 
-test("merge: a newly introduced workspace is available to conflict agents and merge checks", async () => {
+test("merge: a newly introduced workspace is available to conflict agents and merge checks", async (ctx) => {
   for (const conflict of [false, true]) {
-    const { checkout, repo, task, wt } = setup({ remote: false });
+    const { checkout, repo, task, wt } = setup(ctx, { remote: false });
     commitFile(checkout, ".gitignore", "node_modules/\n", "ignore dependencies");
     const manifest = { name: "fixture", version: "1.0.0", private: true, workspaces: ["packages/*"] };
     const packages: Record<string, unknown> = { "": manifest };
@@ -363,8 +363,8 @@ test("merge: dependency inputs are manifests, lockfiles and package manager sett
   );
 });
 
-test("merge: conflicted manifests defer dependency preparation until the resolution, and checks see the resolved install", async () => {
-  const { checkout, repo, task, wt } = setup({ remote: false });
+test("merge: conflicted manifests defer dependency preparation until the resolution, and checks see the resolved install", async (ctx) => {
+  const { checkout, repo, task, wt } = setup(ctx, { remote: false });
   commitFile(checkout, ".gitignore", "node_modules/\n", "ignore dependencies");
   const manifest = { name: "fixture", version: "1.0.0", private: true, workspaces: ["packages/*"] };
   const lock = (root: object, extra: Record<string, unknown> = {}) =>
@@ -409,8 +409,8 @@ test("merge: conflicted manifests defer dependency preparation until the resolut
   assert.ok(result.commit, "the merge landed after its workspace check passed");
 });
 
-test("merge: unresolved conflicts stop before anything is pushed", async () => {
-  const { root, checkout, repo, task, wt } = setup();
+test("merge: unresolved conflicts stop before anything is pushed", async (ctx) => {
+  const { root, checkout, repo, task, wt } = setup(ctx);
   commitFile(wt, "notes.md", "# Notes\n\nfirst\nfrom the task\n", "task edit");
   landElsewhere(root, "notes.md", "# Notes\n\nfirst\nfrom main\n");
   const before = sh(join(root, "origin.git"), "rev-parse", "main");
@@ -425,8 +425,8 @@ test("merge: unresolved conflicts stop before anything is pushed", async () => {
   assert.equal(sh(wt, "status", "--porcelain", "--untracked-files=no"), "", "merge was aborted");
 });
 
-test("merge: a checkout with local changes is left alone", async () => {
-  const { root, checkout, repo, task, wt } = setup();
+test("merge: a checkout with local changes is left alone", async (ctx) => {
+  const { root, checkout, repo, task, wt } = setup(ctx);
   commitFile(wt, "feature.txt", "feature\n", "add feature");
   writeFileSync(join(checkout, "notes.md"), "operator is mid-edit\n");
   const localBefore = sh(checkout, "rev-parse", "main");
@@ -439,8 +439,8 @@ test("merge: a checkout with local changes is left alone", async () => {
   assert.equal(readFileSync(join(checkout, "notes.md"), "utf8"), "operator is mid-edit\n", "operator's edit intact");
 });
 
-test("merge: without a remote, moves local main when it isn't checked out", async () => {
-  const { checkout, repo, task, wt } = setup({ remote: false });
+test("merge: without a remote, moves local main when it isn't checked out", async (ctx) => {
+  const { checkout, repo, task, wt } = setup(ctx, { remote: false });
   commitFile(wt, "feature.txt", "feature\n", "add feature");
   sh(checkout, "checkout", "-q", "-b", "operator-work");
 
@@ -452,8 +452,8 @@ test("merge: without a remote, moves local main when it isn't checked out", asyn
   assert.equal(sh(checkout, "rev-parse", "--abbrev-ref", "HEAD"), "operator-work", "operator's branch untouched");
 });
 
-test("merge: diverged local and origin main stop before anything is pushed or moved", async () => {
-  const { root, checkout, repo, task, wt } = setup();
+test("merge: diverged local and origin main stop before anything is pushed or moved", async (ctx) => {
+  const { root, checkout, repo, task, wt } = setup(ctx);
   commitFile(wt, "feature.txt", "feature\n", "add feature");
   commitFile(checkout, "local.txt", "local\n", "only on local main");
   landElsewhere(root, "other.txt", "other\n");
@@ -470,8 +470,8 @@ test("merge: diverged local and origin main stop before anything is pushed or mo
   assert.equal(sh(checkout, "rev-parse", task.branch!), branchBefore, "task branch untouched");
 });
 
-test("merge: local commits not on origin yet are pushed along with the task, and the operator is told", async () => {
-  const { root, checkout, repo, task, wt } = setup();
+test("merge: local commits not on origin yet are pushed along with the task, and the operator is told", async (ctx) => {
+  const { root, checkout, repo, task, wt } = setup(ctx);
   commitFile(wt, "feature.txt", "feature\n", "add feature");
   commitFile(checkout, "local.txt", "local\n", "only on local main");
   const notes: string[] = [];
@@ -486,8 +486,8 @@ test("merge: local commits not on origin yet are pushed along with the task, and
   assert.equal(sh(checkout, "rev-parse", "HEAD"), r.commit);
 });
 
-test("merge: a resolver that fails aborts the merge and pushes nothing", async () => {
-  const { root, checkout, repo, task, wt } = setup();
+test("merge: a resolver that fails aborts the merge and pushes nothing", async (ctx) => {
+  const { root, checkout, repo, task, wt } = setup(ctx);
   commitFile(wt, "notes.md", "# Notes\n\nfirst\nfrom the task\n", "task edit");
   landElsewhere(root, "notes.md", "# Notes\n\nfirst\nfrom main\n");
   const before = sh(join(root, "origin.git"), "rev-parse", "main");
@@ -503,8 +503,8 @@ test("merge: a resolver that fails aborts the merge and pushes nothing", async (
   assert.throws(() => sh(wt, "rev-parse", "-q", "--verify", "MERGE_HEAD"), "no merge left in progress");
 });
 
-test("merge: uncommitted changes in Crane's worktree are never merged", async () => {
-  const { root, repo, task, wt } = setup();
+test("merge: uncommitted changes in Crane's worktree are never merged", async (ctx) => {
+  const { root, repo, task, wt } = setup(ctx);
   commitFile(wt, "feature.txt", "feature\n", "add feature");
   writeFileSync(join(wt, "notes.md"), "not committed\n");
   const before = sh(join(root, "origin.git"), "rev-parse", "main");
@@ -517,8 +517,8 @@ test("merge: uncommitted changes in Crane's worktree are never merged", async ()
   assert.equal(readFileSync(join(wt, "notes.md"), "utf8"), "not committed\n", "the work is still there");
 });
 
-test("merge: running it again after it landed is a no-op", async () => {
-  const { root, repo, task, wt } = setup();
+test("merge: running it again after it landed is a no-op", async (ctx) => {
+  const { root, repo, task, wt } = setup(ctx);
   commitFile(wt, "feature.txt", "feature\n", "add feature");
   const first = await landTask({ repo, task, workdir: wt, emit, resolveConflicts: noResolve });
   const again = await landTask({ repo, task, workdir: wt, emit, resolveConflicts: noResolve });
@@ -532,8 +532,8 @@ test("merge: keepBothSides drops markers and the diff3 base", () => {
   assert.equal(keepBothSides(text), "a\nours\ntheirs\nz\n");
 });
 
-test("merge: if origin moves mid-merge, it starts over instead of forcing", async () => {
-  const { root, repo, task, wt } = setup();
+test("merge: if origin moves mid-merge, it starts over instead of forcing", async (ctx) => {
+  const { root, repo, task, wt } = setup(ctx);
   commitFile(wt, "notes.md", "# Notes\n\nfirst\nfrom the task\n", "task edit");
   landElsewhere(root, "notes.md", "# Notes\n\nfirst\nfrom main\n");
 
@@ -567,8 +567,8 @@ test("merge: if origin moves mid-merge, it starts over instead of forcing", asyn
   assert.equal(sh(origin, "show", "main:late.txt"), "late", "the late push survived");
 });
 
-test("merge: a remote-moved retry requires authorization before checking its changed candidate", async () => {
-  const { root, checkout, repo, task, wt } = setup();
+test("merge: a remote-moved retry requires authorization before checking its changed candidate", async (ctx) => {
+  const { root, checkout, repo, task, wt } = setup(ctx);
   commitFile(wt, "feature.txt", "feature\n", "feature");
   const before = sh(checkout, "rev-parse", "HEAD");
   const checked: string[] = [];
@@ -600,8 +600,8 @@ test("merge: a remote-moved retry requires authorization before checking its cha
   assert.equal(sh(checkout, "rev-parse", "HEAD"), before);
 });
 
-test("merge: a reviewed merge lands as is while it's up to date, without resolving its conflicts again", async () => {
-  const { root, repo, task, wt } = setup();
+test("merge: a reviewed merge lands as is while it's up to date, without resolving its conflicts again", async (ctx) => {
+  const { root, repo, task, wt } = setup(ctx);
   const origin = join(root, "origin.git");
   commitFile(wt, "notes.md", "# Notes\n\nfirst\nfrom the task\n", "task edit");
   landElsewhere(root, "notes.md", "# Notes\n\nfirst\nfrom main\n");
@@ -623,8 +623,8 @@ test("merge: a reviewed merge lands as is while it's up to date, without resolvi
   assert.equal(sh(origin, "show", "main:notes.md"), "resolution 1");
 });
 
-test("merge: a reviewed merge is rebuilt once the default branch has moved past it", async () => {
-  const { root, repo, task, wt } = setup();
+test("merge: a reviewed merge is rebuilt once the default branch has moved past it", async (ctx) => {
+  const { root, repo, task, wt } = setup(ctx);
   const origin = join(root, "origin.git");
   commitFile(wt, "notes.md", "# Notes\n\nfirst\nfrom the task\n", "task edit");
   landElsewhere(root, "notes.md", "# Notes\n\nfirst\nfrom main\n");
@@ -648,8 +648,8 @@ test("merge: a reviewed merge is rebuilt once the default branch has moved past 
   assert.equal(sh(origin, "show", "main:later.txt"), "later", "the newer work isn't lost");
 });
 
-test("merge: a decision on the branch tip still lands as a merge commit", async () => {
-  const { repo, task, wt, checkout } = setup();
+test("merge: a decision on the branch tip still lands as a merge commit", async (ctx) => {
+  const { repo, task, wt, checkout } = setup(ctx);
   commitFile(wt, "feature.txt", "feature\n", "feature");
   const tip = sh(wt, "rev-parse", "HEAD");
   const r = await landTask({ repo, task, workdir: wt, emit, resolveConflicts: noResolve, reviewedCandidate: tip });
@@ -658,14 +658,14 @@ test("merge: a decision on the branch tip still lands as a merge commit", async 
 });
 
 /** A repo with a task waiting for review on a visual decision, and the factory that ran it. */
-async function taskAwaitingVisualDecision() {
-  process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
+async function taskAwaitingVisualDecision(ctx: TestContext) {
+  testHome(ctx);
   const { Store } = await import("../src/core/store.js");
   const { OperatorActions } = await import("../src/factory/actions.js");
   const { Factory } = await import("../src/factory/orchestrator.js");
   const { SimulatedDriver } = await import("@crane/agent-drivers");
 
-  const root = mkdtempSync(join(tmpdir(), "crane-e2e-"));
+  const root = temporaryRoot(ctx, "crane-e2e-");
   const origin = join(root, "origin.git");
   const checkout = join(root, "checkout");
   sh(root, "init", "-q", "--bare", "-b", "main", origin);
@@ -676,10 +676,12 @@ async function taskAwaitingVisualDecision() {
   sh(root, "clone", "-q", origin, join(root, "other"));
 
   const store = new Store();
+  onFixtureCleanup(ctx, () => store.close());
   const actions = new OperatorActions(store);
   const repo = await actions.connectRepo(checkout, "e2e");
   store.setRepoChecks(repo.id, ["true"]);
   const factory = new Factory(store, new SimulatedDriver(2), { crewSize: 1, tickMs: 20 });
+  const stopFactory = onFixtureCleanup(ctx, () => factory.stop());
   const until = async (ok: () => boolean, what: string) => {
     for (let i = 0; i < 500 && !ok(); i++) await new Promise((r) => setTimeout(r, 20));
     assert.ok(ok(), `timed out waiting for ${what}`);
@@ -707,11 +709,11 @@ async function taskAwaitingVisualDecision() {
     await until(() => store.getTask(t.id)!.status !== "merging", "merge");
   };
   const waivers = () => store.listEvents(t.id).filter((e) => e.message === "Waived candidate visual review").length;
-  return { store, factory, t, origin, holdForDecision, landOnOrigin, decide, waivers };
+  return { store, stopFactory, t, origin, holdForDecision, landOnOrigin, decide, waivers };
 }
 
-test("factory: one waiver is enough when the default branch moved and the merge is clean", async () => {
-  const { store, factory, t, origin, holdForDecision, landOnOrigin, decide, waivers } = await taskAwaitingVisualDecision();
+test("factory: one waiver is enough when the default branch moved and the merge is clean", async (ctx) => {
+  const { store, stopFactory, t, origin, holdForDecision, landOnOrigin, decide, waivers } = await taskAwaitingVisualDecision(ctx);
   try {
     const commit = holdForDecision();
     landOnOrigin("unrelated.txt", "someone else's work\n");
@@ -722,13 +724,12 @@ test("factory: one waiver is enough when the default branch moved and the merge 
     assert.equal(sh(origin, "show", "main:unrelated.txt"), "someone else's work");
     assert.equal(store.getTask(t.id)!.visualReview!.status, "waived");
   } finally {
-    await factory.stop();
-    store.close();
+    await stopFactory();
   }
 });
 
-test("factory: a UI conflict resolution asks once more, then lands exactly the merge that was decided on", async () => {
-  const { store, factory, t, origin, holdForDecision, landOnOrigin, decide, waivers } = await taskAwaitingVisualDecision();
+test("factory: a UI conflict resolution asks once more, then lands exactly the merge that was decided on", async (ctx) => {
+  const { store, stopFactory, t, origin, holdForDecision, landOnOrigin, decide, waivers } = await taskAwaitingVisualDecision(ctx);
   try {
     const wt = store.getTask(t.id)!.worktree!;
     mkdirSync(join(wt, "web"), { recursive: true });
@@ -753,19 +754,18 @@ test("factory: a UI conflict resolution asks once more, then lands exactly the m
     assert.equal(sh(origin, "rev-parse", "main"), candidate);
     assert.equal(events.filter((e) => /conflict with origin\/main/.test(e.message)).length, 1, "the agent resolved them once");
   } finally {
-    await factory.stop();
-    store.close();
+    await stopFactory();
   }
 });
 
-test("factory: a task goes from work to review to merged and pushed, through a conflict", async () => {
-  process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
+test("factory: a task goes from work to review to merged and pushed, through a conflict", async (ctx) => {
+  testHome(ctx);
   const { Store } = await import("../src/core/store.js");
   const { OperatorActions } = await import("../src/factory/actions.js");
   const { Factory } = await import("../src/factory/orchestrator.js");
   const { SimulatedDriver } = await import("@crane/agent-drivers");
 
-  const root = mkdtempSync(join(tmpdir(), "crane-e2e-"));
+  const root = temporaryRoot(ctx, "crane-e2e-");
   const origin = join(root, "origin.git");
   const checkout = join(root, "checkout");
   sh(root, "init", "-q", "--bare", "-b", "main", origin);
@@ -775,10 +775,12 @@ test("factory: a task goes from work to review to merged and pushed, through a c
   sh(checkout, "push", "-q", "-u", "origin", "main");
 
   const store = new Store();
+  onFixtureCleanup(ctx, () => store.close());
   const actions = new OperatorActions(store);
   const repo = await actions.connectRepo(checkout, "e2e");
   store.setRepoChecks(repo.id, ["true"]);
   const factory = new Factory(store, new SimulatedDriver(2), { crewSize: 1, tickMs: 20 });
+  const stopFactory = onFixtureCleanup(ctx, () => factory.stop());
   const until = async (ok: () => boolean, what: string) => {
     for (let i = 0; i < 500 && !ok(); i++) await new Promise((r) => setTimeout(r, 20));
     assert.ok(ok(), `timed out waiting for ${what}`);
@@ -823,19 +825,18 @@ test("factory: a task goes from work to review to merged and pushed, through a c
     assert.equal(review.worktree, null);
     assert.ok(review.report, "post-mortem uses the normal task report flow");
   } finally {
-    await factory.stop();
-    store.close();
+    await stopFactory();
   }
 });
 
-test("factory: a pre-approved UI task waives visual review and lands once its checks pass", async () => {
-  process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
+test("factory: a pre-approved UI task waives visual review and lands once its checks pass", async (ctx) => {
+  testHome(ctx);
   const { Store } = await import("../src/core/store.js");
   const { OperatorActions } = await import("../src/factory/actions.js");
   const { Factory } = await import("../src/factory/orchestrator.js");
   const { SimulatedDriver } = await import("@crane/agent-drivers");
 
-  const root = mkdtempSync(join(tmpdir(), "crane-e2e-"));
+  const root = temporaryRoot(ctx, "crane-e2e-");
   const origin = join(root, "origin.git");
   const checkout = join(root, "checkout");
   sh(root, "init", "-q", "--bare", "-b", "main", origin);
@@ -845,6 +846,7 @@ test("factory: a pre-approved UI task waives visual review and lands once its ch
   sh(checkout, "push", "-q", "-u", "origin", "main");
 
   const store = new Store();
+  onFixtureCleanup(ctx, () => store.close());
   const actions = new OperatorActions(store);
   const repo = await actions.connectRepo(checkout, "e2e");
   store.setRepoChecks(repo.id, ["true"]);
@@ -857,6 +859,7 @@ test("factory: a pre-approved UI task waives visual review and lands once its ch
     }
   }
   const factory = new Factory(store, new UiDriver(2), { crewSize: 1, tickMs: 20 });
+  const stopFactory = onFixtureCleanup(ctx, () => factory.stop());
   const until = async (ok: () => boolean, what: string) => {
     for (let i = 0; i < 500 && !ok(); i++) await new Promise((r) => setTimeout(r, 20));
     assert.ok(ok(), `timed out waiting for ${what}`);
@@ -888,18 +891,18 @@ test("factory: a pre-approved UI task waives visual review and lands once its ch
     assert.match(sh(origin, "show", `main:.crane-simulated/${t.id}.md`), /Add a greeting/);
     await until(() => store.listAgents().every((a) => a.state === "idle"), "cleanup");
   } finally {
-    await factory.stop();
-    store.close();
+    await stopFactory();
   }
 });
 
-test("actions: approve merges by default, approve only keeps the branch, merge picks it up later", async () => {
+test("actions: approve merges by default, approve only keeps the branch, merge picks it up later", async (ctx) => {
   const { Store } = await import("../src/core/store.js");
   const { OperatorActions } = await import("../src/factory/actions.js");
   const { lastMergeOutcome } = await import("@crane/contracts");
-  const store = new Store(join(mkdtempSync(join(tmpdir(), "crane-")), "t.db"));
+  const store = new Store(join(temporaryRoot(ctx, "crane-"), "t.db"));
+  onFixtureCleanup(ctx, () => store.close());
   const actions = new OperatorActions(store);
-  const r = store.addRepo({ path: mkdtempSync(join(tmpdir(), "crane-repo-")) });
+  const r = store.addRepo({ path: temporaryRoot(ctx, "crane-repo-") });
   const make = (title: string) => {
     const t = store.createTask({ kind: "maintenance", title, brief: "", repoId: r.id, autonomy: "propose" });
     store.updateTask(t.id, { branch: `crane/${t.id}`, agentId: "a-jib", visualReview: { status: "not_required", commit: "test", tree: "test", note: "No UI changes", decidedAt: null } });
@@ -927,5 +930,4 @@ test("actions: approve merges by default, approve only keeps the branch, merge p
   store.setStatus(a.id, "needs_review", "Couldn't merge", { merge: { error: "boom" } });
   assert.equal(lastMergeOutcome(store.listEvents(a.id))?.error, "boom");
   assert.equal(store.overview({ running: false, paused: false, driver: "x", factoryOutdated: false, uiOutdated: false, uiBuild: null, uiCommit: null }).counts.merging, 1);
-  store.close();
 });

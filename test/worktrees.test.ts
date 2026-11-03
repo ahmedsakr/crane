@@ -1,8 +1,8 @@
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
+import { temporaryRoot, onFixtureCleanup, testHome } from "./support/fixtures.js";
 import assert from "node:assert/strict";
 import { sh } from "./support/git.js";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Store } from "../src/core/store.js";
 import { OperatorActions } from "../src/factory/actions.js";
@@ -12,16 +12,16 @@ import { SimulatedDriver } from "@crane/agent-drivers";
 import type { AgentDriver } from "@crane/agent-protocol";
 import type { Report } from "@crane/contracts";
 
-process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
-
-async function setup() {
-  const root = mkdtempSync(join(tmpdir(), "crane-worktrees-"));
+async function setup(ctx: TestContext) {
+  testHome(ctx);
+  const root = temporaryRoot(ctx, "crane-worktrees-");
   const checkout = join(root, "checkout");
   sh(root, "init", "-q", "-b", "main", checkout);
   writeFileSync(join(checkout, "README.md"), "hi\n");
   sh(checkout, "add", "README.md");
   sh(checkout, "commit", "-q", "-m", "start");
   const store = new Store(join(root, "crane.db"));
+  onFixtureCleanup(ctx, () => store.close());
   const actions = new OperatorActions(store);
   const repo = await actions.connectRepo(checkout, "worktrees");
   store.setRepoChecks(repo.id, ["true"]);
@@ -33,9 +33,9 @@ const until = async (ok: () => boolean, what: string) => {
   assert.ok(ok(), `timed out waiting for ${what}`);
 };
 
-test("worktrees: missing prerequisite and unchanged pre-approved branch stop before checks and automatic merge", async () => {
+test("worktrees: missing prerequisite and unchanged pre-approved branch stop before checks and automatic merge", async (ctx) => {
   for (const status of ["blocked", "incomplete", "completed", "already_satisfied"] as const) {
-    const { store, actions, repo, checkout } = await setup();
+    const { store, actions, repo, checkout } = await setup(ctx);
     const main = sh(checkout, "rev-parse", "main");
     const task = actions.createTask({ kind: "maintenance", title: "Needs absent setup", brief: "", repoId: repo.id, autonomy: "propose", preApprove: true });
     const completion: NonNullable<Report["completion"]> = { status,
@@ -47,6 +47,7 @@ test("worktrees: missing prerequisite and unchanged pre-approved branch stop bef
     // A check would fail if reached. Completion holds must skip it entirely.
     store.setRepoChecks(repo.id, ["exit 42"]);
     const factory = new Factory(store, driver, { crewSize: 1, tickMs: 10, buildDashboard: false });
+    const stopFactory = onFixtureCleanup(ctx, () => factory.stop());
     factory.start();
     try {
       await until(() => store.getTask(task.id)?.status === "needs_review", "completion hold");
@@ -61,14 +62,15 @@ test("worktrees: missing prerequisite and unchanged pre-approved branch stop bef
       if (status === "already_satisfied") {
         assert.equal((await actions.approve(task.id, `Accepted README evidence at ${main}`, { merge: false })).status, "approved");
       }
-    } finally { await factory.stop(); store.close(); }
+    } finally { await stopFactory(); }
   }
 });
 
-test("worktrees: a cancelled task's unfinished work goes to its branch, and its worktree is removed", async () => {
-  const { store, actions, repo, checkout } = await setup();
+test("worktrees: a cancelled task's unfinished work goes to its branch, and its worktree is removed", async (ctx) => {
+  const { store, actions, repo, checkout } = await setup(ctx);
   const t = actions.createTask({ kind: "maintenance", title: "Half a change", brief: "", repoId: repo.id, autonomy: "propose" });
   const factory = new Factory(store, new SimulatedDriver(200), { crewSize: 1, tickMs: 10 });
+  const stopFactory = onFixtureCleanup(ctx, () => factory.stop());
   factory.start();
   try {
     await until(() => !!store.getTask(t.id)?.sessionId, "the agent's session to start");
@@ -87,13 +89,12 @@ test("worktrees: a cancelled task's unfinished work goes to its branch, and its 
       store.listEvents(t.id).map((e) => e.message).join("\n"),
     );
   } finally {
-    await factory.stop();
-    store.close();
+    await stopFactory();
   }
 });
 
-test("worktrees: leftovers of finished tasks go, while open tasks and work that can't be saved stay", async () => {
-  const { store, actions, repo, checkout } = await setup();
+test("worktrees: leftovers of finished tasks go, while open tasks and work that can't be saved stay", async (ctx) => {
+  const { store, actions, repo, checkout } = await setup(ctx);
   const make = async (title: string) => {
     const t = actions.createTask({ kind: "maintenance", title, brief: "", repoId: repo.id, autonomy: "propose" });
     const wt = await createWorktree(repo, t);
@@ -128,11 +129,12 @@ test("worktrees: leftovers of finished tasks go, while open tasks and work that 
   const mainBefore = sh(checkout, "rev-parse", "main");
 
   const factory = new Factory(store, new SimulatedDriver(2), { crewSize: 1, tickMs: 10 });
+  const stopFactory = onFixtureCleanup(ctx, () => factory.stop());
   factory.start();
   try {
     await until(() => !existsSync(merged.path) && !existsSync(failed.path), "finished worktrees to be removed");
   } finally {
-    await factory.stop();
+    await stopFactory();
   }
 
   assert.equal(store.getTask(failed.id)!.worktree, null);
@@ -148,5 +150,4 @@ test("worktrees: leftovers of finished tasks go, while open tasks and work that 
   assert.ok(existsSync(checkout));
   assert.equal(sh(checkout, "rev-parse", "main"), mainBefore, "nothing was committed to the operator's branch");
   assert.equal(readFileSync(join(checkout, "mine.txt"), "utf8"), "operator's work\n");
-  store.close();
 });

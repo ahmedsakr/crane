@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import type { ValidationRun } from "@crane/contracts";
 import { git } from "../core/git.js";
 import { elapsed } from "./elapsed.js";
+import { StorageDiagnostics } from "./storage-diagnostics.js";
 
 const CHECK_TIMEOUT_MS = 10 * 60_000;
 /** Shorter than the factory's own stop grace, so a stopping factory sees its checks end. */
@@ -26,6 +27,7 @@ interface CheckExit {
 function runCommand(command: string, cwd: string, timeoutMs: number, signal?: AbortSignal): Promise<CheckExit> {
   return new Promise((resolve) => {
     const child = spawn("/bin/sh", ["-c", command], { cwd, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    const storage = new StorageDiagnostics(cwd);
     let logs = "";
     let omitted = 0;
     let problem: string | null = null;
@@ -36,8 +38,8 @@ function runCommand(command: string, cwd: string, timeoutMs: number, signal?: Ab
       omitted += logs.length - MAX_LOG_CHARS;
       logs = logs.slice(-MAX_LOG_CHARS);
     };
-    child.stdout.setEncoding("utf8").on("data", collect);
-    child.stderr.setEncoding("utf8").on("data", collect);
+    child.stdout.setEncoding("utf8").on("data", chunk => { storage.collect("stdout", chunk); collect(chunk); });
+    child.stderr.setEncoding("utf8").on("data", chunk => { storage.collect("stderr", chunk); collect(chunk); });
 
     const signalGroup = (name: NodeJS.Signals) => {
       try {
@@ -64,8 +66,9 @@ function runCommand(command: string, cwd: string, timeoutMs: number, signal?: Ab
 
     child.once("error", (err) => {
       problem ??= `Couldn't run it: ${err.message}`;
+      storage.collect("spawn", `${err.message}\n`);
     });
-    child.once("close", (code, killedBy) => {
+    child.once("close", async (code, killedBy) => {
       clearTimeout(limit);
       clearTimeout(forced);
       signal?.removeEventListener("abort", stop);
@@ -75,7 +78,7 @@ function runCommand(command: string, cwd: string, timeoutMs: number, signal?: Ab
         code: exitCode,
         note: problem ?? (killedBy ? `Killed by ${killedBy}` : exitCode ? `Exited with code ${exitCode}` : null),
         noVerdict: problem !== null || exitCode === null,
-        logs: omitted ? `[${omitted} earlier characters omitted]\n${logs}` : logs,
+        logs: (omitted ? `[${omitted} earlier characters omitted]\n${logs}` : logs) + await storage.finish(),
       });
     });
   });
