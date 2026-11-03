@@ -273,7 +273,7 @@ export class ClaudeCodeDriver implements AgentDriver {
             if (block.type === "text" && block.text?.trim()) {
               lastText = block.text;
               const visible = block.text.split("```crane-report")[0]!.trim();
-              if (visible) emit("note", visible.slice(0, 1200));
+              if (visible) emit("note", visible.slice(0, 1200), { routine: true });
             } else if (block.type === "tool_use") {
               if (block.id) calls.set(block.id, { name: block.name, input: block.input ?? {} });
               if (block.name === "Bash") {

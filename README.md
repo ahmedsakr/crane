@@ -81,6 +81,45 @@ Reports come back as a summary plus **findings**. **Make this change** opens sch
 
 Tasks that build or change UI are instructed to capture and inspect screenshots, then attach them to their report. The task page shows previews you can open at full size; `crane show <id>` lists captions and local image paths. Crane retains the images separately from the branch, so they survive worktree cleanup. Agents report worktree-relative PNG, JPEG, or WebP paths in `screenshots: [{ "path": ".crane/screenshots/view.png", "caption": "Updated view at 1280 × 800" }]` (up to 12 images, 10 MiB each). If browser tools are unavailable or blocked, including in Codex's sandbox, the agent must explain the missing screenshots and remaining visual validation in its summary. Crane does not bypass those restrictions to capture them.
 
+### Storage retention
+
+Crane keeps all task history and screenshots by default. To opt into permanent
+cleanup, open **Crew → Storage retention**, enable automatic cleanup, and choose
+how many days a task must have been finished. CLI equivalents:
+
+```bash
+crane retention             # Show the saved policy
+crane retention --days 30   # Authorize permanent cleanup after 30 finished days
+crane retention --disable   # Stop cleanup; deleted history cannot be restored
+```
+
+Back up your Crane home before enabling cleanup. The running factory checks at
+startup, when the policy changes, and hourly thereafter, even when paused. Each
+sweep removes up to 5,000 old tool events and explicitly marked routine narration
+events from finished tasks (approved, merged, rejected, done, failed, cancelled).
+Both the task's finish time and the event must be older than the selected period.
+Queued, running, merging and review tasks, undated tasks, and tasks with an active
+run keep their history. Unclassified older notes stay: Crane cannot safely tell
+old narration from diagnostic or merge records. New Claude Code and Codex
+narration carries an explicit routine marker.
+
+Tasks, reports, runs, status, operator decisions, blocked calls, errors, findings,
+merge outcomes and diagnostic notes stay. A retained note records each task's
+trimmed event count and cutoff. Run-based cost and token analytics are unchanged.
+Enabling cleanup also removes generated screenshot files no longer referenced by
+their task's current report once the files are over 24 hours old, regardless of
+the history period. Queued/active tasks and in-flight copies are protected;
+referenced images stay. Cleanup skips symlinks and unexpected filenames.
+
+New databases use SQLite incremental auto-vacuum. The first enabled sweep on an
+older database performs one full `VACUUM` to switch modes: it may briefly block
+factory work and needs temporary disk space for the rewrite. Later hourly sweeps
+use bounded `incremental_vacuum(1000)` reclamation. Ordinary CLI/store opens never
+trim history or rewrite an existing database. Cleanup errors are logged and retried
+an hour later. The API exposes the same policy with `GET /api/factory/retention`
+and `POST /api/factory/retention` (`{"finishedTaskDays":30}` or
+`{"finishedTaskDays":null}` to disable).
+
 ### Visual review before approval
 
 Passing typecheck, tests, or review and merge checks does not complete visual validation. If capture or inspection is outstanding, the agent must hand off the changed routes, UI states, exact screenshot commands, and required sizes in its report summary. In Codex's sandbox, local servers and browsers are known to be unavailable: defer capture directly without attempting it or seeking a workaround.

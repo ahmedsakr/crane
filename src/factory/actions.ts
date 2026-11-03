@@ -29,6 +29,7 @@ import {
   type RoleRunOptions,
   type TaskGates,
   type PostmortemSettings,
+  type RetentionSettings,
 } from "@crane/contracts";
 import { inferDefaultBranch, isGitRepo, removeWorktree, repoRoot } from "./git.js";
 import { driverCatalog, isAvailable, sharedDrivers } from "./drivers.js";
@@ -423,6 +424,20 @@ export class OperatorActions {
 
   postmortemSettings(): PostmortemSettings {
     return this.store.postmortemSettings();
+  }
+
+  retentionSettings(): RetentionSettings {
+    return this.store.retentionSettings();
+  }
+
+  configureRetention(input: RetentionSettings): RetentionSettings {
+    if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Expected retention settings");
+    const days = input.finishedTaskDays;
+    if (days !== null && (!Number.isInteger(days) || days < 1 || days > 36500)) {
+      throw new Error("Retention days must be a whole number from 1 to 36500, or null to keep all history");
+    }
+    this.store.setSetting("retention_finished_task_days", days === null ? "" : String(days));
+    return this.retentionSettings();
   }
 
   /**

@@ -13,6 +13,7 @@ import { driverSettings, isAvailable } from "./drivers.js";
 import { DEFAULT_DRIVER_KEY, DEFAULT_MAX_TURNS, DEFAULT_TIME_LIMIT_MIN, HEARTBEAT_KEY } from "./settings.js";
 import { worktreesDir } from "../core/paths.js";
 import { retainScreenshots } from "../core/screenshots.js";
+import { StorageMaintenance } from "../core/retention.js";
 import { siblingTasksFor } from "./task-context.js";
 import { OperatorActions } from "./actions.js";
 import { candidateVisualReview, hasVisualDecision, requireCandidateVisualReview, visualReviewRequired } from "./visual-review.js";
@@ -111,6 +112,7 @@ export class Factory {
   private lastSweep = 0;
   /** Why the last tick failed, so a store that stays broken is reported once rather than every tick. */
   private tickError: string | null = null;
+  private storageMaintenance: StorageMaintenance;
   /** Worktrees left in place this run, so each is reported once rather than every sweep. */
   private keptWorktrees = new Set<string>();
   /** Every agent this factory can run, by name. The first is the default until the operator picks one. */
@@ -133,6 +135,7 @@ export class Factory {
     }
     this.tickMs = opts.tickMs ?? 1000;
     this.log = opts.log ?? (() => {});
+    this.storageMaintenance = new StorageMaintenance(store, this.log);
     this.maxTurns = Math.max(0, opts.maxTurns ?? envNumber("CRANE_MAX_TURNS") ?? DEFAULT_MAX_TURNS);
     this.timeLimitMin = Math.max(0, opts.timeLimitMin ?? envNumber("CRANE_TIME_LIMIT_MIN") ?? DEFAULT_TIME_LIMIT_MIN);
     this.retryDelayMs = Math.max(0, opts.retryDelayMs ?? (envNumber("CRANE_RETRY_DELAY_SEC") ?? 60) * 1000);
@@ -329,6 +332,7 @@ export class Factory {
   /** One bad tick (a locked or full database, say) mustn't end every agent's run. The next one tries again. */
   private tick() {
     try {
+      this.storageMaintenance.tick();
       this.assignWork();
       this.tickError = null;
     } catch (err) {

@@ -9,6 +9,7 @@ import type {
   DriverInfo,
   Lookout,
   PostmortemSettings,
+  RetentionSettings,
   MaintenanceRole,
   MaintenanceRoleInfo,
   RepoTools,
@@ -144,6 +145,8 @@ export const api = {
   configureDriver: (driver: string, input: { model?: string | null; effort?: string | null }) =>
     post<DriverInfo[]>(`/drivers/${driver}`, input),
   postmortemSettings: () => req<PostmortemSettings>("/factory/postmortem"),
+  retentionSettings: () => req<RetentionSettings>("/factory/retention"),
+  configureRetention: (input: RetentionSettings) => post<RetentionSettings>("/factory/retention", input),
   configurePostmortem: (input: PostmortemSettings) => post<PostmortemSettings>("/factory/postmortem", input),
   pause: () => post("/factory/pause"),
   resume: () => post("/factory/resume"),

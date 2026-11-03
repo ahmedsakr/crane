@@ -46,6 +46,7 @@ export type {
   DriverName,
   DriverSettings,
   PostmortemSettings,
+  RetentionSettings,
   DriverInfo,
   MergeOutcome,
 } from "./types.js";

@@ -273,6 +273,8 @@ export function createApp(store: Store, opts: { exposed?: boolean } = {}) {
     return c.json(await actions.setDefaultDriver(driver));
   });
   api.get("/factory/postmortem", (c) => c.json(actions.postmortemSettings()));
+  api.get("/factory/retention", (c) => c.json(actions.retentionSettings()));
+  api.post("/factory/retention", async (c) => c.json(actions.configureRetention(await c.req.json())));
   api.post("/factory/postmortem", async (c) => c.json(actions.configurePostmortem(await c.req.json())));
 
   api.post("/factory/pause", (c) => {

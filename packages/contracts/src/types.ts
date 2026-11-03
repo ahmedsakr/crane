@@ -241,6 +241,11 @@ export function visualReviewPending(task: Pick<Task, "branch" | "visualReview" |
   return !!task.branch && !task.preApprovedAt && (!task.visualReview || task.visualReview.status === "pending");
 }
 
+/** Null keeps all history. Choosing days authorizes irreversible routine-history cleanup. */
+export interface RetentionSettings {
+  finishedTaskDays: number | null;
+}
+
 export type EventType =
   | "status" // lifecycle change
   | "note" // the agent's narration

@@ -165,7 +165,7 @@ export class CodexDriver implements AgentDriver {
             lastText = item.text;
             {
               const visible = item.text.split("```crane-report")[0]!.trim();
-              if (visible) emit("note", visible.slice(0, 1200));
+              if (visible) emit("note", visible.slice(0, 1200), { routine: true });
             }
             return;
           case "command_execution":
