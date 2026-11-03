@@ -56,6 +56,33 @@ function setup() {
   return { store, repo, task };
 }
 
+test("cli: queue lists pickup order, moves tasks, and rejects ambiguous or stale moves", async () => {
+  const { store, task } = setup();
+  try {
+    const a = task("queued");
+    const b = task("queued");
+    const c = task("queued");
+    const running = task("running");
+    const list = async () => {
+      const result = await crane(store, "queue", "--json");
+      assert.equal(result.code, 0, result.err);
+      return (JSON.parse(result.out) as { id: string }[]).map(m => m.id);
+    };
+    assert.deepEqual(await list(), [a.id, b.id, c.id]);
+    const moved = await crane(store, "queue", c.id.slice(2), "--before", a.id.slice(2));
+    assert.equal(moved.code, 0, moved.err);
+    assert.match(moved.out, /Queue reordered/);
+    assert.deepEqual(await list(), [c.id, a.id, b.id]);
+    assert.equal((await crane(store, "queue", c.id, "--last")).code, 0);
+    assert.deepEqual(await list(), [a.id, b.id, c.id]);
+    for (const args of [[b.id], [b.id, "--last", "--before", a.id], ["--last"], ["--before", a.id],
+      [running.id, "--before", a.id], [b.id, "--before", running.id]]) {
+      assert.equal((await crane(store, "queue", ...args)).code, 1, args.join(" "));
+      assert.deepEqual(await list(), [a.id, b.id, c.id]);
+    }
+  } finally { store.close(); }
+});
+
 test("cli: visual decisions are separate from approval, candidate-bound and explicit", async () => {
   const { store, task } = setup();
   const candidate = task("needs_review");

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useState, type HTMLAttributes, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { api, isScheduled, KIND_LABEL, STATUS_LABEL, type BlockedTool, type Task, type TaskStatus } from "../lib/api";
 import { ago, plural } from "../lib/format";
@@ -24,7 +24,11 @@ export function StatusChip({ status }: { status: TaskStatus }) {
   );
 }
 
-export function TaskRow({ m, repoName }: { m: Task; repoName?: string }) {
+export function TaskRow({ m, repoName, reorder }: {
+  m: Task;
+  repoName?: string;
+  reorder?: { handle: ReactNode; props: HTMLAttributes<HTMLLIElement> };
+}) {
   const when = m.finishedAt ?? m.startedAt ?? m.createdAt;
   const scheduled = isScheduled(m);
   const state = scheduled
@@ -32,8 +36,9 @@ export function TaskRow({ m, repoName }: { m: Task; repoName?: string }) {
     : m.status === "running" ? "Working now" : m.status === "merging" ? "Merging now" : STATUS_LABEL[m.status];
   const meta = scheduled ? [state, repoName, KIND_LABEL[m.kind]] : [repoName, KIND_LABEL[m.kind], state];
   return (
-    <li>
-      <Link className="row" to={`/tasks/${m.id}`}>
+    <li {...reorder?.props} data-queue-id={reorder ? m.id : undefined}>
+      {reorder?.handle}
+      <Link className="row" to={`/tasks/${m.id}`} draggable={reorder ? false : undefined}>
         <Dot status={m.status} />
         <span style={{ minWidth: 0 }}>
           <span className="row-title" style={{ display: "block" }}>
