@@ -197,6 +197,31 @@ test("the builder builds only the newest of the merges that land while it's busy
   s.done();
 });
 
+test("a builder that can't record its progress logs it, rather than ending the factory", async () => {
+  const s = setup();
+  const sha = s.commit("<p>1</p>");
+  const logs: string[] = [];
+  const builder = new DashboardBuilder({
+    repo: () => s.repo,
+    log: (line) => logs.push(line),
+    note: () => { throw new Error("database is locked"); },
+    builds: s.builds,
+    root: join(s.root, "elsewhere"),
+    build: fakeBuild,
+  });
+  await builder.request(sha, "t-1");
+  await builder.idle(); // Rejected before, and with nothing else listening that's an unhandled rejection.
+  assert.ok(logs.some((l) => l.includes("Couldn't finish building the dashboard: database is locked")), logs.join("\n"));
+
+  // It isn't stuck: the next merge still builds.
+  const next = s.commit("<p>2</p>");
+  const healthy = new DashboardBuilder({ repo: () => s.repo, log: () => {}, note: () => {}, builds: s.builds, root: join(s.root, "elsewhere"), build: fakeBuild });
+  await healthy.request(next, "t-2");
+  await healthy.idle();
+  assert.equal(dashboardBuilds(s.builds)[0]?.sha, next);
+  s.done();
+});
+
 test("the server serves Crane's build, its assets, and pages that aren't files", async () => {
   const home = mkdtempSync(join(tmpdir(), "crane-app-"));
   const prev = process.env.CRANE_HOME;

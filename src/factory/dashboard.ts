@@ -175,7 +175,10 @@ export class DashboardBuilder {
     if (!repo || this.ac.signal.aborted) return;
     if (!(await dashboardBuildNeeded(repo, sha, this.opts).catch(() => false))) return;
     this.next = { sha, taskId };
-    this.current ??= this.drain().finally(() => (this.current = null));
+    // Nothing awaits this until stop(), and an unhandled rejection would end the factory with every agent in it.
+    this.current ??= this.drain()
+      .catch((err) => this.opts.log(`Couldn't finish building the dashboard: ${(err as Error).message}`))
+      .finally(() => (this.current = null));
   }
 
   /** Stop building. Resolves once the build in progress has cleaned up after itself. */

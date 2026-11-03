@@ -120,6 +120,14 @@ failure notes distinguish exit codes, signals, cancellation, timeout, and spawn
 errors. These tails can guide investigation but do not establish whether a slow
 install was caused by downloads, lifecycle scripts, or resource contention.
 
+Installs and configured checks each run in their own process group. A timeout or
+cancellation sends that group SIGTERM, then SIGKILL three seconds later, so a
+hung lifecycle script or test runner can't outlive it or hold a crew slot. A
+check that was cancelled or stopped with the factory records no validation run,
+since it says nothing about the candidate; one that hits its ten-minute limit is
+recorded as `blocked`. Check logs keep their last 1 MiB of characters, with the
+omission marked.
+
 Claude tool events retain Bash commands up to 8192 characters in `data.command`
 and correlate calls and results with `data.toolUseId`. Result events keep textual
 content up to 8192 characters, stdout and stderr up to 4096 each, and available

@@ -140,7 +140,7 @@ export class Factory {
       this.dashboard = new DashboardBuilder({
         repo: () => this.store.listRepos().find((r) => r.isFactory) ?? null,
         log: this.log,
-        note: (taskId, message) => this.store.addEvent(taskId, "note", message),
+        note: (taskId, message) => this.recording(() => this.store.addEvent(taskId, "note", message)),
       });
     }
   }
@@ -516,7 +516,7 @@ export class Factory {
       await removeWorktree(repo, workdir);
       if (!result.checkoutBehind) await deleteMergedBranch(repo, task.branch);
       // A change to Crane itself: build the dashboard from it, so it shows without anyone running npm run build.
-      if (repo.isFactory) this.dashboard?.request(result.head, task.id).catch(() => {});
+      if (repo.isFactory) this.dashboard?.request(result.head, task.id).catch((err) => this.log(`Couldn't start the dashboard build: ${(err as Error).message}`));
     } catch (err) {
       if (ac.signal.aborted && !limit.hit()) {
         // The factory is stopping. Leave it waiting; the next factory picks it up again.
