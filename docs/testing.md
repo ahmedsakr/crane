@@ -79,6 +79,14 @@ CLI fixtures. Add stream fixture changes there so callers share the same
 protocol examples. Keep suite-specific setup in its test file until another
 suite needs the same behavior; these helpers do not need a workspace package.
 
+`fixtures.ts` registers temporary roots with test teardown immediately, so
+setup errors and failed assertions cannot skip removal. Register factories and
+stores with `onFixtureCleanup` as soon as they exist: callbacks run in reverse
+order before roots are removed. The returned callback can stop a factory early
+without running its teardown twice. `testHome` also restores `CRANE_HOME`.
+These fixtures are always removed, including on failure; debugging must not
+retain them implicitly. Cleanup touches only roots allocated by that test.
+
 ## CLI output tests
 
 For CLI output tests, start with the existing in-process harness in
@@ -136,6 +144,16 @@ check that was cancelled or stopped with the factory records no validation run,
 since it says nothing about the candidate; one that hits its ten-minute limit is
 recorded as `blocked`. Check logs keep their last 1 MiB of characters, with the
 omission marked.
+
+When configured check output reports ENOSPC, SQLITE_FULL, no space left on
+device, or database or disk is full, the trusted check runner takes one
+read-only filesystem snapshot at the first detected error. It records available,
+free and total bytes and free and total inodes for the check directory, OS temp
+directory and Crane home, or an error code for unavailable paths. Up to four
+redacted error lines survive ordinary log-tail truncation. This bounded evidence
+is appended to the check's validation logs without changing its exit status or
+verdict. It does not identify which files caused exhaustion, scan other tasks,
+delete files, or expand agent permissions.
 
 Claude tool events retain Bash commands up to 8192 characters in `data.command`
 and correlate calls and results with `data.toolUseId`. Result events keep textual
