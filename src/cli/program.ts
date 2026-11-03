@@ -40,6 +40,7 @@ import { diffForTask } from "../factory/git.js";
 import { DEFAULT_HOST, DEFAULT_PORT } from "../core/paths.js";
 import { screenshotPath } from "../core/screenshots.js";
 import * as ui from "./ui.js";
+import { setupCommand } from "./setup.js";
 
 // Set by `runCli` before any command runs, so tests can hand the CLI their own store.
 let store!: Store;
@@ -74,6 +75,8 @@ const program = new Command()
   .description("An autonomous software factory you steer.")
   .showSuggestionAfterError()
   .configureHelp({ sortSubcommands: false });
+
+program.addCommand(setupCommand());
 
 // ── crane (no args): the one screen you need ────────────────
 program.action(() => {

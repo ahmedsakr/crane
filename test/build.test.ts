@@ -29,11 +29,27 @@ test("build: esbuild's backend output runs from the layout the factory expects",
   assert.equal(help.status, 0, help.stderr);
   assert.match(help.stdout, /Usage: crane/);
 
+  // Setup must diagnose missing tools even when persistent-home initialization would fail.
+  const setup = spawnSync(process.execPath, [join(out, "cli", "index.js"), "setup", "--json"], {
+    encoding: "utf8",
+    env: {
+      ...process.env, PATH: out, CRANE_HOME: join(out, "core", "paths.js"),
+      CRANE_CLAUDE_BIN: join(out, "missing-claude"), CRANE_CODEX_BIN: join(out, "missing-codex"),
+    },
+  });
+  assert.equal(setup.status, 1, setup.stderr);
+  const setupReport = JSON.parse(setup.stdout);
+  assert.equal(setupReport.ready, false);
+  for (const id of ["git", "npm", "agent"]) {
+    assert.equal(setupReport.checks.find((check: { id: string }) => check.id === id)?.status, "fail");
+  }
+  assert.equal(setupReport.checks.find((check: { id: string }) => check.id === "sqlite")?.status, "pass");
+
   // factoryRoot() counts directories up from the compiled file, which a bundle would break.
   const { factoryRoot } = await import(pathToFileURL(join(out, "core", "paths.js")).href);
   assert.equal(factoryRoot(), dirname(out));
 
-  // The CLI's one dynamic import, so `--help` above doesn't load it.
+  // Serve is loaded on demand, so `--help` above doesn't load it.
   const { serve } = await import(pathToFileURL(join(out, "cli", "serve.js")).href);
   assert.equal(typeof serve, "function");
 

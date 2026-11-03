@@ -166,11 +166,25 @@ npm install
 npm run build
 npm link            # puts `crane` on your PATH
 
+crane setup         # checks dependencies and explains anything missing
 crane repos add ~/code/my-app
 crane serve         # starts the agents and the dashboard at http://localhost:4471
 # Or: crane start   # builds, serves, and rebuilds/restarts when checkout HEAD changes
 crane do "investigate why the checkout tests are flaky in my-app"
 ```
+
+`crane setup` checks the running Node.js version (20.19 or newer), npm, Git,
+Crane's native SQLite binding, and the Claude Code and Codex executables. Only
+one real agent CLI is required; a missing alternative does not fail setup.
+It respects `CRANE_CLAUDE_BIN` and `CRANE_CODEX_BIN`. Checks are local, run each
+CLI with `--version` with a ten-second limit, and do not install tools, log in,
+open Crane's persistent database, or change settings. A failed requirement
+exits with status 1; successful checks exit with status 0. Use
+`crane setup --json` for structured results (`ready`, `checks`, and `unchecked`).
+Agent login/API access, Git remote access, repository-specific tools (including
+pnpm or Yarn), and optional screenshot browsers still need separate verification.
+In a source checkout, `npm run crane -- setup` works after `npm install`;
+its normal workspace preflight runs first.
 
 Agents run through a coding agent CLI you already have, using its existing login:
 
@@ -202,6 +216,7 @@ Start a run with the button on their row (**Review security**, **Reduce duplicat
 | Command | What it does |
 | --- | --- |
 | `crane` | Status: what needs you, what's running, suggested next steps |
+| `crane setup` | Check system dependencies and show how to fix missing requirements (`--json` for structured results) |
 | `crane do "…"` | Give the factory an instruction. It shows what it understood before starting. |
 | `crane tasks` | Open tasks (`--all` for everything, `--json` for full records including each task's branch and worktree) |
 | `crane queue [<id> --before <other-id> \| --last]` | List pickup order, or move a queued task (`--json` for records in queue order) |
