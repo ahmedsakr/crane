@@ -34,6 +34,9 @@ function listed(task: Task): Task {
 const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
+/** How long open tabs share one overview, each polling it every 2 s on the thread that runs the factory. */
+const OVERVIEW_SHARED_MS = 1000;
+
 /** True for addresses only this machine can reach. `crane serve` binds one of these unless told to expose the dashboard. */
 export function isLoopbackAddress(host: string): boolean {
   return LOOPBACK_HOSTNAMES.has(host) || host === "::1";
@@ -82,14 +85,32 @@ export function createApp(store: Store, opts: { exposed?: boolean } = {}) {
 
   const api = new Hono();
 
+  let sharedOverview: { at: number; json: string } | null = null;
+
+  // An action's result shows on the next poll. Cleared once it finishes, in case a poll saw it halfway.
+  api.use("*", async (c, next) => {
+    try {
+      await next();
+    } finally {
+      if (!SAFE_METHODS.has(c.req.method)) sharedOverview = null;
+    }
+  });
+
   api.get("/overview", (c) => {
-    const overview = store.overview(factoryState());
-    return c.json({
-      ...overview,
-      needsReview: overview.needsReview.map(listed),
-      inFlight: overview.inFlight.map(listed),
-      recent: overview.recent.map(listed),
-    });
+    const at = performance.now();
+    if (!sharedOverview || at - sharedOverview.at >= OVERVIEW_SHARED_MS) {
+      const overview = store.overview(factoryState());
+      sharedOverview = {
+        at,
+        json: JSON.stringify({
+          ...overview,
+          needsReview: overview.needsReview.map(listed),
+          inFlight: overview.inFlight.map(listed),
+          recent: overview.recent.map(listed),
+        }),
+      };
+    }
+    return c.body(sharedOverview.json, 200, { "content-type": "application/json" });
   });
 
   api.get("/tasks", (c) => {

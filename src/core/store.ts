@@ -96,7 +96,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   started_at TEXT,
   finished_at TEXT
 );
-CREATE INDEX IF NOT EXISTS tasks_status ON tasks(status);
+DROP INDEX IF EXISTS tasks_status;
+-- Lets task lists and shipped counts filter and sort without reading rows: briefs and reports run to tens of KB.
+CREATE INDEX IF NOT EXISTS tasks_status_times ON tasks(status, finished_at, created_at);
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id TEXT NOT NULL REFERENCES tasks(id),
@@ -106,6 +108,9 @@ CREATE TABLE IF NOT EXISTS events (
   data TEXT
 );
 CREATE INDEX IF NOT EXISTS events_task ON events(task_id, id);
+-- The overview polls these two every few seconds. Its queries must spell each WHERE the same way, or SQLite skips the index.
+CREATE INDEX IF NOT EXISTS events_activity ON events(ts, type) WHERE type IN ('note','tool','finding');
+CREATE INDEX IF NOT EXISTS events_blocked ON events(task_id) WHERE type = 'blocked';
 CREATE TABLE IF NOT EXISTS agents (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -437,6 +442,7 @@ function toAgent(r: Row): Omit<Agent, "active" | "defaultDriver" | "role" | "run
  */
 export class Store {
   readonly db: Database.Database;
+  private refusalTotalsCache: { version: string; rows: Row[] } | null = null;
 
   constructor(file = dbPath()) {
     this.db = new Database(file);
@@ -589,41 +595,49 @@ export class Store {
   }
 
   /**
-   * Rules agents were refused, added up per repo across tasks. Leaves out
-   * rules the operator has already allowed or kept blocked for that repo.
+   * Every refused rule, added up per repo, most widespread first. Only a change
+   * to the blocked events can change the answer, and any process may write one,
+   * so each call asks the database whether they did. The count catches deletions
+   * the latest id can't see.
    */
-  blockedTools(opts: { repoId?: string; taskId?: string; minTasks?: number } = {}): BlockedTool[] {
-    const where = ["e.type = 'blocked'"];
-    const params: unknown[] = [];
-    if (opts.repoId) {
-      where.push("t.repo_id = ?");
-      params.push(opts.repoId);
-    }
-    if (opts.taskId) {
-      // Every task's count, but only for rules this task hit.
-      where.push(
-        `r.value IN (SELECT r2.value FROM events e2, json_each(e2.data, '$.rules') r2 WHERE e2.task_id = ? AND e2.type = 'blocked')`,
-      );
-      params.push(opts.taskId);
-    }
+  private refusalTotals(): Row[] {
+    const latest = this.db.prepare("SELECT COUNT(*) AS n, MAX(id) AS id FROM events WHERE type = 'blocked'").get() as Row;
+    const version = `${latest.n}:${latest.id}`;
+    if (this.refusalTotalsCache?.version === version) return this.refusalTotalsCache.rows;
+    // SQLite takes bare columns from the row holding the only MAX(), so ts and task_id both describe the latest refusal.
     const rows = this.db
       .prepare(
         `SELECT t.repo_id AS repo_id, p.name AS repo_name, r.value AS rule,
-                COUNT(DISTINCT e.task_id) AS tasks, COUNT(*) AS times, MAX(e.ts) AS last_at,
-                (SELECT e3.task_id FROM events e3, json_each(e3.data, '$.rules') r3
-                  JOIN tasks t3 ON t3.id = e3.task_id
-                  WHERE e3.type = 'blocked' AND r3.value = r.value AND t3.repo_id = t.repo_id
-                  ORDER BY e3.id DESC LIMIT 1) AS last_task_id
+                COUNT(DISTINCT e.task_id) AS tasks, COUNT(*) AS times,
+                MAX(e.id) AS last_id, e.ts AS last_at, e.task_id AS last_task_id
          FROM events e
          JOIN tasks t ON t.id = e.task_id
          JOIN repos p ON p.id = t.repo_id
          , json_each(e.data, '$.rules') r
-         WHERE ${where.join(" AND ")}
+         WHERE e.type = 'blocked'
          GROUP BY t.repo_id, r.value
-         HAVING COUNT(DISTINCT e.task_id) >= ?
          ORDER BY tasks DESC, last_at DESC`,
       )
-      .all(...params, opts.minTasks ?? 1) as Row[];
+      .all() as Row[];
+    this.refusalTotalsCache = { version, rows };
+    return rows;
+  }
+
+  /**
+   * Rules agents were refused, added up per repo across tasks. Leaves out
+   * rules the operator has already allowed or kept blocked for that repo.
+   */
+  blockedTools(opts: { repoId?: string; taskId?: string; minTasks?: number } = {}): BlockedTool[] {
+    // Every task's count, but only for rules this task hit.
+    const taskRules = opts.taskId ? new Set(
+      (this.db
+        .prepare("SELECT r.value AS rule FROM events e, json_each(e.data, '$.rules') r WHERE e.task_id = ? AND e.type = 'blocked'")
+        .all(opts.taskId) as Row[]).map((r) => r.rule),
+    ) : null;
+    const rows = this.refusalTotals().filter((r) =>
+      (!opts.repoId || r.repo_id === opts.repoId)
+      && (r.tasks as number) >= (opts.minTasks ?? 1)
+      && (!taskRules || taskRules.has(r.rule)));
     const decided = new Map<string, Set<string>>();
     const isDecided = (repoId: string, rule: string) => {
       if (!decided.has(repoId)) {
@@ -801,8 +815,13 @@ export class Store {
       where.push("assignee = ?");
       params.push(opts.assignee);
     }
-    const sql = `SELECT * FROM tasks ${where.length ? "WHERE " + where.join(" AND ") : ""}
-                 ORDER BY created_at DESC LIMIT ?`;
+    // Pick the page from the index first, so keeping a few tasks doesn't read every match's brief and report.
+    const sql = `SELECT t.* FROM (
+                   SELECT rowid AS page_rowid FROM tasks ${where.length ? "WHERE " + where.join(" AND ") : ""}
+                   ORDER BY created_at DESC, rowid DESC LIMIT ?
+                 ) page
+                 CROSS JOIN tasks t ON t.rowid = page.page_rowid
+                 ORDER BY t.created_at DESC, t.rowid DESC`;
     params.push(opts.limit ?? 200);
     return (this.db.prepare(sql).all(...params) as Row[]).map(toTask);
   }
@@ -1302,19 +1321,25 @@ export class Store {
     // Hourly activity buckets for the last 7 days.
     const hour = 3600 * 1000;
     const start = Math.floor((t0 - weekMs) / hour) * hour;
-    const buckets = new Map<number, { done: number; events: number }>();
-    for (let t = start; t <= t0; t += hour) buckets.set(t, { done: 0, events: 0 });
+    // Stored times are all UTC toISOString(), so "2026-11-02T14" names an hour, in SQL as well as here.
+    const hourOf = (ms: number) => iso(ms).slice(0, 13);
+    const buckets = new Map<string, { t: string; done: number; events: number }>();
+    for (let t = start; t <= t0; t += hour) buckets.set(hourOf(t), { t: iso(t), done: 0, events: 0 });
     for (const r of this.db
-      .prepare("SELECT ts FROM events WHERE ts >= ? AND type IN ('note','tool','finding')")
+      .prepare(
+        "SELECT substr(ts, 1, 13) AS hour, COUNT(*) AS n FROM events WHERE ts >= ? AND type IN ('note','tool','finding') GROUP BY hour",
+      )
       .all(iso(start)) as Row[]) {
-      const b = buckets.get(Math.floor(Date.parse(r.ts as string) / hour) * hour);
-      if (b) b.events++;
+      const b = buckets.get(r.hour as string);
+      if (b) b.events = r.n as number;
     }
     for (const r of this.db
-      .prepare(`SELECT finished_at FROM tasks WHERE status IN (${shippedIn}) AND finished_at >= ?`)
+      .prepare(
+        `SELECT substr(finished_at, 1, 13) AS hour, COUNT(*) AS n FROM tasks WHERE status IN (${shippedIn}) AND finished_at >= ? GROUP BY hour`,
+      )
       .all(iso(start)) as Row[]) {
-      const b = buckets.get(Math.floor(Date.parse(r.finished_at as string) / hour) * hour);
-      if (b) b.done++;
+      const b = buckets.get(r.hour as string);
+      if (b) b.done = r.n as number;
     }
 
     const openByRepo = new Map<string, number>();
@@ -1333,7 +1358,7 @@ export class Store {
       shippedThisWeek: shipped(t0 - weekMs, t0 + 1),
       shippedLastWeek: shipped(t0 - 2 * weekMs, t0 - weekMs),
       spendThisWeekUsd: spend,
-      activity: [...buckets.entries()].map(([t, v]) => ({ t: iso(t), ...v })),
+      activity: [...buckets.values()],
       needsReview: this.listTasks({ status: ["needs_review"], limit: 20 }),
       inFlight: this.listTasks({ status: ACTIVE_STATUSES, limit: 20 }),
       recent: this.listTasks({ status: FINISHED_STATUSES, limit: 8 }),
