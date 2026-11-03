@@ -84,7 +84,7 @@ export function pruneOrphanScreenshots(store: Store, now = Date.now()): number {
   for (const dir of readdirSync(root, { withFileTypes: true })) {
     if (!dir.isDirectory() || !/^[a-zA-Z0-9_-]+$/.test(dir.name)) continue;
     // Report replacement is serialized with the reference check and unlink.
-    store.db.transaction(() => {
+    store.transaction(() => {
       const task = store.getTask(dir.name);
       if (task && ["queued", "running", "merging"].includes(task.status)) return;
       if (store.db.prepare("SELECT 1 FROM runs WHERE task_id = ? AND outcome = 'running'").get(dir.name)) return;
@@ -103,7 +103,7 @@ export function pruneOrphanScreenshots(store: Store, now = Date.now()): number {
           if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
         }
       }
-    }).immediate();
+    }, { immediate: true });
   }
   return removed;
 }

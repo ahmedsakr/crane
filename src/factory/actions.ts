@@ -326,7 +326,7 @@ export class OperatorActions {
         tree: await git(repo.path, "rev-parse", `refs/heads/${task.branch}^{tree}`), note: "", decidedAt: null };
     }
     const expected = candidate;
-    return this.store.db.transaction(() => {
+    return this.store.transaction(() => {
       const current = this.need(id);
       if (current.status !== task.status || (current.visualReview?.commit ?? null) !== (task.visualReview?.commit ?? null)
         || input.commit !== expected.commit) throw new Error("The candidate changed; inspect its current commit and record a new decision");
@@ -334,7 +334,7 @@ export class OperatorActions {
       this.store.updateTask(id, { visualReview: review });
       this.store.addEvent(id, "operator", input.status === "inspected" ? "Recorded candidate visual inspection" : "Waived candidate visual review", { visualReview: review });
       return this.need(id);
-    }).immediate();
+    }, { immediate: true });
   }
 
   private requireVisualReview(task: Task) {
@@ -569,7 +569,7 @@ export class OperatorActions {
     }
     const repo = opts.repoId === undefined ? await this.ensureFactoryRepo() : this.needRepo(opts.repoId);
     if (!repo) throw new Error("Crane's own repo isn't connected, so there's nothing to maintain");
-    return this.store.db.transaction(() => this.createRoleRun(id, repo, opts)).immediate();
+    return this.store.transaction(() => this.createRoleRun(id, repo, opts), { immediate: true });
   }
 
   private createRoleRun(id: string, repo: Repo, opts: RoleRunOptions & { preApprove?: boolean; scheduleId?: string }): Task {
@@ -637,7 +637,7 @@ export class OperatorActions {
   fireCrewSchedules(at = Date.now()): void {
     const firedAt = new Date(at).toISOString();
     for (const due of this.store.listCrewSchedules().filter((s) => s.enabled && s.nextFireAt <= firedAt)) {
-      this.store.db.transaction(() => {
+      this.store.transaction(() => {
         // Read policy again under the write lock: an edit or pause may have
         // happened since the due list was read by this process.
         const s = this.store.listCrewSchedules().find((s) => s.id === due.id);
@@ -645,16 +645,16 @@ export class OperatorActions {
         if (!this.store.claimCrewSchedule(s, nextCrewFire(s, at), firedAt)) return;
         try {
           // A savepoint rolls back task creation too if pre-approval fails.
-          const task = this.store.db.transaction(() => {
+          const task = this.store.transaction(() => {
             const repo = this.store.getRepo(s.repoId);
             if (!repo) throw new Error("Repo is no longer connected");
             return this.createRoleRun(s.agentId, repo, { preApprove: s.preApprove, scheduleId: s.id });
-          })();
+          });
           this.store.crewScheduleOutcome(s.id, `Queued ${task.id}`);
         } catch (err) {
           this.store.crewScheduleOutcome(s.id, `Skipped: ${errorMessage(err)}`);
         }
-      }).immediate();
+      }, { immediate: true });
     }
   }
 
