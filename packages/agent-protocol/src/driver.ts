@@ -58,6 +58,9 @@ export interface RunContext {
  */
 export interface ResolveConflictsJob {
   kind: "resolve_conflicts";
+  /** Edits finish before Crane checkpoints them; validation starts from that committed candidate. */
+  phase?: "edit" | "validate";
+  checkpoint?: string;
   /** What the task branch is being merged into, e.g. `origin/main`. */
   base: string;
   files: string[];

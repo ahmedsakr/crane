@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
@@ -34,6 +35,8 @@ const run = promisify(execFile);
 
 export class MergeError extends Error {}
 
+interface ResolutionReview { visualReviewRequired: boolean }
+
 export interface MergeRequest {
   /** Factory gate after candidate construction, then again after checks before any push or default-branch update. */
   verifyVisualReview?: (commit: string, tree: string, branchCommit: string, changedFiles: string[]) => Promise<void>;
@@ -49,7 +52,9 @@ export interface MergeRequest {
    * Called while a merge is stopped on conflicts in `cwd`. Should leave every
    * file resolved (markers removed); staging and committing is optional.
    */
-  resolveConflicts: (ctx: { cwd: string; base: string; files: string[]; deferredDependencies?: string[] }) => Promise<void>;
+  resolveConflicts: (ctx: { cwd: string; base: string; files: string[]; deferredDependencies?: string[] }) => Promise<void | ResolutionReview>;
+  /** Runs after Crane durably commits the edits, including on recovery. No approval or check is implied by the checkpoint. */
+  validateResolution?: (ctx: { cwd: string; base: string; files: string[]; checkpoint: string; visualReviewRequired: boolean }) => Promise<void | ResolutionReview>;
   /** How many times to start over when the remote moves under us. */
   maxAttempts?: number;
   /** The commit the operator's visual decision is on. If it's a merge that still fits, it lands as is. */
@@ -248,6 +253,22 @@ async function buildMerge(req: MergeRequest, base: { sha: string; label: string 
   const { workdir: cwd, task, emit } = req;
   const branch = task.branch!;
   const branchSha = (await revParse(cwd, `refs/heads/${branch}`))!;
+  const checkpointRef = resolutionRef(task.id);
+  const checkpoint = await revParse(cwd, checkpointRef);
+  if (checkpoint) {
+    const parents = await g(cwd, ["show", "-s", "--format=%P", checkpoint]);
+    const head = await revParse(cwd, "HEAD");
+    if (parents === `${base.sha} ${branchSha}` && head === checkpoint
+      && !(await g(cwd, ["status", "--porcelain"]))) {
+      const files = (await g(cwd, ["diff", "--name-only", "-z", base.sha, checkpoint])).split("\0").filter(Boolean);
+      emit("note", `Recovered resolution checkpoint ${checkpoint.slice(0, 7)}; asking the resolver to validate it.`);
+      const needsReview = await revParse(cwd, `${checkpointRef}-nonvisual`) !== checkpoint;
+      return validateResolution(req, base.label, files, checkpoint, needsReview);
+    }
+    await g(cwd, ["update-ref", "-d", checkpointRef]);
+    await g(cwd, ["update-ref", "-d", `${checkpointRef}-nonvisual`]);
+    emit("note", "Discarded the resolution checkpoint because its task, base, or workspace changed.");
+  }
   // Resolving the same conflicts again could give a result the operator never saw.
   const reviewed = req.reviewedCandidate;
   if (reviewed && reviewed !== branchSha && (await revParse(cwd, reviewed))
@@ -276,6 +297,7 @@ async function buildMerge(req: MergeRequest, base: { sha: string; label: string 
       { conflicts: files },
     );
     const deferred = dependencyInputs(files);
+    let needsReview = true;
     try {
       if (deferred.length) {
         // A conflicted manifest or lockfile can't be installed from, so don't try.
@@ -293,7 +315,8 @@ async function buildMerge(req: MergeRequest, base: { sha: string; label: string 
           emit("note", `Couldn't prepare dependencies before conflict resolution: ${why(err)}. Will retry before merge checks.`);
         }
       }
-      await req.resolveConflicts({ cwd, base: base.label, files, ...(deferred.length ? { deferredDependencies: deferred } : {}) });
+      const review = await req.resolveConflicts({ cwd, base: base.label, files, ...(deferred.length ? { deferredDependencies: deferred } : {}) });
+      needsReview = review?.visualReviewRequired ?? true;
     } catch (resolveErr) {
       await succeeds(cwd, ["merge", "--abort"]);
       throw resolveErr;
@@ -317,8 +340,40 @@ async function buildMerge(req: MergeRequest, base: { sha: string; label: string 
       throw new MergeError("The resolved merge doesn't contain both the task and the default branch");
     }
     emit("note", `Resolved the conflicts with ${base.label}`);
-    return head;
+    // A ref keeps the candidate reachable across crashes and garbage collection.
+    // This is deliberately before resolver validation, which can take minutes.
+    await saveResolution(req, head, needsReview);
+    emit("note", `Saved resolution checkpoint ${head.slice(0, 7)} before resolver validation.`);
+    return validateResolution(req, base.label, files, head, needsReview);
   }
+}
+
+function resolutionRef(taskId: string): string {
+  return `refs/crane/resolutions/${createHash("sha256").update(taskId).digest("hex")}`;
+}
+
+async function saveResolution(req: MergeRequest, head: string, needsReview: boolean): Promise<void> {
+  const ref = resolutionRef(req.task.id);
+  // Save an opt-out first. Missing or mismatched metadata always requires review,
+  // including a crash between these writes. Neither ref grants operator approval.
+  await g(req.workdir, needsReview ? ["update-ref", "-d", `${ref}-nonvisual`] : ["update-ref", `${ref}-nonvisual`, head]);
+  await g(req.workdir, ["update-ref", ref, head]);
+}
+
+async function validateResolution(req: MergeRequest, base: string, files: string[], checkpoint: string, needsReview: boolean): Promise<string> {
+  if (!req.validateResolution) return checkpoint;
+  await prepareDependencies(req);
+  const review = await req.validateResolution({ cwd: req.workdir, base, files, checkpoint, visualReviewRequired: needsReview });
+  if (await revParse(req.workdir, "HEAD") !== checkpoint) throw new MergeError("The resolver moved the checkpoint HEAD");
+  const left = await filesWithMarkers(req.workdir, files);
+  if (left.length) throw new MergeError(`Conflicts are still unresolved in ${left.join(", ")}`);
+  await g(req.workdir, ["add", "-A"]);
+  if (await g(req.workdir, ["diff", "--cached", "--name-only"])) {
+    await g(req.workdir, [...await identity(req.workdir), "commit", "--amend", "--no-edit", "--quiet"]);
+  }
+  const head = (await revParse(req.workdir, "HEAD"))!;
+  await saveResolution(req, head, needsReview || (review?.visualReviewRequired ?? true));
+  return head;
 }
 
 async function prepareDependencies(req: MergeRequest): Promise<void> {
@@ -414,6 +469,8 @@ export async function landTask(req: MergeRequest): Promise<MergeResult> {
       emit("note", `This merge changed ${changedManifests.join(", ")}. After updating your checkout at ${checkoutBehind ?? repo.path} to ${repo.defaultBranch}, run npm install there before building or running it. Crane does not install dependencies in your checkout.`,
         { dependencyFiles: changedManifests });
     }
+    await g(workdir, ["update-ref", "-d", resolutionRef(task.id)]);
+    await g(workdir, ["update-ref", "-d", `${resolutionRef(task.id)}-nonvisual`]);
     return { commit, head, pushedTo: remote, checkoutBehind };
   }
   throw new MergeError(`${remote}/${repo.defaultBranch} kept moving. Tried ${attempts} times.`);
