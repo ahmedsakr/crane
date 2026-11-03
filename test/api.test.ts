@@ -37,6 +37,36 @@ test("api: invalid task decision bodies leave tasks and history unchanged", asyn
   } finally { store.close(); }
 });
 
+test("api: a new task needs a known autonomy and kind, and text for its title and brief", async () => {
+  const store = new Store(":memory:");
+  try {
+    const repo = store.addRepo({ path: "/repo" });
+    const app = createApp(store);
+    const good = { kind: "maintenance", title: "Look around", brief: "Look around", repoId: repo.id, autonomy: "observe" };
+    const post = (body: unknown) => app.request("/api/tasks", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    const refused: [Record<string, unknown>, RegExp][] = [
+      // Not read-only by the only test that matters, `autonomy === "observe"`, so this would get a writing agent.
+      [{ autonomy: "Observe" }, /Unknown autonomy “Observe”. Use one of: observe, propose, act/],
+      [{ autonomy: "toString" }, /Unknown autonomy/],
+      [{ autonomy: undefined }, /Unknown autonomy/],
+      [{ kind: "chore" }, /Unknown kind “chore”/],
+      [{ title: undefined }, /Give the task a title/],
+      [{ title: 42 }, /Give the task a title/],
+      [{ brief: undefined }, /brief must be text/],
+    ];
+    for (const [change, message] of refused) {
+      const response = await post({ ...good, ...change });
+      assert.equal(response.status, 400, JSON.stringify(change));
+      assert.match(((await response.json()) as { error: string }).error, message);
+    }
+    assert.deepEqual(store.listTasks(), [], "nothing was created");
+    assert.equal((await post(good)).status, 201);
+    assert.equal(store.listTasks()[0]?.autonomy, "observe");
+  } finally { store.close(); }
+});
+
 test("api: approval keeps empty-body defaults and honors approve only", async () => {
   const store = new Store(":memory:");
   try {

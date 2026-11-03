@@ -3,8 +3,10 @@ import { shortId } from "../core/ids.js";
 import { nextCrewFire, validateCrewSchedule, crewScheduleLabel, type CrewScheduleInput, type CrewSchedule } from "@crane/contracts";
 import { crewSettingKey, type Store } from "../core/store.js";
 import {
+  AUTONOMY_LABEL,
   DRIVER_NAMES,
   EFFORT_LEVELS,
+  KIND_LABEL,
   driverLabel,
   visualReviewPending,
   ruleLabel,
@@ -169,13 +171,17 @@ export class OperatorActions {
   }
 
   createTask(input: NewTask & { scheduleId?: string }): Task {
+    // From the API and CLI flags as given. Only an exact "observe" is read-only, so "Observe" would get a writing agent.
+    if (!Object.hasOwn(AUTONOMY_LABEL, input.autonomy)) throw new Error(`Unknown autonomy “${input.autonomy}”. Use one of: ${Object.keys(AUTONOMY_LABEL).join(", ")}`);
+    if (!Object.hasOwn(KIND_LABEL, input.kind)) throw new Error(`Unknown kind “${input.kind}”. Use one of: ${Object.keys(KIND_LABEL).join(", ")}`);
+    if (typeof input.brief !== "string") throw new Error("A task's brief must be text");
     if (input.preApprove !== undefined && typeof input.preApprove !== "boolean") throw new Error("Pre-approval must be a boolean");
     if (input.preApprove && input.autonomy === "observe") throw new Error("This task is investigate-only, so it has nothing to merge");
     if (input.kind !== "factory_feature" && !input.repoId) throw new Error("Choose a repo for this task");
     if (input.kind === "factory_feature" && !input.repoId) {
       input.repoId = this.store.listRepos().find((r) => r.isFactory)?.id ?? null;
     }
-    if (!input.title.trim()) throw new Error("Give the task a title");
+    if (typeof input.title !== "string" || !input.title.trim()) throw new Error("Give the task a title");
     // Nobody else claims an assigned task, so it must name someone on the crew.
     if (input.assignee && !this.store.listAgents().some((a) => a.id === input.assignee)) {
       throw new Error(`No crew member ${input.assignee}`);
