@@ -1,5 +1,9 @@
 # Test selection
 
+The [TypeScript 7 spike](typescript-7-spike.md) records the current compiler
+baseline, the candidate installation blocker, and the remaining build, watch,
+declaration, and timing experiment. The compiler pins remain on 5.9.3.
+
 Outside the restricted agent sandbox, run `npm run typecheck` and `npm test`
 separately and retain their exit statuses and failure diagnostics. Crane runs
 both commands outside the agent sandbox for review and again for the merge
