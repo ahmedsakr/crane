@@ -125,6 +125,9 @@ export const api = {
   repos: () => req<Repo[]>("/repos"),
   addRepo: (path: string, name?: string) => post<Repo>("/repos", { path, name }),
   removeRepo: (id: string) => req<{ ok: true }>(`/repos/${id}`, { method: "DELETE" }),
+  repoChecks: (id: string) => req<string[]>(`/repos/${id}/checks`),
+  /** Replace the commands this repo's work must pass before review and merge. */
+  configureChecks: (id: string, commands: string[]) => req<string[]>(`/repos/${id}/checks`, { method: "PUT", json: commands }),
   /** Let agents in this repo use a command they were blocked from. Crane's deny list still wins. */
   allowTool: (repoId: string, rule: string, taskId?: string) => post<RepoTools>(`/repos/${repoId}/tools/allow`, { rule, taskId }),
   keepBlocked: (repoId: string, rule: string, taskId?: string) =>
