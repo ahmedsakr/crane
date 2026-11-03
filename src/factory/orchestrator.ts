@@ -490,6 +490,25 @@ export class Factory {
       const workdir = task.worktree ?? join(worktreesDir(), task.id);
       this.store.updateTask(task.id, { worktree: workdir });
       let conflictChangedUi = false;
+      const runResolver = async (ctx: { cwd: string; base: string; files: string[]; deferredDependencies?: string[]; checkpoint?: string; visualReviewRequired?: boolean }) => {
+        const { cwd, base, files, deferredDependencies, checkpoint } = ctx;
+        conflictChangedUi ||= ctx.visualReviewRequired ?? false;
+        const current = this.store.getTask(task.id)!;
+        const r = await this.runAgent(agent.id, this.driverFor(current, agent.id), {
+          task: current, repo, cwd, signal: ac.signal, emit,
+          job: { kind: "resolve_conflicts", phase: checkpoint ? "validate" : "edit", base, files,
+            ...(checkpoint ? { checkpoint } : {}), ...(deferredDependencies ? { deferredDependencies } : {}) },
+          checks: this.store.repoChecks(repo.id),
+        });
+        conflictChangedUi ||= visualReviewRequired({ ...r.report, changedFiles: [...r.report.changedFiles, ...files] });
+        if (r.report.screenshots?.length) {
+          const screenshots = retainScreenshots(task.id, cwd, r.report.screenshots, message => emit("note", message));
+          const report = this.store.getTask(task.id)?.report;
+          if (report && screenshots.length) this.store.updateTask(task.id, { report: { ...report, screenshots } });
+        }
+        for (const f of r.report.findings) emit("finding", f.title, { impact: f.impact, effort: f.effort });
+        return { visualReviewRequired: conflictChangedUi };
+      };
 
       const result = await landTask({
         repo,
@@ -505,26 +524,8 @@ export class Factory {
           this.store.updateTask(task.id, { report: { ...report, validation: [...(report.validation ?? []), run] } });
           emit("note", `Merge check ${run.status}: ${run.command ?? "configuration"}`, { validation: run });
         },
-        resolveConflicts: async ({ cwd, base, files, deferredDependencies }) => {
-          const current = this.store.getTask(task.id)!;
-          const r = await this.runAgent(agent.id, this.driverFor(current, agent.id), {
-            task: current,
-            repo,
-            cwd,
-            signal: ac.signal,
-            emit,
-            job: { kind: "resolve_conflicts", base, files, ...(deferredDependencies ? { deferredDependencies } : {}) },
-            // landTask runs these as merge checks once the conflicts are resolved.
-            checks: this.store.repoChecks(repo.id),
-          });
-          conflictChangedUi = visualReviewRequired({ ...r.report, changedFiles: [...r.report.changedFiles, ...files] });
-          if (r.report.screenshots?.length) {
-            const screenshots = retainScreenshots(task.id, cwd, r.report.screenshots, message => emit("note", message));
-            const report = this.store.getTask(task.id)?.report;
-            if (report && screenshots.length) this.store.updateTask(task.id, { report: { ...report, screenshots } });
-          }
-          for (const f of r.report.findings) emit("finding", f.title, { impact: f.impact, effort: f.effort });
-        },
+        resolveConflicts: runResolver,
+        validateResolution: runResolver,
       });
 
       const main = repo.defaultBranch;

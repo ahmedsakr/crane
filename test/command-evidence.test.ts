@@ -6,7 +6,27 @@ import { join } from "node:path";
 import type { CommandEvidence } from "@crane/contracts";
 import { CommandTracker, safeCommand } from "../packages/agent-drivers/src/command-evidence.js";
 import { Store } from "../src/core/store.js";
-import { resumePrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
+import { resumePrompt, systemPrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
+
+test("conflict prompts separate checkpointed edits from resolver validation", () => {
+  const store = new Store(":memory:");
+  try {
+    const task = store.createTask({ kind: "maintenance", title: "Resolution", brief: "", repoId: null, autonomy: "propose" });
+    const job = { kind: "resolve_conflicts" as const, base: "main", files: ["notes.md"] };
+    const editing = systemPrompt(task, null, { ...job, phase: "edit" });
+    assert.match(editing, /before running builds, typechecks, tests, or screenshots/);
+    assert.doesNotMatch(editing, /If the project has quick checks/);
+    const validationJob = { ...job, phase: "validate" as const, checkpoint: "saved-sha" };
+    const validation = systemPrompt(task, null, validationJob);
+    assert.match(validation, /checkpoint saved-sha/);
+    assert.match(validation, /there is no MERGE_HEAD/);
+    assert.match(validation, /git diff HEAD\^2 HEAD/);
+    assert.match(validation, /Run relevant checks/);
+    assert.match(userPrompt(task, validationJob), /Validate resolution checkpoint `saved-sha`/);
+  } finally {
+    store.close();
+  }
+});
 
 test("command evidence correlates completions, distinguishes failures and bounds retention", () => {
   const events: CommandEvidence[] = [];

@@ -79,7 +79,7 @@ export class SimulatedDriver implements AgentDriver {
   private async resolve(ctx: RunContext, files: string[]): Promise<RunResult> {
     const { emit, signal, cwd } = ctx;
     emit("note", "Reading both sides of each conflict.", { simulated: true });
-    for (const f of files) {
+    for (const f of ctx.job?.kind === "resolve_conflicts" && ctx.job.phase === "validate" ? [] : files) {
       await sleep(this.stepMs * 0.5, signal);
       const p = join(cwd, f);
       if (!existsSync(p)) continue;

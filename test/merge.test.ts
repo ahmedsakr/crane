@@ -241,6 +241,82 @@ test("merge: conflicts go to the resolver and the resolution lands", async () =>
   assert.doesNotMatch(merged, /<<<<<<<|>>>>>>>/);
 });
 
+test("merge: interrupted resolver validation recovers committed edits and retains landing gates", async () => {
+  const { checkout, repo, task, wt } = setup({ remote: false });
+  commitFile(wt, "notes.md", "task\n", "task edit");
+  commitFile(checkout, "notes.md", "main\n", "main edit");
+  const before = sh(checkout, "rev-parse", "HEAD");
+  const ac = new AbortController();
+  let checkpoint = "";
+  await assert.rejects(landTask({ repo, task, workdir: wt, emit, signal: ac.signal,
+    resolveConflicts: async ({ cwd }) => {
+      writeFileSync(join(cwd, "notes.md"), "saved resolution\n");
+      return { visualReviewRequired: true };
+    },
+    validateResolution: async (ctx) => {
+      checkpoint = ctx.checkpoint;
+      assert.equal(ctx.visualReviewRequired, true);
+      assert.equal(sh(wt, "status", "--porcelain"), "");
+      ac.abort();
+      throw new Error("factory interrupted during typecheck");
+    },
+  }), /factory interrupted/);
+  assert.equal(sh(checkout, "rev-parse", "HEAD"), before);
+  assert.equal(sh(wt, "rev-parse", "HEAD"), checkpoint);
+  let validations = 0;
+  let gates = 0;
+  const recovered = { repo, task, workdir: wt, emit, resolveConflicts: noResolve,
+    validateResolution: async (ctx: { checkpoint: string; visualReviewRequired: boolean }) => {
+      validations++;
+      assert.equal(ctx.checkpoint, checkpoint);
+      assert.equal(ctx.visualReviewRequired, true, "editing phase classification survives interruption");
+      assert.equal(readFileSync(join(wt, "notes.md"), "utf8"), "saved resolution\n");
+    },
+  };
+  await assert.rejects(landTask({ ...recovered, verifyVisualReview: async () => {
+    throw new Error("visual decision required");
+  } }), /visual decision required/);
+  assert.equal(sh(checkout, "rev-parse", "HEAD"), before);
+  const result = await landTask({ ...recovered,
+    verifyVisualReview: async () => { gates++; },
+    recordValidation: () => { validations++; },
+  });
+  assert.equal(result.commit, checkpoint);
+  assert.equal(gates, 2, "approval gates still run before checks and landing");
+  assert.equal(validations, 3, "both resolver validations and the external merge check run");
+});
+
+for (const changed of ["base", "task", "workspace"] as const) {
+  test(`merge: resolution checkpoint cannot bypass changed ${changed}`, async () => {
+    const { checkout, repo, task, wt } = setup({ remote: false });
+    commitFile(wt, "notes.md", "task\n", "task edit");
+    commitFile(checkout, "notes.md", "main\n", "main edit");
+    await assert.rejects(landTask({ repo, task, workdir: wt, emit,
+      resolveConflicts: async ({ cwd }) => { writeFileSync(join(cwd, "notes.md"), "saved\n"); },
+      validateResolution: async () => { throw new Error("interrupted"); },
+    }), /interrupted/);
+    if (changed === "workspace") {
+      writeFileSync(join(wt, "notes.md"), "unexpected edits\n");
+      await assert.rejects(landTask({ repo, task, workdir: wt, emit, resolveConflicts: noResolve,
+        validateResolution: async () => { assert.fail("dirty workspace must not be offered"); },
+      }), /uncommitted changes/);
+      assert.equal(readFileSync(join(wt, "notes.md"), "utf8"), "unexpected edits\n");
+      return;
+    }
+    if (changed === "base") commitFile(checkout, "other.md", "new base\n", "advance main");
+    else {
+      sh(checkout, "worktree", "add", "-q", join(checkout, "task-update"), task.branch!);
+      commitFile(join(checkout, "task-update"), "other.md", "new task\n", "advance task");
+    }
+    let resolved = 0;
+    await landTask({ repo, task, workdir: wt, emit,
+      resolveConflicts: async ({ cwd }) => { resolved++; writeFileSync(join(cwd, "notes.md"), "fresh\n"); },
+      validateResolution: async () => { assert.equal(readFileSync(join(wt, "notes.md"), "utf8"), "fresh\n"); },
+    });
+    assert.equal(resolved, 1, "changed inputs require a fresh resolution");
+  });
+}
+
 test("merge: a newly introduced workspace is available to conflict agents and merge checks", async () => {
   for (const conflict of [false, true]) {
     const { checkout, repo, task, wt } = setup({ remote: false });

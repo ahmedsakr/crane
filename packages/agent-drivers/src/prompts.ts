@@ -116,26 +116,32 @@ function conflictSystemPrompt(
   const main = repo?.defaultBranch ?? "the default branch";
   return [
     "You are an agent in Crane, an autonomous software factory steered by a human operator.",
-    `The operator approved a task and asked Crane to merge its branch into ${main}. Crane has started that merge in this directory, which is Crane's own isolated worktree (HEAD is detached at ${job.base}; MERGE_HEAD is the task branch). It stopped on conflicts. Your job is to resolve them.`,
+    job.phase === "validate"
+      ? `Crane saved the resolved merge as checkpoint ${job.checkpoint} in this isolated worktree. HEAD is that committed candidate; there is no MERGE_HEAD. Inspect the saved edits and validate them without resolving the original conflicts again. The checkpoint is not an approval or a passing check.`
+      : `The operator approved a task and asked Crane to merge its branch into ${main}. Crane has started that merge in this directory, which is Crane's own isolated worktree (HEAD is detached at ${job.base}; MERGE_HEAD is the task branch). It stopped on conflicts. Your job is to resolve them.`,
     [
       "How to resolve:",
       "- Keep the intent of both sides: the task's change and whatever landed on the default branch since. Never drop one side just to make the conflict go away.",
       agentCommits
         ? "- Remove every conflict marker, then `git add` each resolved file."
         : "- Remove every conflict marker. Crane stages the resolved files itself; your sandbox can't write to git.",
-      "- Use `git diff`, `git log`, and `git show` to understand what each side changed. `git log --oneline HEAD..MERGE_HEAD` is the task's work; `git log --oneline MERGE_HEAD..HEAD` is what landed on the default branch.",
-      "- If the project has quick checks (a typecheck, the test suite), run them and fix anything the merge broke.",
+      job.phase === "validate"
+        ? "- Use `git show HEAD`, `git diff HEAD^1 HEAD`, and `git diff HEAD^2 HEAD` to inspect the saved merge. Run relevant checks and fix anything the merge broke."
+        : "- Use `git diff`, `git log`, and `git show` to understand what each side changed. `git log --oneline HEAD..MERGE_HEAD` is the task's work; `git log --oneline MERGE_HEAD..HEAD` is what landed on the default branch.",
+      job.phase === "edit"
+        ? "- Finish the resolution edits and return your report before running builds, typechecks, tests, or screenshots. Crane will checkpoint the edits and start a separate validation run; report checks as deferred to that run."
+        : "- If the project has quick checks (a typecheck, the test suite), run them and fix anything the merge broke.",
       "- Do not commit, and do not run git merge, checkout, reset, rebase, or push. Crane checks your resolution, commits it, and pushes.",
       "- If you can't resolve a conflict with confidence, leave its markers in place and explain why in your report. Crane will hand the task back to the operator instead of merging.",
     ].join("\n"),
-    deferredDependenciesBrief(job.deferredDependencies),
+    job.phase === "edit" ? "Dependency preparation and validation are deferred until Crane saves the resolution checkpoint." : deferredDependenciesBrief(job.deferredDependencies),
     "Narrate briefly as you go: one short sentence before each significant step, so the operator can follow along.",
     BLOCKED_BRIEF,
     sandbox,
-    VALIDATION_BRIEF,
-    checks,
+    job.phase === "edit" ? "Do not start validation in this editing phase." : VALIDATION_BRIEF,
+    job.phase === "edit" ? "" : checks,
     FILE_EDIT_BRIEF,
-    SCREENSHOT_BRIEF,
+    job.phase === "edit" ? "Capture any required screenshots in the validation phase after its successful UI build." : SCREENSHOT_BRIEF,
     reportInstructions(),
   ]
     .filter(Boolean)
@@ -256,7 +262,9 @@ export function userPrompt(task: Task, job?: AgentJob, context: TaskContext = {}
     const summary = task.report?.summary ? `\n\nWhat the task did: ${task.report.summary}` : "";
     return [
       `# Resolve merge conflicts: ${task.title}`,
-      `Merging \`${task.branch}\` into \`${job.base}\` conflicts in:\n\n${job.files.map((f) => `- ${f}`).join("\n")}`,
+      job.phase === "validate"
+        ? `Validate resolution checkpoint \`${job.checkpoint}\` for \`${task.branch}\` into \`${job.base}\`. Saved merge files:\n\n${job.files.map((f) => `- ${f}`).join("\n")}`
+        : `Merging \`${task.branch}\` into \`${job.base}\` conflicts in:\n\n${job.files.map((f) => `- ${f}`).join("\n")}`,
       `## The original task\n\n${task.brief}${summary}`,
       commandEvidenceBrief(context),
     ].join("\n\n");
