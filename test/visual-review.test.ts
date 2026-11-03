@@ -145,10 +145,12 @@ test("visual review: a pre-approved visual waiver does not waive completion or a
   for (const hold of ["completion", "contribution", "acceptance"] as const) {
     const { store, task } = setup(":memory:", true, hold === "acceptance" ? ["Greeting is accessible"] : []);
     try {
-      store.updateTask(task.id, hold === "acceptance"
-        ? { report: { ...report, acceptance: [] } }
-        : { report: { ...report, ...(hold === "contribution" ? { hasContribution: false }
-          : { completion: { status: "incomplete", reason: "Greeting not implemented", evidence: "Missing component" } }) } });
+      const reports = {
+        acceptance: { ...report, acceptance: [] },
+        contribution: { ...report, hasContribution: false },
+        completion: { ...report, completion: { status: "incomplete" as const, reason: "Greeting not implemented", evidence: "Missing component" } },
+      };
+      store.updateTask(task.id, { report: reports[hold] });
       assert.equal(store.finishWork(task.id, "done"), "needs_review");
       assert.equal(store.getTask(task.id)!.visualReview!.status, "waived");
       assert.equal(store.claimNextMerge("a-jib"), null);

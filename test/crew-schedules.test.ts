@@ -144,7 +144,11 @@ test("crew schedules: on-call, paused, open runs, missing role and invalid pre-a
       assert.equal(store.listTasks({ limit: -1 }).length, count, reason);
       const saved = actions.listCrewSchedules()[0]!;
       assert.match(saved.lastOutcome!, /^Skipped:/, reason);
-      assert.match(saved.lastOutcome!, reason === "open" ? /already has/ : reason === "role" ? /no maintenance role/ : reason === "pre-approval" ? /nothing to merge/ : reason === "factory paused" ? /paused/ : new RegExp(reason));
+      const outcomes = {
+        open: /already has/, role: /no maintenance role/, "pre-approval": /nothing to merge/,
+        "factory paused": /paused/, "on-call": /on-call/, paused: /paused/,
+      };
+      assert.match(saved.lastOutcome!, outcomes[reason]);
       assert.ok(Date.parse(saved.nextFireAt) > monday);
       assert.equal(saved.lastFiredAt, new Date(monday).toISOString());
     } finally { store.close(); }

@@ -320,9 +320,12 @@ test("api: task actions reject invalid states without changing tasks or history"
   try {
     const repo = store.addRepo({ path: "/repo" });
     const app = createApp(store);
-    for (const action of ["approve", "reject", "cancel", "merge"]) {
-      const allowed = action === "cancel" ? ["queued", "running"]
-        : action === "merge" ? ["needs_review", "approved", "done"] : ["needs_review"];
+    const allowedStates = {
+      approve: ["needs_review"], reject: ["needs_review"],
+      cancel: ["queued", "running"], merge: ["needs_review", "approved", "done"],
+    };
+    for (const action of ["approve", "reject", "cancel", "merge"] as const) {
+      const allowed = allowedStates[action];
       for (const status of ALL_STATUSES.filter(status => !allowed.includes(status))) {
         const task = store.createTask({ kind: "maintenance", title: `${action} ${status}`, brief: "", repoId: repo.id, autonomy: "propose" });
         // A branch makes merge exercise its state guard rather than its no-code guard.

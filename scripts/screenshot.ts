@@ -189,8 +189,7 @@ class Cdp {
   }
 }
 
-async function main() {
-  const base = origin ?? (await bootDemo());
+function launchBrowser() {
   const profile = mkdtempSync(join(tmpdir(), "crane-chromium-"));
   cleanup.push(() => rmSync(profile, { recursive: true, force: true }));
   const chrome = spawn(
@@ -218,15 +217,24 @@ async function main() {
   chrome.on("exit", crashed);
   for (const s of [chrome.stdio[3], chrome.stdio[4]]) s?.on("error", () => {});
   const cdp = new Cdp(chrome.stdio[3] as Writable, chrome.stdio[4] as Readable);
+  return { chrome, cdp, crashed };
+}
 
+type PageCommand = (method: string, params?: object) => Promise<any>;
+type Evaluate = (expression: string) => Promise<any>;
+
+async function configurePage(cdp: Cdp): Promise<PageCommand> {
   const { targetId } = await cdp.send("Target.createTarget", { url: "about:blank" });
   const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
   const page = (method: string, params: object = {}) => cdp.send(method, params, sessionId);
   await page("Page.enable");
   await page("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
   if (media.length) await page("Emulation.setEmulatedMedia", { features: media });
+  return page;
+}
 
-  const evaluate = async (expression: string) => {
+function pageTools(page: PageCommand) {
+  const evaluate: Evaluate = async (expression) => {
     const r = await page("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
     if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
     return r.result.value;
@@ -237,27 +245,29 @@ async function main() {
     writeFileSync(file, Buffer.from(data, "base64"));
     console.log(`Saved ${file}`);
   };
+  return { evaluate, shoot };
+}
 
-  const loaded = cdp.once("Page.loadEventFired");
-  await page("Page.navigate", { url: base + path });
-  await loaded;
-  await evaluate("document.fonts.ready.then(() => true)");
+async function click(page: PageCommand, evaluate: Evaluate, selector: string) {
+  const box = await waitFor(selector, () =>
+    evaluate(`(() => {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return null;
+      el.scrollIntoView({ block: "nearest" });
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`),
+  );
+  for (const type of ["mouseMoved", "mousePressed", "mouseReleased"])
+    await page("Input.dispatchMouseEvent", { type, ...box, button: "left", clickCount: 1 });
+}
 
+async function runSteps(page: PageCommand, tools: ReturnType<typeof pageTools>) {
+  const { evaluate, shoot } = tools;
   for (const { op, arg } of steps) {
     if (op === "wait-for") await waitFor(arg, () => evaluate(`!!document.querySelector(${JSON.stringify(arg)})`));
-    else if (op === "click") {
-      const box = await waitFor(arg, () =>
-        evaluate(`(() => {
-          const el = document.querySelector(${JSON.stringify(arg)});
-          if (!el) return null;
-          el.scrollIntoView({ block: "nearest" });
-          const r = el.getBoundingClientRect();
-          return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
-        })()`),
-      );
-      for (const type of ["mouseMoved", "mousePressed", "mouseReleased"])
-        await page("Input.dispatchMouseEvent", { type, ...box, button: "left", clickCount: 1 });
-    } else if (op === "type") await page("Input.insertText", { text: arg });
+    else if (op === "click") await click(page, evaluate, arg);
+    else if (op === "type") await page("Input.insertText", { text: arg });
     else if (op === "key") {
       for (const type of ["keyDown", "keyUp"]) await page("Input.dispatchKeyEvent", { type, key: arg, code: arg });
     } else if (op === "scroll") {
@@ -269,13 +279,28 @@ async function main() {
     // Let animations and layout effects settle before the next step.
     await new Promise((r) => setTimeout(r, 350));
   }
-  await shoot(out);
+}
 
+async function closeBrowser({ chrome, cdp, crashed }: ReturnType<typeof launchBrowser>) {
   // Close the browser before its profile directory is removed.
   chrome.off("exit", crashed);
   const exited = new Promise((r) => chrome.once("exit", r));
   await cdp.send("Browser.close").catch(() => {});
   await Promise.race([exited, new Promise((r) => setTimeout(r, 3000))]);
+}
+
+async function main() {
+  const base = origin ?? (await bootDemo());
+  const browser = launchBrowser();
+  const page = await configurePage(browser.cdp);
+  const tools = pageTools(page);
+  const loaded = browser.cdp.once("Page.loadEventFired");
+  await page("Page.navigate", { url: base + path });
+  await loaded;
+  await tools.evaluate("document.fonts.ready.then(() => true)");
+  await runSteps(page, tools);
+  await tools.shoot(out);
+  await closeBrowser(browser);
 }
 
 main()

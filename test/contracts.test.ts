@@ -28,7 +28,8 @@ function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     if (["node_modules", "dist", ".git"].includes(name)) return [];
     const p = join(dir, name);
-    return statSync(p).isDirectory() ? walk(p) : /\.[cm]?[jt]sx?$/.test(name) ? [p] : [];
+    if (statSync(p).isDirectory()) return walk(p);
+    return /\.[cm]?[jt]sx?$/.test(name) ? [p] : [];
   });
 }
 
