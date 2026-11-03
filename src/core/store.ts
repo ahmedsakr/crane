@@ -8,7 +8,6 @@ import { addMissingColumns, migrateMissionsToTasks, migrateFollowUpLinks, migrat
 import { toRepo, toTask, toEvent, toRun, toAgent, localDayStart, type Row } from "./store/rows.js";
 import {
   errorMessage,
-  ACTIVE_STATUSES,
   ALL_STATUSES,
   FINISHED_STATUSES,
   SHIPPED_STATUSES,
@@ -1369,7 +1368,12 @@ export class Store {
       activity: [...buckets.values()],
       needsReview: this.listTaskSummaries({ status: ["needs_review"], limit: 20 }),
       goalsNeedingReview: this.listGoalSummaries(true),
-      inFlight: this.listTaskSummaries({ status: ACTIVE_STATUSES, limit: 20 }),
+      // A goal can enqueue up to 40 tasks at once. Its newer queued tasks must
+      // never crowd running work or merges out of Home's list and crane site.
+      inFlight: [
+        ...this.listTaskSummaries({ status: ["running", "merging"], limit: -1 }),
+        ...this.listTaskSummaries({ status: ["queued"], limit: 20 }),
+      ],
       recent: this.listTaskSummaries({ status: FINISHED_STATUSES, limit: 8 }),
       agents: this.listAgents(),
       repos: this.listRepos().map((r) => ({ ...r, openTasks: openByRepo.get(r.id) ?? 0, tools: this.repoTools(r.id) })),
