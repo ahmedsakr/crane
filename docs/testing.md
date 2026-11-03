@@ -12,6 +12,13 @@ skip tests in the full suite, or replace either gate.
 
 ## Validation order
 
+Run `git diff --check` as a separate command from informational Git commands
+such as `git status`, `git diff --stat`, or diff inspection, and retain its own
+exit status. Do not combine them as `git diff --check; git status`: the recorded
+exit status belongs to the final command and cannot establish that whitespace
+validation passed. This is an evidence requirement, not evidence that any
+whitespace error occurred.
+
 Finish all relevant edits before starting builds, typechecks, or tests, and do
 not edit their inputs while they run. Workspace packages export compiled
 `dist` files: for example, `test/report.test.ts` imports `@crane/agent-protocol`,
