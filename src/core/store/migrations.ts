@@ -73,6 +73,7 @@ const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
   ["prerequisites", "TEXT"],
   ["prerequisites_waived_at", "TEXT"],
   ["acceptance", "TEXT"],
+  ["acceptance_checks", "TEXT"],
   ["lookouts", "TEXT"],
   ["scheduled_at", "TEXT"],
   ["schedule_id", "TEXT"],

@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   prerequisites TEXT,
   prerequisites_waived_at TEXT,
   acceptance TEXT,
+  acceptance_checks TEXT,
   lookouts TEXT,
   report TEXT,
   cost_usd REAL NOT NULL DEFAULT 0,

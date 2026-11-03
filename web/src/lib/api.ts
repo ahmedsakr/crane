@@ -70,6 +70,7 @@ export {
   MAINTENANCE_ROLES,
   RUN_KIND_LABEL,
   STATUS_LABEL,
+  acceptanceCheckRun,
   acceptanceFor,
   choosableDrivers,
   driverLabel,

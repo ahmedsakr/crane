@@ -27,7 +27,10 @@ soon as its own dependencies land, without waiting for an unrelated group member
 By default, completed tasks wait for individual review and merge approval.
 Selecting **Merge goal tasks automatically** pre-approves every generated task,
 including its visual-review waiver and conflict resolutions. Crane still enforces
-configured checks, completion evidence and acceptance criteria. Unfinished work,
+configured checks, completion evidence and acceptance criteria. A plan task can
+name repo checks in `acceptanceChecks`, which only Crane's own passing result on
+that task's candidate meets; approval rejects a command that isn't one of the
+repo's checks. Unfinished work,
 failed checks, unavailable agents and failed merges need operator attention;
 approval does not bypass these gates. Models left at default follow that agent's
 settings at execution. Research proposes settings; it cannot guarantee that every

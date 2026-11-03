@@ -680,10 +680,11 @@ export class Factory {
       this.store.updateTask(task.id, { report });
 
       // Hold for the operator whenever there's something for them to decide, including unfinished scope.
+      // Read back so required checks are judged against the candidate this run just finalized.
       const needsOperator =
         task.autonomy === "propose" ||
         (task.autonomy === "observe" && report.findings.length > 0) ||
-        unmetAcceptance({ acceptance: task.acceptance, report }).length > 0;
+        unmetAcceptance(this.store.getTask(task.id)!).length > 0;
       // A pre-approved task skips review and goes to the merge queue. Its checks passed above.
       const next = this.store.finishWork(task.id, needsOperator ? "needs_review" : "done");
       if (!next) return;

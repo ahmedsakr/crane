@@ -63,12 +63,13 @@ On **Tasks**, the **Queue** section shows pickup order. Drag a task's numbered h
 
 ### Prerequisites and acceptance criteria
 
-When work depends on another task, or only counts as done when something observable holds, say so as gates rather than in the brief. Open **Prerequisites and acceptance criteria** on the instruct sheet or under **Make this change**, or pass `--after <id>` and `--accept "<criterion>"` (each repeatable) to `crane do` and `crane follow-up`.
+When work depends on another task, or only counts as done when something observable holds, say so as gates rather than in the brief. Open **Prerequisites and acceptance criteria** on the instruct sheet or under **Make this change**, or pass `--after <id>`, `--accept "<criterion>"` and `--accept-check "<command>"` (each repeatable) to `crane do` and `crane follow-up`.
 
 - **Prerequisites** are task ids in the same repo. Crane holds the task in the queue until each one has landed: merged, or finished with no branch left to merge. An approved task whose branch was kept hasn't landed. The task page and `crane show` list what it's waiting for. To start it anyway, **Waive prerequisites** (`crane waive <id> -m "<why>"`). That approves a reduced scope: the agent is told the prerequisites' changes may be missing, and to report what still depends on them as unfinished.
 - **Acceptance criteria** are given to the agent as conditions to check, and it reports each one as met or not, with evidence. A pre-approved task merges on its own only when its report shows every criterion met. Otherwise it comes to you for review even though its checks passed, and approving it accepts the reduced scope. A run of any freedom level that leaves a criterion unmet waits for your review.
+- **Acceptance checks** are for when a repo check must pass, such as `npm test`. Give the exact command of one of the repo's checks. Crane runs it after the agent finishes, and it counts as met only when Crane's own latest result on that exact candidate passed, so an agent that can't run it locally doesn't hold the task. Otherwise it holds the task the same way an unmet criterion does. Crane never treats the text of an acceptance criterion as a check: a criterion that says "the tests pass" still needs the agent to report it met.
 
-**Run again** keeps both gates but not a waiver.
+**Run again** keeps these gates but not a waiver.
 
 ### Also look for
 
@@ -227,7 +228,7 @@ Start a run with the button on their row (**Review security**, **Reduce duplicat
 | `crane pre-approve <id>` | Approve a queued or running task ahead of time, so it merges once its checks pass (`--undo` to take it back) |
 | `crane merge <id>` | Merge and push a task you approved only, or one that finished on its own branch |
 | `crane diff <id>` | See what a task changed on its branch, or its changes so far, uncommitted work included, while it runs. `--files` lists the files with lines added and removed; `--file <path>` shows one file |
-| `crane follow-up <id> <n> [--agent <agent>] [--model <model>] [--effort <level>] [--after <id>] [--accept "<criterion>"] [--look-for <what>]` | Turn finding *n* into a task with optional agent, model, and effort choices, prerequisites, acceptance criteria, and what else to look out for |
+| `crane follow-up <id> <n> [--agent <agent>] [--model <model>] [--effort <level>] [--after <id>] [--accept "<criterion>"] [--accept-check "<command>"] [--look-for <what>]` | Turn finding *n* into a task with optional agent, model, and effort choices, prerequisites, acceptance criteria and checks, and what else to look out for |
 | `crane waive <id>` | Start a queued task without the prerequisites that haven't landed, approving a reduced scope |
 | `crane cancel <id>` / `crane retry <id>` | Stop work, or run it again (`--agent codex` to switch agents) |
 | `crane blocked` | Commands agents were blocked from, added up across tasks |

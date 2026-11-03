@@ -249,6 +249,11 @@ export class Store {
       const plan = validateGoalPlan(goal.plan);
       const repo = this.getRepo(goal.repoId);
       if (!repo) throw new Error("The goal's repo is no longer connected");
+      const checks = this.repoChecks(repo.id);
+      for (const item of plan.tasks) {
+        const missing = item.acceptanceChecks?.find((command) => !checks.includes(command));
+        if (missing) throw new Error(`${item.key} requires “${missing}”, which isn't one of this repo's checks, so Crane would never run it`);
+      }
       const ids = new Map<string, string>();
       for (const wave of goalWaves(plan)) {
         for (const item of wave) {
@@ -256,7 +261,7 @@ export class Store {
             brief: `Goal: ${goal.outcome}\n\nPlan: ${plan.summary}\n\nApproach: ${plan.approach}\n\nYour task (${item.key}):\n${item.brief}\n\nAssignment rationale: ${item.rationale}`,
             kind: repo.isFactory ? "factory_feature" : "repo_feature", repoId: repo.id, autonomy: "propose",
             driver: item.driver, model: item.model, effort: item.effort,
-            prerequisites: item.dependsOn.map((key) => ids.get(key)!), acceptance: item.acceptance,
+            prerequisites: item.dependsOn.map((key) => ids.get(key)!), acceptance: item.acceptance, acceptanceChecks: item.acceptanceChecks,
             lookouts: ["improvements", "refactoring"], preApprove: autoMerge });
           ids.set(item.key, task.id);
           this.linkGoalTask(id, task.id);
@@ -620,14 +625,14 @@ export class Store {
       this.db
         .prepare(
           `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, driver_settings,
-             prerequisites, acceptance, lookouts, status, created_at, scheduled_at, pre_approved_at, follow_up_of, follow_up_finding, schedule_id, postmortem_of, queue_position)
-           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?,
+             prerequisites, acceptance, acceptance_checks, lookouts, status, created_at, scheduled_at, pre_approved_at, follow_up_of, follow_up_finding, schedule_id, postmortem_of, queue_position)
+           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?,
              (SELECT COALESCE(MAX(queue_position), 0) + 1 FROM tasks WHERE status = 'queued'))`,
         )
         .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null,
           input.model ?? null, input.effort ?? null, input.assignee ?? null,
           input.driverSettings ? JSON.stringify(input.driverSettings) : null,
-          list(input.prerequisites), list(input.acceptance), list(input.lookouts), ts, scheduledAt, input.preApprove ? ts : null,
+          list(input.prerequisites), list(input.acceptance), list(input.acceptanceChecks), list(input.lookouts), ts, scheduledAt, input.preApprove ? ts : null,
           input.followUp?.of ?? null, input.followUp?.finding ?? null, input.scheduleId ?? null, input.postmortemOf ?? null);
       this.addEvent(id, "status", scheduledAt ? `Scheduled for ${scheduledAt}` : "Queued", {
         status: "queued", ...(scheduledAt ? { scheduledAt } : {}),

@@ -40,6 +40,7 @@ export function toTask(r: Row): Task {
     prerequisites: r.prerequisites ? JSON.parse(r.prerequisites as string) as string[] : [],
     prerequisitesWaivedAt: (r.prerequisites_waived_at as string) ?? null,
     acceptance: r.acceptance ? JSON.parse(r.acceptance as string) as string[] : [],
+    acceptanceChecks: r.acceptance_checks ? JSON.parse(r.acceptance_checks as string) as string[] : [],
     // A lookout this build doesn't know (written by a newer one) is dropped rather than shown raw.
     lookouts: r.lookouts ? (JSON.parse(r.lookouts as string) as unknown[]).filter(isLookout) : [],
     report: r.report ? (JSON.parse(r.report as string) as Report) : null,

@@ -58,6 +58,7 @@ function setup(opts: { remote?: boolean } = {}) {
     prerequisites: [],
     prerequisitesWaivedAt: null,
     acceptance: [],
+    acceptanceChecks: [],
     lookouts: [],
     report: null,
     costUsd: 0,

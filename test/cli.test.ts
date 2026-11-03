@@ -59,6 +59,32 @@ function setup() {
   return { store, repo, task };
 }
 
+test("cli: follow-up takes acceptance checks, and show reports Crane's result on the candidate", async () => {
+  const { store, repo } = setup();
+  try {
+    store.setRepoChecks(repo.id, ["npm test", "npm run typecheck"]);
+    const source = store.createTask({ kind: "maintenance", title: "Source", brief: "", repoId: repo.id, autonomy: "observe" });
+    store.updateTask(source.id, { report: { summary: "Found it", findings: [{ title: "Fix it", detail: "Details", impact: "low", effort: "small" }], changedFiles: [] } });
+
+    const rejected = await crane(store, "follow-up", source.id, "1", "--accept-check", "npm run lint");
+    assert.equal(rejected.code, 1);
+    assert.match(rejected.err, /isn't one of this repo's checks/);
+
+    assert.equal((await crane(store, "follow-up", source.id, "1", "--accept-check", "npm test", "--accept-check", "npm run typecheck")).code, 0);
+    const task = store.followUps(source.id).at(-1)!;
+    const commit = "a".repeat(40);
+    store.updateTask(task.id, {
+      visualReview: { status: "not_required", commit, tree: "b".repeat(40), note: "No UI changes", decidedAt: null },
+      report: { summary: "Done", findings: [], changedFiles: [], validation: [{ phase: "review", commit, command: "npm test", status: "passed", exitCode: 0, logs: "", durationMs: 1 }] },
+    });
+    const shown = (await crane(store, "show", task.id)).out;
+    assert.match(shown, /✓ {2}npm test {2}passed on aaaaaaa/);
+    assert.match(shown, /○ {2}npm run typecheck {2}not run on this candidate/);
+  } finally {
+    store.close();
+  }
+});
+
 test("cli: goals supports research, feedback, exact-version approval, progress and cancellation", async () => {
   const { store, repo } = setup();
   const dir = mkdtempSync(join(tmpdir(), "crane-goal-cli-"));

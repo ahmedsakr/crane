@@ -216,6 +216,12 @@ export interface Task {
    */
   acceptance: string[];
   /**
+   * Configured repo checks the work must pass, by exact command. Only Crane's
+   * own passing results for the candidate meet them (see `acceptanceCheckRun`),
+   * so the agent never reports on them. Criterion text is never read as one.
+   */
+  acceptanceChecks: string[];
+  /**
    * Opportunities the operator asked the agent to also look out for while it
    * works the task (see `LOOKOUT`). They don't widen the task: the agent
    * reports what it finds as findings. Empty when none were asked for.
@@ -408,6 +414,8 @@ export interface NewTask extends TaskRunOptions {
   prerequisites?: string[];
   /** Observable conditions the work must meet before it can merge without review. */
   acceptance?: string[];
+  /** Configured repo checks that must pass on the candidate, by exact command. */
+  acceptanceChecks?: string[];
   /** What else the agent should look out for while it works. */
   lookouts?: Lookout[];
 }
@@ -417,7 +425,7 @@ export const isScheduled = (task: Pick<Task, "status" | "scheduledAt">, now = Da
   task.status === "queued" && task.scheduledAt != null && Date.parse(task.scheduledAt) > now;
 
 /** What a follow-up can add to the run options: the gates it must pass. */
-export type TaskGates = Pick<NewTask, "prerequisites" | "acceptance">;
+export type TaskGates = Pick<NewTask, "prerequisites" | "acceptance" | "acceptanceChecks">;
 
 /** Opportunities an agent can be asked to look out for alongside its task. */
 export const LOOKOUTS = ["refactoring", "improvements", "test_gaps"] as const;
@@ -499,11 +507,28 @@ export function acceptanceFor(report: Pick<Report, "acceptance"> | null, criteri
 }
 
 /**
- * The task's acceptance criteria its report doesn't show as met: reported
- * unmet, or not reported at all. Empty when there are no criteria.
+ * Crane's latest review result for `command` on the task's candidate, if any.
+ * `visualReview` is the factory's record of the candidate its report was
+ * finalized with; `branchCommit` keeps that identity once a merge candidate
+ * replaces `commit`. Results for earlier candidates stay on the report, and a
+ * rerun on the same candidate supersedes what it ran before.
  */
-export function unmetAcceptance(task: Pick<Task, "acceptance" | "report">): string[] {
-  return task.acceptance.filter((c) => acceptanceFor(task.report, c)?.met !== true);
+export function acceptanceCheckRun(task: Pick<Task, "report" | "visualReview">, command: string): ValidationRun | undefined {
+  const candidate = task.visualReview?.branchCommit ?? task.visualReview?.commit;
+  if (!candidate) return undefined;
+  return task.report?.validation?.filter((r) => r.phase === "review" && r.commit === candidate && r.command === command).at(-1);
+}
+
+/**
+ * What the task still has to show before it counts as accepted: criteria its
+ * agent reported unmet or not at all, and required checks with no passing
+ * result from Crane on the candidate. Empty when it requires neither.
+ */
+export function unmetAcceptance(task: Pick<Task, "acceptance" | "acceptanceChecks" | "report" | "visualReview">): string[] {
+  return [
+    ...task.acceptance.filter((c) => acceptanceFor(task.report, c)?.met !== true),
+    ...task.acceptanceChecks.filter((command) => acceptanceCheckRun(task, command)?.status !== "passed"),
+  ];
 }
 
 /** Kinds of maintenance a crew member can be dedicated to. */

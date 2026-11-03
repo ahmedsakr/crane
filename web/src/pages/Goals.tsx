@@ -72,7 +72,7 @@ function PlanEditor({ goal, onClose, onSaved }: { goal: Goal; onClose: () => voi
   const save = async () => {
     setError(""); setBusy(true);
     try { await api.editGoalPlan(goal.id, goal.revision, validateGoalPlan({ ...plan,
-      improvements: plan.improvements.filter((s) => s.trim()), tasks: plan.tasks.map((t) => ({ ...t, acceptance: t.acceptance.filter((s) => s.trim()) })) })); onSaved(); onClose(); }
+      improvements: plan.improvements.filter((s) => s.trim()), tasks: plan.tasks.map((t) => ({ ...t, acceptance: t.acceptance.filter((s) => s.trim()), acceptanceChecks: t.acceptanceChecks?.filter((s) => s.trim()) })) })); onSaved(); onClose(); }
     catch (err) { setError(errorMessage(err)); } finally { setBusy(false); }
   };
   const add = () => {
@@ -94,6 +94,7 @@ function PlanEditor({ goal, onClose, onSaved }: { goal: Goal; onClose: () => voi
         <label className="tuning-field">Effort<select className="input" value={t.effort ?? ""} onChange={(e) => patch(t.key, { effort: e.target.value || null })}><option value="">Agent default</option>{EFFORT_LEVELS[t.driver].map((v) => <option key={v}>{v}</option>)}</select></label>
         <label className="tuning-field">Why this assignment and order<textarea className="input" rows={3} value={t.rationale} required onChange={(e) => patch(t.key, { rationale: e.target.value })} /></label>
         <label className="tuning-field">Acceptance criteria, one per line<textarea className="input" rows={4} value={t.acceptance.join("\n")} required onChange={(e) => patch(t.key, { acceptance: e.target.value.split("\n") })} /></label>
+        <label className="tuning-field">Acceptance checks, one of the repo's checks per line<textarea className="input" rows={2} spellCheck={false} value={(t.acceptanceChecks ?? []).join("\n")} onChange={(e) => patch(t.key, { acceptanceChecks: e.target.value.split("\n") })} /></label>
         <fieldset className="goal-dependencies"><legend>Wait for these tasks to merge</legend>{plan.tasks.filter((other) => other.key !== t.key).map((other) => <label key={other.key}><input type="checkbox" checked={t.dependsOn.includes(other.key)} onChange={(e) => patch(t.key, { dependsOn: e.target.checked ? [...t.dependsOn, other.key] : t.dependsOn.filter((k) => k !== other.key) })} />{other.title}</label>)}</fieldset>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPlan({ ...plan, tasks: plan.tasks.filter((item) => item.key !== t.key).map((item) => ({ ...item, dependsOn: item.dependsOn.filter((key) => key !== t.key) })) })}>Remove task and its dependencies</button>
       </div></details>)}
@@ -172,7 +173,7 @@ export function GoalPage() {
           <p className="muted">{driverLabel(task?.driver ?? item.driver)} · {task ? task.model ?? "Default model" : item.model ?? "Default model"}{(task ? task.effort : item.effort) ? ` · ${task ? task.effort : item.effort} effort` : ""}</p>
           {task && <p><strong>{STATUS_LABEL[task.status]}</strong>{task.status === "queued" && item.dependsOn.length > 0 ? " · waits for dependencies to merge" : ""}</p>}
           <p className="muted">{item.dependsOn.length ? `After: ${item.dependsOn.map((key) => g.plan!.tasks.find((t) => t.key === key)?.title).join(", ")}` : "No dependencies"}</p>
-          <details><summary>Brief and acceptance</summary><p className="goal-prose">{item.brief}</p><ul>{item.acceptance.map((c) => <li key={c}>{c}</li>)}</ul><p className="muted goal-prose">{item.rationale}</p></details>
+          <details><summary>Brief and acceptance</summary><p className="goal-prose">{item.brief}</p><ul>{item.acceptance.map((c) => <li key={c}>{c}</li>)}{item.acceptanceChecks?.map((c) => <li key={c}>Check must pass: <span className="mono">{c}</span></li>)}</ul><p className="muted goal-prose">{item.rationale}</p></details>
           {task && ["failed", "cancelled", "rejected"].includes(task.status) && ["active", "blocked"].includes(g.status) && <div className="goal-actions"><button className="btn btn-sm" disabled={retrying} onClick={() => void retry(task.id)}>Retry task</button>{drivers?.filter((d) => d.available && d.name !== task.driver).map((d) => <button className="btn btn-sm btn-ghost" key={d.name} disabled={retrying} onClick={() => void retry(task.id, d.name)}>Retry on {d.label}</button>)}</div>}
         </article>;
       })}</div></section>)}

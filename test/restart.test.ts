@@ -148,7 +148,7 @@ test("claude code: resumes with --resume, and starts fresh if the old session ca
   const driver = new ClaudeCodeDriver(bin);
   const task = {
     id: "t-x", kind: "maintenance", title: "X", brief: "", autonomy: "observe", report: null,
-    prerequisites: [], prerequisitesWaivedAt: null, acceptance: [], lookouts: [],
+    prerequisites: [], prerequisitesWaivedAt: null, acceptance: [], acceptanceChecks: [], lookouts: [],
   } as unknown as Task;
   const notes: string[] = [];
   const sessions: string[] = [];
