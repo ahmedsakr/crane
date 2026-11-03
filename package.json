@@ -17,10 +17,11 @@
     "packages/contracts",
     "packages/agent-protocol",
     "packages/agent-policy",
+    "packages/diagnostics",
     "packages/worktree-deps",
     "packages/agent-drivers"
   ],
-  "bundledDependencies": ["@crane/contracts", "@crane/agent-protocol", "@crane/agent-policy", "@crane/worktree-deps", "@crane/agent-drivers"],
+  "bundledDependencies": ["@crane/contracts", "@crane/agent-protocol", "@crane/agent-policy", "@crane/diagnostics", "@crane/worktree-deps", "@crane/agent-drivers"],
   "engines": {
     "node": ">=20.19"
   },
@@ -48,6 +49,7 @@
     "@crane/agent-policy": "0.1.0",
     "@crane/agent-protocol": "0.1.0",
     "@crane/contracts": "0.1.0",
+    "@crane/diagnostics": "0.1.0",
     "@crane/worktree-deps": "0.1.0",
     "@hono/node-server": "^2.1.5",
     "better-sqlite3": "^12.11.1",

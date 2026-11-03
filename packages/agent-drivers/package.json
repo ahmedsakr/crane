@@ -17,6 +17,7 @@
   "dependencies": {
     "@crane/agent-policy": "0.1.0",
     "@crane/agent-protocol": "0.1.0",
-    "@crane/contracts": "0.1.0"
+    "@crane/contracts": "0.1.0",
+    "@crane/diagnostics": "0.1.0"
   }
 }

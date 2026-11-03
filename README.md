@@ -268,6 +268,7 @@ packages/
   agent-protocol/  factory/driver interface, reports, and combined costs
   agent-policy/    deny list and shared permission-rule handling
   agent-drivers/   concrete drivers, prompts, CLI helpers, and provider pricing
+  diagnostics/     credential redaction for stored and displayed diagnostic text
   worktree-deps/   lockfile-based dependency installation and verified copies
 ```
 
@@ -298,7 +299,9 @@ inside each package's `dist/`, so deleting that directory also clears its cache.
 and its command splitter stays internal. Import concrete drivers from
 `@crane/agent-drivers`; prompts, CLI helpers, command-evidence tracking, and
 provider pricing stay private. Only `src/factory/drivers.ts` loads the drivers
-in production. The root npm tarball bundles all private workspace
+in production. Import `sanitizeDiagnosticText` from `@crane/diagnostics`, the
+one place for credential redaction rules; it is best-effort and has no
+dependencies. The root npm tarball bundles all private workspace
 packages for installed CLI use without separate registry releases. Changes to
 package inputs mark the running factory as outdated; rebuild and
 restart it to load them.

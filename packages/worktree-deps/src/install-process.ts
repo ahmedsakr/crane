@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { sanitizeDiagnosticText } from "@crane/diagnostics";
 
 export const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
 export const INSTALL_PROGRESS_MS = 30 * 1000;
@@ -32,20 +33,17 @@ export class InstallDiagnostics {
 
   flush() {
     if (!this.dropping && this.pending.trim()) {
-      // Treat terminal control sequences as untrusted output, too.
-      let line = this.pending.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/[\x00-\x1f\x7f]/g, " ").trim();
-      if (/-----BEGIN .*PRIVATE KEY-----/.test(line)) this.privateKey = true;
-      const hide = this.privateKey;
-      if (/-----END .*PRIVATE KEY-----/.test(line)) this.privateKey = false;
-      if (hide) line = "[REDACTED PRIVATE KEY]";
-      // Redact before bounding each line, including quoted values and URL credentials.
-      line = line
-        .replace(/\b(Bearer|Basic)\s+\S+/gi, "$1 [REDACTED]")
-        .replace(/((?:https?|git\+https?):\/\/)[^\s/]*@/gi, "$1[REDACTED]@")
-        .replace(/((?:https?|git\+https?):\/\/[^\s?#]+)[?#]\S*/gi, "$1?[REDACTED]")
-        .replace(/\b([\w.-]*(?:token|secret|password|passwd|credential|api[_-]?key|private[_-]?key|_auth|authorization|cookie)[\w.-]*["']?\s*(?:[:=]|\s)\s*).*/gi, "$1[REDACTED]");
-      if (line.length > 512) this.omitted = true;
-      this.lines.push(line.slice(0, 512));
+      // One display line. Terminal control sequences are untrusted and could split a key marker.
+      const line = this.pending.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "").replace(/[\x00-\x1f\x7f]/g, " ").trim();
+      // A key's lines hold nothing a pattern could recognise, so the last marker decides what follows.
+      const markers = Array.from(line.matchAll(/-----(BEGIN|END) (?:(?!-----).)*PRIVATE KEY-----/g), m => m[1]);
+      const hide = this.privateKey || markers.includes("BEGIN");
+      if (markers.length) this.privateKey = markers.at(-1) === "BEGIN";
+      const { text, truncated } = hide
+        ? { text: "[REDACTED PRIVATE KEY]", truncated: false }
+        : sanitizeDiagnosticText(line, 512);
+      if (truncated) this.omitted = true;
+      this.lines.push(text);
       if (this.lines.length > 4) {
         this.lines.shift();
         this.omitted = true;
