@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ALL_STATUSES, type Task, type TaskStatus } from "@crane/contracts";
+import { ALL_STATUSES, type TaskSummary, type TaskStatus } from "@crane/contracts";
 import {
   BOX,
   CAPACITY,
@@ -19,7 +19,11 @@ import {
   slotPos,
 } from "../web/src/lib/site.ts";
 
-const task = (id: string, status: TaskStatus) => ({ id, status, title: id }) as unknown as Task;
+const task = (id: string, status: TaskStatus): TaskSummary => ({
+  id, status, title: id, kind: "maintenance", repoId: null, branch: null, assignee: null, postmortemOf: null,
+  createdAt: "2026-01-01T00:00:00.000Z", scheduledAt: null, startedAt: null, finishedAt: null,
+  reportSummary: null, findingCount: 0, changedFileCount: 0,
+});
 
 /** The crate the crane is working on, read fresh (asserts on `m.job` narrow it). */
 const jobOf = (m: SiteModel) => m.job?.id;

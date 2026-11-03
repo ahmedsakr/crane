@@ -18,6 +18,7 @@ export type {
   Screenshot,
   ValidationRun,
   Task,
+  TaskSummary,
   EventType,
   TaskEvent,
   BlockedCall,

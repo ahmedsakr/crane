@@ -290,11 +290,12 @@ test("cli: tasks --json lists open tasks by default, with branch, worktree and r
   const { store, task } = setup();
   try {
     const open = task("needs_review");
-    store.updateTask(open.id, { worktree: "/worktrees/x" });
+    const report = { summary: "Full report", findings: [], changedFiles: ["a.ts"] };
+    store.updateTask(open.id, { worktree: "/worktrees/x", report });
     const queued = task("queued", false);
     const done = task("merged");
 
-    const parse = (out: string) => JSON.parse(out) as { id: string; status: string; branch: string | null; worktree: string | null; repo: string | null }[];
+    const parse = (out: string) => JSON.parse(out) as { id: string; status: string; branch: string | null; worktree: string | null; repo: string | null; brief: string; report: unknown }[];
     const r = await crane(store, "tasks", "--json");
     assert.equal(r.code, 0, r.err);
     const list = parse(r.out);
@@ -303,6 +304,8 @@ test("cli: tasks --json lists open tasks by default, with branch, worktree and r
     assert.equal(row.branch, `crane/${open.id}`);
     assert.equal(row.worktree, "/worktrees/x");
     assert.equal(row.repo, "app");
+    assert.equal(row.brief, open.brief);
+    assert.deepEqual(row.report, report, "CLI JSON retains the full report");
 
     // --all from a previous run must not leak into this one; -s narrows.
     const all = parse((await crane(store, "tasks", "--all", "--json")).out);

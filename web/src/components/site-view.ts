@@ -9,7 +9,7 @@
  * a gentle 30 fps for the work lights), stops while scrolled out of view, and
  * holds still for reduced motion.
  */
-import type { Task } from "../lib/api";
+import type { TaskSummary } from "../lib/api";
 import {
   BOX,
   CAPACITY,
@@ -183,7 +183,7 @@ export class SiteView {
   }
 
   /** Feed the site the tasks it should show and whether the factory is running. */
-  update(tasks: Task[], live: boolean) {
+  update(tasks: TaskSummary[], live: boolean) {
     this.model.sync(tasks);
     this.live = live;
     this.requestDraw();

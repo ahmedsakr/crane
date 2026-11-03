@@ -1,17 +1,17 @@
 import { Link, useNavigate } from "react-router-dom";
 import { useApp } from "../lib/app-context";
-import { api, type Task } from "../lib/api";
+import { api, type TaskSummary } from "../lib/api";
 import { ago, plural } from "../lib/format";
 import { useTick } from "../lib/hooks";
 import { Site } from "../components/Site";
 import { Slab } from "../components/Slab";
 import { BlockedItem, Empty, TaskRow, useToast } from "../components/bits";
 
-function ReviewItem({ m, repoName, onDone }: { m: Task; repoName?: string; onDone: () => void }) {
+function ReviewItem({ m, repoName, onDone }: { m: TaskSummary; repoName?: string; onDone: () => void }) {
   const toast = useToast();
   const nav = useNavigate();
-  const findings = m.report?.findings.length ?? 0;
-  const files = m.report?.changedFiles.length ?? 0;
+  const findings = m.findingCount;
+  const files = m.changedFileCount;
   const isChange = !!m.branch;
   const quickApprove = async () => {
     try {
@@ -33,7 +33,7 @@ function ReviewItem({ m, repoName, onDone }: { m: Task; repoName?: string; onDon
             .filter(Boolean)
             .join(" · ")}
         </div>
-        {m.report?.summary && <div className="review-summary">{m.report.summary}</div>}
+        {m.reportSummary && <div className="review-summary">{m.reportSummary}</div>}
       </div>
       <div className="actions">
         <button className="btn btn-quiet btn-sm" onClick={() => nav(`/tasks/${m.id}`)}>
