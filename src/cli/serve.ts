@@ -21,10 +21,17 @@ function listen(options: Parameters<typeof honoServe>[0]): Promise<ServerType> {
   });
 }
 
-export async function serve(
-  store: Store,
-  opts: { port: number; host?: string; agents: number; driver: string; buildDashboard?: boolean; maxTurns?: number; timeLimit?: number },
-) {
+export interface ServeOptions {
+  port: number;
+  host?: string;
+  agents: number;
+  driver: string;
+  buildDashboard?: boolean;
+  maxTurns?: number;
+  timeLimit?: number;
+}
+
+export async function serve(store: Store, opts: ServeOptions) {
   if (factoryIsRunning(store)) {
     ui.fail("A factory is already running against this Crane home. Stop it first, or set CRANE_HOME to run another.");
   }

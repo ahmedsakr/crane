@@ -126,6 +126,7 @@ npm link            # puts `crane` on your PATH
 
 crane repos add ~/code/my-app
 crane serve         # starts the agents and the dashboard at http://localhost:4471
+# Or: crane start   # builds, serves, and rebuilds/restarts when checkout HEAD changes
 crane do "investigate why the checkout tests are flaky in my-app"
 ```
 
@@ -180,8 +181,13 @@ Start a run with the button on their row (**Review security**, **Reduce duplicat
 | `crane analytics` | What the factory spent, by day, repo, type, and task (`--days 7`). `crane show <id> --events` lists a task's runs and their costs. |
 | `crane pause` / `crane resume` | Stop or restart picking up new tasks |
 | `crane serve` | Run the factory: agents, API, and dashboard |
+| `crane start` | Build and run the factory, rebuilding and restarting on new checkout commits |
 
 You can stop or restart `crane serve` at any time, even while agents are working. Running tasks go back in the queue with their worktree and their agent's session, and when the factory starts again each task resumes its session on the agent that started it, even if you've changed the default since. Merges that were under way run again from the start, which is safe to repeat.
+
+In a Crane source checkout with dependencies installed, `crane start` runs `npm run build`, then starts a separate `crane serve` process from the compiled output. It accepts the same options as `serve` (for example, `crane start --port 4472 --driver codex --no-build-dashboard`) and watches that checkout's HEAD every second, even when invoked from another directory. When HEAD changes, it gracefully stops the factory, rebuilds, and starts it again with the same options and Crane home; running tasks resume as above. Commits arriving during a build trigger another build before serving. Ctrl-C or SIGTERM stops the wrapper and its current build or factory.
+
+`start` watches local commits, including merges that advance this checkout; it does not fetch, pull, switch branches, or watch uncommitted edits. Use `npm run dev` for source-file hot reload. Builds use the checkout's current files, so keep it clean to run precisely the committed code. An initial build failure exits with an error. A failed update leaves the factory stopped and waits for the next commit; fix the build (run `npm install` yourself if dependencies changed), then stop and rerun `crane start` to retry the same commit. An unexpected `serve` exit stops the wrapper with its exit status rather than repeatedly restarting a broken configuration. Installed packages without source should use `crane serve`.
 
 For Codex commands, Crane persists correlated start and completion records in task events, including the session, command, status, and received exit code. Commands without a received completion become interrupted or unknown; this does not prove they failed or stopped. Resumed and replacement sessions receive up to 40 recent command records within a 32,000-character prompt budget. Each command is limited to 8,192 characters with a truncation flag; stdout and stderr are not retained. Common credential arguments, environment assignments, authentication headers, URL credentials and query strings are redacted before storage, but arbitrary secrets embedded in scripts or unnamed positional arguments cannot be reliably recognized: avoid putting credentials in command text. These records are agent evidence and do not replace Crane's external review or merge checks. Older events that recorded only starts cannot establish a command's outcome.
 
