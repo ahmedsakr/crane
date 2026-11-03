@@ -342,6 +342,7 @@ export class Factory {
   private tick() {
     try {
       this.storageMaintenance.tick();
+      this.store.syncGoals();
       this.assignWork();
       this.tickError = null;
     } catch (err) {

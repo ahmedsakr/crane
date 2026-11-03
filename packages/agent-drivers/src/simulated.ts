@@ -30,6 +30,22 @@ export class SimulatedDriver implements AgentDriver {
 
   async run(ctx: RunContext): Promise<RunResult> {
     if (ctx.job?.kind === "resolve_conflicts") return this.resolve(ctx, ctx.job.files);
+    if (ctx.task.autonomy === "observe" && ctx.task.brief.startsWith("Crane goal research\n")) {
+      ctx.emit("note", "Simulating goal research; no repository analysis or implementation has occurred.", { simulated: true });
+      await sleep(this.stepMs, ctx.signal);
+      return { report: { summary: "Simulated goal plan, for trying the workflow only.", findings: [], changedFiles: [],
+        completion: { status: "completed", reason: "Simulated planning complete", evidence: "Demo plan generated; no research performed" },
+        goalPlan: { summary: "Simulated delivery plan. Replace these demo tasks before real work.",
+          approach: "A demo refactoring task precedes two independent tasks; integration waits for both. No repository analysis was performed.",
+          improvements: ["Use a real research agent to identify repository-specific improvements."],
+          tasks: [
+            { key: "foundation", title: "Simulated foundation refactoring", dependsOn: [] },
+            { key: "feature", title: "Simulated feature implementation", dependsOn: ["foundation"] },
+            { key: "support", title: "Simulated supporting work", dependsOn: ["foundation"] },
+            { key: "integration", title: "Simulated integration", dependsOn: ["feature", "support"] },
+          ].map((t) => ({ ...t, brief: "This is a simulated task for demonstrating goal orchestration. Write only a simulated note.",
+            driver: "simulated", model: null, effort: null, rationale: "Simulated agent chosen for a demo, with no model or effort.", acceptance: ["Simulated note written"] })) } } };
+    }
     const { task, emit, signal } = ctx;
     const script = SCRIPTS[task.kind];
     let steps = script.steps;

@@ -1,5 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Store } from "../src/core/store.js";
 import { toRule } from "../src/factory/actions.js";
 import { runCli } from "../src/cli/program.js";
@@ -55,6 +58,57 @@ function setup() {
   };
   return { store, repo, task };
 }
+
+test("cli: goals supports research, feedback, exact-version approval, progress and cancellation", async () => {
+  const { store, repo } = setup();
+  const dir = mkdtempSync(join(tmpdir(), "crane-goal-cli-"));
+  try {
+    const created = await crane(store, "goals", "create", "Customers can save carts", "--repo", repo.name, "--agent", "codex", "--effort", "high", "--json");
+    assert.equal(created.code, 0, created.err);
+    const first = JSON.parse(created.out).goal;
+    assert.equal(first.status, "researching");
+    const plan = { summary: "Save carts", approach: "Implement and verify saved carts in one isolated task", improvements: [], tasks: [
+      { key: "carts", title: "Save carts", brief: "Implement and test saved carts", dependsOn: [], driver: "codex", model: null, effort: "high", rationale: "One coherent change", acceptance: ["Saved cart survives a reload"] },
+    ] };
+    const researchDone = (taskId: string) => store.updateTask(taskId, { status: "done", report: { summary: "Ready", findings: [], changedFiles: [], goalPlan: plan, completion: { status: "completed", reason: "Complete plan", evidence: "Read repo" } } });
+    researchDone(first.researchTaskId);
+    const shown = await crane(store, "goals", "show", first.id, "--json");
+    const ready = JSON.parse(shown.out).goal;
+    assert.equal(ready.status, "needs_review");
+    const feedback = await crane(store, "goals", "feedback", first.id, "Add accessibility coverage", "--revision", String(ready.revision), "--json");
+    assert.equal(feedback.code, 0, feedback.err);
+    const revised = JSON.parse(feedback.out).goal;
+    researchDone(revised.researchTaskId);
+    store.syncGoals();
+    const planFile = join(dir, "plan.json");
+    writeFileSync(planFile, JSON.stringify({ ...plan, summary: "Refined plan" }));
+    const edited = await crane(store, "goals", "edit", first.id, "--revision", String(store.getGoal(first.id)!.revision), "--file", planFile, "--json");
+    assert.equal(edited.code, 0, edited.err);
+    assert.equal(JSON.parse(edited.out).goal.plan.summary, "Refined plan");
+    const revision = store.getGoal(first.id)!.revision;
+    const approved = await crane(store, "goals", "approve", first.id, "--revision", String(revision), "--auto-merge", "--json");
+    assert.equal(approved.code, 0, approved.err);
+    const active = JSON.parse(approved.out).goal;
+    assert.equal(active.tasks.length, 1);
+    assert.ok(store.getTask(active.tasks[0].taskId)!.preApprovedAt);
+    assert.equal((await crane(store, "goals", "approve", first.id, "--revision", String(revision))).code, 1);
+    assert.match((await crane(store, "show", active.tasks[0].taskId)).out, new RegExp(`crane goals show ${first.id}`));
+    const listed = JSON.parse((await crane(store, "goals", "--json")).out);
+    assert.equal(listed[0].id, first.id);
+    store.setStatus(active.tasks[0].taskId, "failed");
+    store.syncGoals();
+    const retried = await crane(store, "goals", "retry", first.id, active.tasks[0].taskId, "--revision", String(store.getGoal(first.id)!.revision), "--agent", "claude-code", "--json");
+    assert.equal(retried.code, 0, retried.err);
+    const retryGoal = JSON.parse(retried.out).goal;
+    assert.equal(store.getTask(retryGoal.tasks[0].taskId)!.driver, "claude-code");
+    const cancelled = await crane(store, "goals", "cancel", first.id, "--revision", String(retryGoal.revision), "--json");
+    assert.equal(cancelled.code, 0, cancelled.err);
+    assert.equal(JSON.parse(cancelled.out).goal.status, "cancelled");
+    const human = await crane(store, "goals", "show", first.id);
+    assert.equal(human.code, 0, human.err);
+    assert.match(human.out, /Research: crane show/);
+  } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
+});
 
 test("cli: repos checks shows, replaces and clears a repo's checks", async () => {
   const { store, repo } = setup();

@@ -54,7 +54,7 @@ export function Home() {
 
   const repoName = (id: string | null) => o.repos.find((r) => r.id === id)?.name;
   const hasTargets = o.repos.some((r) => !r.isFactory);
-  const nothing = !o.needsReview.length && !o.inFlight.length && !o.recent.length;
+  const nothing = !o.needsReview.length && !o.inFlight.length && !o.recent.length && !o.goalsNeedingReview?.length;
 
   return (
     <div className="home">
@@ -71,13 +71,17 @@ export function Home() {
           </div>
         )}
 
-        {o.needsReview.length > 0 && (
+        {(o.needsReview.length > 0 || !!o.goalsNeedingReview?.length) && (
           <section className="section" aria-labelledby="needs-you">
             <div className="section-head">
               <h2 className="section-title" id="needs-you">
-                Needs you <span className="count">{o.needsReview.length}</span>
+                Needs you <span className="count">{o.needsReview.length + (o.goalsNeedingReview?.length ?? 0)}</span>
               </h2>
             </div>
+            {o.goalsNeedingReview?.map((g) => <div className="review-row" key={g.id}>
+              <div style={{ minWidth: 0 }}><Link className="row-title" to={`/goals/${g.id}`}>{g.title}</Link><div className="row-meta">Goal · {g.status === "blocked" ? "Needs attention" : "Plan ready for review"} · {repoName(g.repoId)}</div></div>
+              <Link className="btn btn-primary btn-sm" to={`/goals/${g.id}`}>Review goal</Link>
+            </div>)}
             {o.needsReview.map((m) => (
               <ReviewItem key={m.id} m={m} repoName={repoName(m.repoId)} onDone={refresh} />
             ))}

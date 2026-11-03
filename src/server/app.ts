@@ -11,6 +11,7 @@ import { diffForTask } from "../factory/git.js";
 import { factoryState as readFactoryState } from "../factory/state.js";
 import { servedDashboard } from "../core/webbuild.js";
 import { readScreenshot } from "../core/screenshots.js";
+import type { NewGoal } from "@crane/contracts";
 
 /** Empty bodies use action defaults; malformed or non-object JSON must never trigger a decision. */
 async function optionalJsonObject<T extends object>(request: Request): Promise<T> {
@@ -101,6 +102,34 @@ export function createApp(store: Store, opts: { exposed?: boolean } = {}) {
 
   api.get("/tasks/queue", (c) => c.json(store.listQueuedTaskSummaries()));
 
+  api.get("/goals", (c) => { store.syncGoals(); return c.json(store.listGoalSummaries()); });
+  api.get("/goals/:id", (c) => {
+    store.syncGoals();
+    if (!store.getGoal(c.req.param("id"))) return c.json({ error: "Not found" }, 404);
+    return c.json(store.goalDetail(c.req.param("id")));
+  });
+  api.post("/goals", async (c) => c.json(actions.createGoal(await optionalJsonObject<NewGoal>(c.req.raw)), 201));
+  api.post("/goals/:id/feedback", async (c) => {
+    const body = await optionalJsonObject<{ revision: unknown; feedback: unknown }>(c.req.raw);
+    return c.json(actions.reviseGoal(c.req.param("id"), body.revision, body.feedback));
+  });
+  api.put("/goals/:id/plan", async (c) => {
+    const body = await optionalJsonObject<{ revision: unknown; plan: unknown }>(c.req.raw);
+    return c.json(actions.editGoalPlan(c.req.param("id"), body.revision, body.plan));
+  });
+  api.post("/goals/:id/approve", async (c) => {
+    const body = await optionalJsonObject<{ revision: unknown; autoMerge?: unknown }>(c.req.raw);
+    return c.json(actions.approveGoal(c.req.param("id"), body.revision, body.autoMerge));
+  });
+  api.post("/goals/:id/cancel", async (c) => {
+    const body = await optionalJsonObject<{ revision: unknown }>(c.req.raw);
+    return c.json(actions.cancelGoal(c.req.param("id"), body.revision));
+  });
+  api.post("/goals/:id/tasks/:taskId/retry", async (c) => {
+    const body = await optionalJsonObject<{ revision: unknown; driver?: string | null }>(c.req.raw);
+    return c.json(actions.retryGoalTask(c.req.param("id"), body.revision, c.req.param("taskId"), body));
+  });
+
   api.get("/tasks/:id", (c) => {
     const m = store.getTask(c.req.param("id"));
     if (!m) return c.json({ error: "Not found" }, 404);
@@ -111,6 +140,7 @@ export function createApp(store: Store, opts: { exposed?: boolean } = {}) {
     // Commands this task was refused that are still waiting on a decision, counted across the repo's tasks.
     const blocked = store.blockedTools({ taskId: m.id, ...(m.repoId ? { repoId: m.repoId } : {}) });
     const detail: TaskDetail = {
+      goalId: store.goalForTask(m.id),
       task: m, repo, agent, events: store.listEvents(m.id), runs: store.listRuns(m.id), blocked,
       prerequisites: store.prerequisiteStates(m), followUps: store.followUps(m.id),
       followUpSource: store.followUpSource(m),

@@ -15,6 +15,12 @@ import {
   ruleLabel,
   unmetAcceptance,
   completionReviewReason,
+  validateGoalPlan,
+  goalWaves,
+  type Goal,
+  type GoalDetail,
+  type GoalPlan,
+  type GoalSummary,
   type MaintenanceRole,
   type CrewSchedule,
   type CrewScheduleInput,
@@ -127,6 +133,17 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS goals (
+  id TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  data TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS goals_status ON goals(status);
+CREATE TABLE IF NOT EXISTS goal_tasks (
+  task_id TEXT PRIMARY KEY REFERENCES tasks(id),
+  goal_id TEXT NOT NULL REFERENCES goals(id)
+);
+CREATE INDEX IF NOT EXISTS goal_tasks_goal ON goal_tasks(goal_id);
 CREATE TABLE IF NOT EXISTS crew_schedules (
   id TEXT PRIMARY KEY,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -496,6 +513,225 @@ export class Store {
 
   close() {
     this.db.close();
+  }
+
+  // Goals retain every research revision and its task links across restarts.
+  getGoal(id: string): Goal | null {
+    const row = this.db.prepare("SELECT data FROM goals WHERE id = ?").get(id) as { data: string } | undefined;
+    return row ? JSON.parse(row.data) as Goal : null;
+  }
+
+  listGoals(): Goal[] {
+    return (this.db.prepare("SELECT data FROM goals ORDER BY rowid DESC").all() as { data: string }[])
+      .map((row) => JSON.parse(row.data) as Goal);
+  }
+
+  listGoalSummaries(needsReview = false): GoalSummary[] {
+    return this.db.prepare(`SELECT id, status,
+      json_extract(data, '$.title') AS title, json_extract(data, '$.repoId') AS repoId,
+      json_array_length(data, '$.tasks') AS taskCount FROM goals
+      ${needsReview ? "WHERE status IN ('needs_review', 'blocked')" : ""} ORDER BY rowid DESC`)
+      .all() as GoalSummary[];
+  }
+
+  goalDetail(id: string): GoalDetail {
+    const goal = this.getGoal(id);
+    if (!goal) throw new Error(`No goal ${id}`);
+    return { goal, research: this.getTask(goal.researchTaskId),
+      tasks: goal.tasks.flatMap((t) => { const task = this.getTask(t.taskId); return task ? [task] : []; }) };
+  }
+
+  goalForTask(taskId: string): string | null {
+    const row = this.db.prepare("SELECT goal_id FROM goal_tasks WHERE task_id = ?").get(taskId) as { goal_id: string } | undefined;
+    return row?.goal_id ?? null;
+  }
+
+  private writeGoal(goal: Goal) {
+    this.db.prepare("INSERT INTO goals(id, status, data) VALUES(?, ?, ?) ON CONFLICT(id) DO UPDATE SET status = excluded.status, data = excluded.data")
+      .run(goal.id, goal.status, JSON.stringify(goal));
+  }
+
+  private linkGoalTask(goalId: string, taskId: string) {
+    this.db.prepare("INSERT INTO goal_tasks(task_id, goal_id) VALUES(?, ?)").run(taskId, goalId);
+    this.addEvent(taskId, "note", `Part of goal ${goalId}`, { goalId });
+  }
+
+  createGoal(input: Pick<Goal, "title" | "outcome" | "repoId" | "research">, researchTask: NewTask): Goal {
+    return this.db.transaction(() => {
+      const ts = now();
+      const task = this.createTask(researchTask);
+      const goal: Goal = { ...input, id: shortId("g"), status: "researching", revision: 1, plan: null,
+        researchTaskId: task.id, feedback: [], tasks: [], autoMerge: false, approvedAt: null,
+        createdAt: ts, updatedAt: ts, error: null };
+      this.writeGoal(goal);
+      this.linkGoalTask(goal.id, task.id);
+      return goal;
+    }).immediate();
+  }
+
+  /** Version checks prevent stale tabs and duplicate decisions from starting extra work. */
+  private goalAtRevision(id: string, revision: unknown): Goal {
+    const goal = this.getGoal(id);
+    if (!goal) throw new Error(`No goal ${id}`);
+    if (!Number.isSafeInteger(revision) || goal.revision !== revision) throw new Error("The goal changed. Reload it before deciding");
+    return goal;
+  }
+
+  private editableGoal(id: string, revision: unknown): Goal {
+    const goal = this.goalAtRevision(id, revision);
+    if (goal.approvedAt || !["needs_review", "blocked"].includes(goal.status)) throw new Error("Wait for research to finish; approved goals cannot be replanned");
+    return goal;
+  }
+
+  reviseGoal(id: string, revision: unknown, feedback: string, researchTask: NewTask): Goal {
+    return this.db.transaction(() => {
+      const goal = this.editableGoal(id, revision);
+      const task = this.createTask(researchTask);
+      goal.revision++;
+      goal.feedback.push({ revision: goal.revision, text: feedback, taskId: task.id });
+      goal.researchTaskId = task.id;
+      goal.status = "researching";
+      goal.error = null;
+      goal.updatedAt = now();
+      this.writeGoal(goal);
+      this.linkGoalTask(id, task.id);
+      return goal;
+    }).immediate();
+  }
+
+  saveGoalPlan(id: string, revision: unknown, plan: GoalPlan): Goal {
+    return this.db.transaction(() => {
+      const goal = this.editableGoal(id, revision);
+      goal.plan = validateGoalPlan(plan);
+      goal.revision++;
+      goal.status = "needs_review";
+      goal.error = null;
+      goal.updatedAt = now();
+      this.writeGoal(goal);
+      this.addEvent(goal.researchTaskId, "operator", "Edited goal plan", { goalId: id, revision: goal.revision });
+      return goal;
+    }).immediate();
+  }
+
+  /** Queue the entire approved DAG in one write transaction; claims cannot see a partial graph. */
+  approveGoal(id: string, revision: unknown, autoMerge: boolean): Goal {
+    return this.db.transaction(() => {
+      const goal = this.editableGoal(id, revision);
+      if (goal.status !== "needs_review" || !goal.plan) throw new Error("A valid researched plan is required before approval");
+      const plan = validateGoalPlan(goal.plan);
+      const repo = this.getRepo(goal.repoId);
+      if (!repo) throw new Error("The goal's repo is no longer connected");
+      const ids = new Map<string, string>();
+      for (const wave of goalWaves(plan)) {
+        for (const item of wave) {
+          const task = this.createTask({ title: item.title,
+            brief: `Goal: ${goal.outcome}\n\nPlan: ${plan.summary}\n\nApproach: ${plan.approach}\n\nYour task (${item.key}):\n${item.brief}\n\nAssignment rationale: ${item.rationale}`,
+            kind: repo.isFactory ? "factory_feature" : "repo_feature", repoId: repo.id, autonomy: "propose",
+            driver: item.driver, model: item.model, effort: item.effort,
+            prerequisites: item.dependsOn.map((key) => ids.get(key)!), acceptance: item.acceptance,
+            lookouts: ["improvements", "refactoring"], preApprove: autoMerge });
+          ids.set(item.key, task.id);
+          this.linkGoalTask(id, task.id);
+        }
+      }
+      goal.tasks = plan.tasks.map((t) => ({ key: t.key, taskId: ids.get(t.key)! }));
+      goal.revision++;
+      goal.status = "active";
+      goal.autoMerge = autoMerge;
+      goal.approvedAt = goal.updatedAt = now();
+      this.writeGoal(goal);
+      this.addEvent(goal.researchTaskId, "operator", "Approved goal plan", { goalId: id, revision, autoMerge });
+      return goal;
+    }).immediate();
+  }
+
+  cancelGoal(id: string, revision: unknown): Goal {
+    return this.db.transaction(() => {
+      const goal = this.goalAtRevision(id, revision);
+      if (["completed", "cancelled"].includes(goal.status)) throw new Error("This goal has already ended");
+      // Running work and merges use the usual task cancellation path/worker guard.
+      const ids = [goal.researchTaskId, ...goal.tasks.map((t) => t.taskId)];
+      if (ids.some((id) => this.getTask(id)?.status === "merging")) throw new Error("Wait for the current merge to finish before cancelling the goal");
+      for (const taskId of ids) {
+        const task = this.getTask(taskId);
+        if (task && ["queued", "running", "needs_review", "done", "approved"].includes(task.status)) {
+          this.setStatus(taskId, "cancelled", "Goal cancelled by the operator");
+        }
+      }
+      goal.status = "cancelled";
+      goal.revision++;
+      goal.updatedAt = now();
+      this.writeGoal(goal);
+      return goal;
+    }).immediate();
+  }
+
+  /** Reconcile persisted task results, including after a crash between task completion and the next tick. */
+  syncGoals(): void {
+    const pending = this.db.prepare("SELECT id FROM goals WHERE status IN ('researching', 'active', 'blocked')").all() as { id: string }[];
+    for (const snapshot of pending) {
+      this.db.transaction(() => {
+        const goal = this.getGoal(snapshot.id)!;
+        if (!["researching", "active", "blocked"].includes(goal.status)) return;
+        if (goal.status === "researching") {
+          const task = this.getTask(goal.researchTaskId);
+          if (task && ["queued", "running"].includes(task.status)) return;
+          try {
+            if (!task || !["done", "needs_review", "approved"].includes(task.status)) throw new Error("Research failed or was cancelled. Send feedback to research again");
+            if (task.report?.completion?.status !== "completed") throw new Error("Research did not report completed planning. Review the research report and send feedback");
+            goal.plan = validateGoalPlan(task.report.goalPlan);
+            goal.status = "needs_review";
+            goal.error = null;
+          } catch (err) {
+            goal.status = "blocked";
+            goal.error = (err as Error).message;
+          }
+          if (goal.status === "needs_review" && task?.status === "needs_review") {
+            this.setStatus(task.id, "done", "Research complete; review the plan on its goal", { goalId: goal.id });
+          }
+        } else if (goal.approvedAt) {
+          // Poll statuses alone: agent reports and briefs can be large while work is in flight.
+          const tasks = this.db.prepare(`SELECT status FROM tasks WHERE id IN (${goal.tasks.map(() => "?").join(",")})`)
+            .all(...goal.tasks.map((t) => t.taskId)) as { status: TaskStatus }[];
+          const failed = tasks.length !== goal.tasks.length || tasks.some((t) => ["failed", "cancelled", "rejected"].includes(t.status));
+          const complete = tasks.length > 0 && tasks.every((t) => t.status === "merged");
+          const status = complete ? "completed" : failed ? "blocked" : "active";
+          if (status === goal.status) return;
+          goal.status = status;
+          goal.error = failed ? "A goal task failed, was declined, or was cancelled. Retry it from this goal to reconnect its dependents" : null;
+        } else return;
+        goal.revision++;
+        goal.updatedAt = now();
+        this.writeGoal(goal);
+      }).immediate();
+    }
+  }
+
+  retryGoalTask(id: string, revision: unknown, taskId: string, retry: () => Task): Goal {
+    return this.db.transaction(() => {
+      const goal = this.goalAtRevision(id, revision);
+      if (!goal.approvedAt || !["active", "blocked"].includes(goal.status)) throw new Error("Only executing goals can retry a task");
+      const link = goal.tasks.find((t) => t.taskId === taskId);
+      if (!link) throw new Error("This task does not belong to the goal");
+      const old = this.getTask(taskId);
+      if (!old || !["failed", "cancelled", "rejected"].includes(old.status)) throw new Error("Only failed, cancelled or declined goal tasks can be retried");
+      const next = retry();
+      link.taskId = next.id;
+      this.linkGoalTask(id, next.id);
+      // Retry copies the approved task, including gates. Rewire waiting children, including a retry's own gates.
+      for (const item of goal.tasks) {
+        const task = this.getTask(item.taskId);
+        if (task?.status === "queued" && task.prerequisites.includes(taskId)) {
+          this.db.prepare("UPDATE tasks SET prerequisites = ? WHERE id = ?")
+            .run(JSON.stringify(task.prerequisites.map((p) => p === taskId ? next.id : p)), task.id);
+          this.addEvent(task.id, "operator", `Goal prerequisite ${taskId} replaced by retry ${next.id}`, { goalId: id });
+        }
+      }
+      goal.revision++;
+      goal.updatedAt = now();
+      this.writeGoal(goal);
+      return goal;
+    }).immediate();
   }
 
   listCrewSchedules(agentId?: string): CrewSchedule[] {
@@ -1498,6 +1734,7 @@ export class Store {
       spendThisWeekUsd: spend,
       activity: [...buckets.values()],
       needsReview: this.listTaskSummaries({ status: ["needs_review"], limit: 20 }),
+      goalsNeedingReview: this.listGoalSummaries(true),
       inFlight: this.listTaskSummaries({ status: ACTIVE_STATUSES, limit: 20 }),
       recent: this.listTaskSummaries({ status: FINISHED_STATUSES, limit: 8 }),
       agents: this.listAgents(),

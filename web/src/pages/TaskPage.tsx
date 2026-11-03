@@ -265,6 +265,7 @@ export function TaskPage() {
             {canPreApprove && m.preApprovedAt && <span className="chip chip-ok">Pre-approved</span>}
           </div>
           <h1 className="detail-title">{m.title}</h1>
+          {data.goalId && <p className="notice">Part of a goal. <Link to={`/goals/${data.goalId}`}>Review the plan, progress or retry from the goal</Link></p>}
 
           {m.branch && ["needs_review", "approved", "done"].includes(m.status) && <div className="card card-pad visual-review">
             <h2 className="card-title">Visual review: {visualPending ? "Needs your decision" : visualWaivedByPreApproval ? "Waived by pre-approval" : m.visualReview?.status.replace("_", " ")}</h2>
@@ -637,7 +638,7 @@ export function TaskPage() {
                 Cancel task
               </button>
             )}
-            {["failed", "cancelled", "rejected", "done", "approved", "merged"].includes(m.status) && (
+            {!data.goalId && ["failed", "cancelled", "rejected", "done", "approved", "merged"].includes(m.status) && (
               <button
                 className="btn btn-quiet btn-sm"
                 disabled={!!busy}
@@ -647,7 +648,7 @@ export function TaskPage() {
               </button>
             )}
             {/* When it didn't work out, offer the other installed agents too. */}
-            {["failed", "cancelled", "rejected"].includes(m.status) &&
+            {!data.goalId && ["failed", "cancelled", "rejected"].includes(m.status) &&
               otherAgents.map((d) => (
                 <button
                   key={d.name}
