@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { EventType, Repo, Task } from "@crane/contracts";
 import { runChecks } from "./checks.js";
 import { installDependencies } from "@crane/worktree-deps";
@@ -18,7 +19,9 @@ const run = promisify(execFile);
  * resolution goes to an agent, which edits files inside Crane's worktree and
  * nothing else. The shape is the one an operator would do by hand:
  *
- *   1. Fetch the default branch and take the newest of local and remote.
+ *   1. Fetch the default branch and take the newest of local and remote. A
+ *      temporary network failure gets a few spaced-out tries; nothing goes on
+ *      without a fetch that succeeded.
  *   2. In Crane's worktree, detach at that commit and `merge --no-ff` the task
  *      branch, so the default branch gets one "Merge branch 'crane/…'" commit.
  *   3. If that conflicts, hand the conflicted files to `resolveConflicts`, check
@@ -57,6 +60,8 @@ export interface MergeRequest {
   validateResolution?: (ctx: { cwd: string; base: string; files: string[]; checkpoint: string; visualReviewRequired: boolean }) => Promise<void | ResolutionReview>;
   /** How many times to start over when the remote moves under us. */
   maxAttempts?: number;
+  /** The wait before each retry of a temporary fetch failure. Tries = waits + 1. */
+  fetchRetryDelaysMs?: readonly number[];
   /** The commit the operator's visual decision is on. If it's a merge that still fits, it lands as is. */
   reviewedCandidate?: string;
 }
@@ -196,20 +201,76 @@ export async function newestDefault(repo: Repo, remote: string | null): Promise<
   return "diverged";
 }
 
-/** The commit to merge onto: the newest of the local and remote default branch. */
-async function resolveBase(
-  repo: Repo,
-  remote: string | null,
-  emit: MergeRequest["emit"],
-): Promise<{ sha: string; label: string }> {
+/** About a minute in all, since a merge holds its crew member and its repo's merge slot while it waits. */
+const FETCH_RETRY_DELAYS_MS = [5_000, 15_000, 40_000];
+
+/**
+ * Refusals a retry can't fix: credentials, access, policy, or a missing repo or
+ * branch. These win over TRANSIENT_FETCH, because a branch name or server message
+ * can contain anything. Not "Could not read from remote repository": ssh failures
+ * of every kind end with it, including DNS ones.
+ */
+const PERMANENT_FETCH = /authentication failed|could not read (?:username|password)|terminal prompts disabled|permission denied|host key verification failed|repository not found|does not appear to be a git repository|couldn't find remote ref|not allowed|\bpolicy\b|returned error: 4\d\d|RPC failed; HTTP 4\d\d/i;
+
+/** DNS, connection and gateway failures, in the wording of git, curl, ssh and the system resolver. */
+const TRANSIENT_FETCH = /could not resolve host|temporary failure in name resolution|connection timed out|operation timed out|timeout was reached|connection reset by peer|network is unreachable|no route to host|couldn't connect to server|returned error: 50[234]|RPC failed; HTTP 50[234]/i;
+
+/**
+ * Whether a failed fetch is worth trying again. Only git's own stderr counts, since
+ * an error's message also holds the command line. Anything unrecognized, including
+ * translated wording, isn't transient and comes back to the operator right away.
+ */
+export function isTransientFetchFailure(err: unknown): boolean {
+  const e = err as { name?: string; stderr?: unknown; killed?: boolean };
+  if (e.name === "AbortError") return false;
+  const stderr = typeof e.stderr === "string" ? e.stderr : "";
+  if (PERMANENT_FETCH.test(stderr)) return false;
+  // Node kills git at the time limit in g(), which is what a hung connection looks like.
+  return !!e.killed || TRANSIENT_FETCH.test(stderr);
+}
+
+/** The fetch a merge depends on: retried only for temporary failures, with every attempt on the task's record. */
+async function fetchForMerge(req: MergeRequest, remote: string): Promise<void> {
+  const { repo, emit, signal } = req;
   const main = repo.defaultBranch;
-  if (remote) {
+  const delays = req.fetchRetryDelaysMs ?? FETCH_RETRY_DELAYS_MS;
+  const attempts = delays.length + 1;
+  const record = (outcome: "retrying" | "recovered" | "exhausted" | "cancelled", attempt: number, message: string, details: Record<string, unknown> = {}) =>
+    emit("note", message, { fetch: { outcome, attempt, attempts, ...details } });
+  const stopped = (attempt: number) => {
+    record("cancelled", attempt, `Stopped fetching ${main} from ${remote} on attempt ${attempt} of ${attempts}`);
+    return new Error("Stopped");
+  };
+
+  for (let attempt = 1; ; attempt++) {
     try {
-      await fetchDefault(repo, remote);
+      await fetchDefault(repo, remote, signal);
+      if (attempt > 1) record("recovered", attempt, `Fetched ${main} from ${remote} on attempt ${attempt} of ${attempts}`);
+      return;
     } catch (err) {
-      throw new MergeError(`Couldn't fetch ${main} from ${remote}: ${why(err)}`);
+      if (signal?.aborted) throw stopped(attempt);
+      const reason = (err as { killed?: boolean }).killed ? "git fetch timed out" : why(err);
+      if (!isTransientFetchFailure(err)) throw new MergeError(`Couldn't fetch ${main} from ${remote}: ${reason}`);
+      const wait = delays[attempt - 1];
+      if (wait === undefined) {
+        record("exhausted", attempt, `Couldn't fetch ${main} from ${remote} on attempt ${attempt} of ${attempts}: ${reason}. No tries left`, { reason });
+        throw new MergeError(`Couldn't fetch ${main} from ${remote} after ${attempts} attempts: ${reason}`);
+      }
+      record("retrying", attempt, `Couldn't fetch ${main} from ${remote} on attempt ${attempt} of ${attempts}: ${reason}. Trying again in ${Math.ceil(wait / 1000)}s`, { reason, retryInMs: wait });
+      try {
+        await sleep(wait, undefined, { signal });
+      } catch {
+        throw stopped(attempt);
+      }
     }
   }
+}
+
+/** The commit to merge onto: the newest of the local and remote default branch. */
+async function resolveBase(req: MergeRequest, remote: string | null): Promise<{ sha: string; label: string }> {
+  const { repo, emit } = req;
+  const main = repo.defaultBranch;
+  if (remote) await fetchForMerge(req, remote);
   const tip = await newestDefault(repo, remote);
   if (!tip) throw new MergeError(`There's no ${main} branch to merge into`);
   if (tip === "diverged") {
@@ -427,7 +488,7 @@ export async function landTask(req: MergeRequest): Promise<MergeResult> {
   const attempts = req.maxAttempts ?? 3;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     if (signal?.aborted) throw new Error("Stopped");
-    const base = await resolveBase(repo, remote, emit);
+    const base = await resolveBase(req, remote);
     const branchSha = (await revParse(repo.path, `refs/heads/${task.branch}`))!;
 
     let commit: string | null = null;

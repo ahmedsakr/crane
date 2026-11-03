@@ -38,6 +38,7 @@ Each task also has an **autonomy level**, which sets how far an agent may go on 
 
 Crane never merges into your default branch or pushes without operator approval. For UI changes, complete the [visual review checklist](#visual-review-before-approval) before approval or merge, or waive it by pre-approving the task. When you **approve** a task that changed code, Crane merges its branch into the default branch for you and pushes it:
 
+- It fetches the default branch first. A temporary network failure, such as a DNS or connection error, gets up to three more tries over about a minute, each recorded on the task. Authentication, permission, and policy failures aren't retried, and Crane never merges without a fetch that succeeded.
 - It builds one `Merge branch 'crane/…'` commit on top of the latest default branch, in Crane's own worktree.
 - If that conflicts, an agent resolves the conflicts. Crane checks that no conflict markers are left before it commits.
 - It pushes as a plain fast-forward and never force-pushes. If someone else pushed in the meantime, Crane starts over from the new tip.
