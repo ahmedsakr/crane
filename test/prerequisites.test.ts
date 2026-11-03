@@ -166,9 +166,9 @@ test("acceptance: reports carry only literal met: true, and missing reports mean
     { criterion: "B", met: false, evidence: "7" },
   ]);
   assert.equal(parseReport(text({ summary: "s" })).acceptance, undefined);
-  assert.deepEqual(unmetAcceptance({ acceptance: ["A", "B"], report: parsed }), ["B"]);
-  assert.deepEqual(unmetAcceptance({ acceptance: ["A"], report: null }), ["A"]);
-  assert.deepEqual(unmetAcceptance({ acceptance: [], report: null }), []);
+  assert.deepEqual(unmetAcceptance({ acceptance: ["A", "B"], acceptanceChecks: [], report: parsed }), ["B"]);
+  assert.deepEqual(unmetAcceptance({ acceptance: ["A"], acceptanceChecks: [], report: null }), ["A"]);
+  assert.deepEqual(unmetAcceptance({ acceptance: [], acceptanceChecks: [], report: null }), []);
 });
 
 test("prompts: prerequisites and acceptance criteria read as gates, and a waiver says the scope is reduced", () => {

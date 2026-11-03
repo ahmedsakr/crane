@@ -214,6 +214,16 @@ function acceptanceBrief(task: Task): string {
   ].join("\n\n");
 }
 
+/** Checks only Crane's own results can meet, so the agent has nothing to report about them. */
+function acceptanceChecksBrief(task: Task): string {
+  if (!task.acceptanceChecks.length) return "";
+  return [
+    "## Checks Crane must see pass",
+    "The operator also requires these commands to pass. After you finish, Crane runs them itself on your final commit, and only those results count. Don't list them in your report's `acceptance` array, and don't report the task as incomplete just because your environment doesn't let you run one. Fix any failure you can see.",
+    task.acceptanceChecks.map((c) => `- \`${c}\``).join("\n"),
+  ].join("\n\n");
+}
+
 /**
  * Opportunities the operator asked the agent to keep an eye out for. They
  * ride along with the task without widening it: what the agent spots comes
@@ -275,6 +285,7 @@ export function userPrompt(task: Task, job?: AgentJob, context: TaskContext = {}
     commandEvidenceBrief(context),
     prerequisitesBrief(task, context.prerequisites),
     acceptanceBrief(task),
+    acceptanceChecksBrief(task),
     lookoutsBrief(task),
     siblingTasksBrief(context.siblingTasks),
   ].filter(Boolean).join("\n\n");

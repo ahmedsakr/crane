@@ -361,7 +361,7 @@ test("opening a database shrinks stored histories, leaving work in flight and ot
 test("a queued post-mortem with a stored history runs from the current render, not both", () => {
   const source = { id: "t-source", title: "Feature", brief: "Brief", report: null } as Parameters<typeof postmortemPrompt>[0];
   const stored = postmortemPrompt(source, []);
-  const task = { title: "Post-mortem: Feature", brief: stored, prerequisites: [], acceptance: [], lookouts: [], autonomy: "observe" } as unknown as Parameters<typeof userPrompt>[0];
+  const task = { title: "Post-mortem: Feature", brief: stored, prerequisites: [], acceptance: [], acceptanceChecks: [], lookouts: [], autonomy: "observe" } as unknown as Parameters<typeof userPrompt>[0];
   const prompt = userPrompt(task, undefined, { postmortemPrompt: postmortemPrompt(source, []) });
   assert.equal(prompt.split("Act as Crane's post-mortem agent").length, 2);
 });

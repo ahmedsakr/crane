@@ -83,6 +83,7 @@ export {
   AUTONOMY_LABEL,
   STATUS_LABEL,
   lastMergeOutcome,
+  acceptanceCheckRun,
   acceptanceFor,
   prerequisiteMet,
   followUpFor,

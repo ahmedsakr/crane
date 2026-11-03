@@ -130,6 +130,19 @@ function checkAcceptance(input: unknown): string[] {
 }
 
 /**
+ * Repo checks a task requires, by exact command. Crane only ever runs the
+ * configured ones, so anything else could never be met.
+ */
+function checkAcceptanceChecks(input: unknown, configured: string[]): string[] {
+  if (input === undefined || input === null) return [];
+  if (!Array.isArray(input) || input.some((c) => typeof c !== "string")) throw new Error("Acceptance checks must be a list of commands");
+  const commands = [...new Set(input.map((c: string) => c.trim()).filter(Boolean))];
+  const unknown = commands.find((c) => !configured.includes(c));
+  if (unknown) throw new Error(`“${unknown}” isn't one of this repo's checks, so Crane would never run it. Add it to the repo's checks, or make it an acceptance criterion`);
+  return commands;
+}
+
+/**
  * What else the agent should look out for, by name. Takes `test-gaps` as well
  * as `test_gaps`, drops repeats, and keeps Crane's own order.
  */
@@ -220,6 +233,7 @@ export class OperatorActions {
     if (typeof input.brief !== "string") throw new Error("A task's brief must be text");
     if (input.preApprove !== undefined && typeof input.preApprove !== "boolean") throw new Error("Pre-approval must be a boolean");
     if (input.preApprove && input.autonomy === "observe") throw new Error("This task is investigate-only, so it has nothing to merge");
+    if (input.acceptanceChecks?.length && input.autonomy === "observe") throw new Error("This task is investigate-only, so Crane runs no checks on it");
     if (input.kind !== "factory_feature" && !input.repoId) throw new Error("Choose a repo for this task");
     if (input.kind === "factory_feature" && !input.repoId) {
       input.repoId = this.store.listRepos().find((r) => r.isFactory)?.id ?? null;
@@ -260,12 +274,13 @@ export class OperatorActions {
   }
 
   /**
-   * Prerequisites and acceptance criteria for a new task, checked. Each
-   * prerequisite must be an existing task in the same repo, since only its
-   * landing there puts its changes in this task's checkout.
+   * Prerequisites, acceptance criteria and acceptance checks for a new task,
+   * checked. Each prerequisite must be an existing task in the same repo, since
+   * only its landing there puts its changes in this task's checkout.
    */
   private checkGates(input: TaskGates, repoId: string | null): Required<TaskGates> {
     const acceptance = checkAcceptance(input.acceptance);
+    const acceptanceChecks = checkAcceptanceChecks(input.acceptanceChecks, repoId ? this.store.repoChecks(repoId) : []);
     const given: unknown = input.prerequisites ?? [];
     if (!Array.isArray(given) || given.some((id) => typeof id !== "string")) throw new Error("Prerequisites must be a list of task ids");
     const prerequisites: string[] = [];
@@ -278,7 +293,7 @@ export class OperatorActions {
       if (!prerequisites.includes(t.id)) prerequisites.push(t.id);
     }
     if (prerequisites.length > MAX_GATES) throw new Error(`Give at most ${MAX_GATES} prerequisites`);
-    return { prerequisites, acceptance };
+    return { prerequisites, acceptance, acceptanceChecks };
   }
 
   /**
@@ -444,7 +459,7 @@ export class OperatorActions {
       driver, model: driver === m.driver ? m.model : null, effort: driver === m.driver ? m.effort : null, assignee: m.assignee,
       driverSettings: driver === m.driver ? m.driverSettings : null, postmortemOf: m.postmortemOf,
       // The same gates, but not a waiver: that approved the scope of the earlier run only.
-      prerequisites: m.prerequisites, acceptance: m.acceptance, lookouts: m.lookouts });
+      prerequisites: m.prerequisites, acceptance: m.acceptance, acceptanceChecks: m.acceptanceChecks, lookouts: m.lookouts });
     const on = opts.driver !== undefined ? ` on ${driver ? driverLabel(driver) : "the default agent"}` : "";
     this.store.addEvent(m.id, "operator", `Retried as ${next.id}${on}`, { taskId: next.id });
     return next;

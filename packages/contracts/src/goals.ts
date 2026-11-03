@@ -10,6 +10,8 @@ export interface GoalTask {
   effort: string | null;
   rationale: string;
   acceptance: string[];
+  /** Configured repo checks that must pass, by exact command. Plans saved before this field have none. */
+  acceptanceChecks?: string[];
 }
 
 export interface GoalPlan {
@@ -89,7 +91,8 @@ export function validateGoalPlan(value: unknown): GoalPlan {
     if (!acceptance.length) throw new Error(`Give ${key} at least one acceptance criterion`);
     return { key, title: text(t.title, "Task title", 200), brief: text(t.brief, "Task brief", 20000),
       dependsOn: texts(t.dependsOn, "Dependencies", 20, 40), driver: t.driver, model, effort,
-      rationale: text(t.rationale, "Agent and ordering rationale", 4000), acceptance };
+      rationale: text(t.rationale, "Agent and ordering rationale", 4000), acceptance,
+      acceptanceChecks: texts(t.acceptanceChecks ?? [], "Acceptance checks", 20, 500) };
   });
   const keys = new Set(tasks.map((t) => t.key));
   if (keys.size !== tasks.length) throw new Error("Task keys must be unique");

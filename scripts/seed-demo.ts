@@ -170,6 +170,7 @@ function seedClientReview() {
     repoId: api.id,
     autonomy: "propose",
     acceptance: ["Callers import @payments/client, not ../client", "npm run build emits packages/client/dist"],
+    acceptanceChecks: ["npm test", "npm run typecheck"],
     lookouts: ["refactoring", "test_gaps"],
   });
   store.updateTask(client.id, {
@@ -200,7 +201,15 @@ function seedClientReview() {
       ],
     },
   });
-  seedClientBranch(api.path, store.getTask(client.id)!.branch!);
+  const branch = store.getTask(client.id)!.branch!;
+  seedClientBranch(api.path, branch);
+  // Crane's own results on the real candidate: one required check passed, the other never ran.
+  const commit = execFileSync("git", ["rev-parse", branch], { cwd: api.path, encoding: "utf8" }).trim();
+  const tree = execFileSync("git", ["rev-parse", `${branch}^{tree}`], { cwd: api.path, encoding: "utf8" }).trim();
+  store.updateTask(client.id, {
+    visualReview: { status: "pending", commit, tree, note: "The agent did not classify visual review; operator review is required.", decidedAt: null },
+    report: { ...store.getTask(client.id)!.report!, validation: [{ phase: "review", commit, command: "npm test", status: "passed", exitCode: 0, logs: "All tests passed", durationMs: 41_000 }] },
+  });
   return client;
 }
 

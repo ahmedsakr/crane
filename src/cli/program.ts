@@ -16,6 +16,7 @@ import {
   MAINTENANCE_ROLES,
   RUN_KIND_LABEL,
   UNSHIPPED_STATUSES,
+  acceptanceCheckRun,
   acceptanceFor,
   choosableDrivers,
   crewScheduleLabel,
@@ -54,6 +55,7 @@ const repoName = (id: string | null) => (id ? store.getRepo(id)?.name : undefine
 const collect = (value: string, previous: string[]) => [...previous, value];
 const AFTER_HELP = "wait for this task to land first; repeat for more";
 const ACCEPT_HELP = "an observable condition the work must meet; repeat for more";
+const ACCEPT_CHECK_HELP = "a configured repo check that must pass, by exact command; only Crane's own result counts; repeat for more";
 const LOOK_FOR_HELP = `what else the agent should look out for and report: ${LOOKOUTS.join(" | ")}; repeat or separate with commas`;
 /** `--look-for refactoring,test_gaps --look-for improvements`, checked. Fails the command on an unknown name. */
 const lookFor = (given: string[]): Lookout[] => {
@@ -145,6 +147,7 @@ function printGoal(goal: Goal, json = false) {
         console.log(`    ${driverLabel(item.driver)} · ${item.model ?? "default model"} · ${item.effort ?? "default"} effort · after ${item.dependsOn.join(", ") || "nothing"}`);
         console.log(`    ${item.rationale}\n\n${item.brief}\n`);
         for (const criterion of item.acceptance) console.log(`    Accept: ${criterion}`);
+        for (const command of item.acceptanceChecks ?? []) console.log(`    Check must pass: ${command}`);
       }
     }
     if (goal.plan.improvements.length) console.log(`\nOptional improvements:\n${goal.plan.improvements.map((s) => `- ${s}`).join("\n")}`);
@@ -229,10 +232,11 @@ program
   .option("--pre-approve", "merge after checks and acceptance pass; waive visual review including conflict resolutions")
   .option("--after <id>", AFTER_HELP, collect, [])
   .option("--accept <criterion>", ACCEPT_HELP, collect, [])
+  .option("--accept-check <command>", ACCEPT_CHECK_HELP, collect, [])
   .option("--look-for <what>", LOOK_FOR_HELP, collect, [])
   .option("-y, --yes", "skip the confirmation step")
   .action(async (words: string[], opts: {
-    repo?: string; kind?: TaskKind; autonomy?: Autonomy; agent?: string; yes?: boolean; after: string[]; accept: string[];
+    repo?: string; kind?: TaskKind; autonomy?: Autonomy; agent?: string; yes?: boolean; after: string[]; accept: string[]; acceptCheck: string[];
     lookFor: string[]; at?: string; preApprove?: boolean;
   }) => {
     let preApprove = opts.preApprove ?? false;
@@ -393,7 +397,7 @@ program
     }
 
     try {
-      const m = actions.createTask({ ...draft, driver, prerequisites: opts.after, acceptance: opts.accept, lookouts, scheduledAt, preApprove });
+      const m = actions.createTask({ ...draft, driver, prerequisites: opts.after, acceptance: opts.accept, acceptanceChecks: opts.acceptCheck, lookouts, scheduledAt, preApprove });
       const waiting = store.unmetPrerequisites(m).map((t) => t.id);
       p.outro(
         `${pc.green("✓")} ${m.scheduledAt ? `Task scheduled for ${new Date(m.scheduledAt).toLocaleString()}. Prerequisites still apply` : waiting.length ? `Task queued. It starts once ${waiting.join(", ")} land${waiting.length === 1 ? "s" : ""}` : "Task queued"}  ${ui.dim(m.id)}\n   ${ui.dim("follow along:")} crane watch ${m.id}${
@@ -545,6 +549,18 @@ program
         console.log(`  ${mark}  ${c}${m.report && !said ? ui.dim("  not reported") : ""}`);
         if (said?.evidence) console.log(ui.wrap(said.evidence, 5));
       });
+    }
+    if (m.acceptanceChecks.length) {
+      console.log(ui.section("Acceptance checks", m.acceptanceChecks.length));
+      for (const command of m.acceptanceChecks) {
+        const run = acceptanceCheckRun(m, command);
+        if (!run) {
+          console.log(`  ${ui.dim("○")}  ${command}  ${ui.dim("not run on this candidate")}`);
+          continue;
+        }
+        const mark = run.status === "passed" ? pc.green("✓") : pc.red("✕");
+        console.log(`  ${mark}  ${command}  ${ui.dim(`${run.status} on ${run.commit.slice(0, 7)}`)}`);
+      }
     }
 
     if (m.report) {
@@ -810,14 +826,15 @@ program
   .option("--effort <level>", "model effort for this follow-up only; requires a chosen agent")
   .option("--after <id>", AFTER_HELP, collect, [])
   .option("--accept <criterion>", ACCEPT_HELP, collect, [])
+  .option("--accept-check <command>", ACCEPT_CHECK_HELP, collect, [])
   .option("--look-for <what>", LOOK_FOR_HELP, collect, [])
   .action((id: string, n: string, opts: {
-    agent?: string; model?: string; effort?: string; after: string[]; accept: string[]; lookFor: string[];
+    agent?: string; model?: string; effort?: string; after: string[]; accept: string[]; acceptCheck: string[]; lookFor: string[];
   }) => {
     try {
       const m = actions.followUp(id, Number(n) - 1, {
         driver: opts.agent, model: opts.model, effort: opts.effort, prerequisites: opts.after, acceptance: opts.accept,
-        lookouts: lookFor(opts.lookFor),
+        acceptanceChecks: opts.acceptCheck, lookouts: lookFor(opts.lookFor),
       });
       const waiting = store.unmetPrerequisites(m).map((t) => t.id);
       ui.ok(`${waiting.length ? `Queued ${m.id}. It starts once ${waiting.join(", ")} land${waiting.length === 1 ? "s" : ""}` : `Started ${m.id}`}  ${ui.dim(m.title)}`);

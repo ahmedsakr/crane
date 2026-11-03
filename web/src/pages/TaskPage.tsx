@@ -31,6 +31,7 @@ import { FollowUpForm } from "../components/FollowUpForm";
 import { TaskScheduleForm } from "../components/TaskScheduleForm";
 import { errorMessage, runCostLabel, runTokens, visualReviewPending, visualReviewWaivedByPreApproval, type Task } from "@crane/contracts";
 import { Changes } from "../components/Changes";
+import { AcceptanceChecks } from "../components/AcceptanceChecks";
 
 function VisualReviewForm({ task, busy, save }: { task: Task; busy: boolean; save: (input: { status: "inspected" | "waived"; commit: string; note: string }) => void }) {
   const [status, setStatus] = useState<"inspected" | "waived">("inspected");
@@ -215,8 +216,10 @@ export function TaskPage() {
   const prerequisites = data.prerequisites ?? [];
   const acceptance = m.acceptance ?? [];
   const waitingOn = m.status === "queued" && !m.prerequisitesWaivedAt ? prerequisites.filter((p) => !p.met) : [];
-  const unmet = report ? unmetAcceptance({ acceptance, report }) : [];
-  const acceptanceGate = acceptance.length ? " and its report shows every acceptance criterion met" : "";
+  const acceptanceChecks = m.acceptanceChecks ?? [];
+  const required = acceptance.length + acceptanceChecks.length;
+  const unmet = report ? unmetAcceptance({ ...m, acceptance, acceptanceChecks }) : [];
+  const acceptanceGate = required ? " and its report shows every acceptance criterion met" : "";
   // Tasks started from this task's findings; each finding shows the state of its latest one.
   const followUps = data.followUps ?? [];
   // The task and finding this one came from. A backend older than this page sends none.
@@ -406,12 +409,12 @@ export function TaskPage() {
               )}
             </div>
           )}
-          {acceptance.length > 0 && (
+          {required > 0 && (
             <section className="section" aria-labelledby="acceptance">
               <div className="section-head">
                 <h2 className="section-title" id="acceptance">
                   Acceptance criteria{" "}
-                  <span className="count">{report ? `${acceptance.length - unmet.length} of ${acceptance.length} met` : acceptance.length}</span>
+                  <span className="count">{report ? `${required - unmet.length} of ${required} met` : required}</span>
                 </h2>
               </div>
               <div className="card card-pad" style={{ paddingBlock: 0 }}>
@@ -427,6 +430,7 @@ export function TaskPage() {
                     </div>
                   );
                 })}
+                <AcceptanceChecks task={m} commands={acceptanceChecks} />
               </div>
             </section>
           )}
