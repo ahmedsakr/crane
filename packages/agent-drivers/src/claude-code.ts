@@ -10,9 +10,9 @@ import {
 import { cliAnswers, readMessages } from "./cli.js";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
 import { ALWAYS_DENIED, overlapsDenied, suggestRules } from "@crane/agent-policy";
-import type { Autonomy, BlockedCall, RunUsage } from "@crane/contracts";
+import type { Autonomy, BlockedCall, CommandEvidence, RunUsage } from "@crane/contracts";
 import { CommandTracker, safeEvidenceText } from "./command-evidence.js";
-import { claudeToolResult } from "./claude-evidence.js";
+import { claudeToolResult, claudeValidationSummary } from "./claude-evidence.js";
 
 const READ_ONLY_TOOLS = [
   "Read",
@@ -229,7 +229,9 @@ export class ClaudeCodeDriver implements AgentDriver {
       let started = false;
       // Tool calls by id, so a refusal can be reported with what was asked for.
       const calls = new Map<string, { name: string; input: Record<string, unknown> }>();
+      const commandOutcomes = new Map<string, CommandEvidence>();
       const commands = new CommandTracker((command) => {
+        commandOutcomes.set(command.commandId, command);
         const label = command.status === "running" ? "Ran" : `Command ${command.status}`;
         emit("tool", `${label} ${command.command.split("\n")[0]?.slice(0, 120)}${command.exitCode === null ? "" : ` (exit ${command.exitCode})`}`, {
           tool: "Bash", toolUseId: command.itemId, sessionId: command.sessionId, command,
@@ -353,7 +355,10 @@ export class ClaudeCodeDriver implements AgentDriver {
         }
         if (errored) return fail(errored);
         if (code !== 0 && !finalText) return fail(`Claude Code exited with code ${code}. ${stderr.trim().slice(-500)}`);
-        resolve({ report: parseReport(finalText || lastText) });
+        const report = parseReport(finalText || lastText);
+        const qualification = claudeValidationSummary([...commandOutcomes.values()]);
+        if (qualification) report.summary += `\n\n${qualification}`;
+        resolve({ report });
       });
     });
   }
