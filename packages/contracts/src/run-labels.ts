@@ -1,4 +1,4 @@
-import type { RunUsage } from "./types.js";
+import type { RunUsage } from "./runs.js";
 
 /** Cost only: callers decide whether a running attempt should show a status instead. */
 export function runCostLabel(run: Pick<RunUsage, "costUsd" | "costStatus">, formatUsd: (cost: number) => string): string {

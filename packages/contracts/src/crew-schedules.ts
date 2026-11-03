@@ -64,7 +64,9 @@ export function nextCrewFire(input: CrewScheduleInput, after: number): string {
 }
 
 export function crewScheduleLabel(s: Pick<CrewScheduleInput, "daysMask" | "localTime" | "timezone">): string {
-  const days = s.daysMask === 62 ? "weekday" : s.daysMask === 127 ? "daily"
-    : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].filter((_, i) => s.daysMask & (1 << i)).join(", ");
+  let days: string;
+  if (s.daysMask === 62) days = "weekday";
+  else if (s.daysMask === 127) days = "daily";
+  else days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].filter((_, i) => s.daysMask & (1 << i)).join(", ");
   return `${days} ${s.localTime} (${s.timezone})`;
 }

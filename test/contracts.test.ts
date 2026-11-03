@@ -6,9 +6,54 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseRule } from "@crane/contracts/rules";
 import { ruleLabel } from "@crane/contracts";
-import { moduleRefs, packageImportViolations, specifiers } from "./support/imports.ts";
+import { moduleRefs, packageImportViolations, parseSource, specifiers } from "./support/imports.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+test("contracts preserve the complete public type and runtime export names", async () => {
+  // Captured from index.ts before splitting the domain modules.
+  const types = `AcceptanceResult Agent AgentRun AgentState Analytics Autonomy BlockedCall BlockedTool CommandEvidence
+CrewSchedule CrewScheduleInput DiffFile DiffHunk DiffLine DriverInfo DriverName DriverSettings EventType
+Finding FollowUpSource FollowUpState Goal GoalDetail GoalPlan GoalSummary GoalTask Lookout LookoutInfo
+MaintenanceRole MaintenanceRoleInfo MergeOutcome NewGoal NewTask Overview ParsedDiff PostmortemSettings
+PrerequisiteState Repo RepoTools Report RetentionSettings ReviewCheckpoint RoleRunOptions RunKind
+RunOutcome RunUsage Screenshot SpendSlice SplitRow Task TaskDetail TaskDiff TaskDraft TaskEvent TaskGates
+TaskKind TaskRunOptions TaskStatus TaskSummary ValidationRun VisualReview`.split(/\s+/).sort();
+  const values = `ACTIVE_STATUSES ALL_STATUSES AUTONOMY_LABEL DRIVER_LABEL DRIVER_NAMES EFFORT_LEVELS FINISHED_STATUSES
+KIND_LABEL LOOKOUT LOOKOUTS MAINTENANCE_ROLE MAINTENANCE_ROLES MODEL_SUGGESTIONS RUN_KIND_LABEL
+SHIPPED_STATUSES STATUS_LABEL UNSHIPPED_STATUSES acceptanceFor choosableDrivers completionReviewReason
+crewScheduleLabel diffFiles driverLabel errorMessage followUpFor goalWaves isDriverName isLookout
+isMaintenanceRole isScheduled isTunable lastMergeOutcome lookoutsLabel nextCrewFire parseDiff
+prerequisiteMet ruleLabel runCostLabel runTokens settingsLabel splitRows unmetAcceptance
+validateCrewSchedule validateGoalPlan visualReviewPending visualReviewWaivedByPreApproval`.split(/\s+/).sort();
+  const file = join(root, "packages/contracts/src/index.ts");
+  const exports = parseSource(readFileSync(file, "utf8"), file).program.body;
+  const named = exports.filter((node) => node.type === "ExportNamedDeclaration");
+  const names = (kind: "type" | "value") => named
+    .filter((node) => node.exportKind === kind)
+    .flatMap((node) => node.specifiers.map((spec) => {
+      assert.ok(spec.exported.type === "Identifier");
+      return spec.exported.name;
+    })).sort();
+  assert.equal(named.length, exports.length, "only explicit named exports");
+  assert.deepEqual(names("type"), types);
+  assert.deepEqual(names("value"), values);
+  assert.deepEqual(Object.keys(await import("@crane/contracts")).sort(), values);
+});
+
+test("contract domain modules use erased imports between domains", () => {
+  const domains = [
+    "task.ts", "report.ts", "repo.ts", "events.ts", "crew.ts",
+    "lookouts.ts", "runs.ts", "overview.ts", "drivers.ts", "merge.ts",
+  ];
+  const src = join(root, "packages/contracts/src");
+  for (const file of domains) {
+    assert.ok(readFileSync(join(src, file), "utf8").split("\n").length - 1 < 500, file);
+    assert.ok(moduleRefs(join(src, file)).every((ref) => ref.typeOnly), file);
+  }
+  assert.equal(existsSync(join(src, "types.ts")), false);
+});
+
 const web = join(root, "web");
 const within = (dir: string, path: string) => path === dir || path.startsWith(dir + sep);
 const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));

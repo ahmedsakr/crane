@@ -1,4 +1,6 @@
-import { EFFORT_LEVELS, isDriverName, type DriverName, type Task, type TaskRunOptions } from "./types.js";
+import { EFFORT_LEVELS, isDriverName } from "./drivers.js";
+import type { DriverName } from "./drivers.js";
+import type { Task, TaskRunOptions } from "./task.js";
 
 export interface GoalTask {
   key: string;
