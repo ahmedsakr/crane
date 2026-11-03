@@ -546,7 +546,11 @@ export class Store {
     return { finishedTaskDays: Number.isInteger(days) && days >= 1 && days <= 36500 ? days : null };
   }
 
-  /** Bounded batches; the predicate is checked under the same lock as deletion. */
+  /**
+   * Bounded batches; the predicate is checked under the same lock as deletion.
+   * A post-mortem builds its prompt from its source task's events when it runs,
+   * so a source keeps them while one is queued or running.
+   */
   pruneTaskHistory(cutoff: string, days: number): number {
     return this.db.transaction(() => {
       const removed = this.db.prepare(`DELETE FROM events WHERE id IN (
@@ -554,6 +558,7 @@ export class Store {
         WHERE t.status IN (${FINISHED_STATUSES.map(() => "?").join(",")})
           AND t.finished_at < ? AND e.ts < ?
           AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.task_id = t.id AND r.outcome = 'running')
+          AND t.id NOT IN (SELECT postmortem_of FROM tasks WHERE postmortem_of IS NOT NULL AND status IN ('queued', 'running'))
           AND (e.type = 'tool' OR (e.type = 'note'
             AND CASE WHEN json_valid(e.data) THEN json_extract(e.data, '$.routine') END = 1))
         ORDER BY e.id LIMIT 5000
