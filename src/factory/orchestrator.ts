@@ -1,5 +1,5 @@
 import { crewSettingKey, type Store } from "../core/store.js";
-import { completionReviewReason, driverLabel, isDriverName, unmetAcceptance, type EventType, type RunUsage, type Task, type TaskStatus } from "@crane/contracts";
+import { completionReviewReason, driverLabel, isDriverName, unmetAcceptance, type AgentState, type EventType, type RunUsage, type Task, type TaskStatus } from "@crane/contracts";
 import { AgentRunError, combinedCost, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -44,6 +44,8 @@ export interface FactoryOptions {
  * `tsx watch` (npm run dev) force-kills the factory 5s after asking it to stop.
  */
 const STOP_GRACE_MS = 3500;
+/** Leave room for tick jitter within the six-second freshness window. */
+const HEARTBEAT_MS = 3000;
 const STOPPED_MESSAGE = "Stopped with the factory. Back in the queue to pick up where it left off";
 
 /**
@@ -100,6 +102,9 @@ export class Factory {
   private inflight = new Set<Promise<void>>(); // every work() and merge() under way
   private stopping = false;
   private busy = new Set<string>(); // agentIds
+  /** Only the factory writes agent state; operator choices remain in the store. */
+  private agentStates = new Map<string, { state: AgentState; taskId: string | null }>();
+  private lastHeartbeat: number | null = null;
   private mergingRepos = new Set<string>(); // repoIds with a merge in progress
   private crew: CrewMember[];
   private tickMs: number;
@@ -206,9 +211,11 @@ export class Factory {
     // Keep the operator's saved default if this factory can run it.
     const saved = this.store.getSetting(DEFAULT_DRIVER_KEY);
     if (!saved || !this.drivers.has(saved)) this.store.setSetting(DEFAULT_DRIVER_KEY, this.defaultDriver().name);
+    this.lastHeartbeat = null;
+    this.agentStates = new Map(this.store.listAgents().map(a => [a.id, { state: a.state, taskId: a.taskId }]));
     for (const a of this.crew) {
       this.store.upsertAgent({ ...a, driver: this.defaultDriver().name });
-      this.store.setAgentState(a.id, "idle", null);
+      this.setAgentState(a.id, "idle", null);
     }
     this.store.pruneAgents(this.crew.map((a) => a.id));
 
@@ -342,8 +349,20 @@ export class Factory {
     }
   }
 
+  private setAgentState(id: string, state: AgentState, taskId: string | null) {
+    const previous = this.agentStates.get(id);
+    if (previous?.state === state && previous.taskId === taskId) return;
+    this.store.setAgentState(id, state, taskId);
+    // Cache only successful writes, so the next tick retries a failed transition.
+    this.agentStates.set(id, { state, taskId });
+  }
+
   private assignWork() {
-    this.store.setSetting(HEARTBEAT_KEY, String(Date.now()));
+    const now = Date.now();
+    if (this.lastHeartbeat === null || now - this.lastHeartbeat >= HEARTBEAT_MS) {
+      this.store.setSetting(HEARTBEAT_KEY, String(now));
+      this.lastHeartbeat = now;
+    }
     new OperatorActions(this.store).fireCrewSchedules();
 
     // Honour cancellations made from another process (e.g. the CLI).
@@ -353,20 +372,21 @@ export class Factory {
     this.sweepWorktrees();
 
     const paused = this.store.isPaused();
+    const pending = paused ? { queued: false, merging: false } : this.store.pendingWork();
     for (const agent of this.crew) {
       if (this.busy.has(agent.id)) continue;
-      this.store.setAgentState(agent.id, paused ? "paused" : "idle", null);
-      if (paused) continue;
+      this.setAgentState(agent.id, paused ? "paused" : "idle", null);
+      if (paused || (!pending.queued && !pending.merging)) continue;
       const active = this.store.crewActive(agent.id);
       // Approved merges first: the operator has already said yes and is waiting on them.
-      const merge = active ? this.store.claimNextMerge(agent.id, [...this.mergingRepos]) : null;
+      const merge = active && pending.merging ? this.store.claimNextMerge(agent.id, [...this.mergingRepos]) : null;
       if (merge) {
         this.track(this.merge(agent, merge), agent.id, merge.id);
         continue;
       }
       // A member with a maintenance role is kept for the runs the operator starts for it.
       // An on-call member comes in only for the post-mortems the operator named them for.
-      const task = this.store.claimNextTask(agent.id, active ? { onlyAssigned: this.store.crewRole(agent.id) !== null } : { onlyPostmortems: true });
+      const task = pending.queued ? this.store.claimNextTask(agent.id, active ? { onlyAssigned: this.store.crewRole(agent.id) !== null } : { onlyPostmortems: true }) : null;
       if (!task) continue;
       this.track(this.work(agent, task), agent.id, task.id);
     }
@@ -457,7 +477,7 @@ export class Factory {
     const limit = timeLimit(ac, this.timeLimitMin);
     const repo = task.repoId ? this.store.getRepo(task.repoId) : null;
     if (repo) this.mergingRepos.add(repo.id);
-    this.store.setAgentState(agent.id, "working", task.id);
+    this.setAgentState(agent.id, "working", task.id);
     this.log(`${agent.name} is merging ${task.id} · ${task.title}`);
     const emit = this.emitter(task.id);
     // Stopping the factory aborts every running controller; merges are tracked under their own key.
@@ -539,7 +559,7 @@ export class Factory {
       limit.clear();
       this.running.delete(`merge:${task.id}`);
       if (repo) this.mergingRepos.delete(repo.id);
-      this.store.setAgentState(agent.id, this.store.isPaused() ? "paused" : "idle", null);
+      this.setAgentState(agent.id, this.store.isPaused() ? "paused" : "idle", null);
     }
   }
 
@@ -547,7 +567,7 @@ export class Factory {
     const ac = new AbortController();
     const limit = timeLimit(ac, this.timeLimitMin);
     this.running.set(task.id, ac);
-    this.store.setAgentState(agent.id, "working", task.id);
+    this.setAgentState(agent.id, "working", task.id);
     // A task that already has a session was interrupted by a restart. Its agent carries on.
     const resuming = !!task.sessionId;
     this.log(`${agent.name} ${resuming ? "is resuming" : "picked up"} ${task.id} · ${task.title}`);
@@ -675,7 +695,7 @@ export class Factory {
       this.running.delete(task.id);
       // If it failed or was cancelled, its worktree goes on the next tick.
       if (PUT_AWAY_STATUSES.includes(this.store.getTask(task.id)?.status ?? "queued")) this.lastSweep = 0;
-      this.store.setAgentState(agent.id, this.store.isPaused() ? "paused" : "idle", null);
+      this.setAgentState(agent.id, this.store.isPaused() ? "paused" : "idle", null);
     }
   }
 }
