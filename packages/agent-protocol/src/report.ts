@@ -34,6 +34,7 @@ export function parseReport(finalText: string): Report {
             }))
         : [];
       return {
+        ...(raw.goalPlan !== undefined ? { goalPlan: raw.goalPlan } : {}),
         summary: String(raw.summary ?? "").trim() || firstParagraph(block.rest),
         findings,
         ...(raw.completion && typeof raw.completion === "object"

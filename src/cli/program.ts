@@ -1,4 +1,6 @@
 import { Command } from "commander";
+import { readFileSync } from "node:fs";
+import { goalWaves, type Goal } from "@crane/contracts";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { Store } from "../core/store.js";
@@ -93,6 +95,10 @@ program.action(() => {
     console.log(ui.section(ui.accent("Needs you"), o.needsReview.length));
     for (const m of o.needsReview.slice(0, 5)) console.log(ui.taskLine(m, repoName(m.repoId)));
   }
+  if (o.goalsNeedingReview?.length) {
+    console.log(ui.section(ui.accent("Goals needing you"), o.goalsNeedingReview.length));
+    for (const g of o.goalsNeedingReview) console.log(`  ${g.id} · ${g.title} · crane goals show ${g.id}`);
+  }
   if (o.inFlight.length) {
     console.log(ui.section("In flight", o.inFlight.length));
     for (const m of o.inFlight.slice(0, 5)) console.log(ui.taskLine(m, repoName(m.repoId)));
@@ -101,7 +107,7 @@ program.action(() => {
     console.log(ui.section(ui.accent("Blocked commands"), o.blocked.length));
     for (const b of o.blocked) console.log(ui.blockedLine(b));
   }
-  if (!o.needsReview.length && !o.inFlight.length) {
+  if (!o.needsReview.length && !o.inFlight.length && !o.goalsNeedingReview?.length) {
     console.log(`\n  ${ui.dim("Nothing needs you and nothing is running.")}`);
   }
 
@@ -118,6 +124,93 @@ program.action(() => {
   console.log(ui.hint(...next));
   console.log("");
 });
+
+function printGoal(goal: Goal, json = false) {
+  if (json || goals.opts().json) return console.log(JSON.stringify(store.goalDetail(goal.id), null, 2));
+  console.log(`\n${pc.bold(goal.title)}\n  ${goal.id} · ${goal.status.replaceAll("_", " ")} · revision ${goal.revision} · ${repoName(goal.repoId)}`);
+  console.log(`\n${goal.outcome}\n`);
+  if (goal.error) console.log(pc.red(goal.error));
+  console.log(`Research: crane show ${goal.researchTaskId}`);
+  if (goal.plan) {
+    console.log(`\n${goal.plan.summary}\n\n${goal.plan.approach}`);
+    for (const [i, wave] of goalWaves(goal.plan).entries()) {
+      console.log(ui.section(i ? `Then: group ${i + 1}` : "Start together"));
+      for (const item of wave) {
+        const taskId = goal.tasks.find((t) => t.key === item.key)?.taskId;
+        const task = taskId ? store.getTask(taskId) : null;
+        console.log(`  ${item.key}: ${item.title}${task ? ` · ${task.id} · ${task.status}` : ""}`);
+        console.log(`    ${driverLabel(item.driver)} · ${item.model ?? "default model"} · ${item.effort ?? "default"} effort · after ${item.dependsOn.join(", ") || "nothing"}`);
+        console.log(`    ${item.rationale}\n\n${item.brief}\n`);
+        for (const criterion of item.acceptance) console.log(`    Accept: ${criterion}`);
+      }
+    }
+    if (goal.plan.improvements.length) console.log(`\nOptional improvements:\n${goal.plan.improvements.map((s) => `- ${s}`).join("\n")}`);
+  }
+  for (const feedback of goal.feedback) console.log(`\nFeedback (revision ${feedback.revision}): ${feedback.text}\nResearch: ${feedback.taskId}`);
+  console.log(`\n${goal.approvedAt ? goal.autoMerge ? "Automatic merging approved, including visual-review waivers." : "Each task waits for review before merge." : "Implementation waits for plan approval."}`);
+  console.log(ui.hint([`crane goals show ${goal.id} --json`, "full plan and task records"],
+    ...(!goal.approvedAt ? [[`crane goals feedback ${goal.id} --revision ${goal.revision} "…"`, "ask the research agent to revise the plan"] as [string, string],
+      [`crane goals approve ${goal.id} --revision ${goal.revision}`, "queue the plan; add --auto-merge to pre-approve all tasks and waive visual review"] as [string, string]] : [])));
+}
+
+const goals = program.command("goals").description("Research, review and orchestrate outcomes as dependency-ordered tasks");
+goals.option("--json", "full goal records as JSON").action((opts: { json?: boolean }) => {
+  store.syncGoals();
+  const list = store.listGoals();
+  if (opts.json) console.log(JSON.stringify(list, null, 2));
+  else {
+    for (const g of list) console.log(`  ${g.id} · ${g.status.replaceAll("_", " ")} · ${g.title}`);
+    if (!list.length) console.log("No goals yet. Start one with crane goals create --repo <repo> \"desired outcome\".");
+  }
+});
+goals.command("create").description("Start read-only research for a desired outcome")
+  .argument("<outcome>").requiredOption("-r, --repo <repo>", "connected repo name or id")
+  .option("--agent <agent>", "research agent: claude-code | codex | simulated")
+  .option("--model <model>", "research model (requires --agent)").option("--effort <effort>", "research effort (requires --agent)")
+  .option("--json", "full goal detail as JSON")
+  .action((outcome: string, opts: { repo: string; agent?: string; model?: string; effort?: string; json?: boolean }) => {
+    try { printGoal(actions.createGoal({ outcome, repoId: opts.repo, driver: opts.agent, model: opts.model, effort: opts.effort }), opts.json); }
+    catch (err) { ui.fail((err as Error).message); }
+  });
+goals.command("show").argument("<id>").option("--json", "full plan, research and task records as JSON")
+  .action((id: string, opts: { json?: boolean }) => {
+    store.syncGoals();
+    printGoal(store.getGoal(id) ?? ui.fail(`No goal ${id}`), opts.json);
+  });
+goals.command("feedback").description("Ask the research agent for a revised plan")
+  .argument("<id>").argument("<feedback>").requiredOption("--revision <number>", "revision you reviewed")
+  .option("--json", "full goal detail as JSON")
+  .action((id: string, feedback: string, opts: { revision: string; json?: boolean }) => {
+    try { printGoal(actions.reviseGoal(id, Number(opts.revision), feedback), opts.json); }
+    catch (err) { ui.fail((err as Error).message); }
+  });
+goals.command("edit").description("Replace the draft plan with a JSON GoalPlan file (use show --json to inspect it)")
+  .argument("<id>").requiredOption("--revision <number>", "revision you reviewed").requiredOption("--file <path>", "JSON plan file")
+  .option("--json", "full goal detail as JSON")
+  .action((id: string, opts: { revision: string; file: string; json?: boolean }) => {
+    try { printGoal(actions.editGoalPlan(id, Number(opts.revision), JSON.parse(readFileSync(opts.file, "utf8"))), opts.json); }
+    catch (err) { ui.fail((err as Error).message); }
+  });
+goals.command("approve").description("Approve this exact draft and queue its task graph")
+  .argument("<id>").requiredOption("--revision <number>", "revision you reviewed")
+  .option("--auto-merge", "pre-approve all tasks, merging after checks/acceptance; waive visual review including conflict resolutions")
+  .option("--json", "full goal detail as JSON")
+  .action((id: string, opts: { revision: string; autoMerge?: boolean; json?: boolean }) => {
+    try { printGoal(actions.approveGoal(id, Number(opts.revision), opts.autoMerge ?? false), opts.json); }
+    catch (err) { ui.fail((err as Error).message); }
+  });
+goals.command("cancel").description("Cancel unmerged goal work; wait for merges in progress first")
+  .argument("<id>").requiredOption("--revision <number>", "revision you reviewed").option("--json", "full goal detail as JSON")
+  .action((id: string, opts: { revision: string; json?: boolean }) => {
+    try { printGoal(actions.cancelGoal(id, Number(opts.revision)), opts.json); }
+    catch (err) { ui.fail((err as Error).message); }
+  });
+goals.command("retry").description("Retry a failed goal task and reconnect its waiting dependents")
+  .argument("<id>").argument("<taskId>").requiredOption("--revision <number>", "revision you reviewed").option("--agent <agent>", "retry on another agent").option("--json", "full goal detail as JSON")
+  .action((id: string, taskId: string, opts: { revision: string; agent?: string; json?: boolean }) => {
+    try { printGoal(actions.retryGoalTask(id, Number(opts.revision), taskId, { driver: opts.agent }), opts.json); }
+    catch (err) { ui.fail((err as Error).message); }
+  });
 
 // ── crane do: instruct the factory ──────────────────────────
 program
@@ -396,6 +489,8 @@ program
   .action((id: string, opts: { events?: boolean }) => {
     const m = store.getTask(id) ?? ui.fail(`No task ${id}`);
     const repo = m.repoId ? store.getRepo(m.repoId) : null;
+    const goalId = store.goalForTask(m.id);
+    if (goalId) console.log(`\n  Part of goal: crane goals show ${goalId}`);
     console.log(`\n${ui.statusDot(m.status)} ${pc.bold(m.title)}`);
     console.log(
       ui.dim(

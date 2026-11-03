@@ -1,5 +1,7 @@
 import { resolve } from "node:path";
 import { shortId } from "../core/ids.js";
+import { goalResearchTask } from "./goals.js";
+import { validateGoalPlan, type Goal, type NewGoal } from "@crane/contracts";
 import { nextCrewFire, validateCrewSchedule, crewScheduleLabel, type CrewScheduleInput, type CrewSchedule } from "@crane/contracts";
 import { crewSettingKey, type Store } from "../core/store.js";
 import {
@@ -154,6 +156,46 @@ function checkTaskRunOptions(input: TaskRunOptions): TaskRunOptions {
  */
 export class OperatorActions {
   constructor(private store: Store) {}
+
+  createGoal(input: NewGoal): Goal {
+    if (typeof input.outcome !== "string" || !input.outcome.trim() || input.outcome.trim().length > 20000) throw new Error("Describe the desired outcome in 1 to 20000 characters");
+    const repo = typeof input.repoId === "string" ? this.store.getRepo(input.repoId) : null;
+    if (!repo) throw new Error("Choose a connected repo for this goal");
+    const outcome = input.outcome.trim();
+    const research = checkTaskRunOptions(input);
+    return this.store.createGoal({ outcome, title: outcome.split("\n")[0]!.slice(0, 120), repoId: repo.id, research },
+      goalResearchTask(this.store, repo, outcome, research));
+  }
+
+  reviseGoal(id: string, revision: unknown, feedback: unknown): Goal {
+    const goal = this.store.getGoal(id);
+    if (!goal) throw new Error(`No goal ${id}`);
+    if (typeof feedback !== "string" || !feedback.trim() || feedback.trim().length > 20000) throw new Error("Give feedback in 1 to 20000 characters");
+    const repo = this.store.getRepo(goal.repoId);
+    if (!repo) throw new Error("The goal's repo is no longer connected");
+    return this.store.reviseGoal(id, revision, feedback.trim(), goalResearchTask(this.store, repo, goal.outcome, goal.research, goal, feedback.trim()));
+  }
+
+  editGoalPlan(id: string, revision: unknown, input: unknown): Goal {
+    return this.store.saveGoalPlan(id, revision, validateGoalPlan(input));
+  }
+
+  approveGoal(id: string, revision: unknown, autoMerge: unknown = false): Goal {
+    if (typeof autoMerge !== "boolean") throw new Error("Automatic merging must be a boolean");
+    return this.store.approveGoal(id, revision, autoMerge);
+  }
+
+  cancelGoal(id: string, revision: unknown): Goal {
+    return this.store.cancelGoal(id, revision);
+  }
+
+  retryGoalTask(id: string, revision: unknown, taskId: string, opts: { driver?: string | null } = {}): Goal {
+    return this.store.retryGoalTask(id, revision, taskId, () => {
+      const next = this.retryTask(taskId, opts);
+      if (this.store.getGoal(id)!.autoMerge) this.preApprove(next.id, "Retry of an approved goal task");
+      return this.store.getTask(next.id)!;
+    });
+  }
 
   /** Make sure Crane's own checkout is registered, so factory tasks have somewhere to work. */
   async ensureFactoryRepo(): Promise<Repo | null> {
@@ -389,6 +431,12 @@ export class OperatorActions {
    * it, unless `driver` names another (null or "default" for the factory's default).
    */
   retry(id: string, opts: { driver?: string | null } = {}): Task {
+    const goalId = this.store.goalForTask(this.need(id).id);
+    if (goalId) throw new Error(`This task belongs to goal ${goalId}. Send feedback or retry the task from that goal to preserve its dependencies`);
+    return this.retryTask(id, opts);
+  }
+
+  private retryTask(id: string, opts: { driver?: string | null } = {}): Task {
     const m = this.need(id);
     const driver = opts.driver === undefined ? m.driver : checkDriver(opts.driver);
     // A maintenance run goes back to the member it was started for.

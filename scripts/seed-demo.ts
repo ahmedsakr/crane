@@ -41,6 +41,25 @@ function makeRepo(name: string) {
 const api = makeRepo("payments-api");
 const web = makeRepo("storefront");
 
+// Keep every demo assignment simulated, including after the operator approves its plan.
+const goal = actions.createGoal({ repoId: web.id, outcome: "Customers can save a cart and return to it later", driver: "simulated" });
+store.updateTask(goal.researchTaskId, { status: "done", report: {
+  summary: "Demo research: a shared storage contract unlocks independent UI and API work.", findings: [], changedFiles: [],
+  completion: { status: "completed", reason: "Demo plan ready for review", evidence: "Seeded demo data, not actual repository research" },
+  goalPlan: { summary: "Extract cart persistence, build the two entry points in parallel, then verify the complete customer flow.",
+    approach: "Demo plan: establish the shared storage contract first so the UI and API use the same semantics. UI and API work can then run together in isolated worktrees; a final integration task checks the outcome after both merge. This is sample data, not repository analysis.",
+    improvements: ["Consider consolidating cart and checkout telemetry after delivery."],
+    tasks: [
+      { key: "storage", title: "Extract the cart persistence contract", dependsOn: [], rationale: "Shared contract refactoring must land before consumers change." },
+      { key: "ui", title: "Build the saved carts experience", dependsOn: ["storage"], rationale: "Interaction and accessibility work can run alongside the API." },
+      { key: "api", title: "Add saved cart endpoints", dependsOn: ["storage"], rationale: "Focused API work uses the established persistence contract." },
+      { key: "integration", title: "Verify the complete saved cart flow", dependsOn: ["ui", "api"], rationale: "Integration follows both delivery branches and fixes any remaining gaps." },
+    ].map((t) => ({ ...t, driver: "simulated", model: null, effort: null,
+      brief: "This is a demo task for goal orchestration. Write only a simulated note describing the named change.",
+      acceptance: ["Simulated note written"] })) },
+} });
+store.syncGoals();
+
 const history: [TaskKind, string, string, Autonomy][] = [
   ["maintenance", "Upgrade the Stripe SDK to v18", api.id, "propose"],
   ["maintenance", "Fix flaky checkout timeout test", api.id, "propose"],

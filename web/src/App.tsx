@@ -11,6 +11,7 @@ import { TaskPage } from "./pages/TaskPage";
 import { Repos } from "./pages/Repos";
 import { Crew } from "./pages/Crew";
 import { Analytics } from "./pages/Analytics";
+import { Goals, GoalPage } from "./pages/Goals";
 
 /** Tasks used to be called missions. Keep old links and bookmarks working. */
 function LegacyTaskRedirect() {
@@ -102,6 +103,7 @@ function Shell() {
               {needs > 0 && <span className="badge">{needs}</span>}
             </NavLink>
             <NavLink to="/repos">Repos</NavLink>
+            <NavLink to="/goals">Goals{(overview?.goalsNeedingReview?.length ?? 0) > 0 && <span className="badge">{overview?.goalsNeedingReview?.length}</span>}</NavLink>
             <NavLink to="/crew">Crew</NavLink>
             <NavLink to="/analytics">Analytics</NavLink>
           </nav>
@@ -147,6 +149,8 @@ function Shell() {
           <Route path="/" element={<Home />} />
           <Route path="/tasks" element={<Tasks />} />
           <Route path="/tasks/:id" element={<TaskPage />} />
+          <Route path="/goals" element={<Goals />} />
+          <Route path="/goals/:id" element={<GoalPage />} />
           <Route path="/missions" element={<LegacyTaskRedirect />} />
           <Route path="/missions/:id" element={<LegacyTaskRedirect />} />
           <Route path="/repos" element={<Repos />} />

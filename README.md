@@ -338,3 +338,10 @@ output limits are **blocked**; missing commands are **unconfigured**. All stop
 the gate. Each command has a ten-minute limit and a 16 MiB captured-output
 limit. Checks must leave the commit and tracked files unchanged.
 
+## Goal planning
+
+Crane can research an outcome, revise a dependency-ordered plan with operator
+feedback, and run approved work across Claude Code and Codex crew slots. Open
+**Goals** in the dashboard or use `crane goals create --repo <repo> "desired outcome"`.
+See [Goals](docs/goals.md) for approval, automatic merging, retries and CLI commands.
+

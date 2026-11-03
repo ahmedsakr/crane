@@ -1,4 +1,6 @@
 /** Shared domain/HTTP shapes and pure presentation helpers. No runtime dependencies. */
+export { validateGoalPlan, goalWaves } from "./goals.js";
+export type { Goal, GoalTask, GoalPlan, GoalDetail, GoalSummary, NewGoal } from "./goals.js";
 export { nextCrewFire, validateCrewSchedule, crewScheduleLabel } from "./crew-schedules.js";
 export type { CrewSchedule, CrewScheduleInput } from "./crew-schedules.js";
 export type {

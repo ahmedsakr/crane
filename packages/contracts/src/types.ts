@@ -6,6 +6,7 @@
  * a Report with Findings. Anything that would change code is held behind the
  * task's autonomy level so the operator stays in control.
  */
+import type { GoalSummary } from "./goals.js";
 
 /** What kind of work a task is. */
 export type TaskKind =
@@ -79,6 +80,8 @@ export interface Finding {
 }
 
 export interface Report {
+  /** Untrusted research output; validated again before it becomes a goal's draft plan. */
+  goalPlan?: unknown;
   /** Missing or non-completed outcomes require operator review for implementation work. */
   completion?: { status: "completed" | "blocked" | "incomplete" | "already_satisfied"; reason: string; evidence: string };
   /** Factory-owned Git evidence, never read from agent output. */
@@ -676,6 +679,7 @@ export interface Overview {
   /** One bucket per hour for the last 7 days: completed tasks and agent events. */
   activity: { t: string; done: number; events: number }[];
   needsReview: TaskSummary[];
+  goalsNeedingReview?: GoalSummary[];
   inFlight: TaskSummary[];
   recent: TaskSummary[];
   agents: Agent[];
@@ -686,6 +690,7 @@ export interface Overview {
 
 /** One task with everything its page shows: `GET /api/tasks/:id`. */
 export interface TaskDetail {
+  goalId?: string | null;
   task: Task;
   repo: Repo | null;
   /** Who's working it, or, before it's picked up, the crew member it was started for. */
