@@ -108,6 +108,45 @@ test("retention: respects finished age, lifecycle state, recent events and unfin
   for (const id of [fresh, boundary, undated, running]) assert.ok(store.listEvents(id).some(e => e.type === "tool"));
 });
 
+test("retention: a merged task keeps its history until its waiting post-mortem has finished", t => {
+  const { store, task, ageEvents } = setup(t);
+  const source = task("merged");
+  store.addEvent(source, "tool", "Source activity");
+  store.addEvent(source, "note", "Source narration", { routine: true });
+  const unrelated = task("merged");
+  store.addEvent(unrelated, "tool", "Unrelated activity");
+  ageEvents();
+  const review = store.createTask({ kind: "maintenance", title: "Post-mortem", brief: "", repoId: null, autonomy: "observe", postmortemOf: source });
+  const pruneWhile = (status: TaskStatus) => {
+    store.updateTask(review.id, { status, finishedAt: old });
+    return store.pruneTaskHistory(cutoff, 30);
+  };
+
+  assert.equal(pruneWhile("queued"), 1, "only the unrelated task is trimmed");
+  assert.equal(store.listEvents(unrelated).some(e => e.type === "tool"), false);
+  const prompt = store.postmortemPrompt(source);
+  assert.match(prompt, /Source activity/);
+  assert.match(prompt, /Source narration/);
+
+  assert.equal(pruneWhile("running"), 0);
+  assert.ok(store.listEvents(source).some(e => e.message === "Source activity"));
+
+  assert.equal(pruneWhile("done"), 2, "a finished post-mortem no longer holds the history");
+  assert.equal(store.listEvents(source).some(e => e.message === "Source activity"), false);
+});
+
+test("retention: a retried post-mortem protects its source while an earlier attempt has finished", t => {
+  const { store, task, ageEvents } = setup(t);
+  const source = task("merged");
+  store.addEvent(source, "tool", "Source activity");
+  ageEvents();
+  const review = () => store.createTask({ kind: "maintenance", title: "Post-mortem", brief: "", repoId: null, autonomy: "observe", postmortemOf: source });
+  store.updateTask(review().id, { status: "failed", finishedAt: old });
+  review();
+  assert.equal(store.pruneTaskHistory(cutoff, 30), 0);
+  assert.ok(store.listEvents(source).some(e => e.message === "Source activity"));
+});
+
 test("retention: deletion is bounded and continues in a later sweep", t => {
   const { store, task, ageEvents } = setup(t);
   const id = task();

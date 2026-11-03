@@ -98,8 +98,9 @@ startup, when the policy changes, and hourly thereafter, even when paused. Each
 sweep removes up to 5,000 old tool events and explicitly marked routine narration
 events from finished tasks (approved, merged, rejected, done, failed, cancelled).
 Both the task's finish time and the event must be older than the selected period.
-Queued, running, merging and review tasks, undated tasks, and tasks with an active
-run keep their history. Unclassified older notes stay: Crane cannot safely tell
+Queued, running, merging and review tasks, undated tasks, tasks with an active
+run, and tasks whose post-mortem is queued or running keep their history.
+Unclassified older notes stay: Crane cannot safely tell
 old narration from diagnostic or merge records. New Claude Code and Codex
 narration carries an explicit routine marker.
 
