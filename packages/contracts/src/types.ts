@@ -131,9 +131,28 @@ export interface ValidationRun {
   durationMs: number;
 }
 
+/**
+ * Where a task's review stands once its report is final, so a restart resumes
+ * validation rather than the agent. Written only by the factory, never from agent output.
+ */
+export interface ReviewCheckpoint {
+  commit: string;
+  tree: string;
+  /** The check list these results answer. */
+  checks: string[];
+  /** Null when the installed dependencies couldn't be verified, which never matches. */
+  dependencies: string | null;
+  /** A hash, so it can't expose what's in the factory's environment. */
+  environment: string;
+  /** Commands that passed with exactly these inputs. Their results are in `report.validation`. */
+  passed: string[];
+}
+
 export interface Task {
   /** Factory-owned candidate and operator-owned visual decision. Null/absent requires review. */
   visualReview?: VisualReview | null;
+  /** Present from finalization until the work run hands the task over. */
+  reviewCheckpoint?: ReviewCheckpoint | null;
   id: string;
   kind: TaskKind;
   title: string;

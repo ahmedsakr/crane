@@ -81,13 +81,19 @@ function runCommand(command: string, cwd: string, timeoutMs: number, signal?: Ab
   });
 }
 
-/** Only operator settings supply commands. Agents cannot configure these gates. */
+/**
+ * Only operator settings supply commands. Agents cannot configure these gates.
+ * `alreadyPassed` skips commands whose results the caller has verified still
+ * apply; merge checks never pass it. The candidate check below always runs.
+ */
 export async function runChecks(cwd: string, commands: string[], phase: ValidationRun["phase"],
-  record: (run: ValidationRun) => void, signal?: AbortSignal, timeoutMs = CHECK_TIMEOUT_MS): Promise<void> {
+  record: (run: ValidationRun) => void, signal?: AbortSignal, timeoutMs = CHECK_TIMEOUT_MS,
+  alreadyPassed: ReadonlySet<string> = new Set()): Promise<void> {
   const commit = await git(cwd, "rev-parse", "HEAD");
   const results: ValidationRun[] = [];
   for (const command of commands.length ? commands : [null]) {
     signal?.throwIfAborted();
+    if (command && alreadyPassed.has(command)) continue;
     const start = Date.now();
     let result: ValidationRun = { phase, commit, command, status: "unconfigured", exitCode: null,
       logs: "No repository checks configured by the operator", durationMs: 0 };

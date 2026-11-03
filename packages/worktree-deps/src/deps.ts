@@ -105,6 +105,29 @@ export async function installDependencies(
   return `Installed dependencies (${command}) in ${elapsed(Date.now() - started)}${because}`;
 }
 
+/** What each package manager last installed, which an install or a later change rewrites. */
+const INSTALL_RECORDS = [".package-lock.json", ".modules.yaml", ".yarn-integrity", ".yarn-state.yml"];
+
+/**
+ * Identifies what's installed in a worktree, so results from checks can be
+ * tied to it. Null when that can't be verified: the preparation isn't valid for
+ * the current inputs, or `node_modules` exists with no lockfile pinning it.
+ * Only reads. Doesn't hash `node_modules` itself, so a hand edit inside it goes
+ * unnoticed; installs and package manager runs are what it detects.
+ */
+export async function preparedDependencyIdentity(path: string): Promise<string | null> {
+  if (!lockfileFor(path)) return existsSync(join(path, "node_modules")) ? null : "no-dependencies";
+  try {
+    const fingerprint = await dependencyFingerprint(path);
+    const prepared = await readFile(join(path, PREPARED), "utf8").catch(() => null);
+    if (prepared !== fingerprint || await localLinksMismatch(path)) return null;
+    const records = await Promise.all(INSTALL_RECORDS.map(file => readFile(join(path, "node_modules", file), "utf8").catch(() => null)));
+    return createHash("sha256").update(JSON.stringify([fingerprint, records])).digest("hex");
+  } catch {
+    return null;
+  }
+}
+
 /** A short, readable duration for the activity feed: "0.4s", "12s", "2m 41s". */
 function elapsed(ms: number): string {
   if (ms < 10_000) return `${(Math.max(0, ms) / 1000).toFixed(1)}s`;

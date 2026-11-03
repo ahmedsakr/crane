@@ -1,5 +1,5 @@
 import { crewSettingKey, type Store } from "../core/store.js";
-import { completionReviewReason, driverLabel, isDriverName, unmetAcceptance, type AgentState, type EventType, type RunUsage, type Task, type TaskStatus } from "@crane/contracts";
+import { completionReviewReason, driverLabel, isDriverName, unmetAcceptance, type AgentState, type EventType, type Report, type ReviewCheckpoint, type RunUsage, type Task, type TaskStatus } from "@crane/contracts";
 import { AgentRunError, combinedCost, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -8,6 +8,7 @@ import { installDependencies } from "@crane/worktree-deps";
 import { elapsed } from "./elapsed.js";
 import { deleteMergedBranch, landTask, MergeError } from "./merge.js";
 import { runChecks } from "./checks.js";
+import { candidateUnchanged, changedInputs, reviewInputs } from "./review-checkpoint.js";
 import { DashboardBuilder } from "./dashboard.js";
 import { driverSettings, isAvailable } from "./drivers.js";
 import { DEFAULT_DRIVER_KEY, DEFAULT_MAX_TURNS, DEFAULT_TIME_LIMIT_MIN, HEARTBEAT_KEY } from "./settings.js";
@@ -583,6 +584,7 @@ export class Factory {
       if (unrecorded.length) emit("note", `Couldn't check that ${unrecorded.join(", ")} landed here: Crane has no record of the commit`);
 
       let cwd = repo.path;
+      let checkpoint: ReviewCheckpoint | null = null;
       if (task.autonomy === "observe") {
         // Investigate-only runs read the operator's checkout, so that's what must contain them.
         await requireCommits(repo.path, "HEAD", required, `Your checkout at ${repo.path}`, "Crane didn't start the agent, and doesn't update your checkout. Update it, then retry this task.");
@@ -606,61 +608,94 @@ export class Factory {
           const after = elapsed(Date.now() - started);
           emit("note", `Couldn't install dependencies after ${after}: ${(err as Error).message.split("\n")[0]}`);
         }
+        if (task.reviewCheckpoint) {
+          if (task.report && await candidateUnchanged(cwd, wt.branch, task.reviewCheckpoint)) {
+            checkpoint = task.reviewCheckpoint;
+          } else {
+            // The agent is about to change what this described, so it must not survive another restart.
+            this.store.updateTask(task.id, { reviewCheckpoint: null });
+            emit("note", "The candidate changed after its work finished, so its agent is picking it back up");
+          }
+        }
       }
 
-      const driver = this.driverFor(task, agent.id);
-      // A session belongs to the agent that started it. Older runs didn't record theirs, so trust those.
-      const owner = this.store.lastWorkDriver(task.id);
-      const resumable = !!task.sessionId && (!isDriverName(owner) || owner === driver.name);
-      if (task.sessionId && !resumable) {
-        emit("note", `Switching to ${driverLabel(driver.name)}, which starts a new session on the work so far`);
-      }
-      const result = await this.runAgent(agent.id, driver, {
-        task: this.store.getTask(task.id)!,
-        repo,
-        cwd,
-        signal: ac.signal,
-        emit,
-        resumeSession: resumable ? task.sessionId! : undefined,
-        onSession: (sessionId) => this.recording(() => this.store.updateTask(task.id, { sessionId })),
-        // Run below as review checks. Investigate-only runs get none.
-        checks: task.autonomy !== "observe" ? this.store.repoChecks(repo.id) : undefined,
-      });
+      let report: Report;
+      if (checkpoint) {
+        report = task.report!;
+      } else {
+        const driver = this.driverFor(task, agent.id);
+        // A session belongs to the agent that started it. Older runs didn't record theirs, so trust those.
+        const owner = this.store.lastWorkDriver(task.id);
+        const resumable = !!task.sessionId && (!isDriverName(owner) || owner === driver.name);
+        if (task.sessionId && !resumable) {
+          emit("note", `Switching to ${driverLabel(driver.name)}, which starts a new session on the work so far`);
+        }
+        const result = await this.runAgent(agent.id, driver, {
+          task: this.store.getTask(task.id)!,
+          repo,
+          cwd,
+          signal: ac.signal,
+          emit,
+          resumeSession: resumable ? task.sessionId! : undefined,
+          onSession: (sessionId) => this.recording(() => this.store.updateTask(task.id, { sessionId })),
+          // Run below as review checks. Investigate-only runs get none.
+          checks: task.autonomy !== "observe" ? this.store.repoChecks(repo.id) : undefined,
+        });
+        report = result.report;
 
-      if (task.autonomy !== "observe") {
-        result.report.validation = this.store.getTask(task.id)?.report?.validation ?? [];
+        if (task.autonomy !== "observe") {
+          report.validation = this.store.getTask(task.id)?.report?.validation ?? [];
+        }
+        if (report.screenshots) {
+          // Observe runs cannot create attachments in the operator's checkout.
+          report.screenshots = task.autonomy === "observe" ? []
+            : retainScreenshots(task.id, cwd, report.screenshots, message => emit("note", message));
+          this.store.updateTask(task.id, { report });
+        }
+        if (task.autonomy !== "observe") {
+          const changed = await finalizeWorktree(repo, task, cwd);
+          report.hasContribution = changed.length > 0;
+          report.changedFiles = [...new Set([...changed, ...report.changedFiles])];
+          // One write, so a restart finds the report and the candidate it describes together, or neither.
+          checkpoint = { ...await reviewInputs(cwd, this.store.repoChecks(repo.id)), passed: [] };
+          this.store.updateTask(task.id, { visualReview: await candidateVisualReview(cwd, report), report, reviewCheckpoint: checkpoint });
+        }
       }
-      if (result.report.screenshots) {
-        // Observe runs cannot create attachments in the operator's checkout.
-        result.report.screenshots = task.autonomy === "observe" ? []
-          : retainScreenshots(task.id, cwd, result.report.screenshots, message => emit("note", message));
-        this.store.updateTask(task.id, { report: result.report });
-      }
-      if (task.autonomy !== "observe") {
-        const changed = await finalizeWorktree(repo, task, cwd);
-        result.report.hasContribution = changed.length > 0;
-        result.report.changedFiles = [...new Set([...changed, ...result.report.changedFiles])];
-        this.store.updateTask(task.id, { visualReview: await candidateVisualReview(cwd, result.report) });
-        this.store.updateTask(task.id, { report: result.report });
-        if (!completionReviewReason({ autonomy: task.autonomy, report: result.report })) await runChecks(cwd, this.store.repoChecks(repo.id), "review", (run) => {
-          result.report.validation!.push(run);
-          this.store.updateTask(task.id, { report: result.report });
+
+      if (task.autonomy !== "observe" && !completionReviewReason({ autonomy: task.autonomy, report })) {
+        const current = await reviewInputs(cwd, this.store.repoChecks(repo.id));
+        const changed = changedInputs(checkpoint!, current);
+        const reusable = changed.length ? [] : checkpoint!.passed;
+        if (task.reviewCheckpoint && checkpoint === task.reviewCheckpoint) {
+          const outcome = changed.length ? `${changed.join(", ")} changed, so all checks run again` : `${reusable.length} already passed on it`;
+          emit("note", `Its agent had finished, so review checks are resuming on ${current.commit.slice(0, 7)} without it: ${outcome}`);
+        }
+        let validated: ReviewCheckpoint = { ...current, passed: [...reusable] };
+        this.store.updateTask(task.id, { reviewCheckpoint: validated });
+        report.validation ??= [];
+        await runChecks(cwd, current.checks, "review", (run) => {
+          report.validation!.push(run);
+          if (run.status === "passed" && run.command) validated = { ...validated, passed: [...validated.passed, run.command] };
+          // One write, so a pass is never counted without its evidence on the report.
+          this.store.updateTask(task.id, { report, reviewCheckpoint: validated });
           emit("note", `Review check ${run.status}: ${run.command ?? "configuration"}`, { validation: run });
-        }, ac.signal);
+        }, ac.signal, undefined, new Set(reusable));
+      } else if (checkpoint && checkpoint === task.reviewCheckpoint) {
+        emit("note", "Its agent had finished, so this task is going to review without resuming it");
       }
       const logged = new Set(this.store.listEvents(task.id).filter((e) => e.type === "finding").map((e) => e.message));
-      for (const f of result.report.findings) {
+      for (const f of report.findings) {
         if (!logged.has(f.title)) emit("finding", f.title, { impact: f.impact, effort: f.effort });
       }
 
       // No cost here: every run, including earlier interrupted ones, already added its own via the runs ledger.
-      this.store.updateTask(task.id, { report: result.report });
+      this.store.updateTask(task.id, { report });
 
       // Hold for the operator whenever there's something for them to decide, including unfinished scope.
       const needsOperator =
         task.autonomy === "propose" ||
-        (task.autonomy === "observe" && result.report.findings.length > 0) ||
-        unmetAcceptance({ acceptance: task.acceptance, report: result.report }).length > 0;
+        (task.autonomy === "observe" && report.findings.length > 0) ||
+        unmetAcceptance({ acceptance: task.acceptance, report }).length > 0;
       // A pre-approved task skips review and goes to the merge queue. Its checks passed above.
       const next = this.store.finishWork(task.id, needsOperator ? "needs_review" : "done");
       if (!next) return;
@@ -695,8 +730,13 @@ export class Factory {
     } finally {
       limit.clear();
       this.running.delete(task.id);
+      const ended = this.store.getTask(task.id);
+      // Only a task going back in the queue resumes from its checkpoint. Merge checks never read it.
+      if (ended?.reviewCheckpoint && !["queued", "running"].includes(ended.status)) {
+        this.recording(() => this.store.updateTask(task.id, { reviewCheckpoint: null }));
+      }
       // If it failed or was cancelled, its worktree goes on the next tick.
-      if (PUT_AWAY_STATUSES.includes(this.store.getTask(task.id)?.status ?? "queued")) this.lastSweep = 0;
+      if (PUT_AWAY_STATUSES.includes(ended?.status ?? "queued")) this.lastSweep = 0;
       this.setAgentState(agent.id, this.store.isPaused() ? "paused" : "idle", null);
     }
   }

@@ -185,6 +185,7 @@ const TASK_UPDATE_COLUMNS = {
   sessionId: "session_id",
   report: "report",
   visualReview: "visual_review",
+  reviewCheckpoint: "review_checkpoint",
   costUsd: "cost_usd",
   startedAt: "started_at",
   finishedAt: "finished_at",
@@ -267,6 +268,7 @@ const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
   ["scheduled_at", "TEXT"],
   ["schedule_id", "TEXT"],
   ["visual_review", "TEXT"],
+  ["review_checkpoint", "TEXT"],
   // Older tasks share 0 and keep their original FIFO order until moved.
   ["queue_position", "INTEGER NOT NULL DEFAULT 0"],
 ];
@@ -385,6 +387,7 @@ function toTask(r: Row): Task {
     postmortemOf: (r.postmortem_of as string) ?? null,
     preApprovedAt: (r.pre_approved_at as string) ?? null,
     visualReview: r.visual_review ? JSON.parse(r.visual_review as string) : null,
+    reviewCheckpoint: r.review_checkpoint ? JSON.parse(r.review_checkpoint as string) : null,
     prerequisites: r.prerequisites ? JSON.parse(r.prerequisites as string) as string[] : [],
     prerequisitesWaivedAt: (r.prerequisites_waived_at as string) ?? null,
     acceptance: r.acceptance ? JSON.parse(r.acceptance as string) as string[] : [],
@@ -961,7 +964,7 @@ export class Store {
       const col = cols[k];
       if (!col) continue;
       sets.push(`${col} = ?`);
-      params.push((k === "report" || k === "visualReview") && v ? JSON.stringify(v) : v);
+      params.push((k === "report" || k === "visualReview" || k === "reviewCheckpoint") && v ? JSON.stringify(v) : v);
     }
     if (!sets.length) return;
     params.push(id);
