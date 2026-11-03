@@ -216,6 +216,7 @@ Start a run with the button on their row (**Review security**, **Reduce duplicat
 | `crane blocked` | Commands agents were blocked from, added up across tasks |
 | `crane allow "<command>" -r <repo>` / `crane keep-blocked …` | Let agents in that repo run it from now on, or keep it blocked and stop asking. `crane disallow` takes an allowed command back. |
 | `crane repos` / `crane repos add <path>` | The codebases the factory works on, and the commands allowed in each |
+| `crane repos checks <repo> [--set "<command>"] [--clear]` | Show or replace the commands a repo's work must pass before review and merge (repeat `--set` for each command; `--json` for machine-readable output) |
 | `crane agents` / `crane agents use <agent>` | Who's on the crew, which agents are installed, and which one new tasks run on |
 | `crane agents set <agent> --model <model> --effort <level>` | Choose the model and effort an agent runs with (`default` for its own) |
 | `crane agents postmortem [--agent <agent>] [--model <model>] [--effort <level>] [--crew <members>]` | Show or set who runs post-mortems and the defaults for newly queued ones |
@@ -312,8 +313,8 @@ incompatible suites to Crane's full external review and merge checks.
 MIT
 # Repository validation
 
-Use **Repos → Checks** to configure shell commands, one per line, for each
-repository. These are trusted operator commands executed by the factory in its
+Use **Repos → Checks** or `crane repos checks <repo> --set "<command>"` to
+configure shell commands for each repository. These are trusted operator commands executed by the factory in its
 isolated worktree, not commands supplied by an agent. Crane defaults to
 `npm run typecheck` and `npm test` for its own repository. Other repositories
 start unconfigured and cannot pass review or merge gates until checks are set.

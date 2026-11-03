@@ -56,6 +56,32 @@ function setup() {
   return { store, repo, task };
 }
 
+test("cli: repos checks shows, replaces and clears a repo's checks", async () => {
+  const { store, repo } = setup();
+  try {
+    assert.match((await crane(store, "repos", "checks", "app")).out, /can't pass review or merge/);
+
+    const set = await crane(store, "repos", "checks", "app", "--set", " npm run lint ", "--set", "npm test");
+    assert.equal(set.code, 0, set.err);
+    assert.match(set.out, /Saved checks for app/);
+    assert.deepEqual(store.repoChecks(repo.id), ["npm run lint", "npm test"]);
+
+    const shown = await crane(store, "repos", "checks", "app", "--json");
+    assert.deepEqual(JSON.parse(shown.out), ["npm run lint", "npm test"]);
+
+    for (const args of [["--set", "  "], ["--set", "npm test", "--clear"]]) {
+      assert.equal((await crane(store, "repos", "checks", "app", ...args)).code, 1, args.join(" "));
+      assert.deepEqual(store.repoChecks(repo.id), ["npm run lint", "npm test"]);
+    }
+    assert.equal((await crane(store, "repos", "checks", "nope")).code, 1);
+    assert.equal((await crane(store, "repos", "checks", "nope", "--set", "npm test")).code, 1);
+
+    const cleared = await crane(store, "repos", "checks", "app", "--clear", "--json");
+    assert.deepEqual(JSON.parse(cleared.out), []);
+    assert.deepEqual(store.repoChecks(repo.id), []);
+  } finally { store.close(); }
+});
+
 test("cli: retention is opt-in, validates days and can be disabled", async () => {
   const { store } = setup();
   try {

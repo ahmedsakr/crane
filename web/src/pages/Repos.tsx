@@ -1,7 +1,64 @@
-import { useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useApp } from "../lib/app-context";
-import { api, ruleLabel } from "../lib/api";
+import { api, ruleLabel, type Repo } from "../lib/api";
 import { useToast } from "../components/bits";
+import { Sheet, SheetBody, SheetFoot, SheetHead } from "../components/Sheet";
+
+/** Edit the commands a repo's work must pass. Save stays off until the saved list has loaded, so a failed load can't wipe it. */
+function ChecksSheet({ repo, onClose }: { repo: Pick<Repo, "id" | "name">; onClose: () => void }) {
+  const toast = useToast();
+  const formId = useId();
+  const [text, setText] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const commands = (text ?? "").split("\n").map((line) => line.trim()).filter(Boolean);
+
+  useEffect(() => {
+    let stale = false;
+    api.repoChecks(repo.id).then(
+      (saved) => { if (!stale) setText(saved.join("\n")); },
+      (e: Error) => { if (!stale) setError(e.message); },
+    );
+    return () => { stale = true; };
+  }, [repo.id]);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await api.configureChecks(repo.id, commands);
+      toast({ text: `Saved checks for ${repo.name}` });
+      onClose();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const note = error
+    ? <span className="error-text" role="alert">{error}</span>
+    : text !== null && !commands.length ? "With no checks, work in this repo can't pass review or merge." : undefined;
+  return (
+    <Sheet onClose={onClose}>
+      <SheetHead title={`Checks for ${repo.name}`} subtitle="What work must pass before review and merge. Crane runs these itself, in the task's worktree." />
+      <SheetBody>
+        <form id={formId} className="sheet-fields" onSubmit={(e) => { e.preventDefault(); void save(); }}>
+          <label className="tuning-field">
+            <span>Shell commands, one per line</span>
+            <textarea className="input mono" rows={5} value={text ?? ""} disabled={text === null || saving}
+              placeholder={text === null ? "" : "npm test"} spellCheck={false} autoComplete="off"
+              onChange={(e) => setText(e.target.value)} />
+          </label>
+        </form>
+      </SheetBody>
+      <SheetFoot note={note}>
+        <button className="btn btn-ghost btn-sm" type="button" disabled={saving} onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary btn-sm" type="submit" form={formId} disabled={text === null || saving}>Save</button>
+      </SheetFoot>
+    </Sheet>
+  );
+}
 
 export function Repos() {
   const { overview, refresh, instruct } = useApp();
@@ -9,6 +66,7 @@ export function Repos() {
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [checksRepo, setChecksRepo] = useState<Repo | null>(null);
 
   const connect = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -105,20 +163,9 @@ export function Repos() {
                 )}
               </span>
               <span style={{ display: "flex", gap: 6 }}>
-                <button className="btn btn-quiet btn-sm" onClick={async () => {
-                  try {
-                    const url = `/api/repos/${r.id}/checks`;
-                    const response = await fetch(url);
-                    if (!response.ok) throw new Error("Couldn't load checks");
-                    const commands = await response.json() as string[];
-                    const value = window.prompt("Repository checks (one shell command per line). Empty configuration blocks review and merge.", commands.join("\n"));
-                    if (value === null) return;
-                    const saved = await fetch(url, { method: "PUT", headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify(value.split("\n").map(x => x.trim()).filter(Boolean)) });
-                    if (!saved.ok) throw new Error("Couldn't save checks");
-                    toast({ text: "Repository checks saved" });
-                  } catch (e) { toast({ text: (e as Error).message }); }
-                }}>Checks</button>
+                <button className="btn btn-quiet btn-sm" aria-label={`Checks for ${r.name}`} onClick={() => setChecksRepo(r)}>
+                  Checks
+                </button>
                 <button
                   className="btn btn-quiet btn-sm"
                   onClick={() =>
@@ -148,6 +195,7 @@ export function Repos() {
           </li>
         ))}
       </ul>
+      {checksRepo && <ChecksSheet repo={checksRepo} onClose={() => setChecksRepo(null)} />}
     </>
   );
 }

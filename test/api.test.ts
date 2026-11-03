@@ -236,6 +236,22 @@ test("api: invalid check settings cannot replace the operator's merge gates", as
       assert.deepEqual(await (await app.request(`/api/repos/${repo.id}/checks`)).json(), commands);
       assert.deepEqual(store.repoChecks(other.id), [], "settings stay scoped to the selected repo");
     }
+    assert.equal((await app.request("/api/repos/r-missing/checks")).status, 404);
+  } finally { store.close(); }
+});
+
+test("api: checks saved by repo name are the ones the factory runs", async () => {
+  const store = new Store(":memory:");
+  try {
+    const repo = store.addRepo({ path: "/other", name: "other" });
+    const app = createApp(store);
+    const response = await app.request("/api/repos/other/checks", {
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify([" npm test "]),
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), ["npm test"]);
+    assert.deepEqual(store.repoChecks(repo.id), ["npm test"]);
+    assert.deepEqual(await (await app.request("/api/repos/other/checks")).json(), ["npm test"]);
   } finally { store.close(); }
 });
 

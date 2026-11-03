@@ -700,6 +700,21 @@ export class OperatorActions {
     return next;
   }
 
+  /**
+   * Replace the commands a repo's work must pass before review and merge. Saving
+   * none is allowed, and stops that work passing either gate. Bad input leaves the
+   * saved checks alone. Resolves the repo first because checks are stored by id.
+   */
+  configureChecks(repoId: string, input: unknown): string[] {
+    const repo = this.needRepo(repoId);
+    if (!Array.isArray(input) || input.some((c) => typeof c !== "string" || !c.trim())) {
+      throw new Error("Expected an array of nonempty commands");
+    }
+    const commands = input.map((c: string) => c.trim());
+    this.store.setRepoChecks(repo.id, commands);
+    return commands;
+  }
+
   private noteOnTask(taskId: string | undefined, message: string, data: Record<string, unknown>) {
     const t = taskId ? this.store.getTask(taskId) : null;
     if (t) this.store.addEvent(t.id, "operator", message, data);
