@@ -231,7 +231,7 @@ function lookoutsBrief(task: Task): string {
 }
 
 /** What the factory knows about the task's surroundings when the run starts. */
-type TaskContext = Pick<RunContext, "siblingTasks" | "prerequisites" | "commandEvidence">;
+type TaskContext = Pick<RunContext, "siblingTasks" | "prerequisites" | "commandEvidence" | "postmortemPrompt">;
 
 function commandEvidenceBrief(context: TaskContext): string {
   if (!context.commandEvidence?.length) return "";
@@ -262,7 +262,7 @@ export function userPrompt(task: Task, job?: AgentJob, context: TaskContext = {}
     ].join("\n\n");
   }
   return [
-    `# ${task.title}\n\n${task.brief}`,
+    `# ${task.title}\n\n${context.postmortemPrompt ?? task.brief}`,
     commandEvidenceBrief(context),
     prerequisitesBrief(task, context.prerequisites),
     acceptanceBrief(task),
