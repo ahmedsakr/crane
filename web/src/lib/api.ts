@@ -98,6 +98,8 @@ export const api = {
   overview: () => req<Overview>("/overview"),
   analytics: (days: number) => req<Analytics>(`/analytics?days=${days}`),
   tasks: (status?: string) => req<Task[]>(`/tasks${status ? `?status=${status}` : ""}`),
+  queue: () => req<Task[]>("/tasks/queue"),
+  moveQueuedTask: (id: string, beforeId: string | null) => post<Task[]>(`/tasks/${id}/move`, { beforeId }),
   task: (id: string) => req<TaskDetail>(`/tasks/${id}`),
   diff: (id: string) => req<TaskDiff>(`/tasks/${id}/diff`),
   draft: (text: string) => post<TaskDraft>("/instruct/draft", { text }),

@@ -59,6 +59,16 @@ test("store: claiming a task holds the write lock across its read, so another pr
   }
 });
 
+test("store: reordering the queue holds the write lock across its read", () => {
+  const { file, store, task } = setup();
+  const second = store.createTask({ kind: "maintenance", title: "second", brief: "", repoId: null, autonomy: "observe" });
+  const other = otherProcessWritesBefore(file, store, "UPDATE tasks SET queue_position");
+  try {
+    assert.deepEqual(store.moveQueuedTask(second.id, task.id).map(t => t.id), [second.id, task.id]);
+    assert.equal(other.seen.outcome, "SQLITE_BUSY");
+  } finally { other.close(); store.close(); }
+});
+
 test("store: claiming a merge holds the write lock across its read, so another process can't break it", () => {
   const { file, store, task } = setup();
   store.updateTask(task.id, { status: "merging" });

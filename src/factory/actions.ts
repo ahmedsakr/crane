@@ -200,6 +200,14 @@ export class OperatorActions {
     return task;
   }
 
+  /** Reorder waiting work; scheduling, crew assignment and prerequisites still apply. */
+  moveQueuedTask(id: string, beforeId: unknown): Task[] {
+    if (beforeId !== null && (typeof beforeId !== "string" || !beforeId.trim())) {
+      throw new Error("Give beforeId as a task id, or null to move to the end of the queue");
+    }
+    return this.store.moveQueuedTask(this.need(id).id, beforeId === null ? null : this.need(beforeId).id);
+  }
+
   /** Reschedule queued work, or clear its time without waiving prerequisites. */
   schedule(id: string, scheduledAt: unknown): Task {
     const task = this.need(id);

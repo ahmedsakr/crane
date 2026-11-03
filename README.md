@@ -58,6 +58,8 @@ You can also pre-approve at creation: open **Merge when it passes** next to **St
 
 The task page shows the start time and lets you change it or **Start now**. CLI equivalents are `crane schedule <id> <timestamp>` and `crane schedule <id> now`. Clearing a start time does not waive prerequisites. You can cancel scheduled work like any queued task. **Run again** creates a fresh task eligible immediately, without carrying over the original start time.
 
+On **Tasks**, the **Queue** section shows pickup order. Drag a task's numbered handle with a mouse or finger to move it; with a keyboard, focus the handle and use ↑ / ↓ (Home / End move to the first / last position). Escape cancels a drag. The **Queue** filter shows just waiting work. The order survives restarts, and new tasks join the end. Agents take the first task they can work: start times, prerequisites, crew assignment and factory pause still apply. Running tasks keep running. From the CLI, `crane queue [--json]` lists pickup order, `crane queue <id> --before <other-id>` moves a task before another, and `crane queue <id> --last` moves it to the end.
+
 ### Prerequisites and acceptance criteria
 
 When work depends on another task, or only counts as done when something observable holds, say so as gates rather than in the brief. Open **Prerequisites and acceptance criteria** on the instruct sheet or under **Make this change**, or pass `--after <id>` and `--accept "<criterion>"` (each repeatable) to `crane do` and `crane follow-up`.
@@ -162,6 +164,7 @@ Start a run with the button on their row (**Review security**, **Reduce duplicat
 | `crane` | Status: what needs you, what's running, suggested next steps |
 | `crane do "…"` | Give the factory an instruction. It shows what it understood before starting. |
 | `crane tasks` | Open tasks (`--all` for everything, `--json` for full records including each task's branch and worktree) |
+| `crane queue [<id> --before <other-id> \| --last]` | List pickup order, or move a queued task (`--json` for records in queue order) |
 | `crane show <id>` | Summary, findings, changed files, and recent activity |
 | `crane watch [id]` | Follow a task, or the whole factory, live |
 | `crane approve <id>` / `crane decline <id>` | Decide on work that's waiting for you. Approving merges and pushes it (`--no-merge` to approve only). |

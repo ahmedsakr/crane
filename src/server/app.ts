@@ -98,6 +98,8 @@ export function createApp(store: Store, opts: { exposed?: boolean } = {}) {
     return c.json(store.listTasks({ status, repoId }).map(listed));
   });
 
+  api.get("/tasks/queue", (c) => c.json(store.listQueuedTasks().map(listed)));
+
   api.get("/tasks/:id", (c) => {
     const m = store.getTask(c.req.param("id"));
     if (!m) return c.json({ error: "Not found" }, 404);
@@ -177,6 +179,10 @@ export function createApp(store: Store, opts: { exposed?: boolean } = {}) {
   api.post("/tasks/:id/visual-review", async (c) => {
     const input = await optionalJsonObject<{ status: "inspected" | "waived"; commit: string; note: string }>(c.req.raw);
     return c.json(await actions.recordVisualReview(c.req.param("id"), input));
+  });
+  api.post("/tasks/:id/move", async (c) => {
+    const { beforeId } = await optionalJsonObject<{ beforeId: string | null }>(c.req.raw);
+    return c.json(actions.moveQueuedTask(c.req.param("id"), beforeId).map(listed));
   });
   api.post("/tasks/:id/schedule", async (c) => {
     const body = await c.req.json<{ scheduledAt: string | null }>();

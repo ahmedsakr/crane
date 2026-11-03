@@ -251,6 +251,8 @@ const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
   ["scheduled_at", "TEXT"],
   ["schedule_id", "TEXT"],
   ["visual_review", "TEXT"],
+  // Older tasks share 0 and keep their original FIFO order until moved.
+  ["queue_position", "INTEGER NOT NULL DEFAULT 0"],
 ];
 
 /** Add any missing columns to an older database. Safe if two processes open it at once. */
@@ -664,8 +666,9 @@ export class Store {
       this.db
         .prepare(
           `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, driver_settings,
-             prerequisites, acceptance, lookouts, status, created_at, scheduled_at, pre_approved_at, follow_up_of, follow_up_finding, schedule_id, postmortem_of)
-           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?)`,
+             prerequisites, acceptance, lookouts, status, created_at, scheduled_at, pre_approved_at, follow_up_of, follow_up_finding, schedule_id, postmortem_of, queue_position)
+           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?,
+             (SELECT COALESCE(MAX(queue_position), 0) + 1 FROM tasks WHERE status = 'queued'))`,
         )
         .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null,
           input.model ?? null, input.effort ?? null, input.assignee ?? null,
@@ -684,6 +687,34 @@ export class Store {
         });
       }
       return task;
+    }).immediate();
+  }
+
+  /** The entire waiting queue, in pickup order, including tasks not yet eligible. */
+  listQueuedTasks(): Task[] {
+    return (this.db.prepare("SELECT * FROM tasks WHERE status = 'queued' ORDER BY queue_position, created_at, rowid")
+      .all() as Row[]).map(toTask);
+  }
+
+  /** Move relative to a live anchor, without overwriting concurrent queue changes. */
+  moveQueuedTask(id: string, beforeId: string | null): Task[] {
+    return this.db.transaction(() => {
+      const queue = this.listQueuedTasks();
+      const from = queue.findIndex(t => t.id === id);
+      if (from < 0) throw new Error(`Task ${id} isn't queued; refresh the queue and try again`);
+      if (beforeId !== null && !queue.some(t => t.id === beforeId)) {
+        throw new Error(`Task ${beforeId} isn't queued; refresh the queue and try again`);
+      }
+      if (id === beforeId) return queue;
+      const task = queue[from]!;
+      queue.splice(from, 1);
+      const to = beforeId === null ? queue.length : queue.findIndex(t => t.id === beforeId);
+      queue.splice(to, 0, task);
+      if (from === to) return queue;
+      const update = this.db.prepare("UPDATE tasks SET queue_position = ? WHERE id = ?");
+      queue.forEach((t, i) => update.run(i + 1, t.id));
+      this.addEvent(id, "operator", beforeId === null ? "Moved to the end of the queue" : `Moved before ${beforeId} in the queue`, { beforeId });
+      return queue;
     }).immediate();
   }
 
@@ -930,7 +961,7 @@ export class Store {
   }
 
   /**
-   * Atomically take the oldest queued task this agent may work: one assigned
+   * Atomically take the first queued task this agent may work: one assigned
    * to it, or one assigned to nobody unless `onlyAssigned`. Once the operator
    * names a post-mortem crew, post-mortems go to them alone, whatever their role;
    * `onlyPostmortems` is how a named member who's on-call gets called in. Skips tasks whose
@@ -950,7 +981,7 @@ export class Store {
     return this.db.transaction(() => {
       const rows = this.db
         .prepare(`SELECT * FROM tasks WHERE status = 'queued' AND ${eligible}
-          AND ${TASK_DUE} ORDER BY created_at ASC`)
+          AND ${TASK_DUE} ORDER BY queue_position, created_at, rowid`)
         .all(...(opts.onlyPostmortems ? [now()] : [agentId, now()])) as Row[];
       const next = rows.map(toTask).find((t) => !this.unmetPrerequisites(t).length);
       if (!next) return null;
