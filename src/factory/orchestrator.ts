@@ -1,23 +1,24 @@
 import { crewSettingKey, type Store } from "../core/store.js";
-import { errorMessage, completionReviewReason, driverLabel, isDriverName, unmetAcceptance, type AgentState, type EventType, type Report, type ReviewCheckpoint, type RunUsage, type Task, type TaskStatus } from "@crane/contracts";
-import { AgentRunError, addRunUsage, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
-import { readdirSync } from "node:fs";
+import { errorMessage, completionReviewReason, driverLabel, isDriverName, unmetAcceptance, type AgentState, type EventType, type Report, type ReviewCheckpoint, type Task } from "@crane/contracts";
+import { AgentRunError, type AgentDriver } from "@crane/agent-protocol";
 import { join } from "node:path";
-import { createWorktree, finalizeWorktree, PreparationHold, putAwayWorktree, removeWorktree, requireCommits } from "./git.js";
+import { runAgent, type AgentRunnerDeps } from "./agent-runner.js";
+import { defaultDriver, driverFor } from "./driver-selection.js";
+import { createWorktree, finalizeWorktree, PreparationHold, removeWorktree, requireCommits } from "./git.js";
 import { installDependencies } from "@crane/worktree-deps";
 import { elapsed } from "./elapsed.js";
 import { deleteMergedBranch, landTask, MergeError } from "./merge.js";
 import { runChecks } from "./checks.js";
 import { candidateUnchanged, changedInputs, reviewInputs } from "./review-checkpoint.js";
 import { DashboardBuilder } from "./dashboard.js";
-import { driverSettings, isAvailable } from "./drivers.js";
+import { envNumber, minutes, timeLimit } from "./run-limits.js";
 import { DEFAULT_DRIVER_KEY, DEFAULT_MAX_TURNS, DEFAULT_TIME_LIMIT_MIN, HEARTBEAT_KEY } from "./settings.js";
 import { worktreesDir } from "../core/paths.js";
 import { retainScreenshots } from "../core/screenshots.js";
 import { StorageMaintenance } from "../core/retention.js";
-import { siblingTasksFor } from "./task-context.js";
 import { OperatorActions } from "./actions.js";
 import { candidateVisualReview, hasVisualDecision, requireCandidateVisualReview, visualReviewRequired } from "./visual-review.js";
+import { WorktreeSweeper } from "./worktree-sweeper.js";
 
 const CREW = ["Jib", "Boom", "Hoist", "Trolley", "Rigger", "Winch", "Gantry", "Mast"];
 
@@ -50,49 +51,6 @@ const HEARTBEAT_MS = 3000;
 const STOPPED_MESSAGE = "Stopped with the factory. Back in the queue to pick up where it left off";
 
 /**
- * Tasks whose worktree nothing will use again: a retry is a new task with its
- * own. Approved and done tasks keep theirs, since the operator may still merge.
- */
-const PUT_AWAY_STATUSES: TaskStatus[] = ["merged", "rejected", "failed", "cancelled"];
-/** Statuses where the agent may have left work uncommitted, which goes to the branch first. */
-const SAVE_WORK_STATUSES: TaskStatus[] = ["failed", "cancelled"];
-/** How often to look for worktrees to put away, besides right after a task stops. */
-const SWEEP_MS = 60_000;
-
-const envNumber = (name: string): number | undefined => {
-  const v = process.env[name];
-  return v !== undefined && v !== "" && Number.isFinite(Number(v)) ? Number(v) : undefined;
-};
-
-/**
- * Abort `ac` once `minutes` have passed. `hit()` says whether that's why it
- * was aborted, so the caller can tell a time limit from a cancellation.
- */
-function timeLimit(ac: AbortController, minutes: number) {
-  let hit = false;
-  const timer = minutes > 0 ? setTimeout(() => ((hit = true), ac.abort()), minutes * 60_000) : null;
-  timer?.unref();
-  return { hit: () => hit, clear: () => timer && clearTimeout(timer) };
-}
-
-function sleep(ms: number, signal: AbortSignal) {
-  return new Promise<void>((resolve, reject) => {
-    if (signal.aborted) return reject(new Error("Cancelled"));
-    const t = setTimeout(() => {
-      signal.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(t);
-      reject(new Error("Cancelled"));
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
-const minutes = (n: number) => (n === 1 ? "1 minute" : `${n} minutes`);
-
-/**
  * The factory floor. Keeps a crew of agents busy: each idle agent claims the
  * oldest queued task, works it through the driver, and files the result.
  * State lives in the store, so the CLI and UI can steer it from anywhere.
@@ -113,14 +71,11 @@ export class Factory {
   private dashboard: DashboardBuilder | null = null;
   readonly maxTurns: number;
   readonly timeLimitMin: number;
-  private retryDelayMs: number;
-  private sweeping: Promise<void> | null = null;
-  private lastSweep = 0;
+  private agentRunner: AgentRunnerDeps;
+  private sweeper: WorktreeSweeper;
   /** Why the last tick failed, so a store that stays broken is reported once rather than every tick. */
   private tickError: string | null = null;
   private storageMaintenance: StorageMaintenance;
-  /** Worktrees left in place this run, so each is reported once rather than every sweep. */
-  private keptWorktrees = new Set<string>();
   /** Every agent this factory can run, by name. The first is the default until the operator picks one. */
   private drivers: Map<string, AgentDriver>;
 
@@ -144,7 +99,17 @@ export class Factory {
     this.storageMaintenance = new StorageMaintenance(store, this.log);
     this.maxTurns = Math.max(0, opts.maxTurns ?? envNumber("CRANE_MAX_TURNS") ?? DEFAULT_MAX_TURNS);
     this.timeLimitMin = Math.max(0, opts.timeLimitMin ?? envNumber("CRANE_TIME_LIMIT_MIN") ?? DEFAULT_TIME_LIMIT_MIN);
-    this.retryDelayMs = Math.max(0, opts.retryDelayMs ?? (envNumber("CRANE_RETRY_DELAY_SEC") ?? 60) * 1000);
+    this.agentRunner = {
+      store,
+      maxTurns: this.maxTurns,
+      retryDelayMs: Math.max(0, opts.retryDelayMs ?? (envNumber("CRANE_RETRY_DELAY_SEC") ?? 60) * 1000),
+    };
+    this.sweeper = new WorktreeSweeper({
+      store,
+      log: this.log,
+      inUse: (taskId) => this.running.has(taskId) || this.running.has(`merge:${taskId}`),
+      stopping: () => this.stopping,
+    });
     if (opts.buildDashboard) {
       this.dashboard = new DashboardBuilder({
         repo: () => this.store.listRepos().find((r) => r.isFactory) ?? null,
@@ -154,69 +119,15 @@ export class Factory {
     }
   }
 
-  /**
-   * Run the agent, giving a transient failure (overload, rate limit, network)
-   * one more try after a pause. The retry resumes the same session when there
-   * is one, so the agent picks up where it stopped instead of starting over.
-   */
-  private async runWithRetry(driver: AgentDriver, ctx: RunContext): Promise<RunResult> {
-    const run = async (resumeSession = ctx.resumeSession) => driver.run({
-      ...ctx,
-      resumeSession,
-      commandEvidence: this.store.commandEvidence(ctx.task.id),
-      siblingTasks: ctx.repo && !ctx.job ? await siblingTasksFor(this.store, ctx.task, ctx.repo) : undefined,
-      prerequisites: !ctx.job && ctx.task.prerequisites.length ? this.store.prerequisiteStates(ctx.task) : undefined,
-      postmortemPrompt: !ctx.job && ctx.task.postmortemOf ? this.store.postmortemPrompt(ctx.task.postmortemOf) : undefined,
-    });
-    try {
-      return await run();
-    } catch (err) {
-      if (ctx.signal.aborted || !(err instanceof AgentRunError) || !err.transient) throw err;
-      // Jitter, so a crew that all hit the same overload doesn't come back at once.
-      const wait = Math.round(this.retryDelayMs * (0.8 + Math.random() * 0.4));
-      const reason = err.message.split("\n")[0]!.slice(0, 200).replace(/\.$/, "");
-      ctx.emit("note", `${reason}. Trying once more in ${Math.max(1, Math.round(wait / 1000))}s`, { retry: true });
-      await sleep(wait, ctx.signal);
-      return run(err.sessionId ?? ctx.resumeSession);
-    }
-  }
-
-  /** The operator's default agent, when this factory can run it; otherwise its first driver. */
-  private defaultDriver(): AgentDriver {
-    return this.drivers.get(this.store.getSetting(DEFAULT_DRIVER_KEY) ?? "") ?? this.drivers.values().next().value!;
-  }
-
-  /**
-   * Who works a task: the agent the operator chose for it, else the one that
-   * worked it last (it owns the task's session and knows the work so far),
-   * else the crew member's preference, then the factory's default.
-   */
-  private driverFor(task: Task, agentId: string): AgentDriver {
-    if (task.driver) {
-      const chosen = this.drivers.get(task.driver);
-      if (!chosen) throw new Error(`This task asks for ${driverLabel(task.driver)}, which this factory can't run`);
-      return chosen;
-    }
-    const previous = this.drivers.get(this.store.lastWorkDriver(task.id) ?? "");
-    if (previous) return previous;
-    const preferred = this.store.crewDefaultDriver(agentId);
-    if (preferred) {
-      const driver = this.drivers.get(preferred);
-      if (!driver) throw new Error(`This crew member asks for ${driverLabel(preferred)}, which this factory can't run`);
-      return driver;
-    }
-    return this.defaultDriver();
-  }
-
   start() {
     this.store.closeUnresolvedCommands();
     // Keep the operator's saved default if this factory can run it.
     const saved = this.store.getSetting(DEFAULT_DRIVER_KEY);
-    if (!saved || !this.drivers.has(saved)) this.store.setSetting(DEFAULT_DRIVER_KEY, this.defaultDriver().name);
+    if (!saved || !this.drivers.has(saved)) this.store.setSetting(DEFAULT_DRIVER_KEY, defaultDriver(this.store, this.drivers).name);
     this.lastHeartbeat = null;
     this.agentStates = new Map(this.store.listAgents().map(a => [a.id, { state: a.state, taskId: a.taskId }]));
     for (const a of this.crew) {
-      this.store.upsertAgent({ ...a, driver: this.defaultDriver().name });
+      this.store.upsertAgent({ ...a, driver: defaultDriver(this.store, this.drivers).name });
       this.setAgentState(a.id, "idle", null);
     }
     this.store.pruneAgents(this.crew.map((a) => a.id));
@@ -252,7 +163,7 @@ export class Factory {
     // Give agents a moment to exit, so their last events and the requeue are recorded in order.
     let timeout: NodeJS.Timeout | undefined;
     await Promise.race([
-      Promise.allSettled([...this.inflight, this.sweeping, this.dashboard?.stop()]),
+      Promise.allSettled([...this.inflight, this.sweeper.inProgress, this.dashboard?.stop()]),
       new Promise((r) => (timeout = setTimeout(r, opts.graceMs ?? STOP_GRACE_MS))),
     ]);
     clearTimeout(timeout);
@@ -287,55 +198,8 @@ export class Factory {
     this.inflight.add(p);
   }
 
-  /** Start a sweep for worktrees nothing needs any more, unless one ran lately or is under way. */
   private sweepWorktrees() {
-    if (this.sweeping || this.stopping || Date.now() - this.lastSweep < SWEEP_MS) return;
-    this.lastSweep = Date.now();
-    this.sweeping = this.putAwayWorktrees()
-      .catch((err) => this.log(`Couldn't clean up worktrees: ${errorMessage(err)}`))
-      .finally(() => (this.sweeping = null));
-  }
-
-  /**
-   * Remove the worktrees of tasks that are over: merged, declined, failed, or
-   * cancelled. Work a failed or cancelled task left uncommitted is committed to
-   * its branch first, so the branch still has it. Also finds directories left
-   * after a crash, whose task no longer records them.
-   */
-  private async putAwayWorktrees() {
-    const found = new Map<string, string>(); // taskId -> path
-    for (const t of this.store.tasksWithWorktrees(PUT_AWAY_STATUSES)) found.set(t.id, t.worktree!);
-    const dir = worktreesDir();
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      if (entry.isDirectory() && !found.has(entry.name)) found.set(entry.name, join(dir, entry.name));
-    }
-
-    for (const [id, path] of found) {
-      if (this.stopping) return;
-      if (this.running.has(id) || this.running.has(`merge:${id}`) || this.keptWorktrees.has(path)) continue;
-      // Read it fresh: the operator may have acted on it since the sweep started.
-      const task = this.store.getTask(id);
-      if (!task || task.id !== id || !PUT_AWAY_STATUSES.includes(task.status)) continue;
-      const repo = task.repoId ? this.store.getRepo(task.repoId) : null;
-      if (!repo) continue;
-      let result;
-      try {
-        result = await putAwayWorktree(repo, task, path, { saveWork: SAVE_WORK_STATUSES.includes(task.status) });
-      } catch (err) {
-        result = { removed: false as const, reason: errorMessage(err).split("\n")[0]! };
-      }
-      if (!result.removed) {
-        this.keptWorktrees.add(path);
-        this.log(`Left the worktree of ${task.id} at ${path}: ${result.reason}`);
-        continue;
-      }
-      if (task.worktree) this.store.updateTask(task.id, { worktree: null });
-      if (result.saved) {
-        this.store.addEvent(task.id, "note", `Saved its unfinished work to ${task.branch} and removed its worktree`, {
-          branch: task.branch,
-        });
-      }
-    }
+    this.sweeper.sweep();
   }
 
   /** One bad tick (a locked or full database, say) mustn't end every agent's run. The next one tries again. */
@@ -387,61 +251,19 @@ export class Factory {
         this.track(this.merge(agent, merge), agent.id, merge.id);
         continue;
       }
-      // A member with a maintenance role is kept for the runs the operator starts for it.
-      // An on-call member comes in only for the post-mortems the operator named them for.
-      const task = pending.queued ? this.store.claimNextTask(agent.id, active ? { onlyAssigned: this.store.crewRole(agent.id) !== null } : { onlyPostmortems: true }) : null;
+      const task = pending.queued ? this.claimNextTask(agent.id, active) : null;
       if (!task) continue;
       this.track(this.work(agent, task), agent.id, task.id);
     }
   }
 
   /**
-   * Run the driver with a row in the runs ledger around it, so every run's
-   * cost lands on its task: succeeded, failed, or cancelled. A retry after a
-   * transient failure counts toward the same run.
+   * A member with a maintenance role is kept for the runs the operator starts for it.
+   * An on-call member comes in only for the post-mortems the operator named them for.
    */
-  private async runAgent(
-    agentId: string,
-    driver: AgentDriver,
-    ctx: Omit<RunContext, "onUsage" | "allowedTools" | "maxTurns" | "model" | "effort">,
-  ): Promise<RunResult> {
-    if (!(await isAvailable(driver))) {
-      throw new Error(
-        `${driverLabel(driver.name)} isn't installed where the factory runs, or didn't answer. Install it and restart the factory, or retry the task on another agent.`,
-      );
-    }
-    this.store.setAgentDriver(agentId, driver.name);
-    const runId = this.store.startRun({
-      taskId: ctx.task.id,
-      kind: ctx.job?.kind ?? "work",
-      agentId,
-      driver: driver.name,
-    });
-    let usage: RunUsage | null = null;
-    // A driver can report more than once in a run (a failed resume, then a fresh session), so add them up.
-    const onUsage = (u: RunUsage) => {
-      usage = addRunUsage(usage, u);
-    };
-    // Read at the start of every run, so a change on the Crew page applies to the next one without a restart.
-    const { model, effort } = driverSettings((k) => this.store.getSetting(k), driver.name);
-    // Task overrides belong to their chosen driver, including after a restart.
-    const taskSettings = ctx.task.driver === driver.name ? ctx.task : null;
-    try {
-      const result = await this.runWithRetry(driver, {
-        ...ctx,
-        onUsage,
-        allowedTools: ctx.repo ? this.store.repoTools(ctx.repo.id).allowed : [],
-        maxTurns: this.maxTurns || undefined,
-        model: taskSettings?.model ?? taskSettings?.driverSettings?.model ?? model ?? undefined,
-        effort: taskSettings?.effort ?? taskSettings?.driverSettings?.effort ?? effort ?? undefined,
-      });
-      this.store.finishRun(runId, "succeeded", usage);
-      return result;
-    } catch (err) {
-      const cancelled = ctx.signal.aborted || this.store.getTask(ctx.task.id)?.status === "cancelled";
-      this.store.finishRun(runId, cancelled ? "cancelled" : "failed", usage);
-      throw err;
-    }
+  private claimNextTask(agentId: string, active: boolean) {
+    const scope = active ? { onlyAssigned: this.store.crewRole(agentId) !== null } : { onlyPostmortems: true };
+    return this.store.claimNextTask(agentId, scope);
   }
 
   /**
@@ -485,7 +307,7 @@ export class Factory {
         const { cwd, base, files, deferredDependencies, checkpoint } = ctx;
         conflictChangedUi ||= ctx.visualReviewRequired ?? false;
         const current = this.store.getTask(task.id)!;
-        const r = await this.runAgent(agent.id, this.driverFor(current, agent.id), {
+        const r = await runAgent(this.agentRunner, agent.id, driverFor(this.store, this.drivers, current, agent.id), {
           task: current, repo, cwd, signal: ac.signal, emit,
           job: { kind: "resolve_conflicts", phase: checkpoint ? "validate" : "edit", base, files,
             ...(checkpoint ? { checkpoint } : {}), ...(deferredDependencies ? { deferredDependencies } : {}) },
@@ -611,14 +433,14 @@ export class Factory {
       if (checkpoint) {
         report = task.report!;
       } else {
-        const driver = this.driverFor(task, agent.id);
+        const driver = driverFor(this.store, this.drivers, task, agent.id);
         // A session belongs to the agent that started it. Older runs didn't record theirs, so trust those.
         const owner = this.store.lastWorkDriver(task.id);
         const resumable = !!task.sessionId && (!isDriverName(owner) || owner === driver.name);
         if (task.sessionId && !resumable) {
           emit("note", `Switching to ${driverLabel(driver.name)}, which starts a new session on the work so far`);
         }
-        const result = await this.runAgent(agent.id, driver, {
+        const result = await runAgent(this.agentRunner, agent.id, driver, {
           task: this.store.getTask(task.id)!,
           repo,
           cwd,
@@ -725,7 +547,7 @@ export class Factory {
         this.recording(() => this.store.updateTask(task.id, { reviewCheckpoint: null }));
       }
       // If it failed or was cancelled, its worktree goes on the next tick.
-      if (PUT_AWAY_STATUSES.includes(ended?.status ?? "queued")) this.lastSweep = 0;
+      this.sweeper.taskEnded(ended?.status);
       this.setAgentState(agent.id, this.store.isPaused() ? "paused" : "idle", null);
     }
   }
