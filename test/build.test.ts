@@ -49,6 +49,17 @@ test("build: esbuild's backend output runs from the layout the factory expects",
   assert.ok(statSync(marker).mtimeMs > old.getTime(), "a rebuild rewrites unchanged output");
 });
 
+test("build: tsc is TypeScript 7 and nothing else in the tree can take over its bin", () => {
+  const { packages } = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));
+  const providers = Object.entries<{ bin?: Record<string, string> }>(packages)
+    .filter(([, entry]) => entry.bin?.tsc)
+    .map(([path]) => path);
+  // @typescript/typescript6 is one way to break this: its dependency installs an old `tsc` that wins the link.
+  assert.deepEqual(providers, ["node_modules/typescript"]);
+  assert.match(packages["node_modules/typescript"].version, /^7\./);
+  assert.equal(packages[""].devDependencies.typescript, packages.web.devDependencies.typescript, "web uses the same compiler");
+});
+
 test("build: type errors are caught before packing, since build doesn't check types", () => {
   const { scripts, devDependencies } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   assert.ok(!/\btsc\b/.test(scripts["build:backend"]));

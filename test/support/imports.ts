@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import ts from "typescript";
+import { parse } from "@babel/parser";
+import type { Node } from "@babel/types";
 
 /** One place a source file refers to another module. */
 export interface ModuleRef {
@@ -14,27 +15,38 @@ export interface ModuleRef {
 
 /** Every module reference in a file, in source order, parsed rather than pattern-matched. */
 export function moduleRefs(file: string): ModuleRef[] {
-  const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true);
-  const literal = (node: ts.Node | undefined) => (node && ts.isStringLiteral(node) ? node.text : null);
-  const refs: ModuleRef[] = [];
-  const visit = (node: ts.Node) => {
-    if (ts.isImportDeclaration(node)) {
-      refs.push({ spec: literal(node.moduleSpecifier), declaration: true, typeOnly: node.importClause?.isTypeOnly ?? false });
-    } else if (ts.isExportDeclaration(node)) {
-      if (node.moduleSpecifier) refs.push({ spec: literal(node.moduleSpecifier), declaration: true, typeOnly: node.isTypeOnly });
-    } else if (ts.isImportTypeNode(node)) {
-      refs.push({ spec: ts.isLiteralTypeNode(node.argument) ? literal(node.argument.literal) : null, declaration: false, typeOnly: true });
-    } else if (ts.isImportEqualsDeclaration(node)) {
+  const ast = parse(readFileSync(file, "utf8"), {
+    sourceType: "module",
+    createImportExpressions: true,
+    plugins: /x$/.test(file) ? ["typescript", "jsx"] : ["typescript"],
+  });
+  const literal = (node: Node | null | undefined) => (node?.type === "StringLiteral" ? node.value : null);
+  const found: { at: number; ref: ModuleRef }[] = [];
+  const add = (node: Node, ref: ModuleRef) => found.push({ at: node.start ?? 0, ref });
+  const visit = (node: Node) => {
+    if (node.type === "ImportDeclaration") {
+      add(node, { spec: literal(node.source), declaration: true, typeOnly: node.importKind === "type" });
+    } else if (node.type === "ExportNamedDeclaration" || node.type === "ExportAllDeclaration") {
+      if (node.source) add(node, { spec: literal(node.source), declaration: true, typeOnly: node.exportKind === "type" });
+    } else if (node.type === "TSImportType") {
+      add(node, { spec: literal(node.argument), declaration: false, typeOnly: true });
+    } else if (node.type === "TSImportEqualsDeclaration") {
       const target = node.moduleReference;
-      refs.push({ spec: ts.isExternalModuleReference(target) ? literal(target.expression) : null, declaration: false, typeOnly: node.isTypeOnly });
-    } else if (ts.isCallExpression(node) &&
-      (node.expression.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(node.expression) && node.expression.text === "require"))) {
-      refs.push({ spec: literal(node.arguments[0]), declaration: false, typeOnly: false });
+      add(node, { spec: target.type === "TSExternalModuleReference" ? literal(target.expression) : null, declaration: false, typeOnly: node.importKind === "type" });
+    } else if (node.type === "ImportExpression") {
+      add(node, { spec: literal(node.source), declaration: false, typeOnly: false });
+    } else if (node.type === "CallExpression" && node.callee.type === "Identifier" && node.callee.name === "require") {
+      add(node, { spec: literal(node.arguments[0]), declaration: false, typeOnly: false });
     }
-    ts.forEachChild(node, visit);
+    for (const value of Object.values(node)) {
+      for (const child of Array.isArray(value) ? value : [value]) {
+        if (typeof child?.type === "string") visit(child);
+      }
+    }
   };
-  visit(source);
-  return refs;
+  visit(ast.program);
+  // Babel's fields aren't in source order, so a type annotation can be walked after what follows it.
+  return found.sort((a, b) => a.at - b.at).map(({ ref }) => ref);
 }
 
 /** Every module a file refers to by name, in any form. */

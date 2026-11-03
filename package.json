@@ -58,11 +58,13 @@
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.12",
+    "@babel/types": "^7.29.11",
     "@types/better-sqlite3": "^9.6.0",
     "@types/node": "^20.19.0",
     "concurrently": "^9.2.1",
     "esbuild": "~0.28.2",
     "tsx": "^4.23.15",
-    "typescript": "~5.9.3"
+    "typescript": "~7.0.2"
   }
 }
