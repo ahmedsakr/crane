@@ -6,70 +6,109 @@ export type { Goal, GoalTask, GoalPlan, GoalDetail, GoalSummary, NewGoal } from 
 export { nextCrewFire, validateCrewSchedule, crewScheduleLabel } from "./crew-schedules.js";
 export type { CrewSchedule, CrewScheduleInput } from "./crew-schedules.js";
 export type {
-  CommandEvidence,
   TaskKind,
   Autonomy,
   TaskStatus,
-  Repo,
-  Finding,
-  Report,
-  VisualReview,
-  AcceptanceResult,
   PrerequisiteState,
   FollowUpState,
   FollowUpSource,
   TaskGates,
+  Task,
+  TaskSummary,
+  TaskRunOptions,
+  NewTask,
+  TaskDiff,
+  TaskDraft,
+} from "./task.js";
+export type {
+  Finding,
+  Report,
+  VisualReview,
+  AcceptanceResult,
   Screenshot,
   ValidationRun,
   ReviewCheckpoint,
-  Task,
-  TaskSummary,
+} from "./report.js";
+export type {
+  Repo,
+  RepoTools,
+} from "./repo.js";
+export type {
+  CommandEvidence,
   EventType,
   TaskEvent,
   BlockedCall,
   BlockedTool,
-  RepoTools,
+} from "./events.js";
+export type {
   AgentState,
   Agent,
-  TaskRunOptions,
   RoleRunOptions,
-  NewTask,
   MaintenanceRole,
   MaintenanceRoleInfo,
+} from "./crew.js";
+export type {
   Lookout,
   LookoutInfo,
+} from "./lookouts.js";
+export type {
   RunKind,
   RunOutcome,
   RunUsage,
   AgentRun,
+} from "./runs.js";
+export type {
   SpendSlice,
   Analytics,
   Overview,
   TaskDetail,
-  TaskDiff,
-  TaskDraft,
+  RetentionSettings,
+} from "./overview.js";
+export type {
   DriverName,
   DriverSettings,
   PostmortemSettings,
-  RetentionSettings,
   DriverInfo,
+} from "./drivers.js";
+export type {
   MergeOutcome,
-} from "./types.js";
+} from "./merge.js";
 export {
   ACTIVE_STATUSES,
   FINISHED_STATUSES,
   ALL_STATUSES,
   SHIPPED_STATUSES,
+  isScheduled,
+  UNSHIPPED_STATUSES,
+  KIND_LABEL,
+  AUTONOMY_LABEL,
+  STATUS_LABEL,
+  prerequisiteMet,
+  followUpFor,
+} from "./task.js";
+export {
+  acceptanceCheckRun,
+  acceptanceFor,
+  unmetAcceptance,
+  visualReviewPending,
+  visualReviewWaivedByPreApproval,
+  completionReviewReason,
+} from "./report.js";
+export {
   MAINTENANCE_ROLES,
   isMaintenanceRole,
   MAINTENANCE_ROLE,
+} from "./crew.js";
+export {
   LOOKOUTS,
   LOOKOUT,
   isLookout,
-  isScheduled,
   lookoutsLabel,
+} from "./lookouts.js";
+export {
   RUN_KIND_LABEL,
-  UNSHIPPED_STATUSES,
+} from "./runs.js";
+export {
   DRIVER_NAMES,
   DRIVER_LABEL,
   isDriverName,
@@ -79,19 +118,10 @@ export {
   isTunable,
   settingsLabel,
   choosableDrivers,
-  KIND_LABEL,
-  AUTONOMY_LABEL,
-  STATUS_LABEL,
+} from "./drivers.js";
+export {
   lastMergeOutcome,
-  acceptanceCheckRun,
-  acceptanceFor,
-  prerequisiteMet,
-  followUpFor,
-  unmetAcceptance,
-  visualReviewPending,
-  visualReviewWaivedByPreApproval,
-  completionReviewReason,
-} from "./types.js";
+} from "./merge.js";
 export type { DiffLine, DiffHunk, DiffFile, ParsedDiff, SplitRow } from "./diff.js";
 export { parseDiff, diffFiles, splitRows } from "./diff.js";
 export { ruleLabel } from "./rules.js";
