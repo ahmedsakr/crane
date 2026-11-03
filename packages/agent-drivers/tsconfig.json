@@ -19,6 +19,7 @@
   "references": [
     { "path": "../agent-policy" },
     { "path": "../agent-protocol" },
-    { "path": "../contracts" }
+    { "path": "../contracts" },
+    { "path": "../diagnostics" }
   ]
 }

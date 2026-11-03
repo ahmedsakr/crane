@@ -9,6 +9,7 @@ const webSrc = join(import.meta.dirname, "..", "web", "src");
 const protocolRoot = join(import.meta.dirname, "..", "packages", "agent-protocol");
 const policyRoot = join(import.meta.dirname, "..", "packages", "agent-policy");
 const driversRoot = join(import.meta.dirname, "..", "packages", "agent-drivers");
+const diagnosticsRoot = join(import.meta.dirname, "..", "packages", "diagnostics");
 
 /** A relative specifier in `file`, resolved to a path under the same root like `factory/git`. */
 function resolveSpec(file: string, spec: string): string {
@@ -29,8 +30,8 @@ const sources = (readdirSync(src, { recursive: true }) as string[])
   .map((f) => f.split("\\").join("/"))
   .filter((f) => f.endsWith(".ts"));
 
-test("boundaries: agent drivers depend only on contracts, protocol, policy and Node", () => {
-  const allowed = new Set(["@crane/contracts", "@crane/agent-protocol", "@crane/agent-policy"]);
+test("boundaries: agent drivers depend only on contracts, protocol, policy, diagnostics and Node", () => {
+  const allowed = new Set(["@crane/contracts", "@crane/agent-protocol", "@crane/agent-policy", "@crane/diagnostics"]);
   assert.deepEqual(packageImportViolations(join(driversRoot, "src"), (ref) =>
     ref.spec !== null && (allowed.has(ref.spec) || ref.spec.startsWith("node:"))), []);
 });
@@ -117,7 +118,7 @@ test("boundaries: the private protocol has one ESM export", async () => {
 test("boundaries: concrete drivers have one ESM entry and keep helpers private", async () => {
   const manifest = JSON.parse(readFileSync(join(driversRoot, "package.json"), "utf8"));
   assert.deepEqual(manifest.dependencies, {
-    "@crane/agent-policy": "0.1.0", "@crane/agent-protocol": "0.1.0", "@crane/contracts": "0.1.0",
+    "@crane/agent-policy": "0.1.0", "@crane/agent-protocol": "0.1.0", "@crane/contracts": "0.1.0", "@crane/diagnostics": "0.1.0",
   });
   const config = JSON.parse(readFileSync(join(driversRoot, "tsconfig.json"), "utf8"));
   assert.equal(config.compilerOptions.rootDir, "src");
@@ -126,6 +127,23 @@ test("boundaries: concrete drivers have one ESM entry and keep helpers private",
   const api = await import("@crane/agent-drivers");
   assert.deepEqual(Object.keys(api).sort(), ["ClaudeCodeDriver", "CodexDriver", "SimulatedDriver"]);
   for (const path of ["@crane/agent-drivers/src/codex.js", "@crane/agent-drivers/dist/codex.js", "@crane/agent-drivers/codex-pricing", "@crane/agent-drivers/prompts", "@crane/agent-drivers/command-evidence"]) {
+    await assert.rejects(import(path), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
+  }
+});
+
+test("boundaries: diagnostics import nothing and have one ambient-free ESM entry", async () => {
+  // Dependency preparation uses this too, so it can't bring drivers, Node or the factory along.
+  assert.deepEqual(packageImportViolations(join(diagnosticsRoot, "src"), () => false), []);
+  const manifest = JSON.parse(readFileSync(join(diagnosticsRoot, "package.json"), "utf8"));
+  for (const field of ["dependencies", "optionalDependencies", "peerDependencies"]) {
+    assert.deepEqual(Object.keys(manifest[field] ?? {}), [], `no ${field}`);
+  }
+  const config = JSON.parse(readFileSync(join(diagnosticsRoot, "tsconfig.json"), "utf8"));
+  assert.deepEqual(config.compilerOptions.types, []);
+  assert.deepEqual(config.compilerOptions.lib, ["ES2022"]);
+  const api = await import("@crane/diagnostics");
+  assert.deepEqual(Object.keys(api), ["sanitizeDiagnosticText"]);
+  for (const path of ["@crane/diagnostics/src/sanitize.js", "@crane/diagnostics/dist/sanitize.js", "@crane/diagnostics/sanitize"]) {
     await assert.rejects(import(path), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
   }
 });

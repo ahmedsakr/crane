@@ -13,5 +13,8 @@
   "scripts": {
     "build": "tsc -b tsconfig.json",
     "dev": "tsc -b tsconfig.json --watch"
+  },
+  "dependencies": {
+    "@crane/diagnostics": "0.1.0"
   }
 }

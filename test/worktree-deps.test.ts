@@ -6,16 +6,17 @@ import { packageImportViolations } from "./support/imports.ts";
 
 const root = join(import.meta.dirname, "..", "packages", "worktree-deps");
 
-test("worktree dependencies import only their implementation and Node modules", () => {
+test("worktree dependencies import only their implementation, diagnostics and Node modules", () => {
   const allowed = new Set([
-    "node:child_process", "node:util", "node:fs", "node:fs/promises", "node:crypto", "node:path",
+    "node:child_process", "node:util", "node:fs", "node:fs/promises", "node:crypto", "node:path", "@crane/diagnostics",
   ]);
   assert.deepEqual(packageImportViolations(join(root, "src"), (ref) => allowed.has(ref.spec!)), []);
 });
 
 test("the private dependency package exposes only installation", async () => {
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
-  for (const field of ["dependencies", "optionalDependencies", "peerDependencies"]) {
+  assert.deepEqual(manifest.dependencies, { "@crane/diagnostics": "0.1.0" });
+  for (const field of ["optionalDependencies", "peerDependencies"]) {
     assert.deepEqual(Object.keys(manifest[field] ?? {}), [], `no ${field}`);
   }
   const api = await import("@crane/worktree-deps");

@@ -1,21 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { CommandEvidence } from "@crane/contracts";
+import { sanitizeDiagnosticText } from "@crane/diagnostics";
 
 const COMMAND_LIMIT = 8192;
 
-/** Best-effort credential redaction before truncation, shared by commands and diagnostics. */
+/** Commands and tool diagnostics, sanitized before they're stored or shown. */
 export function safeEvidenceText(raw: string, limit = COMMAND_LIMIT): { text: string; truncated: boolean } {
-  const value = String.raw`(?:"(?:\\.|[^"\\])*"|'[^']*'|\\[\s\S]|[^\s;&|"'\\])+`;
-  const sensitive = String.raw`[\w.-]*(?:token|secret|password|passwd|credential|api[_-]?key|private[_-]?key|authorization|cookie)[\w.-]*`;
-  const redacted = raw
-    .replace(/-----BEGIN [^-]*PRIVATE KEY-----[\s\S]*?(?:-----END [^-]*PRIVATE KEY-----|$)/g, "[REDACTED PRIVATE KEY]")
-    .replace(/(['"])(?:Authorization|Cookie|Set-Cookie)\s*:[\s\S]*?\1/gi, "'[REDACTED HEADER]'")
-    .replace(new RegExp(String.raw`((?:--user|-u)\s+)${value}`, "g"), "$1[REDACTED]")
-    .replace(/\b(Bearer|Basic)\s+[^\s'";]+/gi, "$1 [REDACTED]")
-    .replace(new RegExp(String.raw`\b((?:--?)?${sensitive}["']?\s*(?:=|:|\s)\s*)${value}`, "gi"), "$1[REDACTED]")
-    .replace(/(https?:\/\/)[^\s/@]+@/gi, "$1[REDACTED]@")
-    .replace(/(https?:\/\/[^\s'"?]+)\?[^\s'"]+/gi, "$1?[REDACTED]");
-  return { text: redacted.slice(0, limit), truncated: redacted.length > limit };
+  return sanitizeDiagnosticText(raw, limit);
 }
 
 export function safeCommand(raw: string): Pick<CommandEvidence, "command" | "truncated"> {

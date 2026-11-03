@@ -1,0 +1,17 @@
+{
+  "name": "@crane/diagnostics",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": ["dist/"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "dev": "tsc -b tsconfig.json --watch"
+  }
+}
