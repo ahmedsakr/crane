@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, constants, fstatSync, mkdirSync, openSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { extname, isAbsolute, join, resolve, sep } from "node:path";
 import { craneHome } from "./paths.js";
 import type { Screenshot } from "@crane/contracts";
+import type { Store } from "./store.js";
 
 const MAX_IMAGES = 12;
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -67,4 +68,41 @@ export function readScreenshot(taskId: string, name: string): { bytes: Buffer; m
   } catch {
     return null;
   }
+}
+
+/**
+ * Only discard generated, unreferenced files older than a day. The grace period
+ * covers copies not yet committed to a report (including a crashed run).
+ * Never follow directory symlinks or recursively remove unexpected contents.
+ */
+export function pruneOrphanScreenshots(store: Store, now = Date.now()): number {
+  const root = join(craneHome(), "attachments");
+  try { if (!lstatSync(root).isDirectory()) return 0; }
+  catch (err) { if ((err as NodeJS.ErrnoException).code === "ENOENT") return 0; throw err; }
+  let removed = 0;
+  for (const dir of readdirSync(root, { withFileTypes: true })) {
+    if (!dir.isDirectory() || !/^[a-zA-Z0-9_-]+$/.test(dir.name)) continue;
+    // Report replacement is serialized with the reference check and unlink.
+    store.db.transaction(() => {
+      const task = store.getTask(dir.name);
+      if (task && ["queued", "running", "merging"].includes(task.status)) return;
+      if (store.db.prepare("SELECT 1 FROM runs WHERE task_id = ? AND outcome = 'running'").get(dir.name)) return;
+      const referenced = new Set(task?.report?.screenshots?.map(image => image.path) ?? []);
+      for (const file of readdirSync(join(root, dir.name), { withFileTypes: true })) {
+        if (!file.isFile() || referenced.has(file.name)) continue;
+        const path = screenshotPath(dir.name, file.name);
+        if (!path) continue;
+        try {
+          const stat = lstatSync(path);
+          if (stat.isFile() && stat.mtimeMs < now - 86_400_000) {
+            unlinkSync(path);
+            removed++;
+          }
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+        }
+      }
+    }).immediate();
+  }
+  return removed;
 }

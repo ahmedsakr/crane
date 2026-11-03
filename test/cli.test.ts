@@ -56,6 +56,27 @@ function setup() {
   return { store, repo, task };
 }
 
+test("cli: retention is opt-in, validates days and can be disabled", async () => {
+  const { store } = setup();
+  try {
+    assert.match((await crane(store, "retention")).out, /disabled; keep all history/);
+    const enabled = await crane(store, "retention", "--days", "30");
+    assert.equal(enabled.code, 0, enabled.err);
+    assert.match(enabled.out, /30 days after tasks finish/);
+    assert.match(enabled.out, /permanently deletes/);
+    assert.match(enabled.out, /VACUUM; back up first/);
+    for (const days of ["0", "-1", "1.5", "Infinity", "lots", "36501"]) {
+      assert.equal((await crane(store, "retention", "--days", days)).code, 1, days);
+      assert.equal(store.retentionSettings().finishedTaskDays, 30);
+    }
+    assert.equal((await crane(store, "retention", "--days", "20", "--disable")).code, 1);
+    assert.equal(store.retentionSettings().finishedTaskDays, 30);
+    assert.equal((await crane(store, "retention", "--disable")).code, 0);
+    assert.equal(store.retentionSettings().finishedTaskDays, null);
+    assert.match((await crane(store, "retention")).out, /disabled; keep all history/);
+  } finally { store.close(); }
+});
+
 test("cli: pre-approval discloses its visual waiver and undo restores the pending decision", async () => {
   const { store, task } = setup();
   const candidate = task("running");

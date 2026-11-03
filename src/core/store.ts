@@ -46,6 +46,7 @@ import type {
   Repo,
   DriverSettings,
   PostmortemSettings,
+  RetentionSettings,
 } from "@crane/contracts";
 
 /** A commit a merged prerequisite put on the default branch. */
@@ -97,6 +98,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   finished_at TEXT
 );
 CREATE INDEX IF NOT EXISTS tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS tasks_finished ON tasks(finished_at);
 CREATE TABLE IF NOT EXISTS events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   task_id TEXT NOT NULL REFERENCES tasks(id),
@@ -440,9 +442,14 @@ export class Store {
 
   constructor(file = dbPath()) {
     this.db = new Database(file);
-    this.db.pragma("journal_mode = WAL");
     this.db.pragma("busy_timeout = 5000");
     this.db.pragma("foreign_keys = ON");
+    // This is cheap before the first schema is created. Existing databases are
+    // converted by opt-in maintenance, never by an ordinary CLI/store open.
+    if (!this.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table'").get()) {
+      this.db.pragma("auto_vacuum = INCREMENTAL");
+    }
+    this.db.pragma("journal_mode = WAL");
     migrateMissionsToTasks(this.db);
     this.db.exec(SCHEMA);
     addMissingColumns(this.db);
@@ -500,6 +507,42 @@ export class Store {
     this.db
       .prepare("INSERT INTO settings(key, value) VALUES(?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
       .run(key, value);
+  }
+
+  retentionSettings(): RetentionSettings {
+    const days = Number(this.getSetting("retention_finished_task_days"));
+    return { finishedTaskDays: Number.isInteger(days) && days >= 1 && days <= 36500 ? days : null };
+  }
+
+  /** Bounded batches; the predicate is checked under the same lock as deletion. */
+  pruneTaskHistory(cutoff: string, days: number): number {
+    return this.db.transaction(() => {
+      const removed = this.db.prepare(`DELETE FROM events WHERE id IN (
+        SELECT e.id FROM tasks t JOIN events e ON e.task_id = t.id
+        WHERE t.status IN (${FINISHED_STATUSES.map(() => "?").join(",")})
+          AND t.finished_at < ? AND e.ts < ?
+          AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.task_id = t.id AND r.outcome = 'running')
+          AND (e.type = 'tool' OR (e.type = 'note'
+            AND CASE WHEN json_valid(e.data) THEN json_extract(e.data, '$.routine') END = 1))
+        ORDER BY e.id LIMIT 5000
+      ) RETURNING task_id`).all(...FINISHED_STATUSES, cutoff, cutoff) as { task_id: string }[];
+      const counts = new Map<string, number>();
+      for (const r of removed) counts.set(r.task_id, (counts.get(r.task_id) ?? 0) + 1);
+      for (const [id, count] of counts) this.addEvent(id, "note", `Trimmed ${count} routine history events under the ${days}-day retention setting`, {
+        retention: { days, cutoff, events: count },
+      });
+      return removed.length;
+    }).immediate();
+  }
+
+  /** The first opt-in sweep needs one full rewrite to convert older databases. */
+  vacuumHistory(): void {
+    if (this.db.pragma("auto_vacuum", { simple: true }) !== 2) {
+      this.db.pragma("auto_vacuum = INCREMENTAL");
+      this.db.exec("VACUUM");
+    }
+    // Bounded reclamation on later sweeps, rather than another full VACUUM.
+    this.db.pragma("incremental_vacuum(1000)");
   }
 
   private savedPostmortemSettings(): Partial<PostmortemSettings> {

@@ -17,6 +17,7 @@ import { nextSchedule, whenLabel } from "../lib/schedule";
 import { Chevron, Empty, useToast } from "../components/bits";
 import { Avatar, MemberSheet, memberStatus, type CrewInput, type Member } from "../components/MemberSheet";
 import { Sheet, SheetBody, SheetFoot, SheetHead } from "../components/Sheet";
+import { StorageRetention } from "../components/StorageRetention";
 
 /** Choose the model and effort one agent runs with. */
 function TuningSheet({ driver: d, onChange, onClose }: { driver: DriverInfo; onChange: (d: DriverInfo[]) => void; onClose: () => void }) {
@@ -427,6 +428,7 @@ export function Crew() {
 
       {drivers && drivers.length > 0 && <RunsOn drivers={drivers} onChange={set} />}
       {drivers && drivers.length > 0 && <PostmortemDefaults drivers={drivers} />}
+      <StorageRetention />
 
       {opened && (
         <MemberSheet key={sheet.member} m={opened} start={sheet.start} drivers={drivers} factoryDriver={driver} saving={!!saving}
