@@ -136,6 +136,20 @@ test("cli: repos checks shows, replaces and clears a repo's checks", async () =>
   } finally { store.close(); }
 });
 
+test("cli: options from one run don't carry into the next in the same process", async () => {
+  const { store } = setup();
+  try {
+    assert.equal((await crane(store, "repos", "checks", "app", "--set", "npm run lint", "--json")).code, 0);
+    assert.equal((await crane(store, "repos", "checks", "app", "--set", "npm test")).code, 0);
+    assert.deepEqual(store.repoChecks(store.getRepo("app")!.id), ["npm test"]);
+
+    const shown = await crane(store, "repos", "checks", "app");
+    assert.equal(shown.code, 0, shown.err);
+    assert.doesNotMatch(shown.out, /Saved checks/);
+    assert.match(shown.out, /Checks for app/);
+  } finally { store.close(); }
+});
+
 test("cli: retention is opt-in, validates days and can be disabled", async () => {
   const { store } = setup();
   try {
