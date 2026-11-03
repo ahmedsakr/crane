@@ -134,15 +134,23 @@ test("queue API: full pickup order and validated moves, including tasks beyond t
     const tasks = Array.from({ length: 205 }, (_, i) => make(store, `Task ${i}`));
     const first = tasks[0]!;
     const tail = tasks[204]!;
+    store.updateTask(tail.id, { report: { summary: "Queue summary", findings: [], changedFiles: ["file.ts"] } });
+    store.db.prepare("UPDATE tasks SET brief = ? WHERE id = ?").run("Large brief".repeat(10000), tail.id);
     const app = createApp(store);
     const response = await app.request("/api/tasks/queue");
     assert.equal(response.status, 200);
-    assert.deepEqual(ids(await response.json()), ids(tasks));
+    const queue = await response.json();
+    assert.deepEqual(ids(queue), ids(tasks));
+    assert.equal(queue[204].reportSummary, "Queue summary");
+    assert.equal(queue[204].changedFileCount, 1);
+    assert.ok(queue.every((task: object) => !("brief" in task) && !("report" in task)));
     const moved = await app.request(`/api/tasks/${tail.id}/move`, {
       method: "POST", body: JSON.stringify({ beforeId: first.id }),
     });
     assert.equal(moved.status, 200);
-    assert.deepEqual(ids(await moved.json()), [tail.id, ...ids(tasks.slice(0, 204))]);
+    const reordered = await moved.json();
+    assert.deepEqual(ids(reordered), [tail.id, ...ids(tasks.slice(0, 204))]);
+    assert.deepEqual(reordered[0], queue[204]);
     const last = await app.request(`/api/tasks/${tail.id}/move`, {
       method: "POST", body: JSON.stringify({ beforeId: null }),
     });

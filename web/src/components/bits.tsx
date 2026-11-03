@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useState, type HTMLAttributes, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { api, isScheduled, KIND_LABEL, STATUS_LABEL, type BlockedTool, type Task, type TaskStatus } from "../lib/api";
+import { api, isScheduled, KIND_LABEL, STATUS_LABEL, type BlockedTool, type TaskSummary, type TaskStatus } from "../lib/api";
 import { ago, plural } from "../lib/format";
 
 export function Dot({ status }: { status: TaskStatus | "on" | "paused" | "off" }) {
@@ -25,7 +25,7 @@ export function StatusChip({ status }: { status: TaskStatus }) {
 }
 
 export function TaskRow({ m, repoName, reorder }: {
-  m: Task;
+  m: TaskSummary;
   repoName?: string;
   reorder?: { handle: ReactNode; props: HTMLAttributes<HTMLLIElement> };
 }) {

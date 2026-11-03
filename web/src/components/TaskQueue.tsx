@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type PointerEvent } from "react";
-import { api, type Task } from "../lib/api";
+import { api, type TaskSummary } from "../lib/api";
 import { TaskRow } from "./bits";
 
 type Drag = { id: string; pointer: number; startY: number; y: number; moved: boolean; beforeId: string | null };
@@ -7,7 +7,7 @@ type Drop = { id: string; beforeId: string | null };
 
 /** A separate queue keeps the full pickup order visible even beyond the task-list limit. */
 export function TaskQueue({ repoName, instruct }: { repoName: (id: string | null) => string | undefined; instruct: () => void }) {
-  const [queue, setQueue] = useState<Task[] | null>(null);
+  const [queue, setQueue] = useState<TaskSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);

@@ -38,6 +38,7 @@ import type {
   EventType,
   RepoTools,
   Task,
+  TaskSummary,
   TaskEvent,
   TaskStatus,
   NewTask,
@@ -159,6 +160,14 @@ CREATE INDEX IF NOT EXISTS runs_finished ON runs(finished_at);
 `;
 
 type Row = Record<string, unknown>;
+type TaskListOptions = { status?: TaskStatus[]; repoId?: string; assignee?: string; limit?: number };
+const TASK_SUMMARY_COLUMNS = `id, kind, title, repo_id AS repoId, status, branch, assignee,
+  postmortem_of AS postmortemOf,
+  created_at AS createdAt, scheduled_at AS scheduledAt,
+  started_at AS startedAt, finished_at AS finishedAt,
+  json_extract(report, '$.summary') AS reportSummary,
+  COALESCE(json_array_length(report, '$.findings'), 0) AS findingCount,
+  COALESCE(json_array_length(report, '$.changedFiles'), 0) AS changedFileCount`;
 
 /** Task fields updateTask can persist, mapped to their database columns. */
 const TASK_UPDATE_COLUMNS = {
@@ -696,6 +705,12 @@ export class Store {
       .all() as Row[]).map(toTask);
   }
 
+  /** The entire pickup order, with the same lightweight payload as other polled rows. */
+  listQueuedTaskSummaries(): TaskSummary[] {
+    return this.db.prepare(`SELECT ${TASK_SUMMARY_COLUMNS} FROM tasks
+      WHERE status = 'queued' ORDER BY queue_position, created_at, rowid`).all() as TaskSummary[];
+  }
+
   /** Move relative to a live anchor, without overwriting concurrent queue changes. */
   moveQueuedTask(id: string, beforeId: string | null): Task[] {
     return this.db.transaction(() => {
@@ -817,7 +832,16 @@ export class Store {
       .get(now()) as { n: number }).n;
   }
 
-  listTasks(opts: { status?: TaskStatus[]; repoId?: string; assignee?: string; limit?: number } = {}): Task[] {
+  listTasks(opts: TaskListOptions = {}): Task[] {
+    return this.taskListRows("*", opts).map(toTask);
+  }
+
+  /** Select only what polled rows display, without loading briefs or parsing full reports in JS. */
+  listTaskSummaries(opts: TaskListOptions = {}): TaskSummary[] {
+    return this.taskListRows<TaskSummary>(TASK_SUMMARY_COLUMNS, opts);
+  }
+
+  private taskListRows<T = Row>(columns: string, opts: TaskListOptions): T[] {
     const where: string[] = [];
     const params: unknown[] = [];
     if (opts.status?.length) {
@@ -832,10 +856,10 @@ export class Store {
       where.push("assignee = ?");
       params.push(opts.assignee);
     }
-    const sql = `SELECT * FROM tasks ${where.length ? "WHERE " + where.join(" AND ") : ""}
+    const sql = `SELECT ${columns} FROM tasks ${where.length ? "WHERE " + where.join(" AND ") : ""}
                  ORDER BY created_at DESC LIMIT ?`;
     params.push(opts.limit ?? 200);
-    return (this.db.prepare(sql).all(...params) as Row[]).map(toTask);
+    return this.db.prepare(sql).all(...params) as T[];
   }
 
   /** Tasks in one of these statuses that still have a worktree on record. */
@@ -1365,9 +1389,9 @@ export class Store {
       shippedLastWeek: shipped(t0 - 2 * weekMs, t0 - weekMs),
       spendThisWeekUsd: spend,
       activity: [...buckets.entries()].map(([t, v]) => ({ t: iso(t), ...v })),
-      needsReview: this.listTasks({ status: ["needs_review"], limit: 20 }),
-      inFlight: this.listTasks({ status: ACTIVE_STATUSES, limit: 20 }),
-      recent: this.listTasks({ status: FINISHED_STATUSES, limit: 8 }),
+      needsReview: this.listTaskSummaries({ status: ["needs_review"], limit: 20 }),
+      inFlight: this.listTaskSummaries({ status: ACTIVE_STATUSES, limit: 20 }),
+      recent: this.listTaskSummaries({ status: FINISHED_STATUSES, limit: 8 }),
       agents: this.listAgents(),
       repos: this.listRepos().map((r) => ({ ...r, openTasks: openByRepo.get(r.id) ?? 0, tools: this.repoTools(r.id) })),
       // One refusal could be a fluke; the same one in a second task is a pattern worth a decision.

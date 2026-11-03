@@ -50,7 +50,7 @@ export function truncate(s: string, n: number): string {
 }
 
 /** One line per task: dot, id, title, and a quiet right-hand column. */
-export function taskLine(m: Task, repoName?: string): string {
+export function taskLine(m: Pick<Task, "id" | "title" | "status" | "scheduledAt" | "finishedAt" | "startedAt" | "createdAt">, repoName?: string): string {
   const right = [repoName, isScheduled(m) ? `Scheduled ${new Date(m.scheduledAt!).toLocaleString()}` : ago(m.finishedAt ?? m.startedAt ?? m.createdAt)].filter(Boolean).join(" · ");
   const room = width() - 4 - m.id.length - right.length - 4;
   return `  ${statusDot(m.status)} ${dim(m.id)}  ${truncate(m.title, Math.max(16, room)).padEnd(Math.max(16, room))}  ${dim(right)}`;

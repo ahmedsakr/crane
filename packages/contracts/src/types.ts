@@ -85,7 +85,7 @@ export interface Report {
   hasContribution?: boolean;
   /** Agent classification only; operator decisions live on Task.visualReview. Missing means unknown. */
   visualReview?: { required: boolean; reason: string };
-  /** Factory-owned evidence; never accepted from agent output. The API's task lists leave it out; a task's own detail has it. */
+  /** Factory-owned evidence; never accepted from agent output. Full reports are available on task detail. */
   validation?: ValidationRun[];
   summary: string;
   findings: Finding[];
@@ -215,6 +215,16 @@ export interface Task {
   followUpFinding: number | null;
   startedAt: string | null;
   finishedAt: string | null;
+}
+
+/** Lightweight task-list and overview payload; full briefs and reports stay on task detail. */
+export interface TaskSummary extends Pick<Task,
+  "id" | "kind" | "title" | "repoId" | "status" | "branch" | "assignee" | "postmortemOf" |
+  "createdAt" | "scheduledAt" | "startedAt" | "finishedAt"
+> {
+  reportSummary: string | null;
+  findingCount: number;
+  changedFileCount: number;
 }
 
 export interface VisualReview {
@@ -641,9 +651,9 @@ export interface Overview {
   spendThisWeekUsd: number;
   /** One bucket per hour for the last 7 days: completed tasks and agent events. */
   activity: { t: string; done: number; events: number }[];
-  needsReview: Task[];
-  inFlight: Task[];
-  recent: Task[];
+  needsReview: TaskSummary[];
+  inFlight: TaskSummary[];
+  recent: TaskSummary[];
   agents: Agent[];
   repos: (Repo & { openTasks: number; tools: RepoTools })[];
   /** Commands agents keep getting refused, in more than one task, that the operator hasn't decided on yet. */

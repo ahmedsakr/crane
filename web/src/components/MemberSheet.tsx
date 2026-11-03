@@ -11,7 +11,7 @@ import {
   type DriverInfo,
   type MaintenanceRole,
   type MaintenanceRoleInfo,
-  type Task,
+  type TaskSummary,
 } from "../lib/api";
 import type { CrewSchedule } from "@crane/contracts";
 import { ago } from "../lib/format";
@@ -28,9 +28,9 @@ export interface Member {
   a: Agent;
   role: MaintenanceRoleInfo | null;
   /** The task they're working right now. */
-  doing: Task | null;
+  doing: TaskSummary | null;
   /** A run started for this member that they haven't picked up yet. */
-  waiting: Task | null;
+  waiting: TaskSummary | null;
 }
 
 /** The short line under a member's name: their state, in the operator's words. */

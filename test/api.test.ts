@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/core/store.js";
 import { createApp } from "../src/server/app.js";
-import { ALL_STATUSES } from "@crane/contracts";
+import { ALL_STATUSES, type TaskSummary } from "@crane/contracts";
 import { driverEffortKey, driverModelKey } from "../src/factory/settings.js";
 
 test("api: invalid task decision bodies leave tasks and history unchanged", async () => {
@@ -239,24 +239,25 @@ test("api: invalid check settings cannot replace the operator's merge gates", as
   } finally { store.close(); }
 });
 
-test("api: polled task lists leave out check logs, and the task page still gets them", async () => {
+test("api: polled task lists send summaries, and task detail keeps full briefs and reports", async () => {
   const store = new Store(":memory:");
   try {
     const repo = store.addRepo({ path: "/repo" });
     const app = createApp(store);
     const logs = "a long test log\n".repeat(1000);
+    const brief = "post-mortem history\n".repeat(10000);
     const report = {
-      summary: "Did it", changedFiles: ["a.ts"],
-      findings: [{ title: "One thing", detail: "d", impact: "low" as const, effort: "small" as const }],
+      summary: "Did it", changedFiles: ["a.ts", "b.ts"],
+      findings: [{ title: "One thing", detail: logs, impact: "low" as const, effort: "small" as const }],
       validation: [{ phase: "review" as const, commit: "abc", command: "npm test", status: "passed" as const, exitCode: 0, logs, durationMs: 1 }],
     };
     const ids = (["needs_review", "running", "merged"] as const).map((status) => {
-      const task = store.createTask({ kind: "maintenance", title: status, brief: "", repoId: repo.id, autonomy: "propose" });
+      const task = store.createTask({ kind: "maintenance", title: status, brief, repoId: repo.id, autonomy: "propose" });
       store.updateTask(task.id, { status, report });
       return task.id;
     });
 
-    const lists: Record<string, { id: string; report: Record<string, unknown> | null }[]> = {
+    const lists: Record<string, TaskSummary[]> = {
       tasks: await (await app.request("/api/tasks")).json(),
     };
     const overview = await (await app.request("/api/overview")).json();
@@ -264,15 +265,20 @@ test("api: polled task lists leave out check logs, and the task page still gets 
     for (const [name, list] of Object.entries(lists)) {
       assert.ok(list.length, name);
       for (const task of list) {
-        assert.equal(task.report?.validation, undefined, `${name} leaves out validation`);
-        assert.equal(task.report?.summary, "Did it", `${name} keeps what the rows show`);
-        assert.deepEqual(task.report?.changedFiles, ["a.ts"], name);
-        assert.equal((task.report?.findings as unknown[]).length, 1, name);
+        assert.equal("brief" in task, false, `${name} leaves out briefs`);
+        assert.equal("report" in task, false, `${name} leaves out full reports`);
+        assert.equal(task.reportSummary, "Did it", `${name} keeps what the rows show`);
+        assert.equal(task.changedFileCount, 2, name);
+        assert.equal(task.findingCount, 1, name);
       }
+      assert.ok(JSON.stringify(list).length < 2000, `${name} stays small with large briefs and reports`);
     }
 
     const detail = await (await app.request(`/api/tasks/${ids[0]}`)).json();
     assert.equal(detail.task.report.validation[0].logs, logs);
+    assert.equal(detail.task.brief, brief);
+    assert.deepEqual(detail.task.report, report);
+    assert.deepEqual(store.listTasks().find(t => t.id === ids[0])?.report, report, "CLI lists retain full reports");
     assert.equal(store.getTask(ids[0]!)?.report?.validation?.[0]?.logs, logs, "nothing is removed from storage");
   } finally { store.close(); }
 });

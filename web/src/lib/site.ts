@@ -7,7 +7,7 @@
  * World units: x to the right, y away from the viewer, z up. The crane's mast
  * stands at the origin; the areas sit on an arc in front of it.
  */
-import type { Task, TaskStatus } from "@crane/contracts";
+import type { TaskSummary, TaskStatus } from "@crane/contracts";
 
 export type Vec3 = { x: number; y: number; z: number };
 export type ZoneId = "queued" | "working" | "review" | "merging" | "shipped" | "stopped";
@@ -127,7 +127,7 @@ export interface Rig {
 
 export interface Payload {
   id: string;
-  task: Task;
+  task: TaskSummary;
   /** The area the crate sits in, or was lifted from while it's carried. */
   zone: ZoneId;
   pos: Vec3;
@@ -211,7 +211,7 @@ export class SiteModel {
     return n;
   }
 
-  sync(tasks: Task[]): void {
+  sync(tasks: TaskSummary[]): void {
     const seen = new Set<string>();
     for (const task of tasks) {
       if (seen.has(task.id)) continue;

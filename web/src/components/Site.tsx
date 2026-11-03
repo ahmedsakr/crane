@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { STATUS_LABEL, type Overview, type Task } from "../lib/api";
+import { STATUS_LABEL, type Overview, type TaskSummary } from "../lib/api";
 import { plural } from "../lib/format";
 import { ZONE_IDS, ZONE_LABEL, ZONE_OF, type ZoneId } from "../lib/site";
 import { SiteView } from "./site-view";
@@ -22,7 +22,7 @@ export function Site({ o }: { o: Overview }) {
   navRef.current = nav;
 
   const tasks = useMemo(() => {
-    const seen = new Map<string, Task>();
+    const seen = new Map<string, TaskSummary>();
     for (const t of [...o.inFlight, ...o.needsReview, ...o.recent]) if (!seen.has(t.id)) seen.set(t.id, t);
     return [...seen.values()];
   }, [o.inFlight, o.needsReview, o.recent]);
