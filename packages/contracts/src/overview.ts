@@ -68,6 +68,7 @@ export interface Overview {
   activity: { t: string; done: number; events: number }[];
   needsReview: TaskSummary[];
   goalsNeedingReview?: GoalSummary[];
+  /** All running and merging tasks, followed by up to 20 newest queued tasks. */
   inFlight: TaskSummary[];
   recent: TaskSummary[];
   agents: Agent[];

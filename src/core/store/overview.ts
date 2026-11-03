@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { ACTIVE_STATUSES, ALL_STATUSES, FINISHED_STATUSES, SHIPPED_STATUSES, type Overview, type TaskStatus } from "@crane/contracts";
+import { ALL_STATUSES, FINISHED_STATUSES, SHIPPED_STATUSES, type Overview, type TaskStatus } from "@crane/contracts";
 import type { Store } from "../store.js";
 import type { Row } from "./rows.js";
 
@@ -78,7 +78,12 @@ export function overview(store: OverviewSource, factory: Overview["factory"]): O
     activity,
     needsReview: store.listTaskSummaries({ status: ["needs_review"], limit: 20 }),
     goalsNeedingReview: store.listGoalSummaries(true),
-    inFlight: store.listTaskSummaries({ status: ACTIVE_STATUSES, limit: 20 }),
+    // A goal can enqueue up to 40 tasks at once. Its newer queued tasks must
+    // never crowd running work or merges out of Home's list and crane site.
+    inFlight: [
+      ...store.listTaskSummaries({ status: ["running", "merging"], limit: -1 }),
+      ...store.listTaskSummaries({ status: ["queued"], limit: 20 }),
+    ],
     recent: store.listTaskSummaries({ status: FINISHED_STATUSES, limit: 8 }),
     agents: store.listAgents(),
     repos: store.listRepos().map((r) => ({ ...r, openTasks: openByRepo.get(r.id) ?? 0, tools: store.repoTools(r.id) })),
