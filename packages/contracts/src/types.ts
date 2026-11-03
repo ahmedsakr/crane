@@ -174,7 +174,8 @@ export interface Task {
   /**
    * When the operator pre-approved this task, before it reached review. Once
    * its run finishes and its checks pass, it goes straight to the merge queue
-   * instead of waiting for them. Null means it waits for review as usual.
+   * instead of waiting for them. Also authorizes Crane to waive visual review
+   * for this task, including conflict resolutions. Null means review as usual.
    */
   preApprovedAt: string | null;
   /**
@@ -226,8 +227,8 @@ export interface VisualReview {
   decidedAt: string | null;
 }
 
-export function visualReviewPending(task: Pick<Task, "branch" | "visualReview">): boolean {
-  return !!task.branch && (!task.visualReview || task.visualReview.status === "pending");
+export function visualReviewPending(task: Pick<Task, "branch" | "visualReview" | "preApprovedAt">): boolean {
+  return !!task.branch && !task.preApprovedAt && (!task.visualReview || task.visualReview.status === "pending");
 }
 
 export type EventType =

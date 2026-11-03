@@ -251,7 +251,7 @@ export class OperatorActions {
     return m;
   }
 
-  /** A separate operator decision: ordinary approval and pre-approval never waive visual review. */
+  /** Record candidate inspection or an explicit waiver; task pre-approval also authorizes waivers. */
   async recordVisualReview(id: string, input: { status: "inspected" | "waived"; commit: string; note: string }): Promise<Task> {
     const task = this.need(id);
     if (!input || !["inspected", "waived"].includes(input.status)) throw new Error("Visual decision must be inspected or waived");
@@ -305,8 +305,9 @@ export class OperatorActions {
   /**
    * Approve a queued or running task ahead of time. When its run finishes and
    * its checks pass, it goes straight to the merge queue instead of waiting for
-   * review. A failed run or check fails the task as usual, and a merge that
-   * can't land comes back for review. `undoPreApproval` takes it back.
+   * review, waiving visual review too. A failed run or check fails the task as
+   * usual, and a merge that can't land comes back for review. `undoPreApproval`
+   * takes it back.
    */
   preApprove(id: string, note?: string): Task {
     const m = this.need(id);

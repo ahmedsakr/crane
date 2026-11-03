@@ -9,6 +9,7 @@ const landTask = (req: MergeRequest) => land({ checks: ["true"], ...req });
 import { keepBothSides } from "../packages/agent-drivers/src/simulated.js";
 import { installDependencies } from "@crane/worktree-deps";
 import type { Repo, Task } from "@crane/contracts";
+import type { RunContext } from "@crane/agent-protocol";
 
 function commitFile(cwd: string, file: string, text: string, msg: string) {
   writeFileSync(join(cwd, file), text);
@@ -750,7 +751,7 @@ test("factory: a task goes from work to review to merged and pushed, through a c
   }
 });
 
-test("factory: a pre-approved task skips review and lands once its checks pass", async () => {
+test("factory: a pre-approved UI task waives visual review and lands once its checks pass", async () => {
   process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
   const { Store } = await import("../src/core/store.js");
   const { OperatorActions } = await import("../src/factory/actions.js");
@@ -770,7 +771,15 @@ test("factory: a pre-approved task skips review and lands once its checks pass",
   const actions = new OperatorActions(store);
   const repo = await actions.connectRepo(checkout, "e2e");
   store.setRepoChecks(repo.id, ["true"]);
-  const factory = new Factory(store, new SimulatedDriver(2), { crewSize: 1, tickMs: 20 });
+  class UiDriver extends SimulatedDriver {
+    override async run(ctx: RunContext) {
+      const result = await super.run(ctx);
+      writeFileSync(join(ctx.cwd, "page.html"), "<h1>Greeting</h1>\n");
+      result.report.visualReview = { required: true, reason: "Greeting page needs visual inspection" };
+      return result;
+    }
+  }
+  const factory = new Factory(store, new UiDriver(2), { crewSize: 1, tickMs: 20 });
   const until = async (ok: () => boolean, what: string) => {
     for (let i = 0; i < 500 && !ok(); i++) await new Promise((r) => setTimeout(r, 20));
     assert.ok(ok(), `timed out waiting for ${what}`);
@@ -795,6 +804,9 @@ test("factory: a pre-approved task skips review and lands once its checks pass",
     assert.ok(!statuses.includes("needs_review"), `never waited for review: ${statuses.join(", ")}`);
     assert.ok(events.some((e) => e.type === "operator" && e.message === "Pre-approved: Trusted change"));
     const done = store.getTask(t.id)!;
+    assert.equal(done.visualReview?.status, "waived");
+    assert.ok(events.some(e => e.message === "Visual review waived by pre-approval"));
+    assert.equal(sh(origin, "show", "main:page.html"), "<h1>Greeting</h1>");
     assert.deepEqual(done.report?.validation?.map(r => [r.phase, r.status]), [["review", "passed"], ["merge", "passed"]]);
     assert.match(sh(origin, "show", `main:.crane-simulated/${t.id}.md`), /Add a greeting/);
     await until(() => store.listAgents().every((a) => a.state === "idle"), "cleanup");
