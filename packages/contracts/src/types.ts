@@ -263,6 +263,10 @@ export function visualReviewPending(task: Pick<Task, "branch" | "visualReview" |
   return !!task.branch && !task.preApprovedAt && (!task.visualReview || task.visualReview.status === "pending");
 }
 
+export function visualReviewWaivedByPreApproval(task: Pick<Task, "visualReview" | "preApprovedAt">): boolean {
+  return !!task.preApprovedAt && (!task.visualReview || task.visualReview.status === "pending");
+}
+
 /** Null keeps all history. Choosing days authorizes irreversible routine-history cleanup. */
 export interface RetentionSettings {
   finishedTaskDays: number | null;

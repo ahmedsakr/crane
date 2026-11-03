@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import { shortId } from "../core/ids.js";
 import { goalResearchTask } from "./goals.js";
-import { validateGoalPlan, type Goal, type NewGoal } from "@crane/contracts";
+import { errorMessage, validateGoalPlan, type Goal, type NewGoal } from "@crane/contracts";
 import { nextCrewFire, validateCrewSchedule, crewScheduleLabel, type CrewScheduleInput, type CrewSchedule } from "@crane/contracts";
 import { crewSettingKey, type Store } from "../core/store.js";
 import {
@@ -652,7 +652,7 @@ export class OperatorActions {
           })();
           this.store.crewScheduleOutcome(s.id, `Queued ${task.id}`);
         } catch (err) {
-          this.store.crewScheduleOutcome(s.id, `Skipped: ${(err as Error).message}`);
+          this.store.crewScheduleOutcome(s.id, `Skipped: ${errorMessage(err)}`);
         }
       }).immediate();
     }

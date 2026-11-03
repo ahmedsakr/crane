@@ -1,6 +1,6 @@
 import { useId, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { EFFORT_LEVELS, STATUS_LABEL, driverLabel, goalWaves, validateGoalPlan, type DriverName, type Goal, type GoalPlan, type GoalTask } from "@crane/contracts";
+import { errorMessage, EFFORT_LEVELS, STATUS_LABEL, driverLabel, goalWaves, validateGoalPlan, type DriverName, type Goal, type GoalPlan, type GoalTask } from "@crane/contracts";
 import { api } from "../lib/api";
 import { useApp } from "../lib/app-context";
 import { useDrivers, usePoll } from "../lib/hooks";
@@ -25,7 +25,7 @@ function NewGoalSheet({ onClose }: { onClose: () => void }) {
     try {
       const goal = await api.createGoal({ outcome, repoId, driver: driver || null, model: model || null, effort: effort || null });
       onClose(); navigate(`/goals/${goal.id}`);
-    } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+    } catch (err) { setError(errorMessage(err)); } finally { setBusy(false); }
   };
   return <Sheet onClose={onClose}>
     <SheetHead title="New goal" subtitle="Describe the outcome. A research agent will propose the work, order and agent assignments for your review." />
@@ -73,7 +73,7 @@ function PlanEditor({ goal, onClose, onSaved }: { goal: Goal; onClose: () => voi
     setError(""); setBusy(true);
     try { await api.editGoalPlan(goal.id, goal.revision, validateGoalPlan({ ...plan,
       improvements: plan.improvements.filter((s) => s.trim()), tasks: plan.tasks.map((t) => ({ ...t, acceptance: t.acceptance.filter((s) => s.trim()) })) })); onSaved(); onClose(); }
-    catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+    catch (err) { setError(errorMessage(err)); } finally { setBusy(false); }
   };
   const add = () => {
     let n = plan.tasks.length + 1;
@@ -117,7 +117,7 @@ function GoalDecision({ goal, mode, onClose, onSaved }: { goal: Goal; mode: "fee
       else if (mode === "approve") await api.approveGoal(goal.id, goal.revision, autoMerge);
       else await api.cancelGoal(goal.id, goal.revision);
       onSaved(); onClose();
-    } catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+    } catch (err) { setError(errorMessage(err)); } finally { setBusy(false); }
   };
   return <Sheet onClose={onClose}>
     <SheetHead title={label} subtitle={goal.title} />
@@ -145,7 +145,7 @@ export function GoalPage() {
   const retry = async (taskId: string, driver?: string) => {
     setRetrying(true); setActionError("");
     try { await api.retryGoalTask(g.id, g.revision, taskId, driver); refresh(); }
-    catch (err) { setActionError((err as Error).message); } finally { setRetrying(false); }
+    catch (err) { setActionError(errorMessage(err)); } finally { setRetrying(false); }
   };
   return <>
     <Link className="muted" to="/goals">← Goals</Link>

@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { readFileSync } from "node:fs";
-import { goalWaves, type Goal } from "@crane/contracts";
+import { errorMessage, goalWaves, runCostLabel, runTokens, visualReviewPending, visualReviewWaivedByPreApproval, type Goal } from "@crane/contracts";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { Store } from "../core/store.js";
@@ -60,7 +60,7 @@ const lookFor = (given: string[]): Lookout[] => {
   try {
     return checkLookouts(given.flatMap((g) => g.split(",")));
   } catch (err) {
-    return ui.fail((err as Error).message);
+    return ui.fail(errorMessage(err));
   }
 };
 
@@ -173,7 +173,7 @@ goals.command("create").description("Start read-only research for a desired outc
   .option("--json", "full goal detail as JSON")
   .action((outcome: string, opts: { repo: string; agent?: string; model?: string; effort?: string; json?: boolean }) => {
     try { printGoal(actions.createGoal({ outcome, repoId: opts.repo, driver: opts.agent, model: opts.model, effort: opts.effort }), opts.json); }
-    catch (err) { ui.fail((err as Error).message); }
+    catch (err) { ui.fail(errorMessage(err)); }
   });
 goals.command("show").argument("<id>").option("--json", "full plan, research and task records as JSON")
   .action((id: string, opts: { json?: boolean }) => {
@@ -185,14 +185,14 @@ goals.command("feedback").description("Ask the research agent for a revised plan
   .option("--json", "full goal detail as JSON")
   .action((id: string, feedback: string, opts: { revision: string; json?: boolean }) => {
     try { printGoal(actions.reviseGoal(id, Number(opts.revision), feedback), opts.json); }
-    catch (err) { ui.fail((err as Error).message); }
+    catch (err) { ui.fail(errorMessage(err)); }
   });
 goals.command("edit").description("Replace the draft plan with a JSON GoalPlan file (use show --json to inspect it)")
   .argument("<id>").requiredOption("--revision <number>", "revision you reviewed").requiredOption("--file <path>", "JSON plan file")
   .option("--json", "full goal detail as JSON")
   .action((id: string, opts: { revision: string; file: string; json?: boolean }) => {
     try { printGoal(actions.editGoalPlan(id, Number(opts.revision), JSON.parse(readFileSync(opts.file, "utf8"))), opts.json); }
-    catch (err) { ui.fail((err as Error).message); }
+    catch (err) { ui.fail(errorMessage(err)); }
   });
 goals.command("approve").description("Approve this exact draft and queue its task graph")
   .argument("<id>").requiredOption("--revision <number>", "revision you reviewed")
@@ -200,19 +200,19 @@ goals.command("approve").description("Approve this exact draft and queue its tas
   .option("--json", "full goal detail as JSON")
   .action((id: string, opts: { revision: string; autoMerge?: boolean; json?: boolean }) => {
     try { printGoal(actions.approveGoal(id, Number(opts.revision), opts.autoMerge ?? false), opts.json); }
-    catch (err) { ui.fail((err as Error).message); }
+    catch (err) { ui.fail(errorMessage(err)); }
   });
 goals.command("cancel").description("Cancel unmerged goal work; wait for merges in progress first")
   .argument("<id>").requiredOption("--revision <number>", "revision you reviewed").option("--json", "full goal detail as JSON")
   .action((id: string, opts: { revision: string; json?: boolean }) => {
     try { printGoal(actions.cancelGoal(id, Number(opts.revision)), opts.json); }
-    catch (err) { ui.fail((err as Error).message); }
+    catch (err) { ui.fail(errorMessage(err)); }
   });
 goals.command("retry").description("Retry a failed goal task and reconnect its waiting dependents")
   .argument("<id>").argument("<taskId>").requiredOption("--revision <number>", "revision you reviewed").option("--agent <agent>", "retry on another agent").option("--json", "full goal detail as JSON")
   .action((id: string, taskId: string, opts: { revision: string; agent?: string; json?: boolean }) => {
     try { printGoal(actions.retryGoalTask(id, Number(opts.revision), taskId, { driver: opts.agent }), opts.json); }
-    catch (err) { ui.fail((err as Error).message); }
+    catch (err) { ui.fail(errorMessage(err)); }
   });
 
 // ── crane do: instruct the factory ──────────────────────────
@@ -238,7 +238,7 @@ program
     let preApprove = opts.preApprove ?? false;
     let lookouts = lookFor(opts.lookFor);
     let scheduledAt: string | null;
-    try { scheduledAt = checkScheduledAt(opts.at); } catch (err) { return ui.fail((err as Error).message); }
+    try { scheduledAt = checkScheduledAt(opts.at); } catch (err) { return ui.fail(errorMessage(err)); }
     p.intro(`${ui.accent("▟")} ${pc.bold("New task")}`);
     let text = words.join(" ").trim();
     if (!text) {
@@ -341,7 +341,7 @@ program
           initialValue: scheduledAt ?? "now",
           validate: (v) => {
             if (v?.trim() === "now") return;
-            try { checkScheduledAt(v?.trim() ?? ""); } catch (err) { return (err as Error).message; }
+            try { checkScheduledAt(v?.trim() ?? ""); } catch (err) { return errorMessage(err); }
           },
         });
         if (p.isCancel(at)) return p.cancel("Nothing was created.");
@@ -403,7 +403,7 @@ program
         }`,
       );
     } catch (err) {
-      ui.fail((err as Error).message);
+      ui.fail(errorMessage(err));
     }
   });
 
@@ -480,7 +480,7 @@ program
         if (!queue.length) console.log("  No tasks queued.");
         console.log("");
       }
-    } catch (err) { ui.fail((err as Error).message); }
+    } catch (err) { ui.fail(errorMessage(err)); }
   });
 
 // ── crane show ──────────────────────────────────────────────
@@ -513,9 +513,9 @@ program
     const preApproved = m.preApprovedAt && ["queued", "running"].includes(m.status) ? " · pre-approved" : "";
     console.log(`  ${ui.statusText(m.status)}${ui.dim(forMember + on + cost + preApproved)}`);
     if (m.branch) {
-      console.log(`  Visual review: ${m.preApprovedAt && (!m.visualReview || m.visualReview.status === "pending") ? "waived by pre-approval" : m.visualReview?.status ?? "pending"}${m.visualReview ? ` · candidate ${m.visualReview.commit}` : ""}`);
+      console.log(`  Visual review: ${visualReviewWaivedByPreApproval(m) ? "waived by pre-approval" : m.visualReview?.status ?? "pending"}${m.visualReview ? ` · candidate ${m.visualReview.commit}` : ""}`);
       if (m.visualReview?.note) console.log(ui.wrap(m.visualReview.note, 2));
-      if (!m.preApprovedAt && (!m.visualReview || m.visualReview.status === "pending")) console.log(`  Record inspection: crane visual-review ${m.id} --commit <full-sha> -m 'views, sizes, screenshot paths' (or --waive with reason and scope)`);
+      if (visualReviewPending(m)) console.log(`  Record inspection: crane visual-review ${m.id} --commit <full-sha> -m 'views, sizes, screenshot paths' (or --waive with reason and scope)`);
     }
     if (settingsLabel(m)) console.log(ui.dim(`  Model settings: ${settingsLabel(m)}`));
     if (m.lookouts.length) console.log(ui.dim(`  Also looks for: ${lookoutsLabel(m.lookouts)}`));
@@ -576,9 +576,9 @@ program
     if (opts.events && runs.length) {
       console.log(ui.section("Runs", runs.length));
       for (const r of runs) {
-        const tokens = r.inputTokens + r.cacheReadTokens + r.cacheWriteTokens + r.outputTokens;
+        const tokens = runTokens(r);
         console.log(
-          `  ${RUN_KIND_LABEL[r.kind].padEnd(18)} ${(r.costStatus === "unknown" ? r.costUsd ? `${ui.usd(r.costUsd)} + unknown` : "Unknown" : `${r.costStatus === "estimated" ? "~" : ""}${ui.usd(r.costUsd)}`).padStart(8)}  ${ui.dim(
+          `  ${RUN_KIND_LABEL[r.kind].padEnd(18)} ${runCostLabel(r, ui.usd).padStart(8)}  ${ui.dim(
             [r.outcome, r.driver === "unknown" ? null : driverLabel(r.driver), r.model, r.turns ? `${r.turns} turns` : null, tokens ? `${ui.compact(tokens)} tokens` : null, ui.ago(r.startedAt)]
               .filter(Boolean)
               .join(" · "),
@@ -689,7 +689,7 @@ const act = (name: string, desc: string, fn: (id: string, note?: string) => Prom
         await fn(id, opts.message);
         ui.ok(`${done} ${ui.dim(id)}`);
       } catch (err) {
-        ui.fail((err as Error).message);
+        ui.fail(errorMessage(err));
       }
     });
 
@@ -704,7 +704,7 @@ program
     try {
       const task = await actions.recordVisualReview(id, { status: opts.waive ? "waived" : "inspected", commit: opts.commit, note: opts.message });
       ui.ok(`Visual review ${task.visualReview!.status} for ${task.visualReview!.commit}`);
-    } catch (err) { ui.fail((err as Error).message); }
+    } catch (err) { ui.fail(errorMessage(err)); }
   });
 
 program
@@ -719,7 +719,7 @@ program
       if (m.status === "merging") mergeQueued(m.id);
       else ui.ok(`Approved ${ui.dim(m.id)}${m.branch ? `  ${ui.dim(`branch ${m.branch} is kept`)}` : ""}`);
     } catch (err) {
-      ui.fail((err as Error).message);
+      ui.fail(errorMessage(err));
     }
   });
 
@@ -731,7 +731,7 @@ program
     try {
       mergeQueued((await actions.merge(id)).id);
     } catch (err) {
-      ui.fail((err as Error).message);
+      ui.fail(errorMessage(err));
     }
   });
 
@@ -753,7 +753,7 @@ program
       ui.ok(`Pre-approved. Crane merges it into ${main} after its checks and acceptance pass; visual review is waived, including conflict resolutions  ${ui.dim(m.id)}`);
       console.log(ui.hint([`crane watch ${m.id}`, "follow along live"], [`crane pre-approve ${m.id} --undo`, "wait for review instead"]));
     } catch (err) {
-      ui.fail((err as Error).message);
+      ui.fail(errorMessage(err));
     }
   });
 
@@ -777,7 +777,7 @@ program
     try {
       const task = actions.schedule(id, timestamp === "now" ? null : timestamp);
       ui.ok(task.scheduledAt ? `Scheduled for ${new Date(task.scheduledAt).toLocaleString()}  ${ui.dim(task.id)}` : `Start time cleared. Prerequisites still apply  ${ui.dim(task.id)}`);
-    } catch (err) { ui.fail((err as Error).message); }
+    } catch (err) { ui.fail(errorMessage(err)); }
   });
 act(
   "waive",
@@ -796,7 +796,7 @@ program
       const m = actions.retry(id, { driver: opts.agent });
       ui.ok(`Queued again as ${m.id}${m.driver ? ` on ${driverLabel(m.driver)}` : ""}`);
     } catch (err) {
-      ui.fail((err as Error).message);
+      ui.fail(errorMessage(err));
     }
   });
 
@@ -827,7 +827,7 @@ program
         console.log(ui.dim(`  It starts from the default branch, without ${parent.id}'s unmerged changes. To wait for them, cancel it and add --after ${parent.id}.`));
       }
     } catch (err) {
-      ui.fail((err as Error).message);
+      ui.fail(errorMessage(err));
     }
   });
 
@@ -925,7 +925,7 @@ repos
         [`crane do "investigate open maintenance work in ${r.name}"`, "a good first task"],
       ));
     } catch (err) {
-      ui.fail((err as Error).message);
+      ui.fail(errorMessage(err));
     }
   });
 repos
@@ -944,7 +944,7 @@ repos
       try {
         commands = actions.configureChecks(r.id, opts.set);
       } catch (err) {
-        ui.fail((err as Error).message);
+        ui.fail(errorMessage(err));
       }
     }
     if (opts.json) {
@@ -1020,7 +1020,7 @@ program
       actions.allowTool(r.id, input, opts.task);
       ui.ok(`Allowed ${pc.bold(ruleLabel(toRule(input)))} for ${r.name}  ${ui.dim("agents can run it from their next task")}`);
     } catch (err) {
-      ui.fail((err as Error).message);
+      ui.fail(errorMessage(err));
     }
   });
 
@@ -1036,7 +1036,7 @@ program
       actions.keepBlocked(r.id, input, opts.task);
       ui.ok(`Kept ${pc.bold(ruleLabel(toRule(input)))} blocked for ${r.name}`);
     } catch (err) {
-      ui.fail((err as Error).message);
+      ui.fail(errorMessage(err));
     }
   });
 
@@ -1051,7 +1051,7 @@ program
       actions.disallowTool(r.id, input);
       ui.ok(`Stopped allowing ${pc.bold(ruleLabel(toRule(input)))} for ${r.name}`);
     } catch (err) {
-      ui.fail((err as Error).message);
+      ui.fail(errorMessage(err));
     }
   });
 
@@ -1146,7 +1146,7 @@ agents
         console.log(`  ${ui.dim(`${role.label}: ${role.summary} Takes only the runs you start.`)}`);
         console.log(ui.hint([`crane agents run ${a.name.toLowerCase()}`, role.action.toLowerCase()]) + "\n");
       }
-    } catch (err) { ui.fail((err as Error).message); }
+    } catch (err) { ui.fail(errorMessage(err)); }
   });
 
 agents
@@ -1160,7 +1160,7 @@ agents
       const t = await actions.runRole(a.id, { repoId: opts.repo, scheduledAt: opts.at });
       ui.ok(`${t.scheduledAt ? `Scheduled for ${new Date(t.scheduledAt).toLocaleString()}` : "Queued"} for ${a.name}: ${t.title}  ${ui.dim(`${t.id} · ${AUTONOMY_LABEL[t.autonomy]}`)}`);
       console.log(ui.hint([`crane watch ${t.id}`, "follow along"], [`crane show ${t.id}`, "see the result"]) + "\n");
-    } catch (err) { ui.fail((err as Error).message); }
+    } catch (err) { ui.fail(errorMessage(err)); }
   });
 
 const schedules = agents.command("schedule").description("Recurring maintenance runs (Sunday is day 0)");
@@ -1181,7 +1181,7 @@ schedules.command("add <member>")
         localTime: opts.time, timezone: opts.timezone, preApprove: !!opts.preApprove, enabled: true,
       });
       ui.ok(`Added ${s.id} · Next: ${s.nextFireAt}`);
-    } catch (err) { ui.fail((err as Error).message); }
+    } catch (err) { ui.fail(errorMessage(err)); }
   });
 schedules.command("list <member>").option("--json", "machine-readable schedules")
   .action((member: string, opts: { json?: boolean }) => {
@@ -1190,7 +1190,7 @@ schedules.command("list <member>").option("--json", "machine-readable schedules"
       if (opts.json) { console.log(JSON.stringify(list, null, 2)); return; }
       for (const s of list) console.log(`${s.id} · ${store.getRepo(s.repoId)?.name} · ${crewScheduleLabel(s)} · ${s.enabled ? `Next: ${s.nextFireAt}` : "Paused"} · ${s.preApprove ? "Pre-approved" : "Waits for review"}${s.lastOutcome ? ` · ${s.lastOutcome}` : ""}`);
       if (!list.length) console.log("No schedules");
-    } catch (err) { ui.fail((err as Error).message); }
+    } catch (err) { ui.fail(errorMessage(err)); }
   });
 for (const operation of ["remove", "pause", "resume"] as const) {
   schedules.command(`${operation} <member> <schedule>`).action((member: string, id: string) => {
@@ -1201,7 +1201,7 @@ for (const operation of ["remove", "pause", "resume"] as const) {
       if (operation === "remove") actions.removeCrewSchedule(a.id, id);
       else actions.saveCrewSchedule(a.id, { ...s, enabled: operation === "resume" }, id);
       ui.ok(`${operation === "remove" ? "Removed" : operation === "pause" ? "Paused" : "Resumed"} ${id}`);
-    } catch (err) { ui.fail((err as Error).message); }
+    } catch (err) { ui.fail(errorMessage(err)); }
   });
 }
 schedules.command("update <member> <schedule>")
@@ -1224,7 +1224,7 @@ schedules.command("update <member> <schedule>")
         daysMask: days ? days.reduce((mask, d) => mask | (1 << Number(d)), 0) : s.daysMask,
         localTime: opts.time ?? s.localTime, timezone: opts.timezone ?? s.timezone, preApprove: opts.preApprove ?? s.preApprove }, id);
       ui.ok(`Updated ${id}`);
-    } catch (err) { ui.fail((err as Error).message); }
+    } catch (err) { ui.fail(errorMessage(err)); }
   });
 
 agents
@@ -1250,7 +1250,7 @@ agents
       const d = catalog.find((x) => x.isDefault)!;
       ui.ok(`Factory default set to ${d.label}. Crew preferences, task choices, and resumed sessions take priority.`);
     } catch (err) {
-      ui.fail((err as Error).message);
+      ui.fail(errorMessage(err));
     }
   });
 
@@ -1270,7 +1270,7 @@ agents
       const d = catalog.find((x) => x.name === name)!;
       ui.ok(`${d.label} runs on ${settingsLabel(d) ?? "its default model and effort"} from its next run.`);
     } catch (err) {
-      ui.fail((err as Error).message);
+      ui.fail(errorMessage(err));
     }
   });
 
@@ -1290,7 +1290,7 @@ agents
       console.log(`  Run by ${postmortemCrewLabel(s.crew)}`);
       if (defaults) ui.ok("Defaults saved for newly queued post-mortems.");
       if (crew) ui.ok("Saved who runs post-mortems. It applies to those already waiting too.");
-    } catch (err) { ui.fail((err as Error).message); }
+    } catch (err) { ui.fail(errorMessage(err)); }
   });
 
 program
@@ -1310,7 +1310,7 @@ program
       console.log("  Enabled cleanup permanently deletes tool events, marked routine narration, and unreferenced screenshots older than a day.");
       console.log("  Status, operator, blocked, error, finding, merge records, tasks and runs stay. Unclassified notes stay.");
       console.log("  The running factory sweeps hourly. The first enabled sweep may rewrite the database once with VACUUM; back up first.");
-    } catch (err) { ui.fail((err as Error).message); }
+    } catch (err) { ui.fail(errorMessage(err)); }
   });
 
 // ── crane analytics: what the factory costs ─────────────────
@@ -1442,7 +1442,7 @@ for (const command of ["serve", "start"] as const) {
         try {
           process.exitCode = await start(settings);
         } catch (error) {
-          ui.fail(`Couldn't start Crane: ${(error as Error).message}`);
+          ui.fail(`Couldn't start Crane: ${errorMessage(error)}`);
         }
       } else {
         const { serve } = await import("./serve.js");

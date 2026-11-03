@@ -1,3 +1,4 @@
+import { errorMessage } from "@crane/contracts";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync } from "node:fs";
@@ -177,7 +178,7 @@ export class DashboardBuilder {
     this.next = { sha, taskId };
     // Nothing awaits this until stop(), and an unhandled rejection would end the factory with every agent in it.
     this.current ??= this.drain()
-      .catch((err) => this.opts.log(`Couldn't finish building the dashboard: ${(err as Error).message}`))
+      .catch((err) => this.opts.log(`Couldn't finish building the dashboard: ${errorMessage(err)}`))
       .finally(() => (this.current = null));
   }
 

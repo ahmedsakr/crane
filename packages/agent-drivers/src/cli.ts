@@ -1,3 +1,4 @@
+import { errorMessage } from "@crane/contracts";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
@@ -42,7 +43,7 @@ export function readMessages(
     try {
       onMessage(msg as Record<string, any>);
     } catch (err) {
-      if (!told) onUnreadable((err as Error).message);
+      if (!told) onUnreadable(errorMessage(err));
       told = true;
     }
   });

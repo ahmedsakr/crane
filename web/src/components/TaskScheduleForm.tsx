@@ -1,3 +1,4 @@
+import { errorMessage } from "@crane/contracts";
 import { useState } from "react";
 import { ScheduleFields } from "./ScheduleFields";
 import { localStartTime, parseStartTime } from "../lib/schedule";
@@ -16,7 +17,7 @@ export function TaskScheduleForm({ scheduledAt, busy, onSave }: {
           const time = parseStartTime(value);
           setError(null);
           void onSave(time);
-        } catch (err) { setError((err as Error).message); }
+        } catch (err) { setError(errorMessage(err)); }
       }}>
         <ScheduleFields value={value} onChange={setValue} disabled={busy} />
         {error && <p className="error-text" role="alert">{error}</p>}

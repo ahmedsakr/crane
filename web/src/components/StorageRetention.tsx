@@ -1,3 +1,4 @@
+import { errorMessage } from "@crane/contracts";
 import { useEffect, useId, useState } from "react";
 import type { RetentionSettings } from "@crane/contracts";
 import { api } from "../lib/api";
@@ -26,7 +27,7 @@ export function StorageRetention() {
       setSaved(await api.configureRetention({ finishedTaskDays: enabled ? Number(days) : null }));
       setEditing(false);
       toast({ text: enabled ? "Storage retention enabled" : "Storage retention disabled" });
-    } catch (e) { setSaveError((e as Error).message); }
+    } catch (e) { setSaveError(errorMessage(e)); }
     finally { setSaving(false); }
   };
   return (

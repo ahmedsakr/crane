@@ -1,3 +1,4 @@
+import { errorMessage } from "@crane/contracts";
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
 import { git } from "../core/git.js";
@@ -252,7 +253,7 @@ export async function putAwayWorktree(repo: Repo, task: Task, path: string, opts
         `crane: unfinished work on ${task.title}\n\nTask ${task.id}. Saved by Crane when the task ${why}.`,
       );
     } catch (err) {
-      return { removed: false, reason: `couldn't commit its changes: ${(err as Error).message.split("\n")[0]}` };
+      return { removed: false, reason: `couldn't commit its changes: ${errorMessage(err).split("\n")[0]}` };
     }
     saved = true;
   }

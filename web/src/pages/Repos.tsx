@@ -1,3 +1,4 @@
+import { errorMessage } from "@crane/contracts";
 import { useEffect, useId, useState } from "react";
 import { useApp } from "../lib/app-context";
 import { api, ruleLabel, type Repo } from "../lib/api";
@@ -30,7 +31,7 @@ function ChecksSheet({ repo, onClose }: { repo: Pick<Repo, "id" | "name">; onClo
       toast({ text: `Saved checks for ${repo.name}` });
       onClose();
     } catch (e) {
-      setError((e as Error).message);
+      setError(errorMessage(e));
     } finally {
       setSaving(false);
     }
@@ -78,7 +79,7 @@ export function Repos() {
       toast({ text: `Connected ${r.name}` });
       refresh();
     } catch (err) {
-      setError((err as Error).message);
+      setError(errorMessage(err));
     } finally {
       setBusy(false);
     }
@@ -151,7 +152,7 @@ export function Repos() {
                               toast({ text: `Stopped allowing ${ruleLabel(rule)} for ${r.name}` });
                               refresh();
                             } catch (e) {
-                              toast({ text: (e as Error).message });
+                              toast({ text: errorMessage(e) });
                             }
                           }}
                         >

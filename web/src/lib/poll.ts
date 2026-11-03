@@ -1,3 +1,4 @@
+import { errorMessage } from "@crane/contracts";
 /** Only the latest request may publish; cleanup invalidates pending requests. */
 export function createPollRequest<T>(setData: (data: T) => void, setError: (error: string | null) => void) {
   let generation = 0;
@@ -15,7 +16,7 @@ export function createPollRequest<T>(setData: (data: T) => void, setError: (erro
         setError(null);
       } catch (e) {
         if (request !== generation) return;
-        setError((e as Error).message);
+        setError(errorMessage(e));
       }
     },
   };

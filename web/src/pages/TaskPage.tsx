@@ -29,7 +29,7 @@ import { BlockedItem, StatusChip, useToast } from "../components/bits";
 import { useApp } from "../lib/app-context";
 import { FollowUpForm } from "../components/FollowUpForm";
 import { TaskScheduleForm } from "../components/TaskScheduleForm";
-import { visualReviewPending, type Task } from "@crane/contracts";
+import { errorMessage, runCostLabel, runTokens, visualReviewPending, visualReviewWaivedByPreApproval, type Task } from "@crane/contracts";
 import { Changes } from "../components/Changes";
 
 function VisualReviewForm({ task, busy, save }: { task: Task; busy: boolean; save: (input: { status: "inspected" | "waived"; commit: string; note: string }) => void }) {
@@ -109,14 +109,12 @@ function Runs({ runs }: { runs: AgentRun[] }) {
       <summary>{plural(runs.length, "agent run")}</summary>
       <ul>
         {runs.map((r) => {
-          const tokens = r.inputTokens + r.cacheReadTokens + r.cacheWriteTokens + r.outputTokens;
+          const tokens = runTokens(r);
           return (
             <li key={r.id}>
               <span className="runs-head">
                 <span>{RUN_KIND_LABEL[r.kind]}</span>
-                <span className="tabular">{r.outcome === "running" ? "Running" : r.costStatus === "unknown"
-                  ? r.costUsd ? `${usd(r.costUsd)} + unknown` : "Unknown"
-                  : `${r.costStatus === "estimated" ? "~" : ""}${usd(r.costUsd)}`}</span>
+                <span className="tabular">{r.outcome === "running" ? "Running" : runCostLabel(r, usd)}</span>
               </span>
               <span className="runs-meta">
                 {[
@@ -202,7 +200,7 @@ export function TaskPage() {
   const { task: m, repo, agent } = data;
   const report = m.report;
   const visualPending = visualReviewPending(m);
-  const visualWaivedByPreApproval = !!m.preApprovedAt && (!m.visualReview || m.visualReview.status === "pending");
+  const visualWaivedByPreApproval = visualReviewWaivedByPreApproval(m);
   const main = repo?.defaultBranch ?? "main";
   const merge = lastMergeOutcome(events);
   // The agent that worked it, or the one it asked for. Before it starts with no choice, nothing to say.
@@ -234,7 +232,7 @@ export function TaskPage() {
       refreshApp();
       after?.(r);
     } catch (e) {
-      toast({ text: (e as Error).message });
+      toast({ text: errorMessage(e) });
     } finally {
       setBusy(null);
     }

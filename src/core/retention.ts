@@ -1,3 +1,4 @@
+import { errorMessage } from "@crane/contracts";
 import type { Store } from "./store.js";
 import { pruneOrphanScreenshots } from "./screenshots.js";
 
@@ -23,7 +24,7 @@ export class StorageMaintenance {
       this.store.vacuumHistory();
       if (events || images) this.log(`Storage retention removed ${events} routine events and ${images} unreferenced screenshots`);
     } catch (err) {
-      this.log(`Storage retention failed: ${(err as Error).message}. Will retry in an hour`);
+      this.log(`Storage retention failed: ${errorMessage(err)}. Will retry in an hour`);
     }
   }
 }
