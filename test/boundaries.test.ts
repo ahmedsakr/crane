@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { packageImportViolations, specifiers } from "./support/imports.ts";
+import { moduleRefs, packageImportViolations, specifiers } from "./support/imports.ts";
 
 const src = join(import.meta.dirname, "..", "src");
 const webSrc = join(import.meta.dirname, "..", "web", "src");
@@ -65,6 +65,19 @@ test("boundaries: factory status queries don't load the scheduler or drivers", (
     const bad = importsOf(file).filter((i) => i === "factory/orchestrator");
     assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
   }
+});
+
+test("boundaries: CLI commands load serve and start only when they run", () => {
+  const runtime = new Set(["cli/serve", "cli/start"]);
+  for (const file of sources.filter((f) => f.startsWith("cli/") && !runtime.has(f.replace(/\.ts$/, "")))) {
+    const eager = moduleRefs(join(src, file))
+      .filter((ref) => ref.declaration && !ref.typeOnly && ref.spec?.startsWith("."))
+      .map((ref) => resolveSpec(file, ref.spec!))
+      .filter((path) => runtime.has(path) || path === "factory/orchestrator");
+    assert.deepEqual(eager, [], `${file} eagerly imports ${eager.join(", ")}`);
+  }
+  const lazy = importsOf("cli/commands/serve.ts").filter((path) => runtime.has(path)).sort();
+  assert.deepEqual(lazy, ["cli/serve", "cli/start"]);
 });
 
 test("boundaries: the agent protocol depends on contract types and nothing else", () => {
