@@ -41,6 +41,11 @@ export interface RunContext {
   siblingTasks?: readonly SiblingTask[];
   /** Where each of `task.prerequisites` stood when the run started, supplied by the factory. */
   prerequisites?: readonly PrerequisiteState[];
+  /**
+   * A post-mortem's full brief, rendered from the merged task's history when
+   * the run starts. It stands in for `task.brief`, which stores only one line.
+   */
+  postmortemPrompt?: string;
   /** Extra permission rules the operator allowed for this repo. Crane's deny list still wins. */
   allowedTools?: string[];
   /** Stop the agent after this many turns. */

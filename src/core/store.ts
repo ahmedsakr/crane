@@ -24,7 +24,7 @@ import {
   type CommandEvidence,
   type VisualReview,
 } from "@crane/contracts";
-import { postmortemBrief } from "./postmortem.js";
+import { postmortemBrief, postmortemPrompt, postmortemSourceMissing } from "./postmortem.js";
 import type {
   Agent,
   AgentRun,
@@ -334,6 +334,20 @@ function migratePostmortemLinks(db: Database.Database) {
   }).immediate();
 }
 
+/**
+ * Post-mortems used to store a rendered copy of their merged task's history as
+ * their brief. Keep its first line, which is what they store now. Queued and
+ * running ones wait for a later open, so a factory still on the older build
+ * doesn't start one without its history; the prompt doesn't use their copy anyway.
+ */
+function migratePostmortemBriefs(db: Database.Database) {
+  const legacy = `postmortem_of IS NOT NULL AND status NOT IN ('queued', 'running')
+    AND brief LIKE 'Evaluate the execution of successfully merged task %' AND instr(brief, char(10)) > 0`;
+  // Runs on every open, so don't take the write lock unless there's something to do.
+  if (!db.prepare(`SELECT 1 FROM tasks WHERE ${legacy} LIMIT 1`).get()) return;
+  db.exec(`UPDATE tasks SET brief = substr(brief, 1, instr(brief, char(10)) - 1) WHERE ${legacy}`);
+}
+
 const now = () => new Date().toISOString();
 const TASK_DUE = "(scheduled_at IS NULL OR scheduled_at <= ?)";
 
@@ -465,6 +479,7 @@ export class Store {
     addMissingColumns(this.db);
     migrateFollowUpLinks(this.db);
     migratePostmortemLinks(this.db);
+    migratePostmortemBriefs(this.db);
     migrateCostsToRuns(this.db);
     migrateCostStatus(this.db);
   }
@@ -927,7 +942,7 @@ export class Store {
       const review = this.createTask({
         kind: "maintenance",
         title: `Post-mortem: ${task.title}`,
-        brief: postmortemBrief(this.getTask(id)!, this.listEvents(id)),
+        brief: postmortemBrief(task),
         repoId: task.repoId,
         autonomy: "observe",
         driver: defaults.driver ?? task.driver,
@@ -938,6 +953,12 @@ export class Store {
       this.addEvent(review.id, "note", `Reviewing merged task ${id}`, { sourceTaskId: id });
       return review;
     }).immediate();
+  }
+
+  /** The brief a post-mortem's agent reviews, built from its merged task's current history. */
+  postmortemPrompt(sourceTaskId: string): string {
+    const source = this.getTask(sourceTaskId);
+    return source ? postmortemPrompt(source, this.listEvents(source.id)) : postmortemSourceMissing(sourceTaskId);
   }
 
   /**

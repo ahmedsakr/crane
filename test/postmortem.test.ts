@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "../src/core/store.js";
-import { postmortemBrief } from "../src/core/postmortem.js";
+import { postmortemBrief, postmortemPrompt } from "../src/core/postmortem.js";
+import { resumePrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -28,10 +29,12 @@ test("a successful merge queues exactly one independent read-only post-mortem", 
     assert.equal(review.driver, "codex");
     assert.equal(review.driverSettings, null);
     assert.equal(review.sessionId, null);
-    assert.match(review.brief, /npm ci/);
-    assert.match(review.brief, /Shipped/);
-    assert.match(review.brief, /Merged into main/);
-    assert.match(review.brief, /untrusted evidence/);
+    assert.equal(review.brief, `Evaluate the execution of successfully merged task ${task.id}: Feature.`, "the history stays with the merged task");
+    const prompt = store.postmortemPrompt(review.postmortemOf!);
+    assert.match(prompt, /npm ci/);
+    assert.match(prompt, /Shipped/);
+    assert.match(prompt, /Merged into main/);
+    assert.match(prompt, /untrusted evidence/);
     assert.equal(store.listEvents(task.id).at(-1)!.data!.postmortemTaskId, review.id);
     assert.equal(store.listEvents(review.id).at(-1)!.data!.sourceTaskId, task.id);
     assert.equal(store.completeMerge(task.id, "Merged again", {}), null);
@@ -275,10 +278,98 @@ test("post-mortems run with their saved overrides while ordinary tasks use the a
   assert.equal(seen.find((c) => c.task.id === ordinary.id)!.effort, "max");
 });
 
+test("a post-mortem's agent gets the merged task's history once, on every fresh run and after a retry", async (t) => {
+  const store = new Store(":memory:");
+  const actions = new OperatorActions(store);
+  const repo = store.addRepo({ path: process.cwd() });
+  const seen: RunContext[] = [];
+  const driver: AgentDriver = {
+    name: "simulated", label: "simulated", available: async () => true,
+    run: async (ctx) => { seen.push(ctx); return { report: { summary: "Reviewed", findings: [], changedFiles: [] } }; },
+  };
+  const base = { kind: "maintenance" as const, title: "Feature", brief: "Build the feature", repoId: repo.id, autonomy: "observe" as const };
+  const source = store.createTask(base);
+  store.addEvent(source.id, "blocked", "Command refused", { command: "npm ci" });
+  store.setStatus(source.id, "merging");
+  const review = store.completeMerge(source.id, "Merged", {})!;
+  const ordinary = store.createTask(base);
+  const factory = new Factory(store, [driver], { crewSize: 1, tickMs: 10, buildDashboard: false });
+  t.after(async () => { await factory.stop(); store.close(); });
+  factory.start();
+  for (let i = 0; i < 500 && store.getTask(ordinary.id)!.status !== "done"; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(store.getTask(review.id)!.status, "done");
+  const ctx = seen.find((c) => c.task.id === review.id)!;
+  assert.equal(ctx.task.brief.includes("\n"), false);
+  const prompt = userPrompt(ctx.task, undefined, ctx);
+  assert.match(prompt, /npm ci/);
+  assert.match(prompt, /Build the feature/);
+  assert.equal(prompt.split("Evaluate the execution of successfully merged task").length, 2, "the first line isn't repeated");
+  assert.doesNotMatch(resumePrompt(ctx), /npm ci/, "a resumed session already has it");
+  assert.equal(seen.find((c) => c.task.id === ordinary.id)!.postmortemPrompt, undefined);
+
+  const retried = actions.retry(review.id);
+  assert.equal(retried.brief, review.brief, "a retry stays one line");
+  for (let i = 0; i < 500 && store.getTask(retried.id)!.status !== "done"; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.match(seen.find((c) => c.task.id === retried.id)!.postmortemPrompt!, /npm ci/);
+});
+
+test("a post-mortem says so when its history is missing, instead of leaving gaps to guess at", () => {
+  const store = new Store(":memory:");
+  try {
+    assert.match(store.postmortemPrompt("t-gone"), /t-gone is no longer in Crane.*evidence gap/);
+    const source = store.createTask({ kind: "maintenance", title: "Feature", brief: "", repoId: null, autonomy: "observe" });
+    store.db.prepare("DELETE FROM events WHERE task_id = ?").run(source.id);
+    const prompt = store.postmortemPrompt(source.id);
+    assert.match(prompt, /Blocked calls and errors:\nNone recorded\./);
+    assert.match(prompt, /Activity history:\nNone recorded\./);
+  } finally { store.close(); }
+});
+
+test("opening a database shrinks stored histories, leaving work in flight and other tasks alone", () => {
+  const dir = mkdtempSync(join(tmpdir(), "crane-postmortem-briefs-"));
+  const file = join(dir, "crane.db");
+  let store = new Store(file);
+  try {
+    const base = { kind: "maintenance" as const, title: "Feature", repoId: null, autonomy: "observe" as const };
+    const source = store.createTask({ ...base, brief: "Build it" });
+    const firstLine = postmortemBrief(source);
+    const stored = postmortemPrompt(source, []);
+    const finished = store.createTask({ ...base, brief: stored, postmortemOf: source.id });
+    store.setStatus(finished.id, "done");
+    const queued = store.createTask({ ...base, brief: stored, postmortemOf: source.id });
+    const ordinary = store.createTask({ ...base, brief: `${firstLine}\n\nWritten by the operator` });
+    store.setStatus(ordinary.id, "done");
+    const asWritten = store.createTask({ ...base, brief: "Check this\nby hand", postmortemOf: source.id });
+    store.setStatus(asWritten.id, "done");
+    store.close();
+
+    store = new Store(file);
+    assert.equal(store.getTask(finished.id)!.brief, firstLine);
+    assert.equal(store.getTask(queued.id)!.brief, stored, "an older factory may still be about to run it");
+    assert.equal(store.getTask(ordinary.id)!.brief, `${firstLine}\n\nWritten by the operator`);
+    assert.equal(store.getTask(asWritten.id)!.brief, "Check this\nby hand");
+
+    store.setStatus(queued.id, "cancelled");
+    store.close();
+    store = new Store(file);
+    assert.equal(store.getTask(queued.id)!.brief, firstLine, "it's shrunk once it's finished");
+    const prompt = userPrompt(store.getTask(queued.id)!, undefined, { postmortemPrompt: store.postmortemPrompt(source.id) });
+    assert.match(prompt, /Build it/);
+  } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a queued post-mortem with a stored history runs from the current render, not both", () => {
+  const source = { id: "t-source", title: "Feature", brief: "Brief", report: null } as Parameters<typeof postmortemPrompt>[0];
+  const stored = postmortemPrompt(source, []);
+  const task = { title: "Post-mortem: Feature", brief: stored, prerequisites: [], acceptance: [], lookouts: [], autonomy: "observe" } as unknown as Parameters<typeof userPrompt>[0];
+  const prompt = userPrompt(task, undefined, { postmortemPrompt: postmortemPrompt(source, []) });
+  assert.equal(prompt.split("Act as Crane's post-mortem agent").length, 2);
+});
+
 test("history is bounded and blocked evidence survives noisy tool activity", () => {
-  const task = { id: "t-source", title: "Feature", brief: "Brief", report: null } as Parameters<typeof postmortemBrief>[0];
+  const task = { id: "t-source", title: "Feature", brief: "Brief", report: null } as Parameters<typeof postmortemPrompt>[0];
   const events = Array.from({ length: 1000 }, (_, id) => ({ id, taskId: task.id, ts: "now", type: "tool" as const, message: "x".repeat(1000), data: null }));
-  const brief = postmortemBrief(task, [{ ...events[0]!, type: "blocked", message: "npm test refused" }, ...events]);
+  const brief = postmortemPrompt(task, [{ ...events[0]!, type: "blocked", message: "npm test refused" }, ...events]);
   assert.ok(brief.length < 140000);
   assert.match(brief, /npm test refused/);
   assert.match(brief, /omitted/);
@@ -296,7 +387,7 @@ test("passing check logs are cut so they can't push out the agent's activity or 
   const task = {
     id: "t-source", title: "Feature", brief: "Brief",
     report: { summary: "Shipped", findings: [], changedFiles: [], validation: [review, failed, merge] },
-  } as unknown as Parameters<typeof postmortemBrief>[0];
+  } as unknown as Parameters<typeof postmortemPrompt>[0];
   const event = (id: number, message: string, data: Record<string, unknown> | null = null) =>
     ({ id, taskId: task.id, ts: "now", type: "tool" as const, message, data });
   const events = [
@@ -305,7 +396,7 @@ test("passing check logs are cut so they can't push out the agent's activity or 
     { ...event(30, "Review check passed: npm test", { validation: review }), type: "note" as const },
     { ...event(31, "Merge check passed: npm test", { validation: merge }), type: "note" as const },
   ];
-  const brief = postmortemBrief(task, events);
+  const brief = postmortemPrompt(task, events);
   assert.match(brief, /earliest agent step/);
   assert.doesNotMatch(brief, /Earlier or oversized events omitted/);
   assert.doesNotMatch(brief, /a test name long enough/);

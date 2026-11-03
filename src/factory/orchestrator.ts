@@ -157,6 +157,7 @@ export class Factory {
       commandEvidence: this.store.commandEvidence(ctx.task.id),
       siblingTasks: ctx.repo && !ctx.job ? await siblingTasksFor(this.store, ctx.task, ctx.repo) : undefined,
       prerequisites: !ctx.job && ctx.task.prerequisites.length ? this.store.prerequisiteStates(ctx.task) : undefined,
+      postmortemPrompt: !ctx.job && ctx.task.postmortemOf ? this.store.postmortemPrompt(ctx.task.postmortemOf) : undefined,
     });
     try {
       return await run();
