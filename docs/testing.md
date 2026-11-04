@@ -108,8 +108,11 @@ does not broaden permissions or replace incomplete manual CLI validation.
 
 Plain `npm run screenshot` boots a live demo: new ids, dates relative to now,
 random usage figures, and simulated agents working while it captures. Reduced
-motion can't make that repeatable, so two captures of one build differ. To
-compare images, use the fixture and a matrix:
+motion can't make that repeatable, so two captures of one build differ wherever
+a view shows any of it: in one measurement with identical framing, 2,498 pixels
+on the site and 19,574 on analytics, against none for the fixture. A view that
+happens to match, as `/tasks` did, proves nothing about the next one. To compare
+images, use the fixture and a matrix:
 
 ```sh
 npm run build -w web &&
