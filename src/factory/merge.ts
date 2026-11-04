@@ -204,7 +204,7 @@ async function verifyCandidate(req: MergeRequest, { head, tree, branchSha, chang
   // install: merge checks run only against dependencies Crane prepared for the
   // merge commit's manifests (it reinstalls whenever they changed).
   await prepareDependencies(req);
-  await runChecks(workdir, req.checks ?? [], "merge", req.recordValidation ?? (() => {}), signal);
+  await runChecks(workdir, req.checks ?? [], "merge", req.recordValidation ?? (() => {}), { signal });
   stopIfAborted(signal);
   await req.verifyVisualReview?.(head, tree, branchSha, changedFiles);
 }
