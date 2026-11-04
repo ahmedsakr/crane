@@ -34,7 +34,7 @@ test("a cancelled check stops its process tree, runs nothing further, and record
     const [ready, after, next] = ["ready", "after", "next"].map(s.mark) as [string, string, string];
     const runs: ValidationRun[] = [];
     const ac = new AbortController();
-    const checks = runChecks(s.repo, [lingering(ready, after), `touch '${next}'`], "review", (r) => runs.push(r), ac.signal);
+    const checks = runChecks(s.repo, [lingering(ready, after), `touch '${next}'`], "review", (r) => runs.push(r), { signal: ac.signal });
     await until(() => existsSync(ready), "the check started");
     ac.abort();
     await assert.rejects(checks, { name: "AbortError" });
@@ -50,7 +50,7 @@ test("a check past its time limit is blocked, says why, and stops its process tr
   try {
     const [ready, after] = ["ready", "after"].map(s.mark) as [string, string];
     const runs: ValidationRun[] = [];
-    await assert.rejects(runChecks(s.repo, [`echo started; ${lingering(ready, after)}`], "merge", (r) => runs.push(r), undefined, 200), /did not pass \(blocked\)/);
+    await assert.rejects(runChecks(s.repo, [`echo started; ${lingering(ready, after)}`], "merge", (r) => runs.push(r), { timeoutMs: 200 }), /did not pass \(blocked\)/);
     assert.equal(runs.length, 1);
     assert.equal(runs[0]!.status, "blocked");
     assert.equal(runs[0]!.exitCode, null);
@@ -66,7 +66,7 @@ test("a check that ignores SIGTERM is killed, so the crew slot comes back", asyn
   try {
     const runs: ValidationRun[] = [];
     const started = Date.now();
-    await assert.rejects(runChecks(s.repo, ["trap '' TERM; sleep 30"], "review", (r) => runs.push(r), undefined, 100), /blocked/);
+    await assert.rejects(runChecks(s.repo, ["trap '' TERM; sleep 30"], "review", (r) => runs.push(r), { timeoutMs: 100 }), /blocked/);
     assert.ok(Date.now() - started < 10_000, "it didn't wait out the sleep");
     assert.equal(runs[0]!.status, "blocked");
   } finally { s.done(); }

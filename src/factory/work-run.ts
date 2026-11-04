@@ -186,7 +186,7 @@ async function runReviewChecks({ store }: WorkRunDeps, { task, signal, emit }: W
     // One write, so a pass is never counted without its evidence on the report.
     store.updateTask(task.id, { report, reviewCheckpoint: validated });
     emit("note", `Review check ${check.status}: ${check.command ?? "configuration"}`, { validation: check });
-  }, signal, undefined, new Set(reusable));
+  }, { signal, alreadyPassed: new Set(reusable) });
 }
 
 /** Add the report's findings to the feed, leaving out any an earlier run already added. */
