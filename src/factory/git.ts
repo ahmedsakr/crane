@@ -5,7 +5,8 @@ import { git } from "../core/git.js";
 import { worktreesDir } from "../core/paths.js";
 import { slugify } from "../core/ids.js";
 import type { LandedCommit } from "../core/store.js";
-import { fetchDefault, newestDefault, remoteFor, why } from "./merge.js";
+import { fetchDefault } from "./merge-fetch.js";
+import { newestDefault, remoteFor, why } from "./merge-git.js";
 import type { Task, Repo, TaskDiff } from "@crane/contracts";
 
 export async function isGitRepo(path: string): Promise<boolean> {

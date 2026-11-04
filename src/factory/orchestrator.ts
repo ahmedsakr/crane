@@ -1,19 +1,14 @@
 import { crewSettingKey, type Store } from "../core/store.js";
 import { errorMessage, type AgentState, type EventType, type Task } from "@crane/contracts";
 import type { AgentDriver } from "@crane/agent-protocol";
-import { join } from "node:path";
-import { runAgent, type AgentRunnerDeps } from "./agent-runner.js";
-import { defaultDriver, driverFor } from "./driver-selection.js";
-import { removeWorktree } from "./git.js";
-import { deleteMergedBranch, landTask, MergeError } from "./merge.js";
+import type { AgentRunnerDeps } from "./agent-runner.js";
+import { defaultDriver } from "./driver-selection.js";
 import { DashboardBuilder } from "./dashboard.js";
-import { envNumber, minutes, timeLimit } from "./run-limits.js";
+import { handleMergeFailure, runMerge, type MergeRun, type MergeRunDeps } from "./merge-run.js";
+import { envNumber, timeLimit } from "./run-limits.js";
 import { DEFAULT_DRIVER_KEY, DEFAULT_MAX_TURNS, DEFAULT_TIME_LIMIT_MIN, HEARTBEAT_KEY } from "./settings.js";
-import { worktreesDir } from "../core/paths.js";
-import { retainScreenshots } from "../core/screenshots.js";
 import { StorageMaintenance } from "../core/retention.js";
 import { OperatorActions } from "./actions.js";
-import { hasVisualDecision, requireCandidateVisualReview, visualReviewRequired } from "./visual-review.js";
 import { handleWorkFailure, runWork, settleWorkRun, type CrewMember, type WorkRun, type WorkRunDeps } from "./work-run.js";
 import { WorktreeSweeper } from "./worktree-sweeper.js";
 
@@ -69,6 +64,7 @@ export class Factory {
   private agentRunner: AgentRunnerDeps;
   private sweeper: WorktreeSweeper;
   private workRun: WorkRunDeps;
+  private mergeRun: MergeRunDeps;
   /** Why the last tick failed, so a store that stays broken is reported once rather than every tick. */
   private tickError: string | null = null;
   private storageMaintenance: StorageMaintenance;
@@ -123,6 +119,14 @@ export class Factory {
         note: (taskId, message) => this.recording(() => this.store.addEvent(taskId, "note", message)),
       });
     }
+    this.mergeRun = {
+      store,
+      drivers: this.drivers,
+      agentRunner: this.agentRunner,
+      timeLimitMin: this.timeLimitMin,
+      log: this.log,
+      dashboard: this.dashboard,
+    };
   }
 
   start() {
@@ -291,7 +295,7 @@ export class Factory {
       this.recording(() => this.store.addEvent(taskId, type, message, data ?? null));
   }
 
-  /** Land an approved task on its repo's default branch, with an agent on hand for conflicts. */
+  /** Track one agent's landing of a task: its controller, time limit, repo slot and agent state. The merge itself is in `merge-run.ts`. */
   private async merge(agent: CrewMember, task: Task) {
     const ac = new AbortController();
     const limit = timeLimit(ac, this.timeLimitMin);
@@ -299,81 +303,14 @@ export class Factory {
     if (repo) this.mergingRepos.add(repo.id);
     this.setAgentState(agent.id, "working", task.id);
     this.log(`${agent.name} is merging ${task.id} · ${task.title}`);
-    const emit = this.emitter(task.id);
+    const run: MergeRun = { agent, task, repo, signal: ac.signal, emit: this.emitter(task.id) };
     // Stopping the factory aborts every running controller; merges are tracked under their own key.
     this.running.set(`merge:${task.id}`, ac);
 
     try {
-      if (!repo) throw new MergeError("This task has no repo to merge into");
-      if (!task.branch) throw new MergeError("This task has no branch to merge");
-      const workdir = task.worktree ?? join(worktreesDir(), task.id);
-      this.store.updateTask(task.id, { worktree: workdir });
-      let conflictChangedUi = false;
-      const runResolver = async (ctx: { cwd: string; base: string; files: string[]; deferredDependencies?: string[]; checkpoint?: string; visualReviewRequired?: boolean }) => {
-        const { cwd, base, files, deferredDependencies, checkpoint } = ctx;
-        conflictChangedUi ||= ctx.visualReviewRequired ?? false;
-        const current = this.store.getTask(task.id)!;
-        const r = await runAgent(this.agentRunner, agent.id, driverFor(this.store, this.drivers, current, agent.id), {
-          task: current, repo, cwd, signal: ac.signal, emit,
-          job: { kind: "resolve_conflicts", phase: checkpoint ? "validate" : "edit", base, files,
-            ...(checkpoint ? { checkpoint } : {}), ...(deferredDependencies ? { deferredDependencies } : {}) },
-          checks: this.store.repoChecks(repo.id),
-        });
-        conflictChangedUi ||= visualReviewRequired({ ...r.report, changedFiles: [...r.report.changedFiles, ...files] });
-        if (r.report.screenshots?.length) {
-          const screenshots = retainScreenshots(task.id, cwd, r.report.screenshots, message => emit("note", message));
-          const report = this.store.getTask(task.id)?.report;
-          if (report && screenshots.length) this.store.updateTask(task.id, { report: { ...report, screenshots } });
-        }
-        for (const f of r.report.findings) emit("finding", f.title, { impact: f.impact, effort: f.effort });
-        return { visualReviewRequired: conflictChangedUi };
-      };
-
-      const result = await landTask({
-        repo,
-        task,
-        workdir,
-        emit,
-        signal: ac.signal,
-        checks: this.store.repoChecks(repo.id),
-        reviewedCandidate: hasVisualDecision(task.visualReview) ? task.visualReview.commit : undefined,
-        verifyVisualReview: async (commit, tree, branchCommit, changedFiles) => requireCandidateVisualReview(this.store, task.id, commit, tree, branchCommit, changedFiles, conflictChangedUi),
-        recordValidation: (run) => {
-          const report = this.store.getTask(task.id)?.report ?? { summary: "", findings: [], changedFiles: [] };
-          this.store.updateTask(task.id, { report: { ...report, validation: [...(report.validation ?? []), run] } });
-          emit("note", `Merge check ${run.status}: ${run.command ?? "configuration"}`, { validation: run });
-        },
-        resolveConflicts: runResolver,
-        validateResolution: runResolver,
-      });
-
-      const main = repo.defaultBranch;
-      const where = result.pushedTo ? ` and pushed to ${result.pushedTo}` : "";
-      const message = result.checkoutBehind
-        ? `Merged into ${main}${where}. Your checkout at ${result.checkoutBehind} has local changes, so it wasn't updated`
-        : `Merged into ${main}${where}`;
-      // Record the outcome before cleaning up: if the merge just updated Crane's own
-      // checkout, a dev server may restart any moment.
-      this.store.completeMerge(task.id, message, {
-        merge: { commit: result.commit, head: result.head, pushedTo: result.pushedTo, checkoutBehind: result.checkoutBehind },
-      });
-      this.log(`${agent.name} merged ${task.id}`);
-      await removeWorktree(repo, workdir);
-      if (!result.checkoutBehind) await deleteMergedBranch(repo, task.branch);
-      // A change to Crane itself: build the dashboard from it, so it shows without anyone running npm run build.
-      if (repo.isFactory) this.dashboard?.request(result.head, task.id).catch((err) => this.log(`Couldn't start the dashboard build: ${errorMessage(err)}`));
+      await runMerge(this.mergeRun, run);
     } catch (err) {
-      if (ac.signal.aborted && !limit.hit()) {
-        // The factory is stopping. Leave it waiting; the next factory picks it up again.
-        this.store.updateTask(task.id, { agentId: null });
-        return;
-      }
-      const message = limit.hit()
-        ? `Merging took longer than ${minutes(this.timeLimitMin)}, the most a task may run`
-        : errorMessage(err);
-      emit("error", message, limit.hit() ? { limit: "time" } : undefined);
-      this.store.setStatus(task.id, "needs_review", "Couldn't merge. Back with you", { merge: { error: message } });
-      this.log(`${agent.name} couldn't merge ${task.id}: ${message}`);
+      handleMergeFailure(this.mergeRun, run, err, { timeLimitHit: limit.hit(), aborted: ac.signal.aborted });
     } finally {
       limit.clear();
       this.running.delete(`merge:${task.id}`);
