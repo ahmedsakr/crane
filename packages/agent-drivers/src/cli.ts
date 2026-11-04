@@ -1,3 +1,4 @@
+import { REPORT_FENCE, type RunContext } from "@crane/agent-protocol";
 import { errorMessage } from "@crane/contracts";
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -17,6 +18,12 @@ export function cliAnswers(bin: string, timeoutMs = VERSION_CHECK_MS): Promise<b
     p.on("error", () => resolve(false));
     p.on("exit", (code) => resolve(code === 0));
   });
+}
+
+/** Show what an agent said, up to the report it ends its final message with. */
+export function emitAgentText(emit: RunContext["emit"], text: string) {
+  const visible = text.split("```" + REPORT_FENCE)[0]!.trim();
+  if (visible) emit("note", visible.slice(0, 1200), { routine: true });
 }
 
 /**

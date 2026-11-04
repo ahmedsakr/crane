@@ -14,6 +14,11 @@ export function safeCommand(raw: string): Pick<CommandEvidence, "command" | "tru
   return { command: text, truncated };
 }
 
+/** A command's line in the activity feed: `label` says how far it got. */
+export function commandMessage(label: string, command: CommandEvidence): string {
+  return `${label} ${command.command.split("\n")[0]?.slice(0, 120)}${command.exitCode === null ? "" : ` (exit ${command.exitCode})`}`;
+}
+
 /** One CLI invocation; item IDs alone can repeat in later sessions/runs. */
 export class CommandTracker {
   private invocation = randomUUID();

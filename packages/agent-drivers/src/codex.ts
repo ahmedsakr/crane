@@ -1,22 +1,10 @@
-import { spawn } from "node:child_process";
-import { relative, isAbsolute } from "node:path";
-import {
-  AgentRunError,
-  addRunUsage,
-  isTransientFailure,
-  parseReport,
-  type AgentDriver,
-  type RunContext,
-  type RunResult,
-} from "@crane/agent-protocol";
-import { cliAnswers, readMessages } from "./cli.js";
+import type { AgentDriver, RunContext, RunResult } from "@crane/agent-protocol";
+import { cliAnswers } from "./cli.js";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
-import type { RunUsage } from "@crane/contracts";
-import { codexCost } from "./codex-pricing.js";
-import { CommandTracker } from "./command-evidence.js";
+import { runAgentProcess, runResumingSession } from "./agent-process.js";
+import { CodexStream } from "./codex-stream.js";
 
-/** Codex exited before it got going again on an earlier session. */
-class SessionNotResumed extends Error {}
+export { unwrapShell, usageFromTurn } from "./codex-stream.js";
 
 /**
  * The Codex flags that hold an agent to what its task allows. Codex has no
@@ -56,32 +44,11 @@ export function codexArgs(opts: { cwd: string; readOnly: boolean; resume?: strin
   return args;
 }
 
-/** `bash -lc 'npm test'` → `npm test`. Codex wraps every command in a login shell. */
-export function unwrapShell(command: unknown): string {
-  const raw = Array.isArray(command) ? command.map(String).join(" ") : typeof command === "string" ? command : "";
-  const m = raw.match(/^(?:\S*\/)?(?:ba|z)?sh -l?c\s+(['"])([\s\S]*)\1\s*$/);
-  return (m ? m[2]! : raw).trim();
-}
-
-/** What Codex used, from its `turn.completed` usage. Its input count includes cached tokens. */
-export function usageFromTurn(usage: Record<string, unknown> | undefined, model: string | null): RunUsage {
-  const n = (v: unknown) => (Number.isFinite(Number(v)) ? Math.max(0, Number(v)) : 0);
-  const input = n(usage?.input_tokens);
-  const cached = Math.min(input, n(usage?.cached_input_tokens));
-  const output = n(usage?.output_tokens);
-  const valid = [usage?.input_tokens, usage?.cached_input_tokens, usage?.output_tokens]
-    .every((v) => typeof v === "number" && Number.isFinite(v) && v >= 0) && n(usage?.cached_input_tokens) <= input;
-  const cost = valid ? codexCost(model, input - cached, cached, output) : null;
-  return {
-    costUsd: cost ?? 0,
-    costStatus: cost === null ? "unknown" : "estimated",
-    inputTokens: input - cached,
-    outputTokens: output,
-    cacheReadTokens: cached,
-    cacheWriteTokens: 0,
-    turns: 1,
-    model,
-  };
+/** Codex has no separate system prompt flag, so Crane's brief leads the first message. */
+function codexPrompt(ctx: RunContext, resume?: string): string {
+  if (resume) return resumePrompt(ctx);
+  const brief = systemPrompt(ctx.task, ctx.repo, ctx.job, { agentCommits: false, sandboxed: true, checks: ctx.checks });
+  return `${brief}\n\n---\n\n${userPrompt(ctx.task, ctx.job, ctx)}`;
 }
 
 /**
@@ -101,159 +68,24 @@ export class CodexDriver implements AgentDriver {
     return cliAnswers(this.bin);
   }
 
-  async run(ctx: RunContext): Promise<RunResult> {
-    if (!ctx.resumeSession) return this.runOnce(ctx);
-    try {
-      return await this.runOnce(ctx, ctx.resumeSession);
-    } catch (err) {
-      if (!(err instanceof SessionNotResumed) || ctx.signal.aborted) throw err;
-      ctx.emit("note", "Couldn't pick up the agent's earlier session, so it's starting a new one on the work so far");
-      return this.runOnce(ctx);
-    }
+  run(ctx: RunContext): Promise<RunResult> {
+    return runResumingSession(ctx, (resume) => this.runOnce(ctx, resume));
   }
 
   private runOnce(ctx: RunContext, resume?: string): Promise<RunResult> {
-    const { task, repo, cwd, emit, signal, job } = ctx;
+    const { task, cwd, job } = ctx;
     // Resolving conflicts means editing files, so it gets a writable sandbox.
     const readOnly = !job && task.autonomy === "observe";
     const model = ctx.model || this.model || null;
-    const args = codexArgs({ cwd, readOnly, resume, model: model ?? undefined, effort: ctx.effort });
-    // Codex has no separate system prompt flag, so Crane's brief leads the first message.
-    const prompt = resume
-      ? resumePrompt(ctx)
-      : `${systemPrompt(task, repo, job, { agentCommits: false, sandboxed: true, checks: ctx.checks })}\n\n---\n\n${userPrompt(task, job, ctx)}`;
-    const rel = (p: unknown) => {
-      const s = typeof p === "string" ? p : "";
-      return isAbsolute(s) && s.startsWith(cwd) ? relative(cwd, s) || s : s;
-    };
-
-    return new Promise<RunResult>((resolve, reject) => {
-      // Aborted while the factory got ready: that event has fired, so the listener below would never hear it.
-      if (signal.aborted) return reject(new AgentRunError("Cancelled by operator", { sessionId: resume ?? null }));
-      const child = spawn(this.bin, args, { cwd, env: process.env, stdio: ["pipe", "pipe", "pipe"] });
-      let lastText = "";
-      let started = false;
-      let sessionId: string | null = resume ?? null;
-      let turns = 0;
-      let usage: RunUsage | null = null;
-      let failed: string | null = null; // the turn failed
-      let errored: string | null = null; // the last stream error, which may have been recovered from
-      let stderr = "";
-      const commands = new CommandTracker((command) => {
-        const label = command.status === "running" ? "Started" : `Command ${command.status}`;
-        emit("tool", `${label} ${command.command.split("\n")[0]?.slice(0, 120)}${command.exitCode === null ? "" : ` (exit ${command.exitCode})`}`, {
-          tool: "shell", command,
-        });
-      });
-
-      const onAbort = () => {
-        child.kill("SIGTERM");
-        setTimeout(() => child.exitCode === null && child.signalCode === null && child.kill("SIGKILL"), 3000).unref();
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-
-      child.stdin.on("error", () => {}); // it exited before reading the prompt; `close` reports why
-      child.stdin.end(prompt);
-      child.stderr.on("data", (d) => {
-        stderr = (stderr + String(d)).slice(-4000);
-      });
-
-      const onItem = (phase: "started" | "completed", item: Record<string, any>) => {
-        switch (item.type) {
-          case "agent_message":
-            if (phase !== "completed" || typeof item.text !== "string" || !item.text.trim()) return;
-            lastText = item.text;
-            {
-              const visible = item.text.split("```crane-report")[0]!.trim();
-              if (visible) emit("note", visible.slice(0, 1200), { routine: true });
-            }
-            return;
-          case "command_execution":
-            commands.record(phase, item, unwrapShell(item.command), sessionId);
-            return;
-          case "file_change":
-            if (phase !== "completed") return;
-            for (const c of (item.changes ?? []) as { path?: string; kind?: string }[]) {
-              const verb = c.kind === "add" ? "Wrote" : c.kind === "delete" ? "Deleted" : "Edited";
-              emit("tool", `${verb} ${rel(c.path)}`, { tool: "file_change" });
-            }
-            return;
-          case "web_search":
-            if (phase === "started") emit("tool", `Searched the web for “${item.query ?? ""}”`, { tool: "web_search" });
-            return;
-          case "mcp_tool_call":
-            if (phase === "started") emit("tool", `${item.server ?? "mcp"}: ${item.tool ?? "tool"}`, { tool: "mcp" });
-            return;
-          case "todo_list":
-            if (phase === "started") emit("tool", "Updated its plan", { tool: "todo_list" });
-            return;
-          case "error":
-            if (typeof item.message === "string") emit("note", item.message.slice(0, 600));
-            return;
-        }
-      };
-
-      readMessages(child.stdout, (msg) => {
-        switch (msg.type) {
-          case "thread.started": {
-            started = true;
-            if (typeof msg.thread_id === "string") {
-              sessionId = msg.thread_id;
-              ctx.onSession?.(msg.thread_id);
-            }
-            const verb = resume ? "resumed" : "started";
-            const tuned = [model, ctx.effort ? `${ctx.effort} effort` : null].filter(Boolean).join(", ");
-            emit("note", `Agent session ${verb} on Codex${tuned ? ` (${tuned})` : ""}`, { sessionId: msg.thread_id });
-            return;
-          }
-          case "item.started":
-          case "item.completed":
-            if (msg.item && typeof msg.item === "object") onItem(msg.type === "item.started" ? "started" : "completed", msg.item);
-            return;
-          case "turn.completed": {
-            turns++;
-            const u = usageFromTurn(msg.usage, model);
-            usage = addRunUsage(usage, u);
-            return;
-          }
-          case "turn.failed":
-            failed = String(msg.error?.message ?? "The agent stopped with an error");
-            return;
-          case "error":
-            // Codex also sends these for retries it recovers from; only the last one matters if the run fails.
-            if (typeof msg.message === "string") errored = msg.message;
-            return;
-        }
-      }, (reason) => emit("note", `Skipped a message Crane couldn't read from Codex: ${reason}`));
-
-      const fail = (message: string) => reject(new AgentRunError(message, { transient: isTransientFailure(message), sessionId }));
-
-      child.on("error", (err) => {
-        signal.removeEventListener("abort", onAbort);
-        reject(new Error(`Could not start Codex (${this.bin}): ${err.message}`));
-      });
-      child.on("close", (code) => {
-        signal.removeEventListener("abort", onAbort);
-        commands.close(signal.aborted);
-        // Reported before we decide whether the run succeeded: a failed run still used tokens.
-        if (usage) ctx.onUsage?.(usage);
-        if (signal.aborted) return reject(new AgentRunError("Cancelled by operator", { sessionId }));
-        if (resume && !started) {
-          return reject(new SessionNotResumed(failed ?? errored ?? (stderr.trim().slice(-500) || `exit code ${code}`)));
-        }
-        if (failed) return fail(failed);
-        // A turn that completed is a success, even if a recovered error came before it.
-        if (turns === 0 && errored) return fail(errored);
-        if (!started && !lastText) {
-          return fail(
-            code === 0
-              ? "Codex finished without sending any events Crane understands. Update Codex (npm i -g @openai/codex) and try again."
-              : `Codex exited with code ${code}. ${stderr.trim().slice(-500)}`,
-          );
-        }
-        if (code !== 0 && !lastText) return fail(`Codex exited with code ${code}. ${stderr.trim().slice(-500)}`);
-        resolve({ report: parseReport(lastText) });
-      });
+    return runAgentProcess({
+      bin: this.bin,
+      label: this.label,
+      args: codexArgs({ cwd, readOnly, resume, model: model ?? undefined, effort: ctx.effort }),
+      env: process.env,
+      prompt: codexPrompt(ctx, resume),
+      resume,
+      stream: new CodexStream(ctx, model, resume),
+      ctx,
     });
   }
 }

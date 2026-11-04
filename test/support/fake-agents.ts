@@ -19,6 +19,12 @@ for (const l of JSON.parse(fs.readFileSync(${JSON.stringify(join(dir, "lines.jso
   return { bin, args: () => JSON.parse(readFileSync(join(dir, "args.json"), "utf8")) as string[] };
 }
 
+/** What `claude -p` sends for a new session that works straight away. */
+export const CLAUDE_FRESH_RUN = [
+  { type: "system", subtype: "init", session_id: "fresh-session", model: "fake" },
+  { type: "result", subtype: "success", total_cost_usd: 0.25, result: 'Done.\n\n```crane-report\n{"summary":"All good","findings":[],"changedFiles":[]}\n```' },
+];
+
 /** A stand-in `claude` that fails to resume, the way it does when a session's history is gone. */
 export function fakeResumingClaude(): { bin: string; log: string } {
   const dir = mkdtempSync(join(tmpdir(), "crane-fake-claude-"));
@@ -35,15 +41,30 @@ if (args.includes("--resume")) {
   process.exit(1);
 }
 const say = (m) => process.stdout.write(JSON.stringify(m) + "\\n");
-say({ type: "system", subtype: "init", session_id: "fresh-session", model: "fake" });
-say({ type: "result", subtype: "success", total_cost_usd: 0.25, result: "Done.\\n\\n\`\`\`crane-report\\n{\\"summary\\":\\"All good\\",\\"findings\\":[],\\"changedFiles\\":[]}\\n\`\`\`" });
+for (const m of ${JSON.stringify(CLAUDE_FRESH_RUN)}) say(m);
 `,
   );
   chmodSync(bin, 0o755);
   return { bin, log };
 }
 
-const REPORT = '```crane-report\\n{\\"summary\\":\\"Codex did it\\",\\"findings\\":[{\\"title\\":\\"One thing\\",\\"detail\\":\\"d\\",\\"impact\\":\\"high\\",\\"effort\\":\\"small\\"}],\\"changedFiles\\":[]}\\n```';
+const CODEX_REPORT = '```crane-report\n{"summary":"Codex did it","findings":[{"title":"One thing","detail":"d","impact":"high","effort":"small"}],"changedFiles":[]}\n```';
+const CODEX_TURN_COMPLETED = { type: "turn.completed", usage: { input_tokens: 1000, cached_input_tokens: 600, output_tokens: 50 } };
+
+/** How `codex exec --json` opens a session. */
+export const CODEX_THREAD_START = [{ type: "thread.started", thread_id: "thread-1" }, { type: "turn.started" }];
+
+/** What `codex exec --json` sends for a turn that works, in a run at `cwd`. */
+export function codexWork(cwd: string): object[] {
+  return [
+    { type: "item.started", item: { id: "i1", type: "command_execution", command: "bash -lc 'npm test'", status: "in_progress" } },
+    { type: "item.completed", item: { id: "i1", type: "command_execution", command: "bash -lc 'npm test'", exit_code: 0, status: "completed" } },
+    { type: "item.completed", item: { id: "i2", type: "file_change", changes: [{ path: `${cwd}/src/a.ts`, kind: "update" }, { path: "src/b.ts", kind: "add" }] } },
+    { type: "item.completed", item: { id: "i3", type: "reasoning", text: "thinking" } },
+    { type: "item.completed", item: { id: "i4", type: "agent_message", text: `Fixed it.\n\n${CODEX_REPORT}` } },
+    CODEX_TURN_COMPLETED,
+  ];
+}
 
 /**
  * A stand-in `codex` that logs its arguments and stdin, then plays back the
@@ -68,8 +89,7 @@ process.stdin.on("end", () => {
     say({ type: "error", message: "No saved session found" });
     process.exit(1);
   }
-  say({ type: "thread.started", thread_id: "thread-1" });
-  say({ type: "turn.started" });
+  for (const m of ${JSON.stringify(CODEX_THREAD_START)}) say(m);
   if (${JSON.stringify(mode)} === "malformed") {
     say(null);
     say({ type: "item.completed", item: { type: "file_change", changes: 5 } });
@@ -83,16 +103,9 @@ process.stdin.on("end", () => {
     say({ type: "turn.failed", error: { message: "API Error: 529 overloaded_error" } });
     process.exit(1);
   }
-  say({ type: "item.started", item: { id: "i1", type: "command_execution", command: "bash -lc 'npm test'", status: "in_progress" } });
-  say({ type: "item.completed", item: { id: "i1", type: "command_execution", command: "bash -lc 'npm test'", exit_code: 0, status: "completed" } });
   const cwd = args[args.indexOf("--cd") + 1];
-  say({ type: "item.completed", item: { id: "i2", type: "file_change", changes: [{ path: cwd + "/src/a.ts", kind: "update" }, { path: "src/b.ts", kind: "add" }] } });
-  say({ type: "item.completed", item: { id: "i3", type: "reasoning", text: "thinking" } });
-  say({ type: "item.completed", item: { id: "i4", type: "agent_message", text: "Fixed it.\\n\\n${REPORT}" } });
-  say({ type: "turn.completed", usage: { input_tokens: 1000, cached_input_tokens: 600, output_tokens: 50 } });
-  if (${JSON.stringify(mode)} === "multi-turn") {
-    say({ type: "turn.completed", usage: { input_tokens: 1000, cached_input_tokens: 600, output_tokens: 50 } });
-  }
+  for (const m of JSON.parse(${JSON.stringify(JSON.stringify(codexWork("{{cwd}}")))}.replaceAll("{{cwd}}", cwd))) say(m);
+  if (${JSON.stringify(mode)} === "multi-turn") say(${JSON.stringify(CODEX_TURN_COMPLETED)});
 });
 `,
   );
