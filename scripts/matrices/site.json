@@ -1,0 +1,9 @@
+{
+  "name": "site",
+  "path": "/",
+  "target": ".site-canvas",
+  "ready": ".site-legend",
+  "scroll": { "center": ".site-canvas" },
+  "sizes": ["1280x800", "1280x600", "390x844"],
+  "media": ["prefers-color-scheme=light", "prefers-color-scheme=dark"]
+}

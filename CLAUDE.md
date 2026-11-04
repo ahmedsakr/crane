@@ -27,6 +27,8 @@ Crane is an autonomous software factory steered by a human operator. Agents run 
 
 Captures serve `web/dist`: wait for the UI build to finish successfully before starting any dependent capture. Use `npm run build -w web && npm run screenshot -- ...`; viewport captures may run in parallel only after that successful build. Rebuild after further UI changes.
 
+- `npm run screenshot:matrix -- <matrix.json> --out-dir <dir> [--baseline <dir>]`: compare captures pixel for pixel. Plain `npm run screenshot` boots a live demo whose data, ids and factory state change on every run, so don't diff its images. A matrix (`scripts/matrices/`) fixes one target, readiness condition and scroll position; each cell is captured twice from a fresh `--fixture` and only compared with the baseline if the two match. See [Screenshot comparisons](docs/testing.md#screenshot-comparisons).
+
 ## Shape
 
 - `src/core/store.ts` is the single source of truth (SQLite, WAL). Every process (server, CLI) opens it directly; there is no in-memory state worth trusting across processes. Live views tail the `events` table.

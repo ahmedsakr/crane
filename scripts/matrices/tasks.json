@@ -1,0 +1,9 @@
+{
+  "name": "tasks",
+  "path": "/tasks",
+  "target": ".rows",
+  "ready": ".rows a.row",
+  "scroll": { "selector": "html", "top": 0 },
+  "sizes": ["1280x800", "1280x600", "390x844"],
+  "media": ["prefers-color-scheme=light", "prefers-color-scheme=dark"]
+}
