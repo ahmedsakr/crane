@@ -15,7 +15,11 @@ import type { CrewSchedule } from "@crane/contracts";
 import { ago, plural } from "../lib/format";
 import { useDrivers, usePoll, useTick } from "../lib/hooks";
 import { nextSchedule, whenLabel } from "../lib/schedule";
-import { Chevron, Empty, useToast } from "../components/bits";
+import { useAction } from "../lib/action";
+import { useToast } from "../lib/toast";
+import { Chevron } from "../components/Chevron";
+import { Empty } from "../components/Empty";
+import { Section } from "../components/Section";
 import { Avatar, MemberSheet, memberStatus, type CrewInput, type Member } from "../components/MemberSheet";
 import { Sheet, SheetBody, SheetFoot, SheetHead } from "../components/Sheet";
 import { StorageRetention } from "../components/StorageRetention";
@@ -98,11 +102,8 @@ function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: Dr
   const open = drivers.find((d) => d.name === editing);
 
   return (
-    <section className="section crew-section" aria-labelledby="crew-runs-on">
-      <div className="section-head">
-        <h2 className="section-title" id="crew-runs-on">Runs on</h2>
-        <span className="muted crew-section-note">Crew members use the default unless you choose an agent for them</span>
-      </div>
+    <Section id="crew-runs-on" className="crew-section" title="Runs on"
+      aside={<span className="muted crew-section-note">Crew members use the default unless you choose an agent for them</span>}>
       <ul className="rows card crew-list">
         {drivers.map((d) => {
           const tunable = d.available && d.efforts.length > 0;
@@ -129,7 +130,7 @@ function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange: (d: Dr
         })}
       </ul>
       {open && <TuningSheet driver={open} onChange={onChange} onClose={() => setEditing(null)} />}
-    </section>
+    </Section>
   );
 }
 
@@ -187,11 +188,8 @@ function PostmortemDefaults({ drivers }: { drivers: DriverInfo[] }) {
   };
   const named = agents.filter((a) => saved?.crew.includes(a.id)).map((a) => `${a.name}${a.active ? "" : " (on-call)"}`);
   return (
-    <section className="section crew-section" aria-labelledby="crew-postmortems">
-      <div className="section-head">
-        <h2 className="section-title" id="crew-postmortems">Post-mortems</h2>
-        <span className="muted crew-section-note">A read-only review of task friction, queued after each merge</span>
-      </div>
+    <Section id="crew-postmortems" className="crew-section" title="Post-mortems"
+      aside={<span className="muted crew-section-note">A read-only review of task friction, queued after each merge</span>}>
       <div className="rows card crew-list">
         <div className="crew-row crew-row-plain">
           {error ? (
@@ -250,7 +248,7 @@ function PostmortemDefaults({ drivers }: { drivers: DriverInfo[] }) {
           </SheetFoot>
         </Sheet>
       )}
-    </section>
+    </Section>
   );
 }
 
@@ -312,22 +310,24 @@ function MemberRow({ m, schedules, compact, saving, configure, onOpen, onRun }: 
   );
 }
 
+/** How a crew change reads once it's saved. Nothing for a change that names none of these. */
+function crewChangeText(a: Agent, input: CrewInput): string | undefined {
+  if (input.active) return `${a.name} is active`;
+  if (input.active !== undefined) return a.state === "working" ? `${a.name} goes on-call after this task` : `${a.name} is on-call`;
+  if (input.role !== undefined) return input.role ? `${a.name} now handles ${MAINTENANCE_ROLE[input.role].label.toLowerCase()}` : `${a.name} takes any queued task`;
+  if (input.defaultDriver !== undefined) return input.defaultDriver ? `${a.name} runs on ${driverLabel(input.defaultDriver)}` : `${a.name} follows the factory default`;
+  return undefined;
+}
+
 export function Crew() {
   const { overview: o, refresh } = useApp();
-  const toast = useToast();
-  const [saving, setSaving] = useState<string | null>(null);
+  const { busy: saving, run } = useAction(refresh);
   const [sheet, setSheet] = useState<{ member: string; start: "settings" | "run" } | null>(null);
-  const configure = async (a: Agent, input: CrewInput) => {
-    setSaving(a.id);
-    try {
-      await api.configureCrew(a.id, input);
-      if (input.active !== undefined) toast({ text: input.active ? `${a.name} is active` : a.state === "working" ? `${a.name} goes on-call after this task` : `${a.name} is on-call` });
-      else if (input.role !== undefined) toast({ text: input.role ? `${a.name} now handles ${MAINTENANCE_ROLE[input.role].label.toLowerCase()}` : `${a.name} takes any queued task` });
-      else if (input.defaultDriver !== undefined) toast({ text: input.defaultDriver ? `${a.name} runs on ${driverLabel(input.defaultDriver)}` : `${a.name} follows the factory default` });
-      refresh();
-    } catch (e) { toast({ text: errorMessage(e) }); }
-    finally { setSaving(null); }
-  };
+  const configure = (a: Agent, input: CrewInput) =>
+    run(a.id, () => api.configureCrew(a.id, input), () => {
+      const text = crewChangeText(a, input);
+      return text ? { text } : undefined;
+    });
   const { drivers, set } = useDrivers();
   const schedules = usePoll(api.crewSchedules, 10_000);
   useTick();
@@ -398,31 +398,21 @@ export function Crew() {
         </div>
       ) : (
         <>
-          <section className="section crew-section" aria-labelledby="crew-active">
-            <div className="section-head">
-              <h2 className="section-title" id="crew-active">
-                Active <span className="count">{active.length}</span>
-              </h2>
-            </div>
+          <Section id="crew-active" className="crew-section" title={<>Active <span className="count">{active.length}</span></>}>
             {active.length > 0 ? (
               <ul className="rows card crew-list">{active.map((m) => row(m))}</ul>
             ) : (
               <Empty title="No one is active">Activate an on-call member to start taking work.</Empty>
             )}
-          </section>
+          </Section>
 
           {onCall.length > 0 && (
-            <section className="section crew-section" aria-labelledby="crew-on-call">
-              <div className="section-head">
-                <h2 className="section-title" id="crew-on-call">
-                  On-call <span className="count">{onCall.length}</span>
-                </h2>
-                <span className="muted crew-section-note">
-                  {onCall.some((m) => m.a.runsPostmortems) ? "Named members run post-mortems only" : "No new work until you activate them"}
-                </span>
-              </div>
+            <Section id="crew-on-call" className="crew-section" title={<>On-call <span className="count">{onCall.length}</span></>}
+              aside={<span className="muted crew-section-note">
+                {onCall.some((m) => m.a.runsPostmortems) ? "Named members run post-mortems only" : "No new work until you activate them"}
+              </span>}>
               <ul className="rows card crew-list crew-bench">{onCall.map((m) => row(m, true))}</ul>
-            </section>
+            </Section>
           )}
         </>
       )}

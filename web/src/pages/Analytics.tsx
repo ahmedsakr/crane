@@ -4,7 +4,9 @@ import { useApp } from "../lib/app-context";
 import { api, driverLabel, KIND_LABEL, type Analytics as Data } from "../lib/api";
 import { compact, plural, usd } from "../lib/format";
 import { usePoll } from "../lib/hooks";
-import { Dot, Empty } from "../components/bits";
+import { Empty } from "../components/Empty";
+import { Section } from "../components/Section";
+import { Dot } from "../components/Status";
 
 const RANGES = [7, 30, 90] as const;
 type Days = (typeof RANGES)[number];
@@ -216,12 +218,7 @@ export function Analytics() {
           </div>
 
           {a.topTasks.length > 0 && (
-            <section className="section" aria-labelledby="top-tasks">
-              <div className="section-head">
-                <h2 className="section-title" id="top-tasks">
-                  Most expensive tasks
-                </h2>
-              </div>
+            <Section id="top-tasks" title="Most expensive tasks">
               <ul className="rows card" style={{ padding: "0 16px" }}>
                 {a.topTasks.map((m) => (
                   <li key={m.id}>
@@ -240,7 +237,7 @@ export function Analytics() {
                   </li>
                 ))}
               </ul>
-            </section>
+            </Section>
           )}
 
           <p className="muted spend-note">

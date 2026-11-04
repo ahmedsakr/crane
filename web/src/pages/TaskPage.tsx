@@ -25,12 +25,16 @@ import {
 } from "../lib/api";
 import { useDrivers, useEventStream, usePoll, useTick } from "../lib/hooks";
 import { ago, clock, compact, duration, plural, usd } from "../lib/format";
-import { BlockedItem, StatusChip, useToast } from "../components/bits";
+import { useAction } from "../lib/action";
+import { useToast } from "../lib/toast";
+import { BlockedItem } from "../components/BlockedItem";
+import { Section } from "../components/Section";
+import { StatusChip } from "../components/Status";
 import { useApp } from "../lib/app-context";
 import { ChangeAgentSheet } from "../components/ChangeAgentSheet";
 import { FollowUpForm } from "../components/FollowUpForm";
 import { TaskScheduleForm } from "../components/TaskScheduleForm";
-import { errorMessage, runCostLabel, runTokens, visualReviewPending, visualReviewWaivedByPreApproval, type Task } from "@crane/contracts";
+import { runCostLabel, runTokens, visualReviewPending, visualReviewWaivedByPreApproval, type Task } from "@crane/contracts";
 import { Changes } from "../components/Changes";
 import { AcceptanceChecks } from "../components/AcceptanceChecks";
 
@@ -171,7 +175,10 @@ export function TaskPage() {
   const { data, error, refresh } = usePoll<TaskDetail>(() => api.task(id), 3000, [id]);
   const [live, setLive] = useState<TaskEvent[]>([]);
   const [showDiff, setShowDiff] = useState(false);
-  const [busy, setBusy] = useState<string | null>(null);
+  const { busy, run } = useAction(() => {
+    refresh();
+    refreshApp();
+  });
   const [finding, setFinding] = useState<number | null>(null);
   const [changingAgent, setChangingAgent] = useState(false);
   const { drivers } = useDrivers();
@@ -227,22 +234,6 @@ export function TaskPage() {
   const followUps = data.followUps ?? [];
   // The task and finding this one came from. A backend older than this page sends none.
   const source = data.followUpSource ?? null;
-
-  const run = async (label: string, fn: () => Promise<unknown>, done: string | ((r: unknown) => Parameters<typeof toast>[0]),
-    after?: (r: unknown) => void) => {
-    setBusy(label);
-    try {
-      const r = await fn();
-      toast(typeof done === "string" ? { text: done } : done(r));
-      refresh();
-      refreshApp();
-      after?.(r);
-    } catch (e) {
-      toast({ text: errorMessage(e) });
-    } finally {
-      setBusy(null);
-    }
-  };
 
   // Stay here so the finding shows its follow-up's state, and the operator can act on the next finding.
   const followUp = (i: number, opts: FollowUpOptions) =>
@@ -413,13 +404,10 @@ export function TaskPage() {
             </div>
           )}
           {required > 0 && (
-            <section className="section" aria-labelledby="acceptance">
-              <div className="section-head">
-                <h2 className="section-title" id="acceptance">
-                  Acceptance criteria{" "}
-                  <span className="count">{report ? `${required - unmet.length} of ${required} met` : required}</span>
-                </h2>
-              </div>
+            <Section id="acceptance" title={<>
+              Acceptance criteria{" "}
+              <span className="count">{report ? `${required - unmet.length} of ${required} met` : required}</span>
+            </>}>
               <div className="card card-pad" style={{ paddingBlock: 0 }}>
                 {acceptance.map((c, i) => {
                   const said = report ? acceptanceFor(report, c) : undefined;
@@ -435,13 +423,10 @@ export function TaskPage() {
                 })}
                 <AcceptanceChecks task={m} commands={acceptanceChecks} />
               </div>
-            </section>
+            </Section>
           )}
           {!!report?.screenshots?.length && (
-            <section className="section" aria-labelledby="screenshots">
-              <div className="section-head">
-                <h2 className="section-title" id="screenshots">Screenshots <span className="count">{report.screenshots.length}</span></h2>
-              </div>
+            <Section id="screenshots" title={<>Screenshots <span className="count">{report.screenshots.length}</span></>}>
               <div className="task-screenshots">
                 {report.screenshots.map(image => {
                   const url = `/api/tasks/${encodeURIComponent(m.id)}/screenshots/${encodeURIComponent(image.path)}`;
@@ -455,7 +440,7 @@ export function TaskPage() {
                   );
                 })}
               </div>
-            </section>
+            </Section>
           )}
           {report?.validation?.map((run, i) => (
             <details key={i} className="card card-pad">
@@ -472,12 +457,7 @@ export function TaskPage() {
           )}
 
           {data.blocked.length > 0 && (
-            <section className="section" aria-labelledby="blocked">
-              <div className="section-head">
-                <h2 className="section-title" id="blocked">
-                  Blocked <span className="count">{data.blocked.length}</span>
-                </h2>
-              </div>
+            <Section id="blocked" title={<>Blocked <span className="count">{data.blocked.length}</span></>}>
               <div className="card">
                 {data.blocked.map((b) => (
                   <BlockedItem
@@ -492,16 +472,11 @@ export function TaskPage() {
                 ))}
               </div>
               <p className="muted section-note">Allowing applies to every agent in {repo?.name ?? "this repo"} from its next run.</p>
-            </section>
+            </Section>
           )}
 
           {report && report.findings.length > 0 && (
-            <section className="section">
-              <div className="section-head">
-                <h2 className="section-title">
-                  Findings <span className="count">{report.findings.length}</span>
-                </h2>
-              </div>
+            <Section title={<>Findings <span className="count">{report.findings.length}</span></>}>
               <div className="card">
                 {report.findings.map((f, i) => {
                   const started = followUpFor(followUps, i);
@@ -540,7 +515,7 @@ export function TaskPage() {
                   );
                 })}
               </div>
-            </section>
+            </Section>
           )}
 
           {working && changes.diff && (
@@ -555,15 +530,12 @@ export function TaskPage() {
               canOpen={!!m.branch} open={showDiff} onOpenChange={setShowDiff} empty="No changes on the branch." />
           )}
 
-          <section className="section">
-            <div className="section-head">
-              <h2 className="section-title">
-                Activity
-                {(m.status === "running" || m.status === "merging") && <span className="dot dot-running" title="Live" />}
-              </h2>
-            </div>
+          <Section title={<>
+            Activity
+            {(m.status === "running" || m.status === "merging") && <span className="dot dot-running" title="Live" />}
+          </>}>
             <Timeline events={events} />
-          </section>
+          </Section>
         </div>
 
         <aside className="rail">

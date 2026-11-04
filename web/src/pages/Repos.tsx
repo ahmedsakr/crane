@@ -2,7 +2,7 @@ import { errorMessage } from "@crane/contracts";
 import { useEffect, useId, useState } from "react";
 import { useApp } from "../lib/app-context";
 import { api, ruleLabel, type Repo } from "../lib/api";
-import { useToast } from "../components/bits";
+import { useToast } from "../lib/toast";
 import { Sheet, SheetBody, SheetFoot, SheetHead } from "../components/Sheet";
 
 /** Edit the commands a repo's work must pass. Save stays off until the saved list has loaded, so a failed load can't wipe it. */

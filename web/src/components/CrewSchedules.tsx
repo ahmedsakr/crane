@@ -11,7 +11,7 @@ import {
   WEEK,
   whenLabel,
 } from "../lib/schedule";
-import { useToast } from "./bits";
+import { useToast } from "../lib/toast";
 import { SheetBody, SheetFoot, SheetHead } from "./Sheet";
 
 const canPreApprove = (member: Agent) => !!member.role && MAINTENANCE_ROLE[member.role].autonomy !== "observe";

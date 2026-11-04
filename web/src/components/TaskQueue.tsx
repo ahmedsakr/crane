@@ -1,7 +1,7 @@
 import { errorMessage } from "@crane/contracts";
 import { useCallback, useEffect, useId, useRef, useState, type PointerEvent } from "react";
 import { api, type TaskSummary } from "../lib/api";
-import { TaskRow } from "./bits";
+import { TaskRow } from "./TaskRow";
 
 type Drag = { id: string; pointer: number; startY: number; y: number; moved: boolean; beforeId: string | null };
 type Drop = { id: string; beforeId: string | null };

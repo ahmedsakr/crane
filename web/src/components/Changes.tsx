@@ -1,5 +1,6 @@
 import { Fragment, useId, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { parseDiff, splitRows, type DiffFile, type DiffLine, type TaskDiff } from "../lib/api";
+import { Section } from "./Section";
 
 type Layout = "inline" | "split";
 const LAYOUT_KEY = "crane.diffLayout";
@@ -68,17 +69,15 @@ export function Changes({ title, reported, diff, error, canOpen, open, onOpenCha
   };
 
   return (
-    <section className="section" aria-labelledby={titleId}>
-      <div className="section-head">
-        <h2 className="section-title" id={titleId}>
-          {title} {list.length > 0 && <span className="count">{list.length}</span>}
-        </h2>
-        {canOpen && list.length > 0 && (
-          <button className="btn btn-ghost btn-sm" aria-expanded={open} onClick={() => onOpenChange(!open)}>
-            {open ? "Hide changes" : "Show changes"}
-          </button>
-        )}
-      </div>
+    <Section
+      id={titleId}
+      title={<>{title} {list.length > 0 && <span className="count">{list.length}</span>}</>}
+      aside={canOpen && list.length > 0 && (
+        <button className="btn btn-ghost btn-sm" aria-expanded={open} onClick={() => onOpenChange(!open)}>
+          {open ? "Hide changes" : "Show changes"}
+        </button>
+      )}
+    >
       {list.length > 0 ? (
         <div className="card card-pad" style={{ paddingBlock: 6 }}>
           <ul className="files">
@@ -146,7 +145,7 @@ export function Changes({ title, reported, diff, error, canOpen, open, onOpenCha
         )
       )}
       {list.length > 0 && note}
-    </section>
+    </Section>
   );
 }
 

@@ -6,7 +6,11 @@ import { ago, plural } from "../lib/format";
 import { useTick } from "../lib/hooks";
 import { Site } from "../components/Site";
 import { Slab } from "../components/Slab";
-import { BlockedItem, Empty, TaskRow, useToast } from "../components/bits";
+import { useToast } from "../lib/toast";
+import { BlockedItem } from "../components/BlockedItem";
+import { Empty } from "../components/Empty";
+import { Section } from "../components/Section";
+import { TaskRow } from "../components/TaskRow";
 
 function ReviewItem({ m, repoName, onDone }: { m: TaskSummary; repoName?: string; onDone: () => void }) {
   const toast = useToast();
@@ -73,12 +77,7 @@ export function Home() {
         )}
 
         {(o.needsReview.length > 0 || !!o.goalsNeedingReview?.length) && (
-          <section className="section" aria-labelledby="needs-you">
-            <div className="section-head">
-              <h2 className="section-title" id="needs-you">
-                Needs you <span className="count">{o.needsReview.length + (o.goalsNeedingReview?.length ?? 0)}</span>
-              </h2>
-            </div>
+          <Section id="needs-you" title={<>Needs you <span className="count">{o.needsReview.length + (o.goalsNeedingReview?.length ?? 0)}</span></>}>
             {o.goalsNeedingReview?.map((g) => <div className="review-row" key={g.id}>
               <div style={{ minWidth: 0 }}><Link className="row-title" to={`/goals/${g.id}`}>{g.title}</Link><div className="row-meta">Goal · {g.status === "blocked" ? "Needs attention" : "Plan ready for review"} · {repoName(g.repoId)}</div></div>
               <Link className="btn btn-primary btn-sm" to={`/goals/${g.id}`}>Review goal</Link>
@@ -86,44 +85,27 @@ export function Home() {
             {o.needsReview.map((m) => (
               <ReviewItem key={m.id} m={m} repoName={repoName(m.repoId)} onDone={refresh} />
             ))}
-          </section>
+          </Section>
         )}
 
         {o.blocked.length > 0 && (
-          <section className="section" aria-labelledby="blocked">
-            <div className="section-head">
-              <h2 className="section-title" id="blocked">
-                Blocked commands <span className="count">{o.blocked.length}</span>
-              </h2>
-            </div>
+          <Section id="blocked" title={<>Blocked commands <span className="count">{o.blocked.length}</span></>}>
             <div className="card">
               {o.blocked.map((b) => (
                 <BlockedItem key={`${b.repoId}:${b.rule}`} b={b} showTask onDone={refresh} />
               ))}
             </div>
-          </section>
+          </Section>
         )}
 
         {!nothing && (
-          <section className="section" aria-labelledby="on-site">
-            <div className="section-head">
-              <h2 className="section-title" id="on-site">
-                On site
-              </h2>
-            </div>
+          <Section id="on-site" title="On site">
             <Site o={o} />
-          </section>
+          </Section>
         )}
 
-        <section className="section" aria-labelledby="in-flight">
-          <div className="section-head">
-            <h2 className="section-title" id="in-flight">
-              In flight <span className="count">{o.inFlight.length || ""}</span>
-            </h2>
-            <Link className="link-quiet" to="/tasks">
-              All tasks
-            </Link>
-          </div>
+        <Section id="in-flight" title={<>In flight <span className="count">{o.inFlight.length || ""}</span></>}
+          aside={<Link className="link-quiet" to="/tasks">All tasks</Link>}>
           {o.inFlight.length ? (
             <ul className="rows card" style={{ padding: "0 16px" }}>
               {o.inFlight.map((m) => (
@@ -157,21 +139,16 @@ export function Home() {
               </button>
             </p>
           )}
-        </section>
+        </Section>
 
         {o.recent.length > 0 && (
-          <section className="section" aria-labelledby="recent">
-            <div className="section-head">
-              <h2 className="section-title" id="recent">
-                Recently finished
-              </h2>
-            </div>
+          <Section id="recent" title="Recently finished">
             <ul className="rows card" style={{ padding: "0 16px" }}>
               {o.recent.map((m) => (
                 <TaskRow key={m.id} m={m} repoName={repoName(m.repoId)} />
               ))}
             </ul>
-          </section>
+          </Section>
         )}
       </div>
 
