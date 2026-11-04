@@ -108,6 +108,56 @@ test("goals: invalid and incomplete research block execution and can be research
   }
 });
 
+test("goals: approval composes exact briefs and creates tasks in wave order", () => {
+  const { store, actions, goal } = setup();
+  try {
+    const ready = researchResult(store, goal);
+    const approved = actions.approveGoal(ready.id, ready.revision);
+    const titles = store.db.prepare("SELECT title FROM tasks WHERE id != ? ORDER BY rowid").all(goal.researchTaskId) as { title: string }[];
+    assert.deepEqual(titles.map((t) => t.title), ["Extract cart storage", "Build saved cart UI", "Add saved cart API", "Verify saved carts"]);
+    const taskId = (key: string) => approved.tasks.find((t) => t.key === key)!.taskId;
+    assert.deepEqual(store.getTask(taskId("integration"))!.prerequisites, [taskId("ui"), taskId("api")]);
+    assert.equal(store.getTask(taskId("storage"))!.brief, "Goal: Customers can save and reopen carts\n\n"
+      + `Plan: ${plan().summary}\n\nApproach: ${plan().approach}\n\n`
+      + "Your task (storage):\nExtract storage and retain existing behavior\n\n"
+      + "Assignment rationale: Careful contract refactoring before callers change");
+  } finally { store.close(); }
+});
+
+test("goals: reconciliation keeps its statuses and error text, and an unchanged tick writes nothing", () => {
+  const { store, actions, goal } = setup();
+  try {
+    store.syncGoals();
+    assert.equal(store.getGoal(goal.id)!.revision, goal.revision, "research still in flight leaves the goal alone");
+    store.updateTask(goal.researchTaskId, { status: "failed" });
+    store.syncGoals();
+    const failed = store.getGoal(goal.id)!;
+    assert.equal(failed.status, "blocked");
+    assert.equal(failed.error, "Research failed or was cancelled. Send feedback to research again");
+    store.syncGoals();
+    assert.equal(store.getGoal(goal.id)!.revision, failed.revision, "an unapproved blocked goal is stable across ticks");
+    const revised = actions.reviseGoal(failed.id, failed.revision, "Try again");
+    const incomplete = researchResult(store, revised, { completion: undefined });
+    assert.equal(incomplete.error, "Research did not report completed planning. Review the research report and send feedback");
+    const again = actions.reviseGoal(incomplete.id, incomplete.revision, "Finish planning");
+    const ready = researchResult(store, again);
+    const active = actions.approveGoal(ready.id, ready.revision);
+    store.syncGoals();
+    assert.equal(store.getGoal(goal.id)!.revision, active.revision, "an active goal with work pending is stable across ticks");
+    store.updateTask(active.tasks[0]!.taskId, { status: "rejected" });
+    store.syncGoals();
+    const blocked = store.getGoal(goal.id)!;
+    assert.equal(blocked.status, "blocked");
+    assert.equal(blocked.error, "A goal task failed, was declined, or was cancelled. Retry it from this goal to reconnect its dependents");
+    for (const link of active.tasks) store.updateTask(link.taskId, { status: "merged" });
+    store.syncGoals();
+    const completed = store.getGoal(goal.id)!;
+    assert.equal(completed.status, "completed");
+    assert.equal(completed.error, null);
+    assert.equal(completed.revision, blocked.revision + 1);
+  } finally { store.close(); }
+});
+
 test("goals: a recording failure rolls research reconciliation back for a later retry", () => {
   const { store, goal } = setup();
   try {
