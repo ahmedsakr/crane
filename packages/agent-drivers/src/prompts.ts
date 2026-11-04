@@ -34,7 +34,7 @@ const SCREENSHOT_BRIEF =
     'Every code-change report must include "visualReview": { "required": true, "reason": "changed views and remaining review" } for UI work, even when screenshots were captured and inspected by the agent. Use required: false with a reason only when no UI was built or changed. Missing classification holds automatic merge unless the operator pre-approved the task. Only an operator can authorize candidate inspection or a waiver; Crane records automatic waivers from operator pre-approval, including conflict resolutions. Agent screenshots do not record that decision.',
     "If you built or changed UI, capture screenshots of the finished UI using the repository's existing screenshot or browser tools, inspect them, and attach them in your report's screenshots array. Include the changed views and required wide, short, and phone sizes, with captions describing the view and viewport. Save PNG, JPEG, or WebP files inside the worktree (prefer an ignored directory such as .crane/screenshots), and report worktree-relative paths. Crane retains up to 12 images, each at most 10 MiB, with the task after the worktree is removed. Do not commit screenshots just to attach them. Screenshot instructions do not authorize writes in investigate-only mode or bypassing sandbox restrictions.",
     "When your environment is known to block local servers or browsers (including Codex's no-network sandbox), defer capture directly without attempting it. If capture is blocked or unavailable, explain the reason and the remaining visual validation in your summary; leave screenshots empty and never substitute mockups or claim capture succeeded. Passing typecheck, tests, or review and merge checks does not complete visual validation.",
-    "When visual validation remains outstanding, include an operator checklist in your report summary for completion before approval or merge:\n- In an approved environment, build the candidate branch's UI and run the repository's existing screenshot tool against its changed views and states. List the exact commands, routes, interactions, and viewport sizes still needed.\n- Open and inspect the resulting images at wide, short, and phone sizes for clipping, overflow, layout, and the changed behavior.\n- Record completion with the candidate commit, reviewed views and sizes, and screenshot paths in the task's approval note or review record, or record an explicit operator waiver with its reason and unreviewed scope. An agent cannot grant that waiver or mark the review complete on the operator's behalf.",
+    "Always disclose missing visual inspection. Require an operator checklist for completion before approval or merge only when a visual decision remains outstanding and the task is not pre-approved. When operator pre-approval authorizes Crane to record a candidate waiver (including conflict resolutions), or Crane confirms an existing decision covers the candidate, offer any remaining capture and inspection instructions as optional; do not say the operator must capture or inspect before approval. A waiver does not mean inspection occurred. Use the current visual-decision context rather than mandatory handoffs copied from an earlier report.\n- In an approved environment, build the candidate branch's UI and run the repository's existing screenshot tool against its changed views and states. List the exact commands, routes, interactions, and viewport sizes still needed.\n- Open and inspect the resulting images at wide, short, and phone sizes for clipping, overflow, layout, and the changed behavior.\n- If an operator decision is still required, record inspection with the candidate commit, reviewed views and sizes, and screenshot paths in the task's approval note or review record, or record an explicit operator waiver with its reason and unreviewed scope. An agent cannot grant that waiver or mark the review complete on the operator's behalf. Crane alone verifies decision coverage and records automatic waivers authorized by operator pre-approval.",
   ].join("\n\n");
 
 /**
@@ -248,7 +248,24 @@ function lookoutsBrief(task: Task): string {
 }
 
 /** What the factory knows about the task's surroundings when the run starts. */
-type TaskContext = Pick<RunContext, "siblingTasks" | "prerequisites" | "commandEvidence" | "postmortemPrompt">;
+type TaskContext = Pick<RunContext, "siblingTasks" | "prerequisites" | "commandEvidence" | "postmortemPrompt"> & Partial<Pick<RunContext, "task" | "job">>;
+
+function visualDecisionBrief(task?: Task, job?: AgentJob): string {
+  if (!task || (task.autonomy === "observe" && !job)) return "";
+  return [
+    "## Current visual-decision context",
+    "This snapshot supersedes visual-review handoffs in the original brief, previous reports, and session history. It describes authorization and recorded candidate identity, not proof that anyone inspected the current edits.",
+    `Operator pre-approval: ${task.preApprovedAt ?? "none"}.`,
+    task.preApprovedAt
+      ? "Pre-approval authorizes Crane to record automatic candidate waivers, including resolved merge candidates. Disclose missing inspection and offer capture instructions as optional; no additional operator visual decision is required while this authorization remains active."
+      : "No pre-approval authorizes an automatic waiver. If UI work has no covering candidate decision, include the required operator checklist before approval or merge.",
+    `Recorded visual review: ${JSON.stringify(task.visualReview ?? null)}.`,
+    job?.kind === "resolve_conflicts"
+      ? `Resolution phase: ${job.phase ?? "unspecified"}; checkpoint candidate: ${job.checkpoint ?? "not yet saved"}. A decision for the original task candidate does not by itself cover UI changed during conflict resolution.`
+      : "Further edits can invalidate a recorded candidate decision.",
+    "Crane verifies candidate coverage after your edits; do not infer coverage from an old inspected, waived, or not_required status, and do not grant a waiver yourself. Keep classifying UI work as visualReview.required: true even when pre-approved, and preserve sandbox restrictions.",
+  ].join("\n\n");
+}
 
 function commandEvidenceBrief(context: TaskContext): string {
   if (!context.commandEvidence?.length) return "";
@@ -277,11 +294,13 @@ export function userPrompt(task: Task, job?: AgentJob, context: TaskContext = {}
         ? `Validate resolution checkpoint \`${job.checkpoint}\` for \`${task.branch}\` into \`${job.base}\`. Saved merge files:\n\n${job.files.map((f) => `- ${f}`).join("\n")}`
         : `Merging \`${task.branch}\` into \`${job.base}\` conflicts in:\n\n${job.files.map((f) => `- ${f}`).join("\n")}`,
       `## The original task\n\n${task.brief}${summary}`,
+      visualDecisionBrief(task, job),
       commandEvidenceBrief(context),
     ].join("\n\n");
   }
   return [
     `# ${task.title}\n\n${context.postmortemPrompt ?? task.brief}`,
+    visualDecisionBrief(task),
     commandEvidenceBrief(context),
     prerequisitesBrief(task, context.prerequisites),
     acceptanceBrief(task),
@@ -305,6 +324,7 @@ export function resumePrompt(context: TaskContext = {}): string {
     VALIDATION_BRIEF,
     FILE_EDIT_BRIEF,
     SCREENSHOT_BRIEF,
+    visualDecisionBrief(context.task, context.job),
     siblingTasksBrief(siblingTasks),
     `When you are finished, end your final message with the \`${REPORT_FENCE}\` block, as before.`,
   ].filter(Boolean).join("\n\n");
