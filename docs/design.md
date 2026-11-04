@@ -34,6 +34,10 @@ The Home hero is a solid crane-yellow slab with a big number (tasks shipped in t
 
 Below the decisions on Home, "On site" shows the work in motion: a tower crane carries each task, as a crate, between six pads (Queued, Working, Needs you, Merging, Shipped, Didn't ship) as its status changes. It is ambient, not a control. Crates take their colour from their pad (blue for working, yellow only for Needs you, green for shipped, red for didn't ship), a legend names the pads, pointing at a crate shows the task, and tapping opens it. Like the slab, the crane goes graphite when the factory is off. It draws only while something moves, and lands every move at once for reduced motion. The model lives in `web/src/lib/site.ts`; the drawing in `web/src/components/site-view.ts`.
 
+## Goals
+
+A goal's work uses one colour per phase, on its status, task cards, and progress bar: blue for working, yellow for needs you, red for stopped, green for done, and graphite for waiting. Lists group by what the operator does next. Goals group into Needs you, In progress, and Finished; once a goal runs, its tasks group into Needs you, Working now, Up next, and Done. Finished work folds away. A draft plan reads as numbered steps instead, because its order is the decision. The brief steps aside once work starts.
+
 ## Sheets
 
 A page row shows who or what, its state, and the one action that matters now. The rest opens in a sheet (`web/src/components/Sheet.tsx`): head and foot pinned, the body scrolling between them, and a bottom sheet on phones. It holds focus while open and returns it to what opened it. Don't expand forms inside a row, and don't stack sheets: a form opened from a sheet replaces its contents and has a back button. Escape and tapping outside step back one view; the close button always leaves.

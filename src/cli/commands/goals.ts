@@ -23,7 +23,9 @@ function printGoal(store: Store, goal: Goal, json: boolean) {
         const taskId = goal.tasks.find((t) => t.key === item.key)?.taskId;
         const task = taskId ? store.getTask(taskId) : null;
         console.log(`  ${item.key}: ${item.title}${task ? ` · ${task.id} · ${task.status}` : ""}`);
-        console.log(`    ${driverLabel(item.driver)} · ${item.model ?? "default model"} · ${item.effort ?? "default"} effort · after ${item.dependsOn.join(", ") || "nothing"}`);
+        // The plan freezes at approval, but the agent can still change, so its task has the current one.
+        const run = task ?? item;
+        console.log(`    ${run.driver ? driverLabel(run.driver) : "Factory default"} · ${run.model ?? "default model"} · ${run.effort ?? "default"} effort · after ${item.dependsOn.join(", ") || "nothing"}`);
         console.log(`    ${item.rationale}\n\n${item.brief}\n`);
         for (const criterion of item.acceptance) console.log(`    Accept: ${criterion}`);
         for (const command of item.acceptanceChecks ?? []) console.log(`    Check must pass: ${command}`);
@@ -103,9 +105,18 @@ function registerPlanDecisions(goals: Command, { actions }: CliContext, printGoa
       catch (err) { ui.fail(errorMessage(err)); }
     });
   goals.command("retry").description("Retry a failed goal task and reconnect its waiting dependents")
-    .argument("<id>").argument("<taskId>").requiredOption("--revision <number>", "revision you reviewed").option("--agent <agent>", "retry on another agent").option("--json", "full goal detail as JSON")
-    .action((id: string, taskId: string, opts: { revision: string; agent?: string; json?: boolean }) => {
-      try { printGoal(actions.retryGoalTask(id, Number(opts.revision), taskId, { driver: opts.agent }), opts.json); }
+    .argument("<id>").argument("<taskId>").requiredOption("--revision <number>", "revision you reviewed").option("--agent <agent>", "retry on another agent")
+    .option("--model <model>", "model for the retry, or default").option("--effort <effort>", "model effort for the retry, or default").option("--json", "full goal detail as JSON")
+    .action((id: string, taskId: string, opts: { revision: string; agent?: string; model?: string; effort?: string; json?: boolean }) => {
+      try { printGoal(actions.retryGoalTask(id, Number(opts.revision), taskId, { driver: opts.agent, model: opts.model, effort: opts.effort }), opts.json); }
+      catch (err) { ui.fail(errorMessage(err)); }
+    });
+  goals.command("change-agent").description("Change who runs one task in a draft plan. Once approved, use crane change-agent on the queued task")
+    .argument("<id>").argument("<key>", "the task's key in the plan").requiredOption("--revision <number>", "revision you reviewed")
+    .option("--agent <agent>", "run it on another agent").option("--model <model>", "model for this task, or default").option("--effort <effort>", "model effort for this task, or default")
+    .option("--json", "full goal detail as JSON")
+    .action((id: string, key: string, opts: { revision: string; agent?: string; model?: string; effort?: string; json?: boolean }) => {
+      try { printGoal(actions.changeGoalPlanAgent(id, Number(opts.revision), key, { driver: opts.agent, model: opts.model, effort: opts.effort }), opts.json); }
       catch (err) { ui.fail(errorMessage(err)); }
     });
 }

@@ -62,6 +62,55 @@ function seedGoal() {
   store.syncGoals();
 }
 
+/**
+ * A goal partway through delivery, one task in each state, so the goal pages have something to
+ * show. Only tasks the simulated crew can't claim name a real agent: merged or stopped ones,
+ * and one still waiting on a prerequisite.
+ */
+function seedGoalInProgress() {
+  const goal = actions.createGoal({ repoId: api.id, outcome: "Checkout keeps working when the payments service is down", driver: "simulated" });
+  const tasks: { key: string; title: string; dependsOn: string[]; driver: string; model: string | null; effort: string | null; status: TaskStatus }[] = [
+    { key: "contract", title: "Define the offline charge contract", dependsOn: [], driver: "claude-code", model: "opus", effort: "high", status: "merged" },
+    { key: "queue", title: "Queue charges while the service is down", dependsOn: ["contract"], driver: "codex", model: null, effort: "high", status: "merged" },
+    { key: "replay", title: "Replay queued charges on recovery", dependsOn: ["queue"], driver: "simulated", model: null, effort: null, status: "running" },
+    { key: "banner", title: "Tell shoppers their payment is pending", dependsOn: ["contract"], driver: "simulated", model: null, effort: null, status: "needs_review" },
+    { key: "alerts", title: "Page on-call when the queue backs up", dependsOn: ["queue"], driver: "codex", model: "gpt-5-codex", effort: "medium", status: "failed" },
+    { key: "verify", title: "Verify an outage from end to end", dependsOn: ["replay", "banner", "alerts"], driver: "claude-code", model: "sonnet", effort: "high", status: "queued" },
+  ];
+  store.updateTask(goal.researchTaskId, { status: "done", report: {
+    summary: "Demo research.", findings: [], changedFiles: [],
+    completion: { status: "completed", reason: "Demo plan ready for review", evidence: "Seeded demo data, not actual repository research" },
+    goalPlan: { summary: "Queue charges during an outage and replay them on recovery, with shoppers and on-call kept informed.",
+      approach: "Demo plan: settle the contract first, then build the queue, and run the visible work alongside it. This is sample data, not repository analysis.",
+      improvements: [],
+      tasks: tasks.map(({ status: _status, ...t }) => ({ ...t, rationale: "Demo assignment.", brief: "This is a demo task for goal orchestration. Write only a simulated note describing the named change.", acceptance: ["Simulated note written"] })) },
+  } });
+  store.syncGoals();
+  const approved = actions.approveGoal(goal.id, store.getGoal(goal.id)!.revision);
+  for (const { key, status } of tasks) {
+    if (status !== "queued") store.updateTask(approved.tasks.find((t) => t.key === key)!.taskId, { status });
+  }
+  store.syncGoals();
+}
+
+function seedFinishedGoal() {
+  const goal = actions.createGoal({ repoId: web.id, outcome: "Shoppers can pay with Apple Pay on the web", driver: "simulated" });
+  store.updateTask(goal.researchTaskId, { status: "done", report: {
+    summary: "Demo research.", findings: [], changedFiles: [],
+    completion: { status: "completed", reason: "Demo plan ready for review", evidence: "Seeded demo data, not actual repository research" },
+    goalPlan: { summary: "Add the Apple Pay button behind the existing payment step.", approach: "Demo plan: one change. This is sample data, not repository analysis.", improvements: [],
+      tasks: [{ key: "button", title: "Add the Apple Pay button", dependsOn: [], driver: "simulated", model: null, effort: null, rationale: "Demo assignment.",
+        brief: "This is a demo task for goal orchestration. Write only a simulated note describing the named change.", acceptance: ["Simulated note written"] }] },
+  } });
+  store.syncGoals();
+  const approved = actions.approveGoal(goal.id, store.getGoal(goal.id)!.revision);
+  for (const { taskId } of approved.tasks) store.updateTask(taskId, { status: "merged" });
+  store.syncGoals();
+}
+
+// The plan awaiting review comes last, so it's the first goal listed.
+seedFinishedGoal();
+seedGoalInProgress();
 seedGoal();
 
 const history: [TaskKind, string, string, Autonomy][] = [

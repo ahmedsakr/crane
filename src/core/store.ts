@@ -620,6 +620,21 @@ export class Store {
   }
 
   /** Change pickup time only while queued, and record the decision with the write. */
+  /**
+   * Change who runs a task that hasn't started. The status check is part of the
+   * write, so a crew member's claim can't slip in. Captured settings go too: they
+   * would otherwise fill in for a model or effort the operator just cleared.
+   */
+  setTaskAgent(id: string, run: { driver: string | null; model: string | null; effort: string | null }, message: string): boolean {
+    return this.db.transaction(() => {
+      const changed = this.db.prepare("UPDATE tasks SET driver = ?, model = ?, effort = ?, driver_settings = NULL WHERE id = ? AND status = 'queued'")
+        .run(run.driver, run.model, run.effort, id).changes;
+      if (!changed) return false;
+      this.addEvent(id, "operator", message, run);
+      return true;
+    }).immediate();
+  }
+
   setTaskSchedule(id: string, scheduledAt: string | null): boolean {
     scheduledAt = scheduledAt === null ? null : new Date(scheduledAt).toISOString();
     return this.db.transaction(() => {

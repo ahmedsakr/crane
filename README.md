@@ -231,6 +231,7 @@ Start a run with the button on their row (**Review security**, **Reduce duplicat
 | `crane follow-up <id> <n> [--agent <agent>] [--model <model>] [--effort <level>] [--after <id>] [--accept "<criterion>"] [--accept-check "<command>"] [--look-for <what>]` | Turn finding *n* into a task with optional agent, model, and effort choices, prerequisites, acceptance criteria and checks, and what else to look out for |
 | `crane waive <id>` | Start a queued task without the prerequisites that haven't landed, approving a reduced scope |
 | `crane cancel <id>` / `crane retry <id>` | Stop work, or run it again (`--agent codex` to switch agents) |
+| `crane change-agent <id>` | Change a queued task's agent, model or effort (`--agent`, `--model`, `--effort`) |
 | `crane blocked` | Commands agents were blocked from, added up across tasks |
 | `crane allow "<command>" -r <repo>` / `crane keep-blocked …` | Let agents in that repo run it from now on, or keep it blocked and stop asking. `crane disallow` takes an allowed command back. |
 | `crane repos` / `crane repos add <path>` | The codebases the factory works on, and the commands allowed in each |

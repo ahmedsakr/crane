@@ -1,8 +1,8 @@
 import type {
   Goal,
   GoalDetail,
+  GoalListItem,
   GoalPlan,
-  GoalSummary,
   NewGoal,
   CrewSchedule,
   CrewScheduleInput,
@@ -104,14 +104,16 @@ async function req<T>(path: string, init?: RequestInit & { json?: unknown }): Pr
 const post = <T>(path: string, json: unknown = {}) => req<T>(path, { method: "POST", json });
 
 export const api = {
-  goals: () => req<GoalSummary[]>("/goals"),
+  goals: () => req<GoalListItem[]>("/goals"),
   goal: (id: string) => req<GoalDetail>(`/goals/${id}`),
   createGoal: (input: NewGoal) => post<Goal>("/goals", input),
   goalFeedback: (id: string, revision: number, feedback: string) => post<Goal>(`/goals/${id}/feedback`, { revision, feedback }),
   editGoalPlan: (id: string, revision: number, plan: GoalPlan) => req<Goal>(`/goals/${id}/plan`, { method: "PUT", json: { revision, plan } }),
   approveGoal: (id: string, revision: number, autoMerge: boolean) => post<Goal>(`/goals/${id}/approve`, { revision, autoMerge }),
   cancelGoal: (id: string, revision: number) => post<Goal>(`/goals/${id}/cancel`, { revision }),
-  retryGoalTask: (id: string, revision: number, taskId: string, driver?: string) => post<Goal>(`/goals/${id}/tasks/${taskId}/retry`, { revision, driver }),
+  retryGoalTask: (id: string, revision: number, taskId: string, run: TaskRunOptions = {}) => post<Goal>(`/goals/${id}/tasks/${taskId}/retry`, { revision, ...run }),
+  changeGoalPlanAgent: (id: string, revision: number, key: string, run: TaskRunOptions) => post<Goal>(`/goals/${id}/plan/tasks/${key}/agent`, { revision, ...run }),
+  changeAgent: (id: string, run: TaskRunOptions) => post<Task>(`/tasks/${id}/agent`, run),
   overview: () => req<Overview>("/overview"),
   analytics: (days: number) => req<Analytics>(`/analytics?days=${days}`),
   tasks: (status?: string) => req<TaskSummary[]>(`/tasks${status ? `?status=${status}` : ""}`),

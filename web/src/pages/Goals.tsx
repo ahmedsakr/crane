@@ -1,12 +1,14 @@
 import { useId, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { errorMessage, EFFORT_LEVELS, STATUS_LABEL, driverLabel, goalWaves, validateGoalPlan, type DriverName, type Goal, type GoalPlan, type GoalTask } from "@crane/contracts";
+import { errorMessage, EFFORT_LEVELS, STATUS_LABEL, driverLabel, goalProgress, validateGoalPlan, type DriverName, type Goal, type GoalListItem, type GoalPlan, type GoalTask, type Task } from "@crane/contracts";
 import { api } from "../lib/api";
 import { useApp } from "../lib/app-context";
+import { plural } from "../lib/format";
 import { useDrivers, usePoll } from "../lib/hooks";
 import { Sheet, SheetBody, SheetFoot, SheetHead } from "../components/Sheet";
-
-const LABEL: Record<Goal["status"], string> = { researching: "Researching", needs_review: "Review plan", active: "In progress", completed: "Completed", blocked: "Needs attention", cancelled: "Cancelled" };
+import { AgentFields, NO_AGENT_CHOICE, agentRunOptions } from "../components/AgentFields";
+import { GOAL_STATUS, GoalChip, GoalProgressBar, GoalProgressLegend, progressText } from "../components/GoalProgressBar";
+import { GoalAgentSheet, GoalPlanSteps, GoalTaskGroups, type AgentTarget, type GoalWorkActions } from "../components/GoalWork";
 
 function NewGoalSheet({ onClose }: { onClose: () => void }) {
   const { overview } = useApp();
@@ -15,15 +17,13 @@ function NewGoalSheet({ onClose }: { onClose: () => void }) {
   const form = useId();
   const [outcome, setOutcome] = useState("");
   const [repoId, setRepo] = useState(overview?.repos.length === 1 ? overview.repos[0]!.id : "");
-  const [driver, setDriver] = useState<DriverName | "">("");
-  const [model, setModel] = useState("");
-  const [effort, setEffort] = useState("");
+  const [agent, setAgent] = useState(NO_AGENT_CHOICE);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const create = async () => {
     setBusy(true); setError("");
     try {
-      const goal = await api.createGoal({ outcome, repoId, driver: driver || null, model: model || null, effort: effort || null });
+      const goal = await api.createGoal({ outcome, repoId, ...agentRunOptions(agent, drivers ?? []) });
       onClose(); navigate(`/goals/${goal.id}`);
     } catch (err) { setError(errorMessage(err)); } finally { setBusy(false); }
   };
@@ -33,11 +33,7 @@ function NewGoalSheet({ onClose }: { onClose: () => void }) {
       <label className="tuning-field">Desired outcome<textarea className="input" rows={6} required maxLength={20000} value={outcome} onChange={(e) => setOutcome(e.target.value)} placeholder="What should be possible when this goal is complete?" /></label>
       <label className="tuning-field">Repository<select className="input" required value={repoId} onChange={(e) => setRepo(e.target.value)}><option value="">Choose a repo</option>{overview?.repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
       <details><summary>Research agent</summary><div className="sheet-fields goal-options">
-        <label className="tuning-field">Agent<select className="input" value={driver} onChange={(e) => { setDriver(e.target.value as DriverName | ""); setModel(""); setEffort(""); }}><option value="">Factory default</option>{drivers?.filter((d) => d.available).map((d) => <option key={d.name} value={d.name}>{d.label}</option>)}</select></label>
-        {driver && driver !== "simulated" && <>
-          <label className="tuning-field">Model<input className="input" value={model} maxLength={120} placeholder="Agent default" onChange={(e) => setModel(e.target.value)} /></label>
-          <label className="tuning-field">Effort<select className="input" value={effort} onChange={(e) => setEffort(e.target.value)}><option value="">Agent default</option>{EFFORT_LEVELS[driver].map((v) => <option key={v}>{v}</option>)}</select></label>
-        </>}
+        <AgentFields value={agent} onChange={setAgent} drivers={drivers ?? []} />
       </div></details>
       <p className="muted">Research is read-only. Implementation waits until you approve a plan.</p>
     </form></SheetBody>
@@ -45,20 +41,41 @@ function NewGoalSheet({ onClose }: { onClose: () => void }) {
   </Sheet>;
 }
 
+const LIST_GROUPS: { title: string; statuses: Goal["status"][]; fold?: boolean }[] = [
+  { title: "Needs you", statuses: ["needs_review", "blocked"] },
+  { title: "In progress", statuses: ["researching", "active"] },
+  { title: "Finished", statuses: ["completed", "cancelled"], fold: true },
+];
+
+function GoalRow({ goal: g, repoName }: { goal: GoalListItem; repoName?: string }) {
+  const status = GOAL_STATUS[g.status];
+  // A backend older than this page sends no progress; read it as empty until it restarts.
+  const progress = g.progress ?? goalProgress([]);
+  const planned = g.plannedTasks ? `${plural(g.plannedTasks, "task")} planned` : "Planning";
+  return <Link className={`card card-pad goal-list-item goal-phase-${status.phase}`} to={`/goals/${g.id}`}>
+    <div className="goal-list-copy"><h3 className="card-title">{g.title}</h3><p className="muted">{[repoName, g.taskCount ? progressText(progress) : planned].filter(Boolean).join(" · ")}</p></div>
+    <GoalChip phase={status.phase} label={status.label} />
+    {g.taskCount > 0 && <GoalProgressBar progress={progress} />}
+  </Link>;
+}
+
 export function Goals() {
   const { data, error, refresh } = usePoll(api.goals);
   const { overview } = useApp();
   const [creating, setCreating] = useState(false);
+  const groups = LIST_GROUPS.map((group) => ({ ...group, goals: (data ?? []).filter((g) => group.statuses.includes(g.status)) })).filter((group) => group.goals.length > 0);
   return <>
     <div className="page-head"><h1 className="page-title">Goals</h1><button className="btn btn-primary" onClick={() => setCreating(true)}>New goal</button></div>
     <p className="muted">Set an outcome, refine the plan, then let the crew work through it.</p>
     {error && <p role="alert">{error}</p>}
     {!data && !error && <p className="muted">Loading…</p>}
     {data?.length === 0 && <div className="card card-pad"><h2 className="card-title">Start with the outcome</h2><p>A research agent discovers the tasks, dependencies and useful refactoring. You can give feedback until the plan is ready.</p></div>}
-    <div className="goal-list">{data?.map((g) => <Link className="card card-pad goal-list-item" to={`/goals/${g.id}`} key={g.id}>
-      <div><h2 className="card-title">{g.title}</h2><p className="muted">{overview?.repos.find((r) => r.id === g.repoId)?.name} · {g.taskCount ? `${g.taskCount} tasks` : "Planning"}</p></div>
-      <span className={g.status === "needs_review" || g.status === "blocked" ? "goal-status needs-you" : "goal-status"}>{LABEL[g.status]}</span>
-    </Link>)}</div>
+    {groups.map((group) => {
+      const title = <h2 className="section-title">{group.title} <span className="count">{group.goals.length}</span></h2>;
+      const rows = <div className="goal-list">{group.goals.map((g) => <GoalRow key={g.id} goal={g} repoName={overview?.repos.find((r) => r.id === g.repoId)?.name} />)}</div>;
+      if (!group.fold) return <section className="goal-section" key={group.title}>{title}{rows}</section>;
+      return <details className="goal-section goal-group-fold" key={group.title} open={groups.length === 1}><summary>{title}</summary>{rows}</details>;
+    })}
     {creating && <NewGoalSheet onClose={() => { setCreating(false); refresh(); }} />}
   </>;
 }
@@ -133,53 +150,79 @@ function GoalDecision({ goal, mode, onClose, onSaved }: { goal: Goal; mode: "fee
   </Sheet>;
 }
 
+/** The brief behind the work. Before approval it's what's being decided; afterwards it steps aside for progress. */
+function GoalBrief({ goal: g, research }: { goal: Goal; research: Task | null }) {
+  const researchLink = research && <Link to={`/tasks/${research.id}`}>Open research · {STATUS_LABEL[research.status]}</Link>;
+  const approach = g.plan && <details><summary>Approach and repository evidence</summary><p className="goal-prose">{g.plan.approach}</p></details>;
+  if (g.approvedAt) {
+    return <details className="goal-section goal-brief">
+      <summary>Outcome and plan</summary>
+      <p className="goal-prose">{g.outcome}</p>
+      {g.plan && <p className="goal-prose">{g.plan.summary}</p>}
+      {approach}
+      {researchLink}
+    </details>;
+  }
+  return <>
+    <section className="card card-pad goal-overview"><h2 className="card-title">Desired outcome</h2><p className="goal-prose">{g.outcome}</p>
+      <p className="muted">{g.status === "researching" ? "The research agent is reviewing the repository. Implementation has not started." : "Review the scope, ordering and agent choices. Give feedback as often as needed before approval."}</p>
+      {researchLink}
+    </section>
+    {g.plan && <section className="goal-section"><h2 className="card-title">The plan</h2><p className="goal-prose">{g.plan.summary}</p>{approach}</section>}
+  </>;
+}
+
+function GoalProgressCard({ goal: g, tasks }: { goal: Goal; tasks: Task[] }) {
+  const progress = goalProgress(tasks);
+  return <section className="card card-pad goal-progress">
+    <p className="goal-progress-count"><strong>{progress.done}</strong> of {g.tasks.length} tasks done</p>
+    <GoalProgressBar progress={progress} />
+    <GoalProgressLegend progress={progress} />
+    <p className="muted">{g.autoMerge ? "Automatic merging approved" : "Review each task before merge"}</p>
+  </section>;
+}
+
 export function GoalPage() {
   const { id = "" } = useParams();
-  const { drivers } = useDrivers();
   const { data, error, refresh } = usePoll(() => api.goal(id), 2000, [id]);
   const [sheet, setSheet] = useState<{ goal: Goal; mode: "feedback" | "approve" | "cancel" | "edit" } | null>(null);
+  const [agentSheet, setAgentSheet] = useState<{ goal: Goal; target: AgentTarget } | null>(null);
   const [actionError, setActionError] = useState("");
   const [retrying, setRetrying] = useState(false);
   if (!data) return <p role={error ? "alert" : "status"}>{error ?? "Loading…"}</p>;
   const { goal: g, tasks, research } = data;
   const editable = !g.approvedAt && ["needs_review", "blocked"].includes(g.status);
-  const retry = async (taskId: string, driver?: string) => {
+  const status = GOAL_STATUS[g.status];
+  const taskFor = (key: string) => {
+    const link = g.tasks.find((t) => t.key === key);
+    return tasks.find((t) => t.id === link?.taskId);
+  };
+  const retry = async (task: Task) => {
     setRetrying(true); setActionError("");
-    try { await api.retryGoalTask(g.id, g.revision, taskId, driver); refresh(); }
+    try { await api.retryGoalTask(g.id, g.revision, task.id); refresh(); }
     catch (err) { setActionError(errorMessage(err)); } finally { setRetrying(false); }
   };
+  const actions: GoalWorkActions = { busy: retrying, onChangeAgent: (target) => setAgentSheet({ goal: g, target }), onRetry: (task) => void retry(task) };
+  const cancelGoal = !["completed", "cancelled"].includes(g.status) && <button className="btn btn-ghost" onClick={() => setSheet({ goal: g, mode: "cancel" })}>Cancel goal</button>;
   return <>
     <Link className="muted" to="/goals">← Goals</Link>
-    <div className="page-head goal-head"><h1 className="page-title">{g.title}</h1><span className="goal-status">{LABEL[g.status]}</span></div>
+    <div className="page-head goal-head"><h1 className="page-title">{g.title}</h1><GoalChip phase={status.phase} label={status.label} /></div>
     {(error || actionError) && <p role="alert" className="error-text">{error || actionError}</p>}
     {g.error && <div className="notice" role="status">{g.error}</div>}
-    <div className="goal-actions">
-      {editable && <><button data-goal-action="approve" className="btn btn-primary" disabled={g.status !== "needs_review" || !g.plan} onClick={() => setSheet({ goal: g, mode: "approve" })}>Approve plan</button><button data-goal-action="feedback" className="btn" onClick={() => setSheet({ goal: g, mode: "feedback" })}>Give feedback</button>{g.plan && <button data-goal-action="edit" className="btn btn-ghost" onClick={() => setSheet({ goal: g, mode: "edit" })}>Edit plan</button>}</>}
-      {!["completed", "cancelled"].includes(g.status) && <button className="btn btn-ghost" onClick={() => setSheet({ goal: g, mode: "cancel" })}>Cancel goal</button>}
-    </div>
-    <section className="card card-pad goal-overview"><h2 className="card-title">Desired outcome</h2><p className="goal-prose">{g.outcome}</p>
-      {g.approvedAt ? <p className="muted">{tasks.filter((t) => t.status === "merged").length} of {g.tasks.length} tasks merged · {g.autoMerge ? "Automatic merging approved" : "Review each task before merge"}</p>
-        : <p className="muted">{g.status === "researching" ? "The research agent is reviewing the repository. Implementation has not started." : "Review the scope, ordering and agent choices. Give feedback as often as needed before approval."}</p>}
-      {research && <Link to={`/tasks/${research.id}`}>Open research · {STATUS_LABEL[research.status]}</Link>}
-    </section>
-    {g.plan && <>
-      <section className="goal-section"><h2 className="card-title">The plan</h2><p className="goal-prose">{g.plan.summary}</p><details><summary>Approach and repository evidence</summary><p className="goal-prose">{g.plan.approach}</p></details></section>
-      <p className="muted">Tasks in each group can run together, up to your active crew capacity. Each task starts as soon as its own dependencies have merged.</p>
-      {goalWaves(g.plan).map((wave, i) => <section className="goal-section" key={i}><h2 className="card-title">{i === 0 ? "Start together" : `Then · group ${i + 1}`}</h2><div className="goal-task-grid">{wave.map((item) => {
-        const link = g.tasks.find((t) => t.key === item.key);
-        const task = tasks.find((t) => t.id === link?.taskId);
-        return <article className="card card-pad goal-task" key={item.key}>
-          <h3 className="card-title">{task ? <Link to={`/tasks/${task.id}`}>{item.title}</Link> : item.title}</h3>
-          <p className="muted">{driverLabel(task?.driver ?? item.driver)} · {task ? task.model ?? "Default model" : item.model ?? "Default model"}{(task ? task.effort : item.effort) ? ` · ${task ? task.effort : item.effort} effort` : ""}</p>
-          {task && <p><strong>{STATUS_LABEL[task.status]}</strong>{task.status === "queued" && item.dependsOn.length > 0 ? " · waits for dependencies to merge" : ""}</p>}
-          <p className="muted">{item.dependsOn.length ? `After: ${item.dependsOn.map((key) => g.plan!.tasks.find((t) => t.key === key)?.title).join(", ")}` : "No dependencies"}</p>
-          <details><summary>Brief and acceptance</summary><p className="goal-prose">{item.brief}</p><ul>{item.acceptance.map((c) => <li key={c}>{c}</li>)}{item.acceptanceChecks?.map((c) => <li key={c}>Check must pass: <span className="mono">{c}</span></li>)}</ul><p className="muted goal-prose">{item.rationale}</p></details>
-          {task && ["failed", "cancelled", "rejected"].includes(task.status) && ["active", "blocked"].includes(g.status) && <div className="goal-actions"><button className="btn btn-sm" disabled={retrying} onClick={() => void retry(task.id)}>Retry task</button>{drivers?.filter((d) => d.available && d.name !== task.driver).map((d) => <button className="btn btn-sm btn-ghost" key={d.name} disabled={retrying} onClick={() => void retry(task.id, d.name)}>Retry on {d.label}</button>)}</div>}
-        </article>;
-      })}</div></section>)}
-      {g.plan.improvements.length > 0 && <details className="goal-section"><summary>Optional improvements · {g.plan.improvements.length}</summary><ul>{g.plan.improvements.map((s) => <li key={s} className="goal-prose">{s}</li>)}</ul><p className="muted">These suggestions are outside the approved task scope unless included in a task.</p></details>}
-    </>}
+    {!g.approvedAt && <div className="goal-actions">
+      {editable && <><button data-goal-action="approve" className="btn btn-crane" disabled={g.status !== "needs_review" || !g.plan} onClick={() => setSheet({ goal: g, mode: "approve" })}>Approve plan</button><button data-goal-action="feedback" className="btn" onClick={() => setSheet({ goal: g, mode: "feedback" })}>Give feedback</button>{g.plan && <button data-goal-action="edit" className="btn btn-ghost" onClick={() => setSheet({ goal: g, mode: "edit" })}>Edit plan</button>}</>}
+      {cancelGoal}
+    </div>}
+    {g.approvedAt && <GoalProgressCard goal={g} tasks={tasks} />}
+    {!g.approvedAt && <GoalBrief goal={g} research={research} />}
+    {g.plan && (g.approvedAt
+      ? <GoalTaskGroups goal={g} plan={g.plan} taskFor={taskFor} actions={actions} />
+      : <GoalPlanSteps goal={g} plan={g.plan} taskFor={taskFor} actions={actions} />)}
+    {g.approvedAt && <GoalBrief goal={g} research={research} />}
+    {g.plan && g.plan.improvements.length > 0 && <details className="goal-section"><summary>Optional improvements · {g.plan.improvements.length}</summary><ul>{g.plan.improvements.map((s) => <li key={s} className="goal-prose">{s}</li>)}</ul><p className="muted">These suggestions are outside the approved task scope unless included in a task.</p></details>}
     {g.feedback.length > 0 && <details className="goal-section"><summary>Feedback history · {g.feedback.length}</summary>{g.feedback.map((f) => <div className="goal-feedback" key={f.revision}><p className="goal-prose">{f.text}</p><Link to={`/tasks/${f.taskId}`}>Research revision {f.revision}</Link></div>)}</details>}
+    {g.approvedAt && cancelGoal && <div className="goal-actions">{cancelGoal}</div>}
     {sheet && (sheet.mode === "edit" ? <PlanEditor goal={sheet.goal} onClose={() => setSheet(null)} onSaved={refresh} /> : <GoalDecision goal={sheet.goal} mode={sheet.mode} onClose={() => setSheet(null)} onSaved={refresh} />)}
+    {agentSheet && <GoalAgentSheet goal={agentSheet.goal} target={agentSheet.target} onClose={() => setAgentSheet(null)} onSaved={refresh} />}
   </>;
 }

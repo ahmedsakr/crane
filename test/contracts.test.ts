@@ -14,15 +14,15 @@ test("contracts preserve the complete public type and runtime export names", asy
   // Captured from index.ts before splitting, including main's acceptanceCheckRun addition.
   const types = `AcceptanceResult Agent AgentRun AgentState Analytics Autonomy BlockedCall BlockedTool CommandEvidence
 CrewSchedule CrewScheduleInput DiffFile DiffHunk DiffLine DriverInfo DriverName DriverSettings EventType
-Finding FollowUpSource FollowUpState Goal GoalDetail GoalPlan GoalSummary GoalTask Lookout LookoutInfo
+Finding FollowUpSource FollowUpState Goal GoalDetail GoalListItem GoalPlan GoalProgress GoalSummary GoalTask GoalTaskPhase Lookout LookoutInfo
 MaintenanceRole MaintenanceRoleInfo MergeOutcome NewGoal NewTask Overview ParsedDiff PostmortemSettings
 PrerequisiteState Repo RepoTools Report RetentionSettings ReviewCheckpoint RoleRunOptions RunKind
 RunOutcome RunUsage Screenshot SpendSlice SplitRow Task TaskDetail TaskDiff TaskDraft TaskEvent TaskGates
 TaskKind TaskRunOptions TaskStatus TaskSummary ValidationRun VisualReview`.split(/\s+/).sort();
   const values = `ACTIVE_STATUSES ALL_STATUSES AUTONOMY_LABEL DRIVER_LABEL DRIVER_NAMES EFFORT_LEVELS FINISHED_STATUSES
-KIND_LABEL LOOKOUT LOOKOUTS MAINTENANCE_ROLE MAINTENANCE_ROLES MODEL_SUGGESTIONS RUN_KIND_LABEL
+GOAL_TASK_PHASES KIND_LABEL LOOKOUT LOOKOUTS MAINTENANCE_ROLE MAINTENANCE_ROLES MODEL_SUGGESTIONS RUN_KIND_LABEL
 SHIPPED_STATUSES STATUS_LABEL UNSHIPPED_STATUSES acceptanceCheckRun acceptanceFor choosableDrivers completionReviewReason
-crewScheduleLabel diffFiles driverLabel errorMessage followUpFor goalWaves isDriverName isLookout
+crewScheduleLabel diffFiles driverLabel errorMessage followUpFor goalProgress goalTaskPhase goalWaves isDriverName isLookout
 isMaintenanceRole isScheduled isTunable lastMergeOutcome lookoutsLabel nextCrewFire parseDiff
 prerequisiteMet ruleLabel runCostLabel runTokens settingsLabel splitRows unmetAcceptance
 validateCrewSchedule validateGoalPlan visualReviewPending visualReviewWaivedByPreApproval`.split(/\s+/).sort();

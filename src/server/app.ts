@@ -4,6 +4,7 @@ import { getMimeType } from "hono/utils/mime";
 import { readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import type { Store } from "../core/store.js";
+import { goalListItems } from "../core/store/goal-progress.js";
 import { lastMergeOutcome, type TaskStatus, type NewTask, type TaskDetail, type TaskDiff, type TaskDraft, type TaskGates, type TaskRunOptions, type RoleRunOptions } from "@crane/contracts";
 import { OperatorActions } from "../factory/actions.js";
 import { draftTask } from "../factory/instruct.js";
@@ -102,7 +103,7 @@ export function createApp(store: Store, opts: { exposed?: boolean } = {}) {
 
   api.get("/tasks/queue", (c) => c.json(store.listQueuedTaskSummaries()));
 
-  api.get("/goals", (c) => { store.syncGoals(); return c.json(store.listGoalSummaries()); });
+  api.get("/goals", (c) => { store.syncGoals(); return c.json(goalListItems(store)); });
   api.get("/goals/:id", (c) => {
     store.syncGoals();
     if (!store.getGoal(c.req.param("id"))) return c.json({ error: "Not found" }, 404);
@@ -126,8 +127,18 @@ export function createApp(store: Store, opts: { exposed?: boolean } = {}) {
     return c.json(actions.cancelGoal(c.req.param("id"), body.revision));
   });
   api.post("/goals/:id/tasks/:taskId/retry", async (c) => {
-    const body = await optionalJsonObject<{ revision: unknown; driver?: string | null }>(c.req.raw);
-    return c.json(actions.retryGoalTask(c.req.param("id"), body.revision, c.req.param("taskId"), body));
+    const body = await optionalJsonObject<TaskRunOptions & { revision: unknown }>(c.req.raw);
+    const { driver, model, effort } = body;
+    return c.json(actions.retryGoalTask(c.req.param("id"), body.revision, c.req.param("taskId"), { driver, model, effort }));
+  });
+  api.post("/goals/:id/plan/tasks/:key/agent", async (c) => {
+    const body = await optionalJsonObject<TaskRunOptions & { revision: unknown }>(c.req.raw);
+    const { driver, model, effort } = body;
+    return c.json(actions.changeGoalPlanAgent(c.req.param("id"), body.revision, c.req.param("key"), { driver, model, effort }));
+  });
+  api.post("/tasks/:id/agent", async (c) => {
+    const { driver, model, effort } = await optionalJsonObject<TaskRunOptions>(c.req.raw);
+    return c.json(actions.changeAgent(c.req.param("id"), { driver, model, effort }));
   });
 
   api.get("/tasks/:id", (c) => {
