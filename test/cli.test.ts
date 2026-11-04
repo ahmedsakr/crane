@@ -170,6 +170,25 @@ test("cli: repos checks shows, replaces and clears a repo's checks", async () =>
   } finally { store.close(); }
 });
 
+test("cli: repos remove disconnects a repo by name and refuses the factory's own or an unknown one", async () => {
+  const { store, repo } = setup();
+  try {
+    const factory = store.addRepo({ path: "/factory", name: "crane", isFactory: true });
+    const unknown = await crane(store, "repos", "remove", "nope");
+    assert.equal(unknown.code, 1);
+    assert.match(unknown.err, /No repo nope/);
+    const own = await crane(store, "repos", "remove", "crane");
+    assert.equal(own.code, 1);
+    assert.match(own.err, /factory's own repo can't be removed/);
+    assert.ok(store.getRepo(factory.id));
+
+    const removed = await crane(store, "repos", "remove", "app");
+    assert.equal(removed.code, 0, removed.err);
+    assert.match(removed.out, /Disconnected app/);
+    assert.equal(store.getRepo(repo.id), null);
+  } finally { store.close(); }
+});
+
 test("cli: options from one run don't carry into the next in the same process", async () => {
   const { store } = setup();
   try {
