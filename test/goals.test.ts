@@ -158,6 +158,25 @@ test("goals: reconciliation keeps its statuses and error text, and an unchanged 
   } finally { store.close(); }
 });
 
+test("goals: a missing task row blocks the goal even when every remaining task merged", () => {
+  const { store, actions, goal } = setup();
+  try {
+    const ready = researchResult(store, goal);
+    const active = actions.approveGoal(ready.id, ready.revision);
+    for (const link of active.tasks) store.updateTask(link.taskId, { status: "merged" });
+    // Nothing deletes task rows today, so the fixture has to step around the foreign keys.
+    store.db.pragma("foreign_keys = OFF");
+    store.db.prepare("DELETE FROM tasks WHERE id = ?").run(active.tasks[0]!.taskId);
+    store.db.pragma("foreign_keys = ON");
+    store.syncGoals();
+    const blocked = store.getGoal(goal.id)!;
+    assert.equal(blocked.status, "blocked");
+    assert.equal(blocked.error, "A goal task failed, was declined, or was cancelled. Retry it from this goal to reconnect its dependents");
+    store.syncGoals();
+    assert.equal(store.getGoal(goal.id)!.revision, blocked.revision, "a blocked goal with a missing row is stable across ticks");
+  } finally { store.close(); }
+});
+
 test("goals: a recording failure rolls research reconciliation back for a later retry", () => {
   const { store, goal } = setup();
   try {
