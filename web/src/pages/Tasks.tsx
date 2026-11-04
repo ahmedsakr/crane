@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useApp } from "../lib/app-context";
 import { api } from "../lib/api";
 import { usePoll, useTick } from "../lib/hooks";
-import { Empty, TaskRow } from "../components/bits";
+import { Empty } from "../components/Empty";
+import { TaskRow } from "../components/TaskRow";
 import { TaskQueue } from "../components/TaskQueue";
 
 const FILTERS = [

@@ -171,3 +171,24 @@ test("boundaries: only the web entry point imports App", () => {
     assert.ok(!importsOf(file, webSrc).includes("App"), `${file} imports App`);
   }
 });
+
+test("boundaries: web modules have no import cycles", () => {
+  const files = (readdirSync(webSrc, { recursive: true }) as string[])
+    .map((f) => f.split("\\").join("/"))
+    .filter((f) => /\.tsx?$/.test(f));
+  const fileFor = new Map(files.map((f) => [f.replace(/\.tsx?$/, ""), f]));
+  const graph = new Map(files.map((f) => [f.replace(/\.tsx?$/, ""), importsOf(f, webSrc).filter((m) => fileFor.has(m))]));
+  assert.ok(graph.get("pages/Home")?.includes("components/Section"), "expected to read the web import graph");
+  const done = new Set<string>();
+  const findCycle = (mod: string, path: string[]): string[] | null => {
+    if (path.includes(mod)) return [...path.slice(path.indexOf(mod)), mod];
+    if (done.has(mod)) return null;
+    for (const next of graph.get(mod) ?? []) {
+      const cycle = findCycle(next, [...path, mod]);
+      if (cycle) return cycle;
+    }
+    done.add(mod);
+    return null;
+  };
+  for (const mod of graph.keys()) assert.deepEqual(findCycle(mod, []), null);
+});

@@ -7,7 +7,7 @@ import { parseStartTime, startSummary } from "../lib/schedule";
 import { api, AUTONOMY_LABEL, KIND_LABEL, choosableDrivers, type Autonomy, type Lookout, type TaskDraft, type TaskKind, type Repo } from "../lib/api";
 import { placeMenu, type MenuPlace } from "../lib/placement";
 import { useDrivers } from "../lib/hooks";
-import { useToast } from "./bits";
+import { useToast } from "../lib/toast";
 import { GateFields, NO_GATES, parseGates } from "./GateFields";
 import { LookoutFields } from "./LookoutFields";
 

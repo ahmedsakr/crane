@@ -2,7 +2,9 @@ import { errorMessage } from "@crane/contracts";
 import { useEffect, useId, useState } from "react";
 import type { RetentionSettings } from "@crane/contracts";
 import { api } from "../lib/api";
-import { Chevron, useToast } from "./bits";
+import { useToast } from "../lib/toast";
+import { Chevron } from "./Chevron";
+import { Section } from "./Section";
 import { Sheet, SheetBody, SheetFoot, SheetHead } from "./Sheet";
 
 export function StorageRetention() {
@@ -31,11 +33,8 @@ export function StorageRetention() {
     finally { setSaving(false); }
   };
   return (
-    <section className="section crew-section" aria-labelledby="storage-retention">
-      <div className="section-head">
-        <h2 className="section-title" id="storage-retention">Storage retention</h2>
-        <span className="muted crew-section-note">Choose how long to keep routine task history</span>
-      </div>
+    <Section id="storage-retention" className="crew-section" title="Storage retention"
+      aside={<span className="muted crew-section-note">Choose how long to keep routine task history</span>}>
       <div className="rows card crew-list">
         <div className="crew-row crew-row-plain">
           {error ? <span role="alert">{error} <button className="tuning-change" onClick={load}>Retry</button></span>
@@ -78,6 +77,6 @@ export function StorageRetention() {
           </button>
         </SheetFoot>
       </Sheet>}
-    </section>
+    </Section>
   );
 }
