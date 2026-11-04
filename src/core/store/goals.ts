@@ -13,6 +13,7 @@ import {
 } from "@crane/contracts";
 import { shortId } from "../ids.js";
 import type { Store } from "../store.js";
+import { now } from "./shared.js";
 
 export type NewGoal = Pick<Goal, "title" | "outcome" | "repoId" | "research">;
 
@@ -21,8 +22,6 @@ type PlanTask = GoalPlan["tasks"][number];
 const SYNCED_STATUSES = ["researching", "active", "blocked"];
 const RETRYABLE_TASK_STATUSES = ["failed", "cancelled", "rejected"];
 const CANCELLABLE_TASK_STATUSES = ["queued", "running", "needs_review", "done", "approved"];
-
-const now = () => new Date().toISOString();
 
 // Goals retain every research revision and its task links across restarts.
 export function getGoal(store: Store, id: string): Goal | null {

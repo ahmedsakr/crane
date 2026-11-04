@@ -5,19 +5,25 @@ import { shortId } from "./ids.js";
 import { SCHEMA } from "./store/schema.js";
 import { addMissingColumns, migrateMissionsToTasks, migrateFollowUpLinks, migratePostmortemLinks,
   migratePostmortemBriefs, migrateCostsToRuns, migrateCostStatus } from "./store/migrations.js";
-import { toRepo, toTask, toEvent, toRun, toAgent, type Row } from "./store/rows.js";
+import { toRepo, toAgent, type Row } from "./store/rows.js";
 import { analytics } from "./store/analytics.js";
 import { overview } from "./store/overview.js";
 import { BlockedToolsReader } from "./store/blocked-tools.js";
 import { approveGoal, cancelGoal, createGoal, getGoal, goalDetail, goalForTask, listGoals, listGoalSummaries,
   retryGoalTask, reviseGoal, saveGoalPlan, syncGoals, type NewGoal } from "./store/goals.js";
+import { createTask, getTask, listTasks, listTaskSummaries, setStatus, tasksWithWorktrees, updateTask,
+  type NewTaskRecord, type TaskListOptions, type TaskPatch } from "./store/tasks.js";
+import { listQueuedTasks, listQueuedTaskSummaries, moveQueuedTask, queuedForAnyone, setTaskSchedule } from "./store/queue.js";
+import { followUps, followUpSource, prerequisiteCommits, prerequisiteStates, unmetPrerequisites, waivePrerequisites,
+  type LandedCommit } from "./store/prerequisites.js";
+import { completeMerge, finishWork, postmortemPrompt, setPreApproval, waivePreApprovedVisualReview } from "./store/review.js";
+import { claimNextMerge, claimNextTask, pendingWork, type ClaimOptions } from "./store/claims.js";
+import { addEvent, closeUnresolvedCommands, commandEvidence, eventsSince, latestEventId, listEvents } from "./store/events.js";
+import { closeStaleRuns, finishRun, lastWorkDriver, listRuns, startRun } from "./store/runs.js";
+import { now } from "./store/shared.js";
 import {
   FINISHED_STATUSES,
   isMaintenanceRole,
-  lastMergeOutcome,
-  prerequisiteMet,
-  unmetAcceptance,
-  completionReviewReason,
   type Goal,
   type GoalDetail,
   type GoalPlan,
@@ -31,7 +37,6 @@ import {
   type CommandEvidence,
   type VisualReview,
 } from "@crane/contracts";
-import { postmortemBrief, postmortemPrompt, postmortemSourceMissing } from "./postmortem.js";
 import type {
   Agent,
   AgentRun,
@@ -50,47 +55,11 @@ import type {
   NewTask,
   Overview,
   Repo,
-  DriverSettings,
   PostmortemSettings,
   RetentionSettings,
 } from "@crane/contracts";
 
-/** A commit a merged prerequisite put on the default branch. */
-export interface LandedCommit {
-  id: string;
-  title: string;
-  commit: string;
-}
-
-type TaskListOptions = { status?: TaskStatus[]; repoId?: string; assignee?: string; limit?: number };
-const TASK_SUMMARY_COLUMNS = `id, kind, title, repo_id AS repoId, status, branch, assignee,
-  postmortem_of AS postmortemOf,
-  created_at AS createdAt, scheduled_at AS scheduledAt,
-  started_at AS startedAt, finished_at AS finishedAt,
-  json_extract(report, '$.summary') AS reportSummary,
-  COALESCE(json_array_length(report, '$.findings'), 0) AS findingCount,
-  COALESCE(json_array_length(report, '$.changedFiles'), 0) AS changedFileCount`;
-
-/** Task fields updateTask can persist, mapped to their database columns. */
-const TASK_UPDATE_COLUMNS = {
-  status: "status",
-  agentId: "agent_id",
-  branch: "branch",
-  worktree: "worktree",
-  sessionId: "session_id",
-  report: "report",
-  visualReview: "visual_review",
-  reviewCheckpoint: "review_checkpoint",
-  costUsd: "cost_usd",
-  startedAt: "started_at",
-  finishedAt: "finished_at",
-  title: "title",
-} satisfies Partial<Record<keyof Task, string>>;
-
-type TaskPatch = Partial<Pick<Task, keyof typeof TASK_UPDATE_COLUMNS>>;
-
-const now = () => new Date().toISOString();
-const TASK_DUE = "(scheduled_at IS NULL OR scheduled_at <= ?)";
+export type { LandedCommit } from "./store/prerequisites.js";
 
 /** The settings that hold the operator's choices for one crew member. */
 export const crewSettingKey = {
@@ -367,514 +336,159 @@ export class Store {
     return this.blockedToolsReader.read(this.db, (id) => this.repoTools(id), opts);
   }
 
-  // ── tasks ─────────────────────────────────────────────────
-  createTask(input: NewTask & {
-    driverSettings?: DriverSettings | null;
-    /** The recurring crew schedule that started this task. */
-    scheduleId?: string;
-    /** The task and finding (0-based) this one follows up on. */
-    followUp?: { of: string; finding: number };
-    /** The merged task this post-mortem reviews. */
-    postmortemOf?: string | null;
-  }): Task {
-    return this.db.transaction(() => {
-      const id = shortId("t");
-      const ts = now();
-      const scheduledAt = input.scheduledAt == null ? null : new Date(input.scheduledAt).toISOString();
-      const list = (xs: string[] | undefined) => (xs?.length ? JSON.stringify(xs) : null);
-      this.db
-        .prepare(
-          `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, driver_settings,
-             prerequisites, acceptance, acceptance_checks, lookouts, status, created_at, scheduled_at, pre_approved_at, follow_up_of, follow_up_finding, schedule_id, postmortem_of, queue_position)
-           VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?,
-             (SELECT COALESCE(MAX(queue_position), 0) + 1 FROM tasks WHERE status = 'queued'))`,
-        )
-        .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null,
-          input.model ?? null, input.effort ?? null, input.assignee ?? null,
-          input.driverSettings ? JSON.stringify(input.driverSettings) : null,
-          list(input.prerequisites), list(input.acceptance), list(input.acceptanceChecks), list(input.lookouts), ts, scheduledAt, input.preApprove ? ts : null,
-          input.followUp?.of ?? null, input.followUp?.finding ?? null, input.scheduleId ?? null, input.postmortemOf ?? null);
-      this.addEvent(id, "status", scheduledAt ? `Scheduled for ${scheduledAt}` : "Queued", {
-        status: "queued", ...(scheduledAt ? { scheduledAt } : {}),
-      });
-      if (input.preApprove) this.addEvent(id, "operator", "Pre-approved", { preApproved: true });
-      const task = this.getTask(id)!;
-      const waiting = this.unmetPrerequisites(task);
-      if (waiting.length) {
-        this.addEvent(id, "note", `Waits for ${waiting.map((t) => t.id).join(", ")} to land before it starts`, {
-          prerequisites: waiting.map((t) => t.id),
-        });
-      }
-      return task;
-    }).immediate();
-  }
-
-  /** The entire waiting queue, in pickup order, including tasks not yet eligible. */
-  listQueuedTasks(): Task[] {
-    return (this.db.prepare("SELECT * FROM tasks WHERE status = 'queued' ORDER BY queue_position, created_at, rowid")
-      .all() as Row[]).map(toTask);
-  }
-
-  /** The entire pickup order, with the same lightweight payload as other polled rows. */
-  listQueuedTaskSummaries(): TaskSummary[] {
-    return this.db.prepare(`SELECT ${TASK_SUMMARY_COLUMNS} FROM tasks
-      WHERE status = 'queued' ORDER BY queue_position, created_at, rowid`).all() as TaskSummary[];
-  }
-
-  /** Move relative to a live anchor, without overwriting concurrent queue changes. */
-  moveQueuedTask(id: string, beforeId: string | null): Task[] {
-    return this.db.transaction(() => {
-      const queue = this.listQueuedTasks();
-      const from = queue.findIndex(t => t.id === id);
-      if (from < 0) throw new Error(`Task ${id} isn't queued; refresh the queue and try again`);
-      if (beforeId !== null && !queue.some(t => t.id === beforeId)) {
-        throw new Error(`Task ${beforeId} isn't queued; refresh the queue and try again`);
-      }
-      if (id === beforeId) return queue;
-      const task = queue[from]!;
-      queue.splice(from, 1);
-      const to = beforeId === null ? queue.length : queue.findIndex(t => t.id === beforeId);
-      queue.splice(to, 0, task);
-      if (from === to) return queue;
-      const update = this.db.prepare("UPDATE tasks SET queue_position = ? WHERE id = ?");
-      queue.forEach((t, i) => update.run(i + 1, t.id));
-      this.addEvent(id, "operator", beforeId === null ? "Moved to the end of the queue" : `Moved before ${beforeId} in the queue`, { beforeId });
-      return queue;
-    }).immediate();
-  }
-
-  /** Change pickup time only while queued, and record the decision with the write. */
-  setTaskSchedule(id: string, scheduledAt: string | null): boolean {
-    scheduledAt = scheduledAt === null ? null : new Date(scheduledAt).toISOString();
-    return this.db.transaction(() => {
-      const changed = this.db.prepare("UPDATE tasks SET scheduled_at = ? WHERE id = ? AND status = 'queued'")
-        .run(scheduledAt, id).changes;
-      if (!changed) return false;
-      this.addEvent(id, "operator", scheduledAt ? `Scheduled for ${scheduledAt}` : "Cleared start time; ready once prerequisites are met", { scheduledAt });
-      return true;
-    }).immediate();
-  }
-
-  /** The task's prerequisites in the order it lists them, and whether each has landed. */
-  prerequisiteStates(task: Pick<Task, "prerequisites">): PrerequisiteState[] {
-    return task.prerequisites.map((id) => {
-      const t = this.getTask(id);
-      // A prerequisite that's gone can never land; it holds the task until the operator waives it.
-      return t ? { id: t.id, title: t.title, status: t.status, met: prerequisiteMet(t) } : { id, title: "Unknown task", status: "failed", met: false };
-    });
-  }
-
-  /**
-   * What the task's merged prerequisites in this repo put on the default branch:
-   * the commits a checkout must contain, and tasks whose record names no commit
-   * (merged before Crane kept one). Prerequisites finished without a branch left
-   * nothing to find, and a waiver means the operator accepted them being missing.
-   */
-  prerequisiteCommits(task: Pick<Task, "prerequisites" | "prerequisitesWaivedAt" | "repoId">): { commits: LandedCommit[]; unrecorded: string[] } {
-    const commits: LandedCommit[] = [];
-    const unrecorded: string[] = [];
-    if (task.prerequisitesWaivedAt) return { commits, unrecorded };
-    for (const id of task.prerequisites) {
-      const t = this.getTask(id);
-      if (t?.status !== "merged" || t.repoId !== task.repoId) continue;
-      const outcome = lastMergeOutcome(this.listEvents(t.id));
-      const commit = outcome?.commit ?? outcome?.head;
-      if (commit) commits.push({ id: t.id, title: t.title, commit });
-      else unrecorded.push(t.id);
-    }
-    return { commits, unrecorded };
-  }
-
-  /** Tasks started from this task's findings, oldest first. */
-  followUps(taskId: string): FollowUpState[] {
-    return (this.db
-      .prepare("SELECT id, title, status, follow_up_finding FROM tasks WHERE follow_up_of = ? ORDER BY created_at, rowid")
-      .all(taskId) as Row[])
-      .map((r) => ({
-        id: r.id as string,
-        title: r.title as string,
-        status: r.status as TaskStatus,
-        finding: (r.follow_up_finding as number) ?? null,
-      }));
-  }
-
-  /** The task and finding this one was started from, or null when it isn't a follow-up. */
-  followUpSource(task: Pick<Task, "followUpOf" | "followUpFinding">): FollowUpSource | null {
-    if (!task.followUpOf) return null;
-    const t = this.getTask(task.followUpOf);
-    if (!t) return { id: task.followUpOf, title: "Unknown task", status: "failed", finding: null };
-    const finding = task.followUpFinding === null ? undefined : t.report?.findings[task.followUpFinding];
-    return { id: t.id, title: t.title, status: t.status, finding: finding?.title ?? null };
-  }
-
-  /** Prerequisites still holding the task back: not landed, and not waived by the operator. */
-  unmetPrerequisites(task: Pick<Task, "prerequisites" | "prerequisitesWaivedAt">): PrerequisiteState[] {
-    return task.prerequisitesWaivedAt ? [] : this.prerequisiteStates(task).filter((p) => !p.met);
-  }
-
-  /**
-   * Let a queued task start without the prerequisites that haven't landed. One
-   * conditional write, so it can't apply after the task has been picked up or
-   * cancelled. Returns whether it applied.
-   */
-  waivePrerequisites(id: string): boolean {
-    return this.db
-      .prepare("UPDATE tasks SET prerequisites_waived_at = ? WHERE id = ? AND status = 'queued' AND prerequisites_waived_at IS NULL")
-      .run(now(), id).changes > 0;
+  // Task records live in store/tasks.ts.
+  createTask(input: NewTaskRecord): Task {
+    return createTask(this, input);
   }
 
   getTask(id: string): Task | null {
-    // Accept a bare id too. Tasks created before the rename kept their `m-` prefix.
-    const r = this.db
-      .prepare("SELECT * FROM tasks WHERE id IN (?, ?, ?) ORDER BY id = ? DESC LIMIT 1")
-      .get(id, `t-${id}`, `m-${id}`, id) as Row | undefined;
-    return r ? toTask(r) : null;
-  }
-
-  /**
-   * Unassigned queued work that is no longer waiting for its start time. Post-mortems
-   * count only while any active member can run them: activating someone else
-   * wouldn't help one that's waiting for the crew the operator named.
-   */
-  queuedForAnyone(): number {
-    const named = this.postmortemCrew().length ? "AND postmortem_of IS NULL" : "";
-    return (this.db.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE status = 'queued' AND assignee IS NULL ${named} AND ${TASK_DUE}`)
-      .get(now()) as { n: number }).n;
+    return getTask(this, id);
   }
 
   listTasks(opts: TaskListOptions = {}): Task[] {
-    return this.taskListRows("t.*", opts).map(toTask);
+    return listTasks(this, opts);
   }
 
-  /** Select only what polled rows display, without loading briefs or parsing full reports in JS. */
   listTaskSummaries(opts: TaskListOptions = {}): TaskSummary[] {
-    return this.taskListRows<TaskSummary>(TASK_SUMMARY_COLUMNS, opts);
+    return listTaskSummaries(this, opts);
   }
 
-  private taskListRows<T = Row>(columns: string, opts: TaskListOptions): T[] {
-    const where: string[] = [];
-    const params: unknown[] = [];
-    if (opts.status?.length) {
-      where.push(`status IN (${opts.status.map(() => "?").join(",")})`);
-      params.push(...opts.status);
-    }
-    if (opts.repoId) {
-      where.push("repo_id = ?");
-      params.push(opts.repoId);
-    }
-    if (opts.assignee) {
-      where.push("assignee = ?");
-      params.push(opts.assignee);
-    }
-    // Pick the page from the index first, so keeping a few tasks doesn't read every match's brief and report.
-    const sql = `SELECT ${columns} FROM (
-                   SELECT rowid AS page_rowid FROM tasks ${where.length ? "WHERE " + where.join(" AND ") : ""}
-                   ORDER BY created_at DESC, rowid DESC LIMIT ?
-                 ) page
-                 CROSS JOIN tasks t ON t.rowid = page.page_rowid
-                 ORDER BY t.created_at DESC, t.rowid DESC`;
-    params.push(opts.limit ?? 200);
-    return this.db.prepare(sql).all(...params) as T[];
-  }
-
-  /** Tasks in one of these statuses that still have a worktree on record. */
   tasksWithWorktrees(statuses: TaskStatus[]): Task[] {
-    if (!statuses.length) return [];
-    const rows = this.db
-      .prepare(`SELECT * FROM tasks WHERE worktree IS NOT NULL AND status IN (${statuses.map(() => "?").join(",")})`)
-      .all(...statuses) as Row[];
-    return rows.map(toTask);
+    return tasksWithWorktrees(this, statuses);
   }
 
   updateTask(id: string, patch: TaskPatch) {
-    const cols: Readonly<Record<string, string>> = TASK_UPDATE_COLUMNS;
-    const sets: string[] = [];
-    const params: unknown[] = [];
-    for (const [k, v] of Object.entries(patch)) {
-      const col = cols[k];
-      if (!col) continue;
-      sets.push(`${col} = ?`);
-      params.push((k === "report" || k === "visualReview" || k === "reviewCheckpoint") && v ? JSON.stringify(v) : v);
-    }
-    if (!sets.length) return;
-    params.push(id);
-    this.db.prepare(`UPDATE tasks SET ${sets.join(", ")} WHERE id = ?`).run(...params);
+    updateTask(this, id, patch);
   }
 
   setStatus(id: string, status: TaskStatus, message?: string, data?: Record<string, unknown>) {
-    const patch: TaskPatch = { status };
-    if (status === "running") patch.startedAt = now();
-    // Waiting on the operator counts as finished: the agent's part is over.
-    if (status === "needs_review" || FINISHED_STATUSES.includes(status)) patch.finishedAt = now();
-    this.updateTask(id, patch);
-    this.addEvent(id, "status", message ?? status, { ...data, status });
+    setStatus(this, id, status, message, data);
   }
 
-  /** Persist the successful merge and its follow-up together, including across restarts. */
-  completeMerge(id: string, message: string, data: Record<string, unknown>): Task | null {
-    return this.db.transaction(() => {
-      const task = this.getTask(id);
-      if (!task) throw new Error(`Unknown task ${id}`);
-      if (task.status === "merged") return null;
-      if (task.status !== "merging") throw new Error(`Task ${id} isn't merging`);
-      this.updateTask(id, { worktree: null });
-      this.setStatus(id, "merged", message, data);
-      const defaults = this.postmortemSettings();
-      const review = this.createTask({
-        kind: "maintenance",
-        title: `Post-mortem: ${task.title}`,
-        brief: postmortemBrief(task),
-        repoId: task.repoId,
-        autonomy: "observe",
-        driver: defaults.driver ?? task.driver,
-        driverSettings: defaults.driver ? { model: defaults.model, effort: defaults.effort } : null,
-        postmortemOf: id,
-      });
-      this.addEvent(id, "note", "Queued a post-mortem to look for task friction", { postmortemTaskId: review.id });
-      this.addEvent(review.id, "note", `Reviewing merged task ${id}`, { sourceTaskId: id });
-      return review;
-    }).immediate();
+  // Queue order and scheduling live in store/queue.ts.
+  listQueuedTasks(): Task[] {
+    return listQueuedTasks(this);
   }
 
-  /** The brief a post-mortem's agent reviews, built from its merged task's current history. */
-  postmortemPrompt(sourceTaskId: string): string {
-    const source = this.getTask(sourceTaskId);
-    return source ? postmortemPrompt(source, this.listEvents(source.id)) : postmortemSourceMissing(sourceTaskId);
+  listQueuedTaskSummaries(): TaskSummary[] {
+    return listQueuedTaskSummaries(this);
   }
 
-  /**
-   * Pre-approve a task, or take that back, while it's still queued or running.
-   * One conditional write, so it can't land after the run has already handed
-   * the task to review. Returns whether it applied.
-   */
+  moveQueuedTask(id: string, beforeId: string | null): Task[] {
+    return moveQueuedTask(this, id, beforeId);
+  }
+
+  setTaskSchedule(id: string, scheduledAt: string | null): boolean {
+    return setTaskSchedule(this, id, scheduledAt);
+  }
+
+  queuedForAnyone(): number {
+    return queuedForAnyone(this);
+  }
+
+  // Prerequisites and follow-ups live in store/prerequisites.ts.
+  prerequisiteStates(task: Pick<Task, "prerequisites">): PrerequisiteState[] {
+    return prerequisiteStates(this, task);
+  }
+
+  prerequisiteCommits(task: Pick<Task, "prerequisites" | "prerequisitesWaivedAt" | "repoId">): { commits: LandedCommit[]; unrecorded: string[] } {
+    return prerequisiteCommits(this, task);
+  }
+
+  unmetPrerequisites(task: Pick<Task, "prerequisites" | "prerequisitesWaivedAt">): PrerequisiteState[] {
+    return unmetPrerequisites(this, task);
+  }
+
+  waivePrerequisites(id: string): boolean {
+    return waivePrerequisites(this, id);
+  }
+
+  followUps(taskId: string): FollowUpState[] {
+    return followUps(this, taskId);
+  }
+
+  followUpSource(task: Pick<Task, "followUpOf" | "followUpFinding">): FollowUpSource | null {
+    return followUpSource(this, task);
+  }
+
+  // Pre-approval and the hand-offs out of a work run or merge live in store/review.ts.
   setPreApproval(id: string, on: boolean): boolean {
-    return this.db
-      .prepare(
-        `UPDATE tasks SET pre_approved_at = ? WHERE id = ? AND status IN ('queued', 'running') AND autonomy != 'observe'`,
-      )
-      .run(on ? now() : null, id).changes > 0;
+    return setPreApproval(this, id, on);
   }
 
-  /** Record the candidate waiver authorized by the operator's task pre-approval. */
   waivePreApprovedVisualReview(id: string, candidate: VisualReview): boolean {
-    return this.db.transaction(() => {
-      const task = this.getTask(id);
-      if (!task?.preApprovedAt || task.autonomy === "observe") return false;
-      const review: VisualReview = { ...candidate, status: "waived", decidedAt: now(),
-        note: "Visual review waived by operator pre-approval for this task, including conflict resolutions. All views and viewport sizes may remain unreviewed." };
-      this.updateTask(id, { visualReview: review });
-      this.addEvent(id, "note", "Visual review waived by pre-approval", { preApprovedAt: task.preApprovedAt, visualReview: review });
-      return true;
-    }).immediate();
+    return waivePreApprovedVisualReview(this, id, candidate);
   }
 
-  /**
-   * Hand a task over once its work run passed: to review (`needs_review`), as
-   * done, or, when the operator pre-approved it and it has a branch, straight to
-   * the merge queue. One transaction, so a pre-approval or cancel racing the end
-   * of the run either counts or doesn't. Returns the new status, or null if the
-   * task was cancelled meanwhile.
-   */
   finishWork(id: string, outcome: "needs_review" | "done"): TaskStatus | null {
-    return this.db.transaction(() => {
-      const task = this.getTask(id);
-      if (!task || task.status === "cancelled") return null;
-      if (task.visualReview?.status === "pending") this.waivePreApprovedVisualReview(id, task.visualReview);
-      const completionHold = completionReviewReason(task);
-      if (completionHold) {
-        this.setStatus(id, "needs_review", `Implementation requires operator review: ${completionHold}`, { completionHold });
-        return "needs_review" as const;
-      }
-      // Completion alone doesn't satisfy separately requested acceptance criteria.
-      const unmet = unmetAcceptance(task);
-      if (task.preApprovedAt && task.branch && task.autonomy !== "observe" && unmet.length) {
-        this.setStatus(id, "needs_review",
-          `Pre-approved, but the report doesn't show ${unmet.length === 1 ? "an acceptance criterion" : `${unmet.length} acceptance criteria`} met. Ready for your review`,
-          { acceptanceUnmet: unmet });
-        return "needs_review" as const;
-      }
-      if (task.preApprovedAt && task.branch && task.autonomy !== "observe") {
-        const main = (task.repoId && this.getRepo(task.repoId)?.defaultBranch) || "main";
-        // Free for any agent to claim, and queued by when the work finished.
-        this.updateTask(id, { agentId: null, finishedAt: now() });
-        this.setStatus(id, "merging", `Checks passed. Waiting to merge into ${main}, as you pre-approved`, { preApproved: true });
-        return "merging" as const;
-      }
-      this.setStatus(id, outcome, outcome === "needs_review" ? "Ready for your review" : "Done");
-      return outcome;
-    }).immediate();
+    return finishWork(this, id, outcome);
   }
 
-  /** Read-only hint for one tick; claims still recheck under the write lock. */
+  completeMerge(id: string, message: string, data: Record<string, unknown>): Task | null {
+    return completeMerge(this, id, message, data);
+  }
+
+  postmortemPrompt(sourceTaskId: string): string {
+    return postmortemPrompt(this, sourceTaskId);
+  }
+
+  // Atomic claims live in store/claims.ts.
   pendingWork(): { queued: boolean; merging: boolean } {
-    const row = this.db.prepare(`SELECT
-      EXISTS(SELECT 1 FROM tasks WHERE status = 'queued' AND ${TASK_DUE}) AS queued,
-      EXISTS(SELECT 1 FROM tasks WHERE status = 'merging' AND agent_id IS NULL) AS merging`)
-      .get(now()) as { queued: number; merging: number };
-    return { queued: !!row.queued, merging: !!row.merging };
+    return pendingWork(this);
   }
 
-  /**
-   * Atomically take the first queued task this agent may work: one assigned
-   * to it, or one assigned to nobody unless `onlyAssigned`. Once the operator
-   * names a post-mortem crew, post-mortems go to them alone, whatever their role;
-   * `onlyPostmortems` is how a named member who's on-call gets called in. Skips tasks whose
-   * start time hasn't arrived or prerequisites haven't landed (unless waived). Safe if two
-   * factories race. Immediate because it reads, then writes: a deferred transaction
-   * fails at once, without waiting for busy_timeout, if another process commits between them.
-   */
-  claimNextTask(agentId: string, opts: { onlyAssigned?: boolean; onlyPostmortems?: boolean } = {}): Task | null {
-    const crew = this.postmortemCrew();
-    const named = crew.includes(agentId);
-    if (opts.onlyPostmortems && !named) return null;
-    const mine = opts.onlyAssigned ? "assignee = ?" : "(assignee IS NULL OR assignee = ?)";
-    const eligible = opts.onlyPostmortems ? "postmortem_of IS NOT NULL"
-      : !crew.length ? mine
-      : named ? `(postmortem_of IS NOT NULL OR ${mine})`
-      : `(postmortem_of IS NULL AND ${mine})`;
-    return this.db.transaction(() => {
-      const rows = this.db
-        .prepare(`SELECT * FROM tasks WHERE status = 'queued' AND ${eligible}
-          AND ${TASK_DUE} ORDER BY queue_position, created_at, rowid`)
-        .all(...(opts.onlyPostmortems ? [now()] : [agentId, now()])) as Row[];
-      const next = rows.map(toTask).find((t) => !this.unmetPrerequisites(t).length);
-      if (!next) return null;
-      const changed = this.db
-        .prepare("UPDATE tasks SET status = 'running', agent_id = ?, started_at = ? WHERE id = ? AND status = 'queued'")
-        .run(agentId, now(), next.id).changes;
-      if (!changed) return null;
-      this.addEvent(next.id, "status", "Picked up", { status: "running", agentId });
-      return this.getTask(next.id);
-    }).immediate();
+  claimNextTask(agentId: string, opts: ClaimOptions = {}): Task | null {
+    return claimNextTask(this, agentId, opts);
   }
 
-  /**
-   * Atomically take the oldest task waiting to merge. Skips repos that already
-   * have a merge in progress, so two merges never race for the same branch.
-   */
   claimNextMerge(agentId: string, busyRepoIds: string[] = []): Task | null {
-    return this.db.transaction(() => {
-      const skip = busyRepoIds.length ? `AND repo_id NOT IN (${busyRepoIds.map(() => "?").join(",")})` : "";
-      const r = this.db
-        .prepare(`SELECT id FROM tasks WHERE status = 'merging' AND agent_id IS NULL ${skip} ORDER BY finished_at ASC LIMIT 1`)
-        .get(...busyRepoIds) as Row | undefined;
-      if (!r) return null;
-      const changed = this.db
-        .prepare("UPDATE tasks SET agent_id = ? WHERE id = ? AND status = 'merging' AND agent_id IS NULL")
-        .run(agentId, r.id).changes;
-      if (!changed) return null;
-      this.addEvent(r.id as string, "note", "Picked up to merge", { agentId });
-      return this.getTask(r.id as string);
-    }).immediate();
+    return claimNextMerge(this, agentId, busyRepoIds);
   }
 
-  // ── events ────────────────────────────────────────────────
+  // Events and command evidence live in store/events.ts.
   addEvent(taskId: string, type: EventType, message: string, data?: Record<string, unknown> | null): TaskEvent {
-    const ts = now();
-    const info = this.db
-      .prepare("INSERT INTO events(task_id, ts, type, message, data) VALUES(?, ?, ?, ?, ?)")
-      .run(taskId, ts, type, message, data ? JSON.stringify(data) : null);
-    return { id: Number(info.lastInsertRowid), taskId, ts, type, message, data: data ?? null };
+    return addEvent(this, taskId, type, message, data);
   }
 
   listEvents(taskId: string, afterId = 0): TaskEvent[] {
-    return (
-      this.db.prepare("SELECT * FROM events WHERE task_id = ? AND id > ? ORDER BY id ASC").all(taskId, afterId) as Row[]
-    ).map(toEvent);
+    return listEvents(this, taskId, afterId);
   }
 
-  /** Latest lifecycle event per command, bounded for the next agent's prompt. */
   commandEvidence(taskId: string): CommandEvidence[] {
-    const rows = this.db.prepare(`
-      SELECT e.data FROM events e
-      WHERE e.task_id = ? AND e.type = 'tool' AND json_extract(e.data, '$.command.commandId') IS NOT NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM events later WHERE later.task_id = e.task_id AND later.id > e.id
-            AND json_extract(later.data, '$.command.commandId') = json_extract(e.data, '$.command.commandId')
-        )
-      ORDER BY e.id DESC LIMIT 40
-    `).all(taskId) as Row[];
-    return rows.reverse().map((r) => (JSON.parse(r.data as string) as { command: CommandEvidence }).command);
+    return commandEvidence(this, taskId);
   }
 
-  /** A lost stream is not proof that its command failed (or even stopped). */
   closeUnresolvedCommands(taskId?: string) {
-    const rows = this.db.prepare(`
-      SELECT e.task_id, e.data FROM events e
-      WHERE e.type = 'tool' AND json_extract(e.data, '$.command.status') = 'running'
-        AND (? IS NULL OR e.task_id = ?)
-        AND NOT EXISTS (
-          SELECT 1 FROM events later WHERE later.task_id = e.task_id AND later.id > e.id
-            AND json_extract(later.data, '$.command.commandId') = json_extract(e.data, '$.command.commandId')
-        )
-    `).all(taskId ?? null, taskId ?? null) as Row[];
-    for (const r of rows) {
-      const command = (JSON.parse(r.data as string) as { command: CommandEvidence }).command;
-      this.addEvent(r.task_id as string, "tool", "Command outcome unknown after the agent stream stopped", {
-        tool: "shell", command: { ...command, status: "unknown", exitCode: null },
-      });
-    }
+    closeUnresolvedCommands(this, taskId);
   }
 
-  /** Events across every task, for the live factory feed. */
   eventsSince(afterId: number, limit = 200): TaskEvent[] {
-    return (this.db.prepare("SELECT * FROM events WHERE id > ? ORDER BY id ASC LIMIT ?").all(afterId, limit) as Row[]).map(
-      toEvent,
-    );
+    return eventsSince(this, afterId, limit);
   }
 
   latestEventId(): number {
-    const r = this.db.prepare("SELECT MAX(id) AS id FROM events").get() as Row;
-    return (r.id as number) ?? 0;
+    return latestEventId(this);
   }
 
-  // ── runs: what each agent run cost ────────────────────────
+  // Runs and what they cost live in store/runs.ts.
   startRun(input: { taskId: string; kind: RunKind; agentId: string | null; driver: string }): number {
-    const info = this.db
-      .prepare("INSERT INTO runs(task_id, kind, agent_id, driver, started_at) VALUES(?, ?, ?, ?, ?)")
-      .run(input.taskId, input.kind, input.agentId, input.driver, now());
-    return Number(info.lastInsertRowid);
+    return startRun(this, input);
   }
 
-  /**
-   * Close a run and add what it cost to its task, in one transaction so the
-   * task's total always equals the sum of its runs. `usage` is null when the
-   * run ended before its driver could say (e.g. it was killed).
-   */
   finishRun(id: number, outcome: Exclude<RunOutcome, "running">, usage: RunUsage | null) {
-    const u = usage ?? { costUsd: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, turns: 0, model: null };
-    const cost = Number.isFinite(u.costUsd) && u.costUsd > 0 ? u.costUsd : 0;
-    const costStatus = !usage || !Number.isFinite(u.costUsd) || u.costUsd < 0 ? "unknown" : u.costStatus ?? "reported";
-    this.db.transaction(() => {
-      const run = this.db
-        .prepare(
-          `UPDATE runs SET outcome = ?, finished_at = ?, cost_usd = ?, input_tokens = ?, output_tokens = ?,
-             cache_read_tokens = ?, cache_write_tokens = ?, turns = ?, model = COALESCE(?, model), cost_status = ?
-           WHERE id = ? AND outcome = 'running' RETURNING task_id`,
-        )
-        .get(outcome, now(), cost, u.inputTokens, u.outputTokens, u.cacheReadTokens, u.cacheWriteTokens, u.turns, u.model, costStatus, id) as
-        | Row
-        | undefined;
-      // Already closed (say, by a restarted factory): don't count its cost twice.
-      if (run && cost) this.db.prepare("UPDATE tasks SET cost_usd = cost_usd + ? WHERE id = ?").run(cost, run.task_id);
-    })();
+    finishRun(this, id, outcome, usage);
   }
 
-  /** Runs a dead factory left open retain their unknown cost status. */
   closeStaleRuns(): number {
-    return this.db.prepare("UPDATE runs SET outcome = 'cancelled', finished_at = ? WHERE outcome = 'running'").run(now()).changes;
+    return closeStaleRuns(this);
   }
 
   listRuns(taskId: string): AgentRun[] {
-    return (this.db.prepare("SELECT * FROM runs WHERE task_id = ? ORDER BY id ASC").all(taskId) as Row[]).map(toRun);
+    return listRuns(this, taskId);
   }
 
-  /** The driver of the task's latest work run, which owns its session. Null before its first run. */
   lastWorkDriver(taskId: string): string | null {
-    const r = this.db
-      .prepare("SELECT driver FROM runs WHERE task_id = ? AND kind = 'work' ORDER BY id DESC LIMIT 1")
-      .get(taskId) as Row | undefined;
-    return (r?.driver as string) ?? null;
+    return lastWorkDriver(this, taskId);
   }
 
   /** Spend over the last `days` local days, today included, with the same span before it for comparison. */
