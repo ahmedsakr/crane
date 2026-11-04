@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, KIND_LABEL, type DriverInfo, type TaskDetail, type TaskEvent } from "../lib/api";
+import { api, KIND_LABEL, type DriverInfo, type Task, type TaskDetail, type TaskEvent } from "../lib/api";
 import { useDrivers, usePoll, useTick } from "../lib/hooks";
 import { useAction } from "../lib/action";
 import { useToast } from "../lib/toast";
@@ -79,10 +79,29 @@ function TaskRail({ detail, view, drivers, actions, onChangeAgent }: Omit<PagePa
   );
 }
 
+function TaskActivity({ task, events }: { task: Task; events: TaskEvent[] }) {
+  return (
+    <Section title={<>
+      Activity
+      {(task.status === "running" || task.status === "merging") && <span className="dot dot-running" title="Live" />}
+    </>}>
+      <Timeline events={events} />
+    </Section>
+  );
+}
+
+function ChangeAgent({ task, onSaved, onClose }: { task: Task; onSaved: () => void; onClose: () => void }) {
+  const toast = useToast();
+  return (
+    <ChangeAgentSheet title={task.title} run={task} note="This applies when a crew member picks the task up."
+      onSave={async (next) => { await api.changeAgent(task.id, next); toast({ text: "Agent changed" }); onSaved(); }}
+      onClose={onClose} />
+  );
+}
+
 export function TaskPage() {
   const { id = "" } = useParams();
   const { refresh: refreshApp } = useApp();
-  const toast = useToast();
   const { data, error, refresh } = usePoll<TaskDetail>(() => api.task(id), 3000, [id]);
   const [showDiff, setShowDiff] = useState(false);
   const [finding, setFinding] = useState<number | null>(null);
@@ -128,20 +147,11 @@ export function TaskPage() {
           <BlockedSection blocked={data.blocked} taskId={task.id} repoName={repo?.name} onDone={reload} />
           <FindingsSection task={task} followUps={view.followUps} drivers={drivers} open={finding} onOpenChange={setFinding} refresh={refresh} actions={actions} />
           <TaskChanges task={task} working={working} changes={changes} open={showDiff} onOpenChange={setShowDiff} />
-          <Section title={<>
-            Activity
-            {(task.status === "running" || task.status === "merging") && <span className="dot dot-running" title="Live" />}
-          </>}>
-            <Timeline events={events} />
-          </Section>
+          <TaskActivity task={task} events={events} />
         </div>
         <TaskRail {...parts} drivers={drivers} onChangeAgent={() => setChangingAgent(true)} />
       </div>
-      {changingAgent && task.status === "queued" && (
-        <ChangeAgentSheet title={task.title} run={task} note="This applies when a crew member picks the task up."
-          onSave={async (next) => { await api.changeAgent(task.id, next); toast({ text: "Agent changed" }); refresh(); }}
-          onClose={() => setChangingAgent(false)} />
-      )}
+      {changingAgent && task.status === "queued" && <ChangeAgent task={task} onSaved={refresh} onClose={() => setChangingAgent(false)} />}
     </article>
   );
 }
