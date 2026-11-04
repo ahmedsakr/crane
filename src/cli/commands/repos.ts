@@ -48,7 +48,7 @@ export function registerRepos(program: Command, ctx: CliContext): void {
     .action((name: string) => {
       const r = store.getRepo(name) ?? ui.fail(`No repo ${name}`);
       if (r.isFactory) ui.fail("The factory's own repo can't be removed.");
-      store.removeRepo(r.id);
+      actions.removeRepo(r.id);
       ui.ok(`Disconnected ${r.name}`);
     });
 }

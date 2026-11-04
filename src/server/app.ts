@@ -272,7 +272,7 @@ export function createApp(store: Store, opts: { exposed?: boolean } = {}) {
     return c.json(await actions.connectRepo(path, name), 201);
   });
   api.delete("/repos/:id", (c) => {
-    store.removeRepo(c.req.param("id"));
+    actions.removeRepo(c.req.param("id"));
     return c.json({ ok: true });
   });
 
