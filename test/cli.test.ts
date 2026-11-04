@@ -106,6 +106,9 @@ test("cli: goals supports research, feedback, exact-version approval, progress a
     const revised = JSON.parse(feedback.out).goal;
     researchDone(revised.researchTaskId);
     store.syncGoals();
+    const replanned = await crane(store, "goals", "change-agent", first.id, "carts", "--revision", String(store.getGoal(first.id)!.revision), "--agent", "claude-code", "--model", "sonnet", "--json");
+    assert.equal(replanned.code, 0, replanned.err);
+    assert.equal(JSON.parse(replanned.out).goal.plan.tasks[0].model, "sonnet");
     const planFile = join(dir, "plan.json");
     writeFileSync(planFile, JSON.stringify({ ...plan, summary: "Refined plan" }));
     const edited = await crane(store, "goals", "edit", first.id, "--revision", String(store.getGoal(first.id)!.revision), "--file", planFile, "--json");
@@ -121,12 +124,17 @@ test("cli: goals supports research, feedback, exact-version approval, progress a
     assert.match((await crane(store, "show", active.tasks[0].taskId)).out, new RegExp(`crane goals show ${first.id}`));
     const listed = JSON.parse((await crane(store, "goals", "--json")).out);
     assert.equal(listed[0].id, first.id);
+    const changed = await crane(store, "change-agent", active.tasks[0].taskId, "--agent", "codex", "--model", "gpt-5-codex", "--effort", "low");
+    assert.equal(changed.code, 0, changed.err);
+    assert.match((await crane(store, "goals", "show", first.id)).out, /Codex · gpt-5-codex · low effort/, "show gives the task's current agent, not the frozen plan's");
     store.setStatus(active.tasks[0].taskId, "failed");
     store.syncGoals();
-    const retried = await crane(store, "goals", "retry", first.id, active.tasks[0].taskId, "--revision", String(store.getGoal(first.id)!.revision), "--agent", "claude-code", "--json");
+    assert.equal((await crane(store, "change-agent", active.tasks[0].taskId, "--agent", "claude-code")).code, 1, "only a queued task's agent can change");
+    const retried = await crane(store, "goals", "retry", first.id, active.tasks[0].taskId, "--revision", String(store.getGoal(first.id)!.revision), "--agent", "claude-code", "--model", "opus", "--json");
     assert.equal(retried.code, 0, retried.err);
     const retryGoal = JSON.parse(retried.out).goal;
     assert.equal(store.getTask(retryGoal.tasks[0].taskId)!.driver, "claude-code");
+    assert.equal(store.getTask(retryGoal.tasks[0].taskId)!.model, "opus");
     const cancelled = await crane(store, "goals", "cancel", first.id, "--revision", String(retryGoal.revision), "--json");
     assert.equal(cancelled.code, 0, cancelled.err);
     assert.equal(JSON.parse(cancelled.out).goal.status, "cancelled");

@@ -15,6 +15,7 @@ import {
   isDriverName,
   isMaintenanceRole,
   isTunable,
+  settingsLabel,
   LOOKOUTS,
   MAINTENANCE_ROLE,
   MAINTENANCE_ROLES,
@@ -163,6 +164,32 @@ function checkTaskRunOptions(input: TaskRunOptions): TaskRunOptions {
   return { driver, ...checkDriverSettings(driver, input) };
 }
 
+type TaskRun = { driver: string | null; model: string | null; effort: string | null };
+
+/**
+ * What a run uses after the operator's changes, checked. A field left out stays
+ * as it was, except that a model and effort belong to their agent: switching
+ * agents clears them unless the operator gave new ones.
+ */
+function nextRun(current: TaskRun, input: TaskRunOptions): TaskRun {
+  if (input.driver === undefined && input.model === undefined && input.effort === undefined) {
+    return { driver: current.driver, model: current.model, effort: current.effort };
+  }
+  const driver = input.driver === undefined ? current.driver : checkDriver(input.driver);
+  const kept = driver === current.driver ? current : { model: null, effort: null };
+  const run = checkTaskRunOptions({
+    driver,
+    model: input.model === undefined ? kept.model : input.model,
+    effort: input.effort === undefined ? kept.effort : input.effort,
+  });
+  return { driver: run.driver ?? null, model: run.model ?? null, effort: run.effort ?? null };
+}
+
+function runLabel(run: TaskRun): string {
+  const settings = settingsLabel({ model: run.model, effort: run.effort });
+  return `${run.driver ? driverLabel(run.driver) : "the default agent"}${settings ? ` (${settings})` : ""}`;
+}
+
 /**
  * Everything an operator can do, shared by the web UI and the CLI so both
  * behave identically. Task decisions record an `operator` event on the task.
@@ -202,12 +229,28 @@ export class OperatorActions {
     return this.store.cancelGoal(id, revision);
   }
 
-  retryGoalTask(id: string, revision: unknown, taskId: string, opts: { driver?: string | null } = {}): Goal {
+  retryGoalTask(id: string, revision: unknown, taskId: string, opts: TaskRunOptions = {}): Goal {
     return this.store.retryGoalTask(id, revision, taskId, () => {
       const next = this.retryTask(taskId, opts);
       if (this.store.getGoal(id)!.autoMerge) this.preApprove(next.id, "Retry of an approved goal task");
       return this.store.getTask(next.id)!;
     });
+  }
+
+  /**
+   * Change who runs one task in a draft plan. Saving goes through the same
+   * revision check and plan validation as any other edit. Once the plan is
+   * approved, change the queued task itself with `changeAgent`.
+   */
+  changeGoalPlanAgent(id: string, revision: unknown, key: string, input: TaskRunOptions): Goal {
+    const goal = this.store.getGoal(id);
+    if (!goal) throw new Error(`No goal ${id}`);
+    const item = goal.plan?.tasks.find((t) => t.key === key);
+    if (!item) throw new Error(`This goal's plan has no task ${key}`);
+    const run = nextRun(item, input);
+    if (!run.driver) throw new Error("Choose an agent for this plan task");
+    const changed = { ...item, driver: run.driver as DriverName, model: run.model, effort: run.effort };
+    return this.store.saveGoalPlan(id, revision, { ...goal.plan!, tasks: goal.plan!.tasks.map((t) => t.key === key ? changed : t) });
   }
 
   /** Make sure Crane's own checkout is registered, so factory tasks have somewhere to work. */
@@ -271,6 +314,25 @@ export class OperatorActions {
     const time = checkScheduledAt(scheduledAt);
     if (!this.store.setTaskSchedule(task.id, time)) throw new Error(`Task ${task.id} isn't queued, so its start time can't change`);
     return this.need(task.id);
+  }
+
+  /**
+   * Change the agent, model or effort of a task that hasn't started. It applies
+   * when a crew member picks the task up. A task that already ran starts a new
+   * session on the work so far if the agent changes.
+   */
+  changeAgent(id: string, input: TaskRunOptions): Task {
+    const m = this.need(id);
+    if (!input || (input.driver === undefined && input.model === undefined && input.effort === undefined)) {
+      throw new Error("Give an agent, model or effort to change");
+    }
+    const run = nextRun(m, input);
+    if (m.status !== "queued") throw new Error(`Task ${m.id} isn't queued, so its agent can't change`);
+    if (run.driver === m.driver && run.model === m.model && run.effort === m.effort) return m;
+    if (!this.store.setTaskAgent(m.id, run, `Changed agent to ${runLabel(run)}`)) {
+      throw new Error(`Task ${m.id} isn't queued, so its agent can't change`);
+    }
+    return this.need(id);
   }
 
   /**
@@ -451,16 +513,18 @@ export class OperatorActions {
     return this.retryTask(id, opts);
   }
 
-  private retryTask(id: string, opts: { driver?: string | null } = {}): Task {
+  private retryTask(id: string, opts: TaskRunOptions = {}): Task {
     const m = this.need(id);
-    const driver = opts.driver === undefined ? m.driver : checkDriver(opts.driver);
+    const run = nextRun(m, opts);
+    const tuned = opts.model !== undefined || opts.effort !== undefined;
     // A maintenance run goes back to the member it was started for.
     const next = this.store.createTask({ kind: m.kind, title: m.title, brief: m.brief, repoId: m.repoId, autonomy: m.autonomy,
-      driver, model: driver === m.driver ? m.model : null, effort: driver === m.driver ? m.effort : null, assignee: m.assignee,
-      driverSettings: driver === m.driver ? m.driverSettings : null, postmortemOf: m.postmortemOf,
+      ...run, assignee: m.assignee,
+      // Captured settings would fill in for a model or effort the operator just cleared.
+      driverSettings: run.driver === m.driver && !tuned ? m.driverSettings : null, postmortemOf: m.postmortemOf,
       // The same gates, but not a waiver: that approved the scope of the earlier run only.
       prerequisites: m.prerequisites, acceptance: m.acceptance, acceptanceChecks: m.acceptanceChecks, lookouts: m.lookouts });
-    const on = opts.driver !== undefined ? ` on ${driver ? driverLabel(driver) : "the default agent"}` : "";
+    const on = opts.driver !== undefined || tuned ? ` on ${runLabel(run)}` : "";
     this.store.addEvent(m.id, "operator", `Retried as ${next.id}${on}`, { taskId: next.id });
     return next;
   }
@@ -683,12 +747,7 @@ export class OperatorActions {
     if (!Number.isInteger(findingIndex) || findingIndex < 0) throw new Error("Choose a finding by its number");
     const f = m.report?.findings[findingIndex];
     if (!f) throw new Error(`Task ${m.id} has no finding #${findingIndex + 1}`);
-    const driver = opts.driver === undefined ? m.driver : checkDriver(opts.driver);
-    const settings = checkTaskRunOptions({
-      driver,
-      model: opts.model === undefined ? (driver === m.driver ? m.model : null) : opts.model,
-      effort: opts.effort === undefined ? (driver === m.driver ? m.effort : null) : opts.effort,
-    });
+    const settings = nextRun(m, opts);
     const gates = this.checkGates(opts, m.repoId);
     const lookouts = checkLookouts(opts.lookouts);
     const next = this.store.createTask({

@@ -27,6 +27,7 @@ import { useDrivers, useEventStream, usePoll, useTick } from "../lib/hooks";
 import { ago, clock, compact, duration, plural, usd } from "../lib/format";
 import { BlockedItem, StatusChip, useToast } from "../components/bits";
 import { useApp } from "../lib/app-context";
+import { ChangeAgentSheet } from "../components/ChangeAgentSheet";
 import { FollowUpForm } from "../components/FollowUpForm";
 import { TaskScheduleForm } from "../components/TaskScheduleForm";
 import { errorMessage, runCostLabel, runTokens, visualReviewPending, visualReviewWaivedByPreApproval, type Task } from "@crane/contracts";
@@ -172,6 +173,7 @@ export function TaskPage() {
   const [showDiff, setShowDiff] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [finding, setFinding] = useState<number | null>(null);
+  const [changingAgent, setChangingAgent] = useState(false);
   const { drivers } = useDrivers();
   useTick(5000);
 
@@ -206,7 +208,8 @@ export function TaskPage() {
   const merge = lastMergeOutcome(events);
   // The agent that worked it, or the one it asked for. Before it starts with no choice, nothing to say.
   const ranOn = data.runs.filter((r) => r.kind === "work" && r.driver !== "unknown").at(-1)?.driver ?? null;
-  const usedDriver = ranOn ?? m.driver;
+  // A queued task runs next on whoever the operator chose, even if another agent worked it before.
+  const usedDriver = m.status === "queued" ? m.driver ?? ranOn : ranOn ?? m.driver;
   const runsOn = usedDriver ? driverLabel(usedDriver) : null;
   const otherAgents = choosableDrivers(drivers ?? []).filter((d) => d.name !== usedDriver);
   // Only before review: once it's there, Approve is the decision.
@@ -635,6 +638,11 @@ export function TaskPage() {
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {m.status === "queued" && (
+              <button className="btn btn-quiet btn-sm" disabled={!!busy} onClick={() => setChangingAgent(true)}>
+                Change agent
+              </button>
+            )}
             {["queued", "running"].includes(m.status) && (
               <button className="btn btn-quiet btn-sm" disabled={!!busy} onClick={() => run("cancel", () => api.cancel(m.id), "Cancelled")}>
                 Cancel task
@@ -706,6 +714,11 @@ export function TaskPage() {
           )}
         </aside>
       </div>
+      {changingAgent && m.status === "queued" && (
+        <ChangeAgentSheet title={m.title} run={m} note="This applies when a crew member picks the task up."
+          onSave={async (next) => { await api.changeAgent(m.id, next); toast({ text: "Agent changed" }); refresh(); }}
+          onClose={() => setChangingAgent(false)} />
+      )}
     </article>
   );
 }

@@ -2,6 +2,7 @@ import { Command } from "commander";
 import type { Store } from "../core/store.js";
 import { registerAgents } from "./commands/agents.js";
 import { registerAnalytics } from "./commands/analytics.js";
+import { registerChangeAgent } from "./commands/change-agent.js";
 import { registerDecisions } from "./commands/decisions.js";
 import { registerDiff } from "./commands/diff.js";
 import { registerDo } from "./commands/do.js";
@@ -38,6 +39,7 @@ export function buildProgram(ctx: CliContext): Command {
   registerShow(program, ctx);
   registerWatch(program, ctx);
   registerDecisions(program, ctx);
+  registerChangeAgent(program, ctx);
   registerSchedule(program, ctx);
   registerFollowUps(program, ctx);
   registerDiff(program, ctx);

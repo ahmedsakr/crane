@@ -158,21 +158,52 @@ button {
 }
 
 /* Goals keep approval and progress visible; task details open on demand. */
-.goal-list { display: grid; gap: 12px; margin-top: 24px; }
-.goal-list-item { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.goal-list-item > div { min-width: 0; }
-.goal-list-item h2, .goal-head h1 { overflow-wrap: anywhere; }
-.goal-list-item p { margin-bottom: 0; }
-.goal-status { font-size: 13px; border-radius: 999px; padding: 6px 10px; background: var(--concrete); white-space: nowrap; }
-.goal-status.needs-you { background: var(--crane); color: var(--on-crane); }
-.goal-head { gap: 16px; align-items: start; margin-top: 16px; }
+/* One colour per phase, everywhere a goal's work appears: blue moving, yellow or red needs you, green finished. */
+.goal-phase-stopped { --phase: var(--bad); --phase-soft: var(--bad-soft); --phase-text: var(--bad); }
+.goal-phase-review { --phase: var(--crane); --phase-soft: var(--crane-soft); --phase-text: var(--ink); }
+.goal-phase-working { --phase: var(--live); --phase-soft: color-mix(in srgb, var(--live) 12%, var(--surface)); --phase-text: var(--live); }
+.goal-phase-waiting { --phase: var(--hairline-strong); --phase-soft: var(--surface-2); --phase-text: var(--graphite); }
+.goal-phase-done { --phase: var(--ok); --phase-soft: var(--ok-soft); --phase-text: var(--ok); }
+/* These sit above the base .chip and .card rules, so they need the extra class to win. */
+.chip.goal-chip { background: var(--phase-soft); border-color: transparent; color: var(--phase-text); }
+.goal-chip .dot { background: var(--phase); }
+.goal-bar { display: flex; gap: 2px; height: 8px; border-radius: 999px; overflow: hidden; background: var(--hairline); }
+.goal-bar span { display: block; flex: 1 1 0; min-width: 4px; background: var(--phase); }
+.goal-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 12px 0; padding: 0; list-style: none; font-size: 14px; color: var(--ink-2); }
+.goal-legend li { display: inline-flex; align-items: center; gap: 6px; }
+.goal-legend .dot { background: var(--phase); }
+.goal-legend strong { color: var(--ink); }
+.goal-progress { margin-top: 16px; }
+.goal-progress > .muted { margin: 0; font-size: 14px; }
+.goal-progress-count { margin: 0 0 12px; font-family: var(--font-display); font-weight: 700; font-size: 18px; letter-spacing: -0.02em; color: var(--ink-2); }
+.goal-progress-count strong { font-size: 32px; color: var(--ink); }
+.goal-list { display: grid; gap: 12px; margin-top: 12px; }
+.card.goal-list-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px 16px; color: inherit; box-shadow: inset 4px 0 0 var(--phase), var(--shadow); }
+.goal-list-item .goal-bar { grid-column: 1 / -1; }
+.goal-list-item h3, .goal-head h1 { overflow-wrap: anywhere; }
+.goal-list-item h3 { margin-bottom: 4px; }
+.goal-list-item p { margin: 0; font-size: 14px; }
+.page-head.goal-head { gap: 16px; align-items: center; margin-top: 16px; flex-wrap: nowrap; }
 .goal-head h1 { min-width: 0; }
+.goal-head .chip { flex: none; }
 .goal-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 20px 0; }
-.goal-section { margin: 28px 0; }
+.goal-section { margin: 32px 0; }
+.goal-group-fold > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.goal-group-fold > summary::before { content: "▸"; color: var(--graphite); }
+.goal-group-fold[open] > summary::before { content: "▾"; }
+.goal-brief > summary { cursor: pointer; font-weight: 600; }
 .goal-prose { white-space: pre-wrap; overflow-wrap: anywhere; }
-.goal-task-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr)); gap: 14px; margin-top: 14px; }
-.goal-task { min-width: 0; overflow-wrap: anywhere; }
-.goal-task .btn { margin-top: 16px; }
+.goal-task-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr)); gap: 14px; margin-top: 14px; }
+.goal-task { display: flex; flex-direction: column; gap: 8px; min-width: 0; overflow-wrap: anywhere; }
+.card.goal-task-tinted { background: color-mix(in srgb, var(--phase-soft) 40%, var(--surface)); box-shadow: inset 4px 0 0 var(--phase), var(--shadow); }
+.card.goal-phase-waiting.goal-task-tinted { background: var(--surface); }
+.goal-task-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.goal-task-head .card-title { display: block; min-width: 0; margin: 0; }
+.goal-task-head .chip { flex: none; }
+.goal-task-run { margin: 0; font-size: 14px; color: var(--ink-2); }
+.goal-task-note { margin: 0; font-size: 14px; }
+.goal-task summary { cursor: pointer; font-size: 14px; color: var(--graphite); }
+.goal-task-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; padding-top: 6px; }
 .goal-task details p { line-height: 1.6; }
 .goal-task li, .goal-section li { margin: 8px 0; }
 .goal-options { margin-top: 16px; }
@@ -183,8 +214,9 @@ button {
 .goal-check input, .goal-dependencies input { flex: none; margin-top: 4px; }
 .goal-feedback { padding: 14px 0; border-bottom: 1px solid var(--hairline); }
 @media (max-width: 760px) {
-  .goal-list-item { align-items: flex-start; flex-direction: column; }
-  .goal-head { flex-wrap: wrap; }
+  .card.goal-list-item { grid-template-columns: minmax(0, 1fr); justify-items: start; }
+  .goal-list-item .goal-bar { width: 100%; }
+  .page-head.goal-head { flex-wrap: wrap; }
 }
 .nav a {
   flex: none;

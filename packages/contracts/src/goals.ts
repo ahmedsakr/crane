@@ -1,6 +1,6 @@
 import { EFFORT_LEVELS, isDriverName } from "./drivers.js";
 import type { DriverName } from "./drivers.js";
-import type { Task, TaskRunOptions } from "./task.js";
+import { prerequisiteMet, type Task, type TaskRunOptions } from "./task.js";
 
 export interface GoalTask {
   key: string;
@@ -57,6 +57,42 @@ export interface GoalDetail {
 
 export interface GoalSummary extends Pick<Goal, "id" | "title" | "repoId" | "status"> {
   taskCount: number;
+}
+
+/** Where a goal's task stands, in the order an operator should look at them. */
+export const GOAL_TASK_PHASES = ["stopped", "review", "working", "waiting", "done"] as const;
+export type GoalTaskPhase = (typeof GOAL_TASK_PHASES)[number];
+export type GoalProgress = Record<GoalTaskPhase, number>;
+
+/** A row on the Goals page: its summary, and how far its work has got. */
+export interface GoalListItem extends GoalSummary {
+  /** Tasks in the current plan, which exist before approval creates any. */
+  plannedTasks: number;
+  progress: GoalProgress;
+}
+
+/** Done means its dependents can start, so an approved branch still waiting to merge needs the operator. */
+export function goalTaskPhase(task: Pick<Task, "status" | "branch">): GoalTaskPhase {
+  if (prerequisiteMet(task)) return "done";
+  switch (task.status) {
+    case "running":
+    case "merging":
+      return "working";
+    case "queued":
+      return "waiting";
+    case "failed":
+    case "cancelled":
+    case "rejected":
+      return "stopped";
+    default:
+      return "review";
+  }
+}
+
+export function goalProgress(tasks: Pick<Task, "status" | "branch">[]): GoalProgress {
+  const progress: GoalProgress = { stopped: 0, review: 0, working: 0, waiting: 0, done: 0 };
+  for (const task of tasks) progress[goalTaskPhase(task)]++;
+  return progress;
 }
 
 function record(value: unknown): Record<string, unknown> {

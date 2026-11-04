@@ -4,6 +4,8 @@ import { toTask, type Row } from "./rows.js";
 import { now, TASK_DUE } from "./shared.js";
 import { TASK_SUMMARY_COLUMNS } from "./tasks.js";
 
+export type TaskAgent = { driver: string | null; model: string | null; effort: string | null };
+
 /** The entire waiting queue, in pickup order, including tasks not yet eligible. */
 export function listQueuedTasks(store: Store): Task[] {
   return (store.db.prepare("SELECT * FROM tasks WHERE status = 'queued' ORDER BY queue_position, created_at, rowid")
@@ -46,6 +48,21 @@ export function setTaskSchedule(store: Store, id: string, scheduledAt: string | 
       .run(scheduledAt, id).changes;
     if (!changed) return false;
     store.addEvent(id, "operator", scheduledAt ? `Scheduled for ${scheduledAt}` : "Cleared start time; ready once prerequisites are met", { scheduledAt });
+    return true;
+  }).immediate();
+}
+
+/**
+ * Change who runs a task that hasn't started. The status check is part of the
+ * write, so a crew member's claim can't slip in. Captured settings go too: they
+ * would otherwise fill in for a model or effort the operator just cleared.
+ */
+export function setTaskAgent(store: Store, id: string, run: TaskAgent, message: string): boolean {
+  return store.db.transaction(() => {
+    const changed = store.db.prepare("UPDATE tasks SET driver = ?, model = ?, effort = ?, driver_settings = NULL WHERE id = ? AND status = 'queued'")
+      .run(run.driver, run.model, run.effort, id).changes;
+    if (!changed) return false;
+    store.addEvent(id, "operator", message, run);
     return true;
   }).immediate();
 }

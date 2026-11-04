@@ -1,5 +1,6 @@
-import { useId, useState } from "react";
-import { UNSHIPPED_STATUSES, driverLabel, prerequisiteMet, type DriverInfo, type FollowUpOptions, type Lookout, type Task } from "../lib/api";
+import { useState } from "react";
+import { UNSHIPPED_STATUSES, prerequisiteMet, type DriverInfo, type FollowUpOptions, type Lookout, type Task } from "../lib/api";
+import { AgentFields, agentChoice, agentRunOptions, chosenAgent } from "./AgentFields";
 import { GateFields, NO_GATES, parseGates } from "./GateFields";
 import { LookoutFields } from "./LookoutFields";
 
@@ -11,65 +12,22 @@ export function FollowUpForm({ task, drivers, busy, onSubmit, onClose }: {
   onSubmit: (opts: FollowUpOptions) => void;
   onClose: () => void;
 }) {
-  const [driver, setDriver] = useState(task.driver ?? "");
-  const [model, setModel] = useState(task.model ?? "");
-  const [effort, setEffort] = useState(task.effort ?? "");
+  const [choice, setChoice] = useState(() => agentChoice(task));
   // A finding from a change that hasn't landed may build on it, so the follow-up
   // waits for it by default (the operator can clear that). A failed, cancelled,
   // or declined task keeps its branch only for the record, so nothing to wait for.
   const waitsForTask = !!task.branch && !prerequisiteMet(task) && !UNSHIPPED_STATUSES.includes(task.status);
   const [gates, setGates] = useState(waitsForTask ? { ...NO_GATES, prerequisites: task.id } : NO_GATES);
   const [lookouts, setLookouts] = useState<Lookout[]>([]);
-  const listId = useId();
-  const defaultAgent = drivers.find(d => d.isDefault);
-  const selected = driver ? drivers.find(d => d.name === driver) : defaultAgent;
-  const tunable = !!selected?.efforts.length;
+  const selected = chosenAgent(drivers, choice.driver);
 
   return (
     <form className="follow-up-form" aria-label="Schedule change" onSubmit={e => {
       e.preventDefault();
-      // Pin the agent when tuning it, so a later default change cannot apply
-      // this agent's model or effort to a different one.
-      onSubmit({
-        driver: tunable && (model.trim() || effort) ? selected!.name : driver || null,
-        model: tunable ? model.trim() || null : null,
-        effort: tunable ? effort || null : null,
-        ...parseGates(gates),
-        lookouts,
-      });
+      onSubmit({ ...agentRunOptions(choice, drivers), ...parseGates(gates), lookouts });
     }}>
       <div className="tuning">
-        <label className="tuning-field">
-          <span>Agent</span>
-          <select className="input" autoFocus value={driver} disabled={busy} onChange={e => {
-            setDriver(e.target.value);
-            setModel("");
-            setEffort("");
-          }}>
-            <option value="">Factory default{defaultAgent ? ` · ${defaultAgent.label}` : ""}</option>
-            {driver && !drivers.some(d => d.name === driver) && <option value={driver}>{driverLabel(driver)} · unavailable</option>}
-            {drivers.map(d => <option key={d.name} value={d.name} disabled={!d.available}>
-              {d.label}{d.available ? "" : " · not installed"}
-            </option>)}
-          </select>
-        </label>
-        {tunable && <>
-          <label className="tuning-field">
-            <span>Model</span>
-            <input className="input" list={listId} value={model} disabled={busy}
-              placeholder={selected.model ?? "Agent default"} onChange={e => setModel(e.target.value)} />
-            {selected.models.length > 0 && <datalist id={listId}>
-              {selected.models.map(m => <option key={m} value={m} />)}
-            </datalist>}
-          </label>
-          <label className="tuning-field">
-            <span>Model effort</span>
-            <select className="input" value={effort} disabled={busy} onChange={e => setEffort(e.target.value)}>
-              <option value="">Agent default{selected.effort ? ` · ${selected.effort}` : ""}</option>
-              {selected.efforts.map(level => <option key={level} value={level}>{level}</option>)}
-            </select>
-          </label>
-        </>}
+        <AgentFields value={choice} onChange={setChoice} drivers={drivers} disabled={busy} autoFocus />
       </div>
       <LookoutFields value={lookouts} onChange={setLookouts} disabled={busy} />
       <GateFields value={gates} onChange={setGates} disabled={busy} />

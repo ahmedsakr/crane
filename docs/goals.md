@@ -11,9 +11,10 @@ plan appears in **Needs you** on Home and in Goals. Review the approach and
 repository evidence, parallel groups, briefs, acceptance criteria and assignment
 rationale. Optional improvements remain suggestions unless included in a task.
 **Give feedback** runs fresh research with the previous plan and feedback history;
-repeat until satisfied. **Edit plan** lets you change tasks, dependencies, agents,
-models, effort and criteria directly. Invalid graphs, unknown agents, unsupported
-efforts and incomplete tasks cannot be saved or approved.
+repeat until satisfied. **Change agent** on a task picks its agent, model and effort
+in one step. **Edit plan** lets you change tasks, dependencies, agents, models,
+effort and criteria directly. Invalid graphs, unknown agents, unsupported efforts
+and incomplete tasks cannot be saved or approved.
 
 **Approve plan** queues the entire graph atomically. Approval targets the revision
 you reviewed; an older tab cannot approve a newer plan or create duplicate tasks.
@@ -36,12 +37,20 @@ approval does not bypass these gates. Models left at default follow that agent's
 settings at execution. Research proposes settings; it cannot guarantee that every
 model is accessible to the operator's account.
 
+Once work starts, the goal's page groups tasks by where they stand: **Needs you**,
+**Working now**, **Up next**, and **Done**, folded away. The approved plan stays as
+it was, but a queued task's agent, model and effort can still change: use **Change
+agent** on the task, here or on its own page, and it applies when a crew member
+picks the task up. A task that's already running keeps its agent; cancel it, then
+retry it on another. Changing the agent clears the previous agent's model and
+effort unless you choose new ones.
+
 A goal completes only after all its current task branches merge. A failed,
 cancelled or declined task marks it **Needs attention** and holds dependent work;
-independent work can continue. **Retry task**, or **Retry on …**, creates a new
-attempt and reconnects queued dependents to it, retaining the approved merge
-policy. Switching agents clears the previous agent's model and effort overrides.
-Retry through the goal, rather than the ordinary task retry, to preserve the graph.
+independent work can continue. **Retry task** creates a new attempt and reconnects
+queued dependents to it, retaining the approved merge policy. **Change agent** does
+the same on the agent, model and effort you choose. Retry through the goal, rather
+than the ordinary task retry, to preserve the graph.
 Existing task review, pre-approval reversal, merge and prerequisite-waiver actions
 remain available for explicit operator decisions. **Cancel goal** cancels unmerged
 work and preserves merged changes; a merge in progress must finish first.
@@ -63,9 +72,11 @@ crane goals show g-xxxxxx
 crane goals show g-xxxxxx --json
 crane goals feedback g-xxxxxx --revision 2 "Keep checkout unchanged; include accessibility coverage"
 crane goals edit g-xxxxxx --revision 4 --file plan.json
+crane goals change-agent g-xxxxxx storage --revision 4 --agent codex --effort high
 crane goals approve g-xxxxxx --revision 5
 crane goals approve g-yyyyyy --revision 2 --auto-merge
-crane goals retry g-xxxxxx t-xxxxxx --revision 7 --agent claude-code
+crane change-agent t-xxxxxx --agent claude-code --model opus
+crane goals retry g-xxxxxx t-xxxxxx --revision 7 --agent claude-code --model opus
 crane goals cancel g-xxxxxx --revision 8
 ```
 
@@ -79,8 +90,9 @@ pre-approval and visual-review waiver; omit it to review each task before mergin
 Capture is deferred in Codex's restricted sandbox because local servers and
 Chromium cannot run. In an approved environment, build the candidate branch and
 use the existing screenshot tool. The demo seed includes a ready goal with two
-parallel tasks so these views are reproducible. All demo assignments use simulated
-agents, including after approval. This sequence captures Home's goal
+parallel tasks, a goal partway through delivery with a task in each state, and a
+finished goal, so these views are reproducible. The ready goal's assignments use
+simulated agents, including after approval. This sequence captures Home's goal
 decision, the Goals list, creation, the plan, task editing, feedback, approval,
 execution progress and the task backlink. Each invocation starts fresh demo data;
 the approval leaves automatic merging unchecked. Use the commands below from the

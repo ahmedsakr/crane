@@ -13,7 +13,8 @@ import { approveGoal, cancelGoal, createGoal, getGoal, goalDetail, goalForTask, 
   retryGoalTask, reviseGoal, saveGoalPlan, syncGoals, type NewGoal } from "./store/goals.js";
 import { createTask, getTask, listTasks, listTaskSummaries, setStatus, tasksWithWorktrees, updateTask,
   type NewTaskRecord, type TaskListOptions, type TaskPatch } from "./store/tasks.js";
-import { listQueuedTasks, listQueuedTaskSummaries, moveQueuedTask, queuedForAnyone, setTaskSchedule } from "./store/queue.js";
+import { listQueuedTasks, listQueuedTaskSummaries, moveQueuedTask, queuedForAnyone, setTaskAgent, setTaskSchedule,
+  type TaskAgent } from "./store/queue.js";
 import { followUps, followUpSource, prerequisiteCommits, prerequisiteStates, unmetPrerequisites, waivePrerequisites,
   type LandedCommit } from "./store/prerequisites.js";
 import { completeMerge, finishWork, postmortemPrompt, setPreApproval, waivePreApprovedVisualReview } from "./store/review.js";
@@ -380,6 +381,10 @@ export class Store {
 
   setTaskSchedule(id: string, scheduledAt: string | null): boolean {
     return setTaskSchedule(this, id, scheduledAt);
+  }
+
+  setTaskAgent(id: string, run: TaskAgent, message: string): boolean {
+    return setTaskAgent(this, id, run, message);
   }
 
   queuedForAnyone(): number {
