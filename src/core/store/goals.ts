@@ -221,9 +221,10 @@ function reconcileResearch(store: Store, goal: Goal): boolean {
   return true;
 }
 
+/** Failure wins: a missing task row leaves the remaining rows able to look fully merged. */
 function executionStatus(complete: boolean, failed: boolean): Goal["status"] {
-  if (complete) return "completed";
-  return failed ? "blocked" : "active";
+  if (failed) return "blocked";
+  return complete ? "completed" : "active";
 }
 
 /** Returns whether the goal changed and needs writing. */
