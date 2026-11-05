@@ -78,6 +78,130 @@ export function ScheduleList({ member, repos, schedules, error, reload, onEdit }
 let timezones: string[] | null = null;
 const allTimezones = () => (timezones ??= Intl.supportedValuesOf("timeZone"));
 
+/** A form field's view of the draft: what it holds, and how to change part of it. */
+type DraftField = { draft: CrewScheduleInput; change: (patch: Partial<CrewScheduleInput>) => void };
+
+function RepoField({ repos, draft, change }: DraftField & { repos: Repo[] }) {
+  return (
+    <label className="tuning-field">
+      <span>Repository</span>
+      <select className="input" value={draft.repoId} required onChange={(e) => change({ repoId: e.target.value })}>
+        {!draft.repoId && <option value="">Choose a repo</option>}
+        {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function RepeatsField({ draft, change }: DraftField) {
+  const labelId = useId();
+  return (
+    <div className="tuning-field">
+      <span id={labelId}>Repeats</span>
+      <div className="pills" role="group" aria-labelledby={labelId}>
+        {DAY_PRESETS.map((p) => (
+          <button type="button" key={p.mask} className={`pill-btn${draft.daysMask === p.mask ? " on" : ""}`} aria-pressed={draft.daysMask === p.mask}
+            onClick={() => change({ daysMask: p.mask })}>{p.label}</button>
+        ))}
+      </div>
+      <div className="week" role="group" aria-label="Days of the week">
+        {WEEK.map((d) => (
+          <label className="pill week-day" key={d.bit}>
+            <input type="checkbox" checked={!!(draft.daysMask & (1 << d.bit))} onChange={() => change({ daysMask: draft.daysMask ^ (1 << d.bit) })} />
+            <span>{d.label}</span>
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The timezone reads as a sentence until someone asks to change it. */
+function TimezoneField({ draft, change }: DraftField) {
+  const listId = useId();
+  const [changing, setChanging] = useState(() => draft.timezone !== browserTimezone());
+  if (!changing) {
+    return <p className="muted crew-note">In {draft.timezone}. <button type="button" className="tuning-change" onClick={() => setChanging(true)} aria-label="Change timezone">Change</button></p>;
+  }
+  return (
+    <label className="tuning-field">
+      <span>Timezone</span>
+      <input className="input" required list={listId} value={draft.timezone} placeholder={browserTimezone()}
+        onChange={(e) => change({ timezone: e.target.value })} />
+      <datalist id={listId}>{allTimezones().map((z) => <option key={z} value={z} />)}</datalist>
+    </label>
+  );
+}
+
+function PreApproveField({ draft, change }: DraftField) {
+  return (
+    <label className="check">
+      <input type="checkbox" checked={draft.preApprove} onChange={(e) => change({ preApprove: e.target.checked })} />
+      <span>
+        Pre-approve each run
+        <small>Runs merge after their checks pass. This also waives visual review for each run, including conflict resolutions. Without this, each one waits for your review.</small>
+      </span>
+    </label>
+  );
+}
+
+function ScheduleFormFields({ member, repos, draft, change, preview, busy }: DraftField & {
+  member: Agent;
+  repos: Repo[];
+  preview: ReturnType<typeof schedulePreview>;
+  busy: boolean;
+}) {
+  return (
+    <fieldset disabled={busy} className="schedule-fields">
+      {repos.length > 1 && <RepoField repos={repos} draft={draft} change={change} />}
+      <RepeatsField draft={draft} change={change} />
+      <label className="tuning-field schedule-time">
+        <span>Time</span>
+        <input type="time" className="input" required value={draft.localTime} onChange={(e) => change({ localTime: e.target.value })} />
+      </label>
+      <TimezoneField draft={draft} change={change} />
+      {(canPreApprove(member) || draft.preApprove) && <PreApproveField draft={draft} change={change} />}
+      {"next" in preview ? (
+        <p className="when-summary"><span className="muted">Next run:</span> <strong>{preview.next}</strong></p>
+      ) : (
+        <p className="when-summary error-text" role="alert">{preview.problem}</p>
+      )}
+      <details className="gates schedule-rules">
+        <summary>When a slot gets skipped</summary>
+        <p className="muted">Missed slots catch up once. A slot is skipped while this member is on-call, the factory is paused, or their last run is still open. Spring clock gaps skip that day; repeated times run once at the earlier instant.</p>
+      </details>
+    </fieldset>
+  );
+}
+
+function ScheduleFoot({ formId, canRemove, canSave, busy, error, onCancel, onRemove }: {
+  formId: string;
+  canRemove: boolean;
+  canSave: boolean;
+  busy: boolean;
+  error: string | null;
+  onCancel: () => void;
+  onRemove: () => void;
+}) {
+  const [removing, setRemoving] = useState(false);
+  const errorNote = error ? <span className="error-text" role="alert">{error}</span> : null;
+  if (removing) {
+    return (
+      <SheetFoot note={errorNote ?? "Remove this schedule?"}>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setRemoving(false)}>Keep</button>
+        <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={onRemove}>Remove</button>
+      </SheetFoot>
+    );
+  }
+  const removeButton = canRemove ? <button type="button" className="btn btn-ghost btn-sm schedule-remove" disabled={busy} onClick={() => setRemoving(true)}>Remove</button> : undefined;
+  return (
+    <SheetFoot note={errorNote ?? removeButton}>
+      <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={onCancel}>Cancel</button>
+      <button type="submit" form={formId} className="btn btn-primary btn-sm" disabled={busy || !canSave}>Save schedule</button>
+    </SheetFoot>
+  );
+}
+
 /** Add or change a recurring run. Starts ready to save, and previews the next run as it changes. */
 export function ScheduleForm({ member, repos, schedule, existing, reload, onDone, onBack }: {
   member: Agent;
@@ -91,10 +215,9 @@ export function ScheduleForm({ member, repos, schedule, existing, reload, onDone
   const toast = useToast();
   const formId = useId();
   const [draft, setDraft] = useState<CrewScheduleInput>(() => (schedule ? toInput(schedule) : newScheduleInput(repos, existing)));
-  const [changingZone, setChangingZone] = useState(() => draft.timezone !== browserTimezone());
   const [busy, setBusy] = useState(false);
-  const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const change = (patch: Partial<CrewScheduleInput>) => setDraft({ ...draft, ...patch });
   const preview = schedulePreview(draft);
   const role = member.role ? MAINTENANCE_ROLE[member.role] : null;
   const act = async (fn: () => Promise<string>) => {
@@ -124,81 +247,11 @@ export function ScheduleForm({ member, repos, schedule, existing, reload, onDone
       <SheetHead onBack={onBack} title={schedule ? "Edit schedule" : "New schedule"} subtitle={`${member.name}${role ? ` · ${role.label}` : ""}`} />
       <SheetBody>
         <form id={formId} onSubmit={(e) => { e.preventDefault(); if ("next" in preview) void save(); }}>
-          <fieldset disabled={busy} className="schedule-fields">
-            {repos.length > 1 && (
-              <label className="tuning-field">
-                <span>Repository</span>
-                <select className="input" value={draft.repoId} required onChange={(e) => setDraft({ ...draft, repoId: e.target.value })}>
-                  {!draft.repoId && <option value="">Choose a repo</option>}
-                  {repos.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-                </select>
-              </label>
-            )}
-            <div className="tuning-field">
-              <span id={`${formId}-days`}>Repeats</span>
-              <div className="pills" role="group" aria-labelledby={`${formId}-days`}>
-                {DAY_PRESETS.map((p) => (
-                  <button type="button" key={p.mask} className={`pill-btn${draft.daysMask === p.mask ? " on" : ""}`} aria-pressed={draft.daysMask === p.mask}
-                    onClick={() => setDraft({ ...draft, daysMask: p.mask })}>{p.label}</button>
-                ))}
-              </div>
-              <div className="week" role="group" aria-label="Days of the week">
-                {WEEK.map((d) => (
-                  <label className="pill week-day" key={d.bit}>
-                    <input type="checkbox" checked={!!(draft.daysMask & (1 << d.bit))} onChange={() => setDraft({ ...draft, daysMask: draft.daysMask ^ (1 << d.bit) })} />
-                    <span>{d.label}</span>
-                  </label>
-                ))}
-              </div>
-            </div>
-            <label className="tuning-field schedule-time">
-              <span>Time</span>
-              <input type="time" className="input" required value={draft.localTime} onChange={(e) => setDraft({ ...draft, localTime: e.target.value })} />
-            </label>
-            {changingZone ? (
-              <label className="tuning-field">
-                <span>Timezone</span>
-                <input className="input" required list={`${formId}-zones`} value={draft.timezone} placeholder={browserTimezone()}
-                  onChange={(e) => setDraft({ ...draft, timezone: e.target.value })} />
-                <datalist id={`${formId}-zones`}>{allTimezones().map((z) => <option key={z} value={z} />)}</datalist>
-              </label>
-            ) : (
-              <p className="muted crew-note">In {draft.timezone}. <button type="button" className="tuning-change" onClick={() => setChangingZone(true)} aria-label="Change timezone">Change</button></p>
-            )}
-            {(canPreApprove(member) || draft.preApprove) && (
-              <label className="check">
-                <input type="checkbox" checked={draft.preApprove} onChange={(e) => setDraft({ ...draft, preApprove: e.target.checked })} />
-                <span>
-                  Pre-approve each run
-                  <small>Runs merge after their checks pass. This also waives visual review for each run, including conflict resolutions. Without this, each one waits for your review.</small>
-                </span>
-              </label>
-            )}
-            {"next" in preview ? (
-              <p className="when-summary"><span className="muted">Next run:</span> <strong>{preview.next}</strong></p>
-            ) : (
-              <p className="when-summary error-text" role="alert">{preview.problem}</p>
-            )}
-            <details className="gates schedule-rules">
-              <summary>When a slot gets skipped</summary>
-              <p className="muted">Missed slots catch up once. A slot is skipped while this member is on-call, the factory is paused, or their last run is still open. Spring clock gaps skip that day; repeated times run once at the earlier instant.</p>
-            </details>
-          </fieldset>
+          <ScheduleFormFields member={member} repos={repos} draft={draft} change={change} preview={preview} busy={busy} />
         </form>
       </SheetBody>
-      {removing ? (
-        <SheetFoot note={error ? <span className="error-text" role="alert">{error}</span> : "Remove this schedule?"}>
-          <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setRemoving(false)}>Keep</button>
-          <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => void remove()}>Remove</button>
-        </SheetFoot>
-      ) : (
-        <SheetFoot note={error ? <span className="error-text" role="alert">{error}</span> : schedule ? (
-          <button type="button" className="btn btn-ghost btn-sm schedule-remove" disabled={busy} onClick={() => setRemoving(true)}>Remove</button>
-        ) : undefined}>
-          <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={onBack}>Cancel</button>
-          <button type="submit" form={formId} className="btn btn-primary btn-sm" disabled={busy || !("next" in preview)}>Save schedule</button>
-        </SheetFoot>
-      )}
+      <ScheduleFoot formId={formId} canRemove={!!schedule} canSave={"next" in preview} busy={busy} error={error}
+        onCancel={onBack} onRemove={() => void remove()} />
     </>
   );
 }
