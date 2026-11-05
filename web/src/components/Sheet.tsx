@@ -4,6 +4,35 @@ const FOCUSABLE = 'a[href], button:not(:disabled), input:not(:disabled), select:
 
 const SheetContext = createContext<{ titleId: string; onClose: () => void }>({ titleId: "", onClose: () => {} });
 
+/** Hides the page's scrollbar without moving the page. Returns how to put it back. */
+function lockPageScroll(): () => void {
+  const { body, documentElement } = document;
+  const { overflow, paddingRight } = body.style;
+  const scrollbar = window.innerWidth - documentElement.clientWidth;
+  body.style.overflow = "hidden";
+  if (scrollbar > 0) body.style.paddingRight = `${scrollbar}px`;
+  return () => {
+    body.style.overflow = overflow;
+    body.style.paddingRight = paddingRight;
+  };
+}
+
+/** Keeps Tab inside the panel by wrapping focus at its first and last items. */
+function trapTab(e: KeyboardEvent, panel: HTMLElement | null) {
+  if (e.key !== "Tab" || !panel) return;
+  const items = panel.querySelectorAll<HTMLElement>(FOCUSABLE);
+  const first = items[0];
+  const last = items[items.length - 1];
+  const active = document.activeElement;
+  if (e.shiftKey && (active === first || active === panel)) {
+    e.preventDefault();
+    last?.focus();
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault();
+    first?.focus();
+  }
+}
+
 /**
  * A modal panel: pinned head and foot around a body that scrolls, a bottom sheet
  * on phones. Holds focus while open and hands it back to what opened it.
@@ -25,48 +54,27 @@ export function Sheet({ onClose, onDismiss = onClose, view, children }: {
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
-    const { body, documentElement } = document;
-    const { overflow, paddingRight } = body.style;
-    // Keep the page from moving when its scrollbar goes away.
-    const scrollbar = window.innerWidth - documentElement.clientWidth;
-    body.style.overflow = "hidden";
-    if (scrollbar > 0) body.style.paddingRight = `${scrollbar}px`;
+    const unlockPageScroll = lockPageScroll();
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key !== "Escape") return;
       // The instruct sheet can open over this one and owns Escape while it has focus.
       const active = document.activeElement;
-      if (active && active !== body && !panel.current?.contains(active)) return;
+      if (active && active !== document.body && !panel.current?.contains(active)) return;
       dismiss.current();
     };
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
-      body.style.overflow = overflow;
-      body.style.paddingRight = paddingRight;
+      unlockPageScroll();
       opener?.focus();
     };
   }, []);
 
   useEffect(() => panel.current?.focus(), [view]);
 
-  const trapTab = (e: KeyboardEvent) => {
-    if (e.key !== "Tab" || !panel.current) return;
-    const items = panel.current.querySelectorAll<HTMLElement>(FOCUSABLE);
-    const first = items[0];
-    const last = items[items.length - 1];
-    const active = document.activeElement;
-    if (e.shiftKey && (active === first || active === panel.current)) {
-      e.preventDefault();
-      last?.focus();
-    } else if (!e.shiftKey && active === last) {
-      e.preventDefault();
-      first?.focus();
-    }
-  };
-
   return (
     <div className="scrim sheet-scrim" onMouseDown={(e) => e.target === e.currentTarget && onDismiss()}>
-      <div className="sheet sheet-pane" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} ref={panel} onKeyDown={trapTab}>
+      <div className="sheet sheet-pane" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1} ref={panel} onKeyDown={(e) => trapTab(e, panel.current)}>
         <SheetContext.Provider value={{ titleId, onClose }}>{children}</SheetContext.Provider>
       </div>
     </div>
