@@ -19,7 +19,6 @@ export function ScheduleFields({ value, onChange, disabled }: {
   const [choice, setChoice] = useState(() =>
     value === null ? NOW : presets.find((p) => p.value === value)?.id ?? CUSTOM);
   const [date = "", time = ""] = value?.split("T") ?? [];
-  const problem = startProblem(value);
   const pick = (id: string, next: string | null) => {
     setChoice(id);
     onChange(next);
@@ -53,19 +52,24 @@ export function ScheduleFields({ value, onChange, disabled }: {
           </label>
         </div>
       )}
-      {value === null ? (
-        <p className="when-summary muted">Starts as soon as an agent is free.</p>
-      ) : problem ? (
-        <p className="when-summary error-text" role="alert">{problem}</p>
-      ) : (
-        <>
-          <p className="when-summary">
-            <strong>{whenLabel(new Date(value).getTime())}</strong>
-            <span className="muted"> · {untilLabel(new Date(value).getTime())}</span>
-          </p>
-          <small className="when-note">Your timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}. Starts when an agent is free after this time and prerequisites are met. The factory must be running and unpaused.</small>
-        </>
-      )}
+      <StartLine value={value} />
     </fieldset>
+  );
+}
+
+/** What the chosen start time means, or what's wrong with it. */
+function StartLine({ value }: { value: string | null }) {
+  if (value === null) return <p className="when-summary muted">Starts as soon as an agent is free.</p>;
+  const problem = startProblem(value);
+  if (problem) return <p className="when-summary error-text" role="alert">{problem}</p>;
+  const at = new Date(value).getTime();
+  return (
+    <>
+      <p className="when-summary">
+        <strong>{whenLabel(at)}</strong>
+        <span className="muted"> · {untilLabel(at)}</span>
+      </p>
+      <small className="when-note">Your timezone: {Intl.DateTimeFormat().resolvedOptions().timeZone}. Starts when an agent is free after this time and prerequisites are met. The factory must be running and unpaused.</small>
+    </>
   );
 }
