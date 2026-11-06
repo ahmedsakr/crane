@@ -3,23 +3,26 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { moduleRefs, packageImportViolations, specifiers } from "./support/imports.ts";
+import {
+  LAZY_RUNTIME_EXCEPTIONS,
+  PAGE_PARTS,
+  STORE_EXCEPTIONS,
+  STORE_READS,
+  databaseViolations,
+  findCycle,
+  pageImportViolations,
+  resolveSpec,
+  runtimeImports,
+  stateChangeViolations,
+} from "./support/responsibilities.ts";
 
-const src = join(import.meta.dirname, "..", "src");
-const webSrc = join(import.meta.dirname, "..", "web", "src");
-const protocolRoot = join(import.meta.dirname, "..", "packages", "agent-protocol");
-const policyRoot = join(import.meta.dirname, "..", "packages", "agent-policy");
-const driversRoot = join(import.meta.dirname, "..", "packages", "agent-drivers");
-const diagnosticsRoot = join(import.meta.dirname, "..", "packages", "diagnostics");
-
-/** A relative specifier in `file`, resolved to a path under the same root like `factory/git`. */
-function resolveSpec(file: string, spec: string): string {
-  const parts = file.split("/").slice(0, -1);
-  for (const seg of spec.replace(/\.(js|tsx?)$/, "").split("/")) {
-    if (seg === "..") parts.pop();
-    else if (seg !== ".") parts.push(seg);
-  }
-  return parts.join("/");
-}
+const root = join(import.meta.dirname, "..");
+const src = join(root, "src");
+const webSrc = join(root, "web", "src");
+const protocolRoot = join(root, "packages", "agent-protocol");
+const policyRoot = join(root, "packages", "agent-policy");
+const driversRoot = join(root, "packages", "agent-drivers");
+const diagnosticsRoot = join(root, "packages", "diagnostics");
 
 /** Every relative import in a source file, resolved to a path under `root` like `factory/git`. */
 function importsOf(file: string, root = src): string[] {
@@ -181,16 +184,122 @@ test("boundaries: web modules have no import cycles", () => {
   const fileFor = new Map(files.map((f) => [f.replace(/\.tsx?$/, ""), f]));
   const graph = new Map(files.map((f) => [f.replace(/\.tsx?$/, ""), importsOf(f, webSrc).filter((m) => fileFor.has(m))]));
   assert.ok(graph.get("pages/Home")?.includes("components/Section"), "expected to read the web import graph");
-  const done = new Set<string>();
-  const findCycle = (mod: string, path: string[]): string[] | null => {
-    if (path.includes(mod)) return [...path.slice(path.indexOf(mod)), mod];
-    if (done.has(mod)) return null;
-    for (const next of graph.get(mod) ?? []) {
-      const cycle = findCycle(next, [...path, mod]);
-      if (cycle) return cycle;
-    }
-    done.add(mod);
-    return null;
-  };
-  for (const mod of graph.keys()) assert.deepEqual(findCycle(mod, []), null);
+  assert.deepEqual(findCycle(graph), null);
+});
+
+/** Source files under `dir`, relative to it with forward slashes, matching `pattern`. */
+function filesUnder(dir: string, pattern = /\.tsx?$/): string[] {
+  return (readdirSync(dir, { recursive: true }) as string[])
+    .map((f) => f.split("\\").join("/"))
+    .filter((f) => pattern.test(f) && !f.split("/").includes("node_modules"))
+    .sort();
+}
+
+const read = (dir: string, file: string) => readFileSync(join(dir, file), "utf8");
+
+test("boundaries: backend and package modules have no runtime import cycles", () => {
+  // Type-only imports are erased, so a store/ module typing its `Store` argument is no cycle.
+  const roots = [src, ...readdirSync(join(root, "packages")).map((name) => join(root, "packages", name, "src"))];
+  for (const dir of roots) {
+    const files = filesUnder(dir).filter((f) => !f.endsWith(".d.ts"));
+    const graph = new Map(files.map((f) => [f.replace(/\.tsx?$/, ""), runtimeImports(f, read(dir, f))]));
+    assert.ok(graph.size > 0, `expected sources in ${dir}`);
+    assert.deepEqual(findCycle(graph), null, `import cycle in ${dir}`);
+  }
+  assert.deepEqual(findCycle(new Map([["a", ["b"]], ["b", ["c"]], ["c", ["a"]]])), ["a", "b", "c", "a"]);
+});
+
+/** Production sources by repository path: backend, packages and web. Tests and scripts are not production. */
+function productionSources(): string[] {
+  const packages = readdirSync(join(root, "packages")).flatMap((name) =>
+    filesUnder(join(root, "packages", name, "src")).map((f) => `packages/${name}/src/${f}`));
+  return [...filesUnder(src).map((f) => `src/${f}`), ...packages, ...filesUnder(webSrc).map((f) => `web/src/${f}`)];
+}
+
+/** Production code that may reach SQLite outside the store, and why. */
+const DATABASE_EXCEPTIONS = new Map([
+  // `crane setup` checks that the native module loads on this Node runtime, before any Store can open.
+  ["src/cli/setup.ts", ["imports better-sqlite3"]],
+]);
+
+test("responsibilities: only the store opens and queries the database", () => {
+  const owned = (path: string) => path === "src/core/store.ts" || path.startsWith("src/core/store/");
+  const files = productionSources().filter((path) => !owned(path));
+  assert.ok(files.includes("src/factory/orchestrator.ts") && files.includes("web/src/App.tsx"), "expected production sources");
+  const violations = files.flatMap((path) => databaseViolations(path, read(root, path))
+    .filter((v) => !DATABASE_EXCEPTIONS.get(path)?.some((allowed) => v.endsWith(allowed))));
+  assert.deepEqual(violations, []);
+  for (const [path, allowed] of DATABASE_EXCEPTIONS) {
+    const found = databaseViolations(path, read(root, path));
+    assert.ok(allowed.every((a) => found.some((v) => v.endsWith(a))), `${path} no longer needs its exception: remove it`);
+  }
+});
+
+test("responsibilities: the database check catches store.db and better-sqlite3", () => {
+  assert.deepEqual(databaseViolations("src/x.ts", 'import Database from "better-sqlite3";\nctx.store.db.prepare("x");\nstore.getTask("t");'), [
+    "src/x.ts:1 imports better-sqlite3",
+    "src/x.ts:2 uses store.db",
+  ]);
+  assert.deepEqual(databaseViolations("src/x.ts", 'const { default: D } = await import("better-sqlite3");'), ["src/x.ts:1 imports better-sqlite3"]);
+  assert.deepEqual(databaseViolations("src/x.ts", "store.getTask(id);\nconst db = open();"), []);
+});
+
+test("responsibilities: web pages don't import other pages or their parts", () => {
+  const files = filesUnder(webSrc);
+  assert.deepEqual(files.flatMap((path) => pageImportViolations(path, read(webSrc, path))), []);
+  // Every parts directory belongs to a page that exists.
+  const dirs = new Set(files.filter((f) => /^pages\/[^/]+\//.test(f)).map((f) => f.split("/")[1]!));
+  assert.deepEqual([...dirs].filter((dir) => !Object.values(PAGE_PARTS).includes(dir)), []);
+  for (const page of Object.keys(PAGE_PARTS)) assert.ok(files.includes(`pages/${page}.tsx`), `PAGE_PARTS names a missing page ${page}`);
+});
+
+test("responsibilities: the page check catches cross-page imports", () => {
+  assert.deepEqual(pageImportViolations("pages/Home.tsx", 'import { TaskPage } from "./TaskPage";'), ["pages/Home.tsx:1 imports the page pages/TaskPage"]);
+  assert.deepEqual(pageImportViolations("pages/Home.tsx", 'import { Timeline } from "./task/Timeline";'), [
+    "pages/Home.tsx:1 imports pages/task/Timeline, a part of another page",
+  ]);
+  assert.deepEqual(pageImportViolations("pages/crew/RunsOn.tsx", 'import { Runs } from "../task/Runs";'), [
+    "pages/crew/RunsOn.tsx:1 imports pages/task/Runs, a part of another page",
+  ]);
+  assert.deepEqual(pageImportViolations("components/Row.tsx", 'import { Runs } from "../pages/task/Runs";'), [
+    "components/Row.tsx:1 imports pages/task/Runs, a part of another page",
+  ]);
+  assert.deepEqual(pageImportViolations("pages/TaskPage.tsx", 'import { Runs } from "./task/Runs";\nimport { Section } from "../components/Section";'), []);
+  assert.deepEqual(pageImportViolations("pages/GoalPage.tsx", 'import { GoalBrief } from "./goals/GoalBrief";'), []);
+  assert.deepEqual(pageImportViolations("App.tsx", 'import { Home } from "./pages/Home";'), []);
+});
+
+test("responsibilities: CLI commands and API routes change state only through OperatorActions", () => {
+  const files = [
+    ...filesUnder(join(src, "cli", "commands")).map((f) => `cli/commands/${f}`),
+    ...filesUnder(join(src, "server", "routes")).map((f) => `server/routes/${f}`),
+  ];
+  assert.ok(files.includes("cli/commands/do.ts") && files.includes("server/routes/tasks.ts"), "expected command and route sources");
+  assert.deepEqual(files.flatMap((path) => stateChangeViolations(path, read(src, path))), []);
+  // The allowed reads are all real Store methods, and each exception is still used.
+  const facade = read(src, "core/store.ts");
+  for (const name of [...STORE_READS, ...Object.keys(STORE_EXCEPTIONS)]) assert.match(facade, new RegExp(`^  ${name}\\(`, "m"), name);
+  const used = files.map((path) => read(src, path)).join("\n");
+  for (const name of Object.keys(STORE_EXCEPTIONS)) assert.match(used, new RegExp(`store\\.${name}\\(`), `${name} is no longer needed`);
+  for (const [path, modules] of Object.entries(LAZY_RUNTIME_EXCEPTIONS)) {
+    assert.deepEqual(importsOf(path).filter((m) => modules.includes(m)).sort(), [...modules].sort());
+  }
+});
+
+test("responsibilities: the state check catches writes, raw database use and writing imports", () => {
+  const check = (source: string, path = "cli/commands/sample.ts") => stateChangeViolations(path, source);
+  assert.deepEqual(check("ctx.store.getTask(id);\nstore.listRepos();\nstore.syncGoals();\nactions.approve(id);"), []);
+  assert.deepEqual(check("ctx.store.updateTask(id, {});\nstore.setPaused(true);\nstore.db.prepare('x');"), [
+    "cli/commands/sample.ts:1 calls store.updateTask; change state through OperatorActions",
+    "cli/commands/sample.ts:2 calls store.setPaused; change state through OperatorActions",
+    "cli/commands/sample.ts:3 calls store.db; change state through OperatorActions",
+  ]);
+  assert.deepEqual(check('import { landTask } from "../../factory/merge.js";'), ["cli/commands/sample.ts:1 imports factory/merge"]);
+  assert.deepEqual(check('import { diffForTask, removeWorktree } from "../../factory/git.js";'), [
+    "cli/commands/sample.ts:1 imports removeWorktree from factory/git",
+  ]);
+  assert.deepEqual(check('import { writeFileSync } from "node:fs";'), ["cli/commands/sample.ts:1 imports writeFileSync from node:fs"]);
+  assert.deepEqual(check('import { execFileSync } from "node:child_process";'), ["cli/commands/sample.ts:1 imports node:child_process"]);
+  assert.deepEqual(check('await import("../serve.js");'), ["cli/commands/sample.ts:1 loads cli/serve"]);
+  assert.deepEqual(check('import type { Store } from "../../core/store.js";\nimport { shared } from "./shared.js";'), []);
 });

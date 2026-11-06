@@ -91,7 +91,7 @@ export function pruneOrphanScreenshots(store: Store, now = Date.now()): number {
     store.transaction(() => {
       const task = store.getTask(dir.name);
       if (task && ["queued", "running", "merging"].includes(task.status)) return;
-      if (store.db.prepare("SELECT 1 FROM runs WHERE task_id = ? AND outcome = 'running'").get(dir.name)) return;
+      if (store.hasRunningRun(dir.name)) return;
       const referenced = new Set(task?.report?.screenshots?.map(image => image.path) ?? []);
       for (const file of readdirSync(join(root, dir.name), { withFileTypes: true })) {
         if (!file.isFile() || referenced.has(file.name)) continue;

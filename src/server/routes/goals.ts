@@ -1,13 +1,12 @@
 import type { Hono } from "hono";
 import type { NewGoal, TaskRunOptions } from "@crane/contracts";
-import { goalListItems } from "../../core/store/goal-progress.js";
 import { optionalJsonObject } from "../body.js";
 import type { RouteDeps } from "./deps.js";
 
 type RevisedRun = TaskRunOptions & { revision: unknown };
 
 export function registerGoalRoutes(api: Hono, { store, actions }: RouteDeps): void {
-  api.get("/goals", (c) => { store.syncGoals(); return c.json(goalListItems(store)); });
+  api.get("/goals", (c) => { store.syncGoals(); return c.json(store.goalListItems()); });
   api.get("/goals/:id", (c) => {
     store.syncGoals();
     if (!store.getGoal(c.req.param("id"))) return c.json({ error: "Not found" }, 404);

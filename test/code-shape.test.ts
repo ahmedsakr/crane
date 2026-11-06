@@ -4,13 +4,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { existsSync } from "node:fs";
 import {
-  BASELINE_DIR,
-  budgetName,
-  compareToBudgets,
+  LIMITS,
   inspectSource,
-  readBudgets,
   scanTree,
+  shapeFailures,
   sourcePaths,
   type ShapeRule,
 } from "./support/code-shape.ts";
@@ -36,12 +35,32 @@ function nestedIfs(levels: number): string {
 
 const params = (count: number) => Array.from({ length: count }, (_, index) => `p${index}`).join(", ");
 
-// A file over budget, used by the ratchet tests: two nested ternaries in one function.
+// Two nested ternaries in one function.
 const OVER_LIMIT = "export function pick(a, b, c) {\n  return a ? 1 : b ? 2 : c ? 3 : 4;\n}\n";
 
-test("the tree matches its budgets exactly", () => {
-  const failures = compareToBudgets(scanTree(ROOT), readBudgets(join(ROOT, BASELINE_DIR)));
-  assert.equal(failures.length, 0, `\n${failures.join("\n\n")}\n`);
+const TREE = scanTree(ROOT);
+
+test("every source file is within every rule, with no exemptions", () => {
+  const failures = shapeFailures(TREE);
+  assert.equal(failures.length, 0, `\nBring the code within the limits:\n${failures.join("\n")}\n`);
+  assert.equal(existsSync(join(ROOT, "test/support/code-shape-baseline")), false, "there are no budgets: delete the directory");
+});
+
+test("the tree has no long function, nested ternary, or long production file", () => {
+  assert.ok(TREE.some((file) => file.path === "src/core/store.ts"), "expected to scan the tree");
+  const longest = Math.max(...TREE.flatMap((file) => file.functions.map((fn) => fn.codeLines)));
+  assert.ok(longest <= LIMITS.functionLines, `longest function: ${longest} lines`);
+  assert.deepEqual(TREE.flatMap((file) => file.violations.filter((v) => v.rule === "nestedTernary")), []);
+  const production = TREE.filter((file) => !file.path.startsWith("test/") && !file.path.startsWith("scripts/"));
+  assert.deepEqual(production.flatMap((file) => file.violations.filter((v) => v.rule === "fileLines")), []);
+});
+
+test("a violation fails naming the file, location, value and limit", () => {
+  assert.deepEqual(shapeFailures([inspectSource("src/pick.ts", OVER_LIMIT)]), [
+    "src/pick.ts:2 pick: 2 ternary nesting level (limit 1)",
+    "src/pick.ts:2 pick: 3 ternary nesting level (limit 1)",
+  ]);
+  assert.deepEqual(shapeFailures([inspectSource("src/clean.ts", "export const a = 1;\n")]), []);
 });
 
 test("the guard only reads files: no sockets or child processes", () => {
@@ -179,69 +198,5 @@ test("the scan covers source directories and skips dist, node_modules, and other
     ]);
   } finally {
     rmSync(root, { recursive: true, force: true });
-  }
-});
-
-test("budgets are named from the source path", () => {
-  assert.equal(budgetName("src/core/store.ts"), "src__core__store.ts.json");
-});
-
-test("no budget: a file with no violations passes", () => {
-  assert.deepEqual(compareToBudgets([inspectSource("src/clean.ts", "export const a = 1;\n")], new Map()), []);
-});
-
-test("a matching budget passes, in any key order", () => {
-  const file = inspectSource("src/pick.ts", OVER_LIMIT);
-  assert.deepEqual(compareToBudgets([file], new Map([["src__pick.ts.json", '{ "nestedTernary": 2 }']])), []);
-});
-
-test("an unbudgeted violation fails naming the file, location, value, limit, and what to do", () => {
-  const [failure, ...rest] = compareToBudgets([inspectSource("src/pick.ts", OVER_LIMIT)], new Map());
-  assert.deepEqual(rest, []);
-  assert.match(failure!, /src\/pick\.ts has violations and no budget/);
-  assert.match(failure!, /src\/pick\.ts:2 pick: 2 ternary nesting level \(limit 1\)/);
-  assert.match(failure!, /src\/pick\.ts:2 pick: 3 ternary nesting level \(limit 1\)/);
-  assert.match(failure!, /Bring the code within the limits/);
-  assert.match(failure!, /test\/support\/code-shape-baseline\/src__pick\.ts\.json: \{"nestedTernary":2\}/);
-});
-
-test("a file over its budget fails and says not to raise it", () => {
-  const budgets = new Map([["src__pick.ts.json", '{ "nestedTernary": 1 }']]);
-  const [failure, ...rest] = compareToBudgets([inspectSource("src/pick.ts", OVER_LIMIT)], budgets);
-  assert.deepEqual(rest, []);
-  assert.match(failure!, /src\/pick\.ts is over its nestedTernary budget: 2 violations, budget 1/);
-  assert.match(failure!, /src\/pick\.ts:2 pick: 3 ternary nesting level \(limit 1\)/);
-  assert.match(failure!, /Don't raise test\/support\/code-shape-baseline\/src__pick\.ts\.json/);
-});
-
-test("a file under its budget fails and says what to lower", () => {
-  const budgets = new Map([["src__pick.ts.json", '{ "nestedTernary": 2, "depth": 1 }']]);
-  const [failure, ...rest] = compareToBudgets([inspectSource("src/pick.ts", OVER_LIMIT)], budgets);
-  assert.deepEqual(rest, []);
-  assert.match(failure!, /src\/pick\.ts is under its depth budget: 0 violations, budget 1/);
-  assert.match(failure!, /Set "depth" to 0 in test\/support\/code-shape-baseline\/src__pick\.ts\.json/);
-});
-
-test("a file with no violations left must delete its budget", () => {
-  const budgets = new Map([["src__clean.ts.json", '{ "depth": 1 }']]);
-  assert.deepEqual(compareToBudgets([inspectSource("src/clean.ts", "export const a = 1;\n")], budgets), [
-    "src/clean.ts has no violations left. Delete test/support/code-shape-baseline/src__clean.ts.json.",
-  ]);
-  assert.equal(compareToBudgets([inspectSource("src/clean.ts", "")], new Map([["src__clean.ts.json", "{}"]])).length, 1);
-});
-
-test("a budget for a missing file fails naming the file and what to change", () => {
-  const [failure, ...rest] = compareToBudgets([], new Map([["src__core__gone.ts.json", '{ "depth": 1 }']]));
-  assert.deepEqual(rest, []);
-  assert.match(failure!, /src__core__gone\.ts\.json names a file that isn't scanned: src\/core\/gone\.ts/);
-  assert.match(failure!, /Delete the budget/);
-});
-
-test("a malformed budget fails naming the file", () => {
-  const file = inspectSource("src/pick.ts", OVER_LIMIT);
-  for (const raw of ["not json", "[]", "null", '{ "unknownRule": 1 }', '{ "depth": -1 }', '{ "depth": 1.5 }', '{ "depth": "1" }']) {
-    const [failure, ...rest] = compareToBudgets([file], new Map([["src__pick.ts.json", raw]]));
-    assert.deepEqual(rest, []);
-    assert.match(failure!, /src__pick\.ts\.json isn't a valid budget for src\/pick\.ts/, raw);
   }
 });

@@ -6,6 +6,7 @@ import { overview } from "./store/overview.js";
 import { BlockedToolsReader } from "./store/blocked-tools.js";
 import { approveGoal, cancelGoal, createGoal, getGoal, goalDetail, goalForTask, listGoals, listGoalSummaries,
   retryGoalTask, reviseGoal, saveGoalPlan, syncGoals, type NewGoal } from "./store/goals.js";
+import { goalListItems } from "./store/goal-progress.js";
 import { createTask, getTask, listTasks, listTaskSummaries, setStatus, tasksWithWorktrees, updateTask,
   type NewTaskRecord, type TaskListOptions, type TaskPatch } from "./store/tasks.js";
 import { listQueuedTasks, listQueuedTaskSummaries, moveQueuedTask, queuedForAnyone, setTaskAgent, setTaskSchedule,
@@ -15,7 +16,7 @@ import { followUps, followUpSource, prerequisiteCommits, prerequisiteStates, unm
 import { completeMerge, finishWork, postmortemPrompt, setPreApproval, waivePreApprovedVisualReview } from "./store/review.js";
 import { claimNextMerge, claimNextTask, pendingWork, type ClaimOptions } from "./store/claims.js";
 import { addEvent, closeUnresolvedCommands, commandEvidence, eventsSince, latestEventId, listEvents } from "./store/events.js";
-import { closeStaleRuns, finishRun, lastWorkDriver, listRuns, startRun } from "./store/runs.js";
+import { closeStaleRuns, finishRun, hasRunningRun, lastWorkDriver, listRuns, startRun } from "./store/runs.js";
 import { getSetting, isPaused, postmortemCrew, postmortemSettings, pruneTaskHistory, retentionSettings, setPaused,
   setPostmortemSettings, setSetting, vacuumHistory } from "./store/settings.js";
 import { addRepo, getRepo, listRepos, removeRepo, repoChecks, repoTools, setRepoChecks, setRepoTools,
@@ -38,6 +39,7 @@ import type {
   FollowUpState,
   Goal,
   GoalDetail,
+  GoalListItem,
   GoalPlan,
   GoalSummary,
   MaintenanceRole,
@@ -104,6 +106,11 @@ export class Store {
 
   listGoalSummaries(needsReview = false): GoalSummary[] {
     return listGoalSummaries(this, needsReview);
+  }
+
+  /** The Goals page's rows, with each goal's progress. */
+  goalListItems(): GoalListItem[] {
+    return goalListItems(this);
   }
 
   goalDetail(id: string): GoalDetail {
@@ -400,6 +407,10 @@ export class Store {
 
   lastWorkDriver(taskId: string): string | null {
     return lastWorkDriver(this, taskId);
+  }
+
+  hasRunningRun(taskId: string): boolean {
+    return hasRunningRun(this, taskId);
   }
 
   /** Spend over the last `days` local days, today included, with the same span before it for comparison. */
