@@ -13,8 +13,9 @@ export function registerRetention(program: Command, { actions }: CliContext): vo
       try {
         if (opts.disable && opts.days !== undefined) throw new Error("Choose --days or --disable");
         if (opts.days !== undefined && !/^\d+$/.test(opts.days)) throw new Error("--days takes a whole number from 1 to 36500");
+        const finishedTaskDays = opts.disable ? null : Number(opts.days);
         const settings = opts.disable || opts.days !== undefined
-          ? actions.configureRetention({ finishedTaskDays: opts.disable ? null : Number(opts.days) })
+          ? actions.configureRetention({ finishedTaskDays })
           : actions.retentionSettings();
         console.log(settings.finishedTaskDays === null ? "  Storage retention: disabled; keep all history"
           : `  Storage retention: ${settings.finishedTaskDays} days after tasks finish`);

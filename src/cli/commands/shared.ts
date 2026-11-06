@@ -42,6 +42,11 @@ export const crewMember = (store: Store, member: string) => {
   return a;
 };
 
+/** "It starts once t-1, t-2 land": what a new task waits for before it can start. */
+export function startsOnce(waiting: string[]): string {
+  return `It starts once ${waiting.join(", ")} land${waiting.length === 1 ? "s" : ""}`;
+}
+
 /** Who runs post-mortems, in the words the Crew page uses. */
 export function postmortemCrewLabel(store: Store, crew: string[]): string {
   const named = store.listAgents().filter((a) => crew.includes(a.id));

@@ -9,6 +9,12 @@ import { repoName } from "./shared.js";
 
 type PrintGoal = (goal: Goal, json?: boolean) => void;
 
+/** How the goal's tasks reach the default branch, given what the operator approved. */
+function goalMergeLine(goal: Goal): string {
+  if (!goal.approvedAt) return "Implementation waits for plan approval.";
+  return goal.autoMerge ? "Automatic merging approved, including visual-review waivers." : "Each task waits for review before merge.";
+}
+
 function printGoal(store: Store, goal: Goal, json: boolean) {
   if (json) return console.log(JSON.stringify(store.goalDetail(goal.id), null, 2));
   console.log(`\n${pc.bold(goal.title)}\n  ${goal.id} · ${goal.status.replaceAll("_", " ")} · revision ${goal.revision} · ${repoName(store, goal.repoId)}`);
@@ -34,7 +40,7 @@ function printGoal(store: Store, goal: Goal, json: boolean) {
     if (goal.plan.improvements.length) console.log(`\nOptional improvements:\n${goal.plan.improvements.map((s) => `- ${s}`).join("\n")}`);
   }
   for (const feedback of goal.feedback) console.log(`\nFeedback (revision ${feedback.revision}): ${feedback.text}\nResearch: ${feedback.taskId}`);
-  console.log(`\n${goal.approvedAt ? goal.autoMerge ? "Automatic merging approved, including visual-review waivers." : "Each task waits for review before merge." : "Implementation waits for plan approval."}`);
+  console.log(`\n${goalMergeLine(goal)}`);
   console.log(ui.hint([`crane goals show ${goal.id} --json`, "full plan and task records"],
     ...(!goal.approvedAt ? [[`crane goals feedback ${goal.id} --revision ${goal.revision} "…"`, "ask the research agent to revise the plan"] as [string, string],
       [`crane goals approve ${goal.id} --revision ${goal.revision}`, "queue the plan; add --auto-merge to pre-approve all tasks and waive visual review"] as [string, string]] : [])));

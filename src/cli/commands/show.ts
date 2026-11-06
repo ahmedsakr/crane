@@ -12,13 +12,21 @@ import {
   settingsLabel,
   visualReviewPending,
   visualReviewWaivedByPreApproval,
+  type AgentRun,
+  type BlockedTool,
+  type MergeOutcome,
+  type PrerequisiteState,
+  type Task,
+  type TaskEvent,
 } from "@crane/contracts";
 import type { Command } from "commander";
 import pc from "picocolors";
 import { screenshotPath } from "../../core/screenshots.js";
+import type { Store } from "../../core/store.js";
 import type { CliContext } from "../context.js";
 import * as ui from "../ui.js";
-import { allowCommand, postmortemCrewLabel, repoName } from "./shared.js";
+import { nextSteps } from "./next-steps.js";
+import { postmortemCrewLabel, repoName } from "./shared.js";
 
 export function registerShow(program: Command, ctx: CliContext): void {
   program
@@ -30,163 +38,181 @@ export function registerShow(program: Command, ctx: CliContext): void {
 }
 
 function showTask({ store }: CliContext, id: string, opts: { events?: boolean }): void {
-  const m = store.getTask(id) ?? ui.fail(`No task ${id}`);
-  const repo = m.repoId ? store.getRepo(m.repoId) : null;
-  const goalId = store.goalForTask(m.id);
-  if (goalId) console.log(`\n  Part of goal: crane goals show ${goalId}`);
-  console.log(`\n${ui.statusDot(m.status)} ${pc.bold(m.title)}`);
-  console.log(
-    ui.dim(
-      `  ${m.id} · ${ui.kindLabel(m)} · ${repoName(store, m.repoId) ?? "—"} · ${AUTONOMY_LABEL[m.autonomy]} · ${ui.ago(m.createdAt)}`,
-    ),
-  );
-  const runs = store.listRuns(m.id);
-  const cost = m.costUsd ? ` · ${ui.usd(m.costUsd)}${runs.length > 1 ? ` over ${runs.length} runs` : ""}` : "";
-  const ran = store.lastWorkDriver(m.id);
-  const agent = m.driver ?? ran;
-  const on = agent && agent !== "unknown" ? ` · on ${driverLabel(agent)}` : "";
-  const member = m.assignee ? store.listAgents().find((a) => a.id === m.assignee) : null;
-  const reviewers = m.status === "queued" && m.postmortemOf ? store.postmortemCrew() : [];
-  const forMember = member
-    ? ` · for ${member.name}${m.status === "queued" && !member.active ? " (on-call)" : ""}`
-    : reviewers.length ? ` · for ${postmortemCrewLabel(store, reviewers)}` : "";
-  const preApproved = m.preApprovedAt && ["queued", "running"].includes(m.status) ? " · pre-approved" : "";
-  console.log(`  ${ui.statusText(m.status)}${ui.dim(forMember + on + cost + preApproved)}`);
-  if (m.branch) {
-    console.log(`  Visual review: ${visualReviewWaivedByPreApproval(m) ? "waived by pre-approval" : m.visualReview?.status ?? "pending"}${m.visualReview ? ` · candidate ${m.visualReview.commit}` : ""}`);
-    if (m.visualReview?.note) console.log(ui.wrap(m.visualReview.note, 2));
-    if (visualReviewPending(m)) console.log(`  Record inspection: crane visual-review ${m.id} --commit <full-sha> -m 'views, sizes, screenshot paths' (or --waive with reason and scope)`);
-  }
-  if (settingsLabel(m)) console.log(ui.dim(`  Model settings: ${settingsLabel(m)}`));
-  if (m.lookouts.length) console.log(ui.dim(`  Also looks for: ${lookoutsLabel(m.lookouts)}`));
-  if (m.scheduledAt) console.log(ui.dim(`  Start no earlier than: ${new Date(m.scheduledAt).toLocaleString()} (${m.scheduledAt})`));
-  const source = store.followUpSource(m);
-  if (source) {
-    console.log(`  ${ui.dim("Follow-up to")} ${source.id}  ${source.title}  ${ui.statusText(source.status)}`);
-    if (source.finding) console.log(`  ${ui.dim("Finding")} ${source.finding}`);
-  }
+  const task = store.getTask(id) ?? ui.fail(`No task ${id}`);
+  const all = opts.events ?? false;
+  const runs = store.listRuns(task.id);
+  const waiting = store.unmetPrerequisites(task);
+  const blocked = store.blockedTools({ taskId: task.id, ...(task.repoId ? { repoId: task.repoId } : {}) });
+  const events = store.listEvents(task.id);
+  const merge = lastMergeOutcome(events);
+  const main = (task.repoId ? store.getRepo(task.repoId) : null)?.defaultBranch ?? "main";
+  const next = nextSteps(task, { main, waiting: waiting.map((t) => t.id), checkoutBehind: merge?.checkoutBehind, blocked: blocked[0] });
+  console.log([
+    ...headerLines(store, task, runs),
+    ...visualReviewLines(task),
+    ...detailLines(store, task),
+    ...prerequisiteLines(task, store.prerequisiteStates(task), waiting.length > 0),
+    ...acceptanceLines(task),
+    ...acceptanceCheckLines(task),
+    ...reportLines(store, task),
+    ...(all ? runLines(runs) : []),
+    ...blockedLines(blocked),
+    ...activityLines(task.id, events, all),
+    "",
+    ...mergeErrorLines(merge, main),
+    ...(next.length ? [ui.hint(...next) + "\n"] : []),
+  ].join("\n"));
+}
 
-  const prerequisites = store.prerequisiteStates(m);
-  const waiting = store.unmetPrerequisites(m);
-  if (prerequisites.length) {
-    const title = m.prerequisitesWaivedAt
-      ? "Prerequisites, waived"
-      : waiting.length && m.status === "queued" ? ui.accent("Waiting for prerequisites") : "Prerequisites";
-    console.log(ui.section(title, prerequisites.length));
-    for (const t of prerequisites) {
-      console.log(`  ${t.met ? pc.green("✓") : ui.dim("○")} ${t.id}  ${t.title}  ${t.met ? ui.dim("landed") : ui.statusText(t.status)}`);
+/** The goal it belongs to, its title, and one line each of identity and status. */
+function headerLines(store: Store, task: Task, runs: AgentRun[]): string[] {
+  const goalId = store.goalForTask(task.id);
+  const agent = task.driver ?? store.lastWorkDriver(task.id);
+  const on = agent && agent !== "unknown" ? ` · on ${driverLabel(agent)}` : "";
+  const preApproved = task.preApprovedAt && ["queued", "running"].includes(task.status) ? " · pre-approved" : "";
+  return [
+    ...(goalId ? [`\n  Part of goal: crane goals show ${goalId}`] : []),
+    `\n${ui.statusDot(task.status)} ${pc.bold(task.title)}`,
+    ui.dim(`  ${task.id} · ${ui.kindLabel(task)} · ${repoName(store, task.repoId) ?? "—"} · ${AUTONOMY_LABEL[task.autonomy]} · ${ui.ago(task.createdAt)}`),
+    `  ${ui.statusText(task.status)}${ui.dim(assigneeLabel(store, task) + on + costLabel(task, runs) + preApproved)}`,
+  ];
+}
+
+/** " · for Hoist", or the post-mortem crew a queued post-mortem waits for. */
+function assigneeLabel(store: Store, task: Task): string {
+  const queued = task.status === "queued";
+  const member = task.assignee ? store.listAgents().find((a) => a.id === task.assignee) : null;
+  if (member) return ` · for ${member.name}${queued && !member.active ? " (on-call)" : ""}`;
+  const reviewers = queued && task.postmortemOf ? store.postmortemCrew() : [];
+  return reviewers.length ? ` · for ${postmortemCrewLabel(store, reviewers)}` : "";
+}
+
+function costLabel(task: Task, runs: AgentRun[]): string {
+  if (!task.costUsd) return "";
+  return ` · ${ui.usd(task.costUsd)}${runs.length > 1 ? ` over ${runs.length} runs` : ""}`;
+}
+
+/** Only tasks with a branch have a candidate to inspect. */
+function visualReviewLines(task: Task): string[] {
+  if (!task.branch) return [];
+  const status = visualReviewWaivedByPreApproval(task) ? "waived by pre-approval" : task.visualReview?.status ?? "pending";
+  const lines = [`  Visual review: ${status}${task.visualReview ? ` · candidate ${task.visualReview.commit}` : ""}`];
+  if (task.visualReview?.note) lines.push(ui.wrap(task.visualReview.note, 2));
+  if (visualReviewPending(task)) lines.push(`  Record inspection: crane visual-review ${task.id} --commit <full-sha> -m 'views, sizes, screenshot paths' (or --waive with reason and scope)`);
+  return lines;
+}
+
+/** Model settings, look-outs, start time, and the finding it follows up. */
+function detailLines(store: Store, task: Task): string[] {
+  const lines: string[] = [];
+  const settings = settingsLabel(task);
+  if (settings) lines.push(ui.dim(`  Model settings: ${settings}`));
+  if (task.lookouts.length) lines.push(ui.dim(`  Also looks for: ${lookoutsLabel(task.lookouts)}`));
+  if (task.scheduledAt) lines.push(ui.dim(`  Start no earlier than: ${new Date(task.scheduledAt).toLocaleString()} (${task.scheduledAt})`));
+  const source = store.followUpSource(task);
+  if (source) {
+    lines.push(`  ${ui.dim("Follow-up to")} ${source.id}  ${source.title}  ${ui.statusText(source.status)}`);
+    if (source.finding) lines.push(`  ${ui.dim("Finding")} ${source.finding}`);
+  }
+  return lines;
+}
+
+function prerequisiteLines(task: Task, prerequisites: PrerequisiteState[], waiting: boolean): string[] {
+  if (!prerequisites.length) return [];
+  return [
+    ui.section(prerequisiteTitle(task, waiting), prerequisites.length),
+    ...prerequisites.map((t) => `  ${t.met ? pc.green("✓") : ui.dim("○")} ${t.id}  ${t.title}  ${t.met ? ui.dim("landed") : ui.statusText(t.status)}`),
+  ];
+}
+
+function prerequisiteTitle(task: Task, waiting: boolean): string {
+  if (task.prerequisitesWaivedAt) return "Prerequisites, waived";
+  return waiting && task.status === "queued" ? ui.accent("Waiting for prerequisites") : "Prerequisites";
+}
+
+/** Each criterion, with the agent's word on it once there's a report. */
+function acceptanceLines(task: Task): string[] {
+  if (!task.acceptance.length) return [];
+  const lines = [ui.section("Acceptance criteria", task.acceptance.length)];
+  task.acceptance.forEach((c, i) => {
+    const said = task.report ? acceptanceFor(task.report, c) : undefined;
+    lines.push(`  ${acceptanceMark(Boolean(task.report), said?.met, i)}  ${c}${task.report && !said ? ui.dim("  not reported") : ""}`);
+    if (said?.evidence) lines.push(ui.wrap(said.evidence, 5));
+  });
+  return lines;
+}
+
+/** Its number before a report, then ✓ or ✕. */
+function acceptanceMark(reported: boolean, met: boolean | undefined, index: number): string {
+  if (!reported) return ui.dim(String(index + 1));
+  return met ? pc.green("✓") : pc.red("✕");
+}
+
+/** Crane's own result for each required check, on this candidate. */
+function acceptanceCheckLines(task: Task): string[] {
+  if (!task.acceptanceChecks.length) return [];
+  return [
+    ui.section("Acceptance checks", task.acceptanceChecks.length),
+    ...task.acceptanceChecks.map((command) => {
+      const run = acceptanceCheckRun(task, command);
+      if (!run) return `  ${ui.dim("○")}  ${command}  ${ui.dim("not run on this candidate")}`;
+      const mark = run.status === "passed" ? pc.green("✓") : pc.red("✕");
+      return `  ${mark}  ${command}  ${ui.dim(`${run.status} on ${run.commit.slice(0, 7)}`)}`;
+    }),
+  ];
+}
+
+/** The report: summary, screenshots, findings with their follow-ups, and changed files. */
+function reportLines(store: Store, task: Task): string[] {
+  const report = task.report;
+  if (!report) return [];
+  const lines = [ui.section("Summary"), ui.wrap(report.summary, 2)];
+  if (report.screenshots?.length) {
+    lines.push(ui.section("Screenshots", report.screenshots.length));
+    for (const image of report.screenshots) {
+      const path = screenshotPath(task.id, image.path);
+      if (path) lines.push(`  ${image.caption}\n  ${ui.dim(path)}`);
     }
   }
-  if (m.acceptance.length) {
-    console.log(ui.section("Acceptance criteria", m.acceptance.length));
-    m.acceptance.forEach((c, i) => {
-      const said = m.report ? acceptanceFor(m.report, c) : undefined;
-      const mark = !m.report ? ui.dim(String(i + 1)) : said?.met ? pc.green("✓") : pc.red("✕");
-      console.log(`  ${mark}  ${c}${m.report && !said ? ui.dim("  not reported") : ""}`);
-      if (said?.evidence) console.log(ui.wrap(said.evidence, 5));
+  if (report.findings.length) {
+    const followUps = store.followUps(task.id);
+    lines.push(ui.section("Findings", report.findings.length));
+    report.findings.forEach((f, i) => {
+      lines.push(`  ${ui.accent(String(i + 1))}  ${pc.bold(f.title)}  ${ui.dim(`${f.impact} impact · ${f.effort} effort`)}`, ui.wrap(f.detail, 5));
+      const next = followUpFor(followUps, i);
+      if (next) lines.push(`     ${ui.dim("Follow-up")} ${next.id}  ${ui.statusText(next.status)}`);
     });
   }
-  if (m.acceptanceChecks.length) {
-    console.log(ui.section("Acceptance checks", m.acceptanceChecks.length));
-    for (const command of m.acceptanceChecks) {
-      const run = acceptanceCheckRun(m, command);
-      if (!run) {
-        console.log(`  ${ui.dim("○")}  ${command}  ${ui.dim("not run on this candidate")}`);
-        continue;
-      }
-      const mark = run.status === "passed" ? pc.green("✓") : pc.red("✕");
-      console.log(`  ${mark}  ${command}  ${ui.dim(`${run.status} on ${run.commit.slice(0, 7)}`)}`);
-    }
+  if (report.changedFiles.length) {
+    lines.push(ui.section("Changed files", report.changedFiles.length));
+    for (const f of report.changedFiles.slice(0, 12)) lines.push(`  ${ui.dim("·")} ${f}`);
   }
+  return lines;
+}
 
-  if (m.report) {
-    console.log(ui.section("Summary"));
-    console.log(ui.wrap(m.report.summary, 2));
-    if (m.report.screenshots?.length) {
-      console.log(ui.section("Screenshots", m.report.screenshots.length));
-      for (const image of m.report.screenshots) {
-        const path = screenshotPath(m.id, image.path);
-        if (path) console.log(`  ${image.caption}\n  ${ui.dim(path)}`);
-      }
-    }
-    if (m.report.findings.length) {
-      const followUps = store.followUps(m.id);
-      console.log(ui.section("Findings", m.report.findings.length));
-      m.report.findings.forEach((f, i) => {
-        console.log(`  ${ui.accent(String(i + 1))}  ${pc.bold(f.title)}  ${ui.dim(`${f.impact} impact · ${f.effort} effort`)}`);
-        console.log(ui.wrap(f.detail, 5));
-        const next = followUpFor(followUps, i);
-        if (next) console.log(`     ${ui.dim("Follow-up")} ${next.id}  ${ui.statusText(next.status)}`);
-      });
-    }
-    if (m.report.changedFiles.length) {
-      console.log(ui.section("Changed files", m.report.changedFiles.length));
-      for (const f of m.report.changedFiles.slice(0, 12)) console.log(`  ${ui.dim("·")} ${f}`);
-    }
-  }
+function runLines(runs: AgentRun[]): string[] {
+  if (!runs.length) return [];
+  return [ui.section("Runs", runs.length), ...runs.map((r) => {
+    const tokens = runTokens(r);
+    const facts = [r.outcome, r.driver === "unknown" ? null : driverLabel(r.driver), r.model, r.turns ? `${r.turns} turns` : null, tokens ? `${ui.compact(tokens)} tokens` : null, ui.ago(r.startedAt)];
+    return `  ${RUN_KIND_LABEL[r.kind].padEnd(18)} ${runCostLabel(r, ui.usd).padStart(8)}  ${ui.dim(facts.filter(Boolean).join(" · "))}`;
+  })];
+}
 
-  if (opts.events && runs.length) {
-    console.log(ui.section("Runs", runs.length));
-    for (const r of runs) {
-      const tokens = runTokens(r);
-      console.log(
-        `  ${RUN_KIND_LABEL[r.kind].padEnd(18)} ${runCostLabel(r, ui.usd).padStart(8)}  ${ui.dim(
-          [r.outcome, r.driver === "unknown" ? null : driverLabel(r.driver), r.model, r.turns ? `${r.turns} turns` : null, tokens ? `${ui.compact(tokens)} tokens` : null, ui.ago(r.startedAt)]
-            .filter(Boolean)
-            .join(" · "),
-        )}`,
-      );
-    }
-  }
+function blockedLines(blocked: BlockedTool[]): string[] {
+  if (!blocked.length) return [];
+  return [ui.section(ui.accent("Blocked"), blocked.length), ...blocked.map((b) => ui.blockedLine(b))];
+}
 
-  const blocked = store.blockedTools({ taskId: m.id, ...(m.repoId ? { repoId: m.repoId } : {}) });
-  if (blocked.length) {
-    console.log(ui.section(ui.accent("Blocked"), blocked.length));
-    for (const b of blocked) console.log(ui.blockedLine(b));
-  }
+/** The last few events without tool calls, or every event with `--events`. */
+function activityLines(taskId: string, events: TaskEvent[], all: boolean): string[] {
+  const shown = all ? events : events.filter((e) => e.type !== "tool").slice(-6);
+  const lines = [ui.section("Activity", events.length), ...shown.map((e) => "  " + ui.eventLine(e))];
+  if (!all && events.length > shown.length) lines.push(ui.dim(`  … crane show ${taskId} --events for all of it`));
+  return lines;
+}
 
-  const events = store.listEvents(m.id);
-  const shown = opts.events ? events : events.filter((e) => e.type !== "tool").slice(-6);
-  console.log(ui.section("Activity", events.length));
-  for (const e of shown) console.log("  " + ui.eventLine(e));
-  if (!opts.events && events.length > shown.length) console.log(ui.dim(`  … crane show ${m.id} --events for all of it`));
-
-  console.log("");
-  const merge = lastMergeOutcome(events);
-  const main = repo?.defaultBranch ?? "main";
-  if (merge?.error) {
-    console.log(`\n  ${pc.red("✕")} ${pc.bold(`Couldn't merge into ${main}`)}`);
-    console.log(ui.wrap(merge.error, 4));
-  }
-
-  const next: [string, string][] = [];
-  if (m.status === "needs_review") {
-    next.push([`crane approve ${m.id}`, m.branch ? `merge into ${main} and push` : "mark as reviewed"]);
-    if (m.branch) next.push([`crane approve ${m.id} --no-merge`, `approve only, keep ${m.branch}`]);
-    next.push([`crane decline ${m.id}`, m.branch ? "discard the branch" : "dismiss"]);
-    if (m.branch) next.push([`crane diff ${m.id}`, "see the changes"]);
-    if (m.report?.findings.length && m.autonomy === "observe") next.push([`crane follow-up ${m.id} 1`, "act on finding 1"]);
-  } else if (m.status === "running" || m.status === "queued") {
-    if (m.status === "queued" && waiting.length) {
-      next.push([`crane waive ${m.id} -m "…"`, `start it without ${waiting.map((t) => t.id).join(", ")}, accepting a reduced scope`]);
-    }
-    next.push([`crane watch ${m.id}`, "follow along live"]);
-    if (m.status === "running" && m.branch) next.push([`crane diff ${m.id}`, "see the changes so far"]);
-    next.push([`crane cancel ${m.id}`, "stop it"]);
-    if (m.autonomy !== "observe") {
-      next.push(m.preApprovedAt
-        ? [`crane pre-approve ${m.id} --undo`, "wait for your review instead of merging"]
-        : [`crane pre-approve ${m.id}`, `merge into ${main} once its checks pass`]);
-    }
-  } else if (m.status === "merging") {
-    next.push([`crane watch ${m.id}`, "follow the merge"]);
-  } else if (m.status === "failed" || m.status === "cancelled") {
-    next.push([`crane retry ${m.id}`, "run it again"]);
-  } else if ((m.status === "approved" || m.status === "done") && m.branch) {
-    next.push([`crane merge ${m.id}`, `merge into ${main} and push`]);
-  } else if (m.status === "merged" && merge?.checkoutBehind) {
-    next.push([`git -C ${merge.checkoutBehind} pull --ff-only`, "catch your checkout up, once it's clean"]);
-  }
-  if (blocked[0]) next.push([allowCommand(blocked[0], m.id), `let agents run it in ${blocked[0].repoName}`]);
-  if (next.length) console.log(ui.hint(...next) + "\n");
+function mergeErrorLines(merge: MergeOutcome | null, main: string): string[] {
+  if (!merge?.error) return [];
+  return [`\n  ${pc.red("✕")} ${pc.bold(`Couldn't merge into ${main}`)}`, ui.wrap(merge.error, 4)];
 }
