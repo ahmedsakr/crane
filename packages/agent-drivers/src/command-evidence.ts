@@ -19,6 +19,15 @@ export function commandMessage(label: string, command: CommandEvidence): string 
   return `${label} ${command.command.split("\n")[0]?.slice(0, 120)}${command.exitCode === null ? "" : ` (exit ${command.exitCode})`}`;
 }
 
+/** A command's status: completed only when the item says so and exited 0; a nonzero exit always fails. */
+function commandStatus(phase: "started" | "completed", itemStatus: unknown, exitCode: number | null): CommandEvidence["status"] {
+  if (phase === "started") return "running";
+  if (itemStatus === "interrupted") return "interrupted";
+  if (itemStatus === "failed" || (exitCode !== null && exitCode !== 0)) return "failed";
+  if (itemStatus === "completed" && exitCode === 0) return "completed";
+  return "unknown";
+}
+
 /** One CLI invocation; item IDs alone can repeat in later sessions/runs. */
 export class CommandTracker {
   private invocation = randomUUID();
@@ -31,10 +40,7 @@ export class CommandTracker {
     const commandId = `${this.invocation}:${itemId ?? randomUUID()}`;
     const previous = this.pending.get(commandId);
     const exitCode = typeof item.exit_code === "number" && Number.isInteger(item.exit_code) ? item.exit_code : null;
-    const status = phase === "started" ? "running"
-      : item.status === "interrupted" ? "interrupted"
-      : item.status === "failed" || (exitCode !== null && exitCode !== 0) ? "failed"
-      : item.status === "completed" && exitCode === 0 ? "completed" : "unknown";
+    const status = commandStatus(phase, item.status, exitCode);
     const evidence: CommandEvidence = {
       commandId, itemId, sessionId,
       ...(previous && !command ? { command: previous.command, truncated: previous.truncated } : safeCommand(command)),

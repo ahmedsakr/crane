@@ -44,77 +44,97 @@ function headerPath(rest: string): string {
   return same ? rest.slice(2, 2 + n) : rest;
 }
 
+/** Where `parseDiff` is: the file and hunk it is filling, and its place in that hunk. */
+interface DiffCursor {
+  files: DiffFile[];
+  notes: string[];
+  file: DiffFile | null;
+  hunk: DiffHunk | null;
+  /** Lines the current hunk still has to come, on each side. A hunk ends when both run out. */
+  oldLeft: number;
+  newLeft: number;
+  /** The next line's number on each side. */
+  oldNo: number;
+  newNo: number;
+}
+
 /** Splits a unified git diff into files and hunks, numbering each line on both sides. */
 export function parseDiff(diff: string): ParsedDiff {
-  const files: DiffFile[] = [];
-  const notes: string[] = [];
-  let file: DiffFile | null = null;
-  let hunk: DiffHunk | null = null;
-  // Lines the current hunk still has to come, on each side. A hunk ends when both run out.
-  let oldLeft = 0;
-  let newLeft = 0;
-  let oldNo = 0;
-  let newNo = 0;
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("diff --git ")) {
-      file = { path: headerPath(line.slice("diff --git ".length)), oldPath: null, status: "modified", binary: false, additions: 0, deletions: 0, hunks: [] };
-      files.push(file);
-      hunk = null;
-      oldLeft = newLeft = 0;
-      continue;
-    }
-    if (!file) {
-      if (line) notes.push(line);
-      continue;
-    }
-    const m = HUNK.exec(line);
-    // Every line inside a hunk starts with "+", "-", " " or "\", so "@@" always starts a new one.
-    if (m) {
-      oldNo = Number(m[1]);
-      newNo = Number(m[3]);
-      oldLeft = m[2] === undefined ? 1 : Number(m[2]);
-      newLeft = m[4] === undefined ? 1 : Number(m[4]);
-      hunk = { header: line, lines: [] };
-      file.hunks.push(hunk);
-      continue;
-    }
-    if (hunk && (oldLeft > 0 || newLeft > 0)) {
-      if (line.startsWith("+")) {
-        hunk.lines.push({ kind: "add", text: line.slice(1), oldLine: null, newLine: newNo++ });
-        file.additions++;
-        newLeft--;
-      } else if (line.startsWith("-")) {
-        hunk.lines.push({ kind: "del", text: line.slice(1), oldLine: oldNo++, newLine: null });
-        file.deletions++;
-        oldLeft--;
-      } else if (line.startsWith("\\")) {
-        hunk.lines.push({ kind: "note", text: line.slice(1).trim(), oldLine: null, newLine: null });
-      } else {
-        // A context line. Git's output may have lost the trailing space of an empty one.
-        hunk.lines.push({ kind: "context", text: line.slice(1), oldLine: oldNo++, newLine: newNo++ });
-        oldLeft--;
-        newLeft--;
-      }
-      continue;
-    }
-    if (hunk) {
-      // Past the hunk's last line: only a note about the line before still belongs to it.
-      if (line.startsWith("\\")) hunk.lines.push({ kind: "note", text: line.slice(1).trim(), oldLine: null, newLine: null });
-      else if (line) notes.push(line);
-      continue;
-    }
-    // The file's header, before its first hunk.
-    if (line.startsWith("new file mode")) file.status = "added";
-    else if (line.startsWith("deleted file mode")) file.status = "deleted";
-    else if (line.startsWith("rename from ")) {
-      file.status = "renamed";
-      file.oldPath = line.slice("rename from ".length);
-    } else if (line.startsWith("rename to ")) file.path = line.slice("rename to ".length);
-    // Git ends "+++" lines with a tab when the path has a space.
-    else if (line.startsWith("+++ b/")) file.path = line.slice(6).replace(/\t$/, "");
-    else if (line.startsWith("Binary files ") || line === "GIT binary patch") file.binary = true;
+  const at: DiffCursor = { files: [], notes: [], file: null, hunk: null, oldLeft: 0, newLeft: 0, oldNo: 0, newNo: 0 };
+  for (const line of diff.split("\n")) readLine(at, line);
+  return { files: at.files, notes: at.notes };
+}
+
+function readLine(at: DiffCursor, line: string): void {
+  if (line.startsWith("diff --git ")) return startFile(at, line);
+  if (!at.file) {
+    if (line) at.notes.push(line);
+    return;
   }
-  return { files, notes };
+  const m = HUNK.exec(line);
+  // Every line inside a hunk starts with "+", "-", " " or "\", so "@@" always starts a new one.
+  if (m) return startHunk(at, at.file, line, m);
+  if (at.hunk && (at.oldLeft > 0 || at.newLeft > 0)) return readHunkLine(at, at.file, at.hunk, line);
+  if (at.hunk) return readAfterHunk(at, at.hunk, line);
+  readFileHeader(at.file, line);
+}
+
+function startFile(at: DiffCursor, line: string): void {
+  at.file = { path: headerPath(line.slice("diff --git ".length)), oldPath: null, status: "modified", binary: false, additions: 0, deletions: 0, hunks: [] };
+  at.files.push(at.file);
+  at.hunk = null;
+  at.oldLeft = at.newLeft = 0;
+}
+
+function startHunk(at: DiffCursor, file: DiffFile, line: string, m: RegExpExecArray): void {
+  at.oldNo = Number(m[1]);
+  at.newNo = Number(m[3]);
+  at.oldLeft = m[2] === undefined ? 1 : Number(m[2]);
+  at.newLeft = m[4] === undefined ? 1 : Number(m[4]);
+  at.hunk = { header: line, lines: [] };
+  file.hunks.push(at.hunk);
+}
+
+function noteLine(line: string): DiffLine {
+  return { kind: "note", text: line.slice(1).trim(), oldLine: null, newLine: null };
+}
+
+function readHunkLine(at: DiffCursor, file: DiffFile, hunk: DiffHunk, line: string): void {
+  if (line.startsWith("+")) {
+    hunk.lines.push({ kind: "add", text: line.slice(1), oldLine: null, newLine: at.newNo++ });
+    file.additions++;
+    at.newLeft--;
+  } else if (line.startsWith("-")) {
+    hunk.lines.push({ kind: "del", text: line.slice(1), oldLine: at.oldNo++, newLine: null });
+    file.deletions++;
+    at.oldLeft--;
+  } else if (line.startsWith("\\")) {
+    hunk.lines.push(noteLine(line));
+  } else {
+    // A context line. Git's output may have lost the trailing space of an empty one.
+    hunk.lines.push({ kind: "context", text: line.slice(1), oldLine: at.oldNo++, newLine: at.newNo++ });
+    at.oldLeft--;
+    at.newLeft--;
+  }
+}
+
+/** Past the hunk's last line: only a note about the line before still belongs to it. */
+function readAfterHunk(at: DiffCursor, hunk: DiffHunk, line: string): void {
+  if (line.startsWith("\\")) hunk.lines.push(noteLine(line));
+  else if (line) at.notes.push(line);
+}
+
+/** The file's header, before its first hunk. */
+function readFileHeader(file: DiffFile, line: string): void {
+  if (line.startsWith("new file mode")) file.status = "added";
+  else if (line.startsWith("deleted file mode")) file.status = "deleted";
+  else if (line.startsWith("rename from ")) {
+    file.status = "renamed";
+    file.oldPath = line.slice("rename from ".length);
+  } else if (line.startsWith("rename to ")) file.path = line.slice("rename to ".length);
+  // Git ends "+++" lines with a tab when the path has a space.
+  else if (line.startsWith("+++ b/")) file.path = line.slice(6).replace(/\t$/, "");
+  else if (line.startsWith("Binary files ") || line === "GIT binary patch") file.binary = true;
 }
 
 /** The files a unified git diff touches, in order, by their new name (or old name, for deletions). */

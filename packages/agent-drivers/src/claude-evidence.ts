@@ -9,19 +9,31 @@ export function claudeToolResult(block: Record<string, unknown>, metadata: unkno
   // when supplied; tool success and output (including TAP) cannot supply a code.
   const exit = result.exit_code ?? result.exitCode;
   const exitCode = typeof exit === "number" && Number.isSafeInteger(exit) ? exit : null;
-  const content = typeof block.content === "string" ? block.content
-    : Array.isArray(block.content) ? block.content
-      .filter((part) => part?.type === "text" && typeof part.text === "string")
-      .map((part) => part.text).join("\n") : "";
+  const content = toolResultText(block.content);
   return {
     isError: typeof block.is_error === "boolean" ? block.is_error : null,
     exitCode,
-    exitCodeSource: exitCode === null ? null : result.exit_code != null ? "exit_code" : "exitCode",
+    exitCodeSource: exitCodeSource(exitCode, result),
     ...(typeof result.interrupted === "boolean" ? { interrupted: result.interrupted } : {}),
     content: safeEvidenceText(content, 8192),
     ...(typeof result.stdout === "string" ? { stdout: safeEvidenceText(result.stdout, 4096) } : {}),
     ...(typeof result.stderr === "string" ? { stderr: safeEvidenceText(result.stderr, 4096) } : {}),
   };
+}
+
+/** A tool result's text: the string itself, or its text parts joined by newlines. */
+function toolResultText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((part) => part?.type === "text" && typeof part.text === "string")
+    .map((part) => part.text).join("\n");
+}
+
+/** Which metadata field supplied the exit code, preferring `exit_code` as the lookup does. */
+function exitCodeSource(exitCode: number | null, result: Record<string, unknown>): "exit_code" | "exitCode" | null {
+  if (exitCode === null) return null;
+  return result.exit_code != null ? "exit_code" : "exitCode";
 }
 
 /** Driver-owned qualification of agent validation claims, separate from external checks. */

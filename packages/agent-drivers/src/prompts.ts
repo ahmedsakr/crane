@@ -178,9 +178,14 @@ function siblingTasksBrief(tasks?: readonly SiblingTask[]): string {
       title: t.title,
       status: t.status,
       branch: t.branch,
-      commitsNotOnDefaultBranch: t.hasCommits === null ? "unknown" : t.hasCommits ? "yes" : "no",
+      commitsNotOnDefaultBranch: commitsLabel(t.hasCommits),
     })),
   ].filter(Boolean).join("\n\n");
+}
+
+function commitsLabel(hasCommits: boolean | null): "unknown" | "yes" | "no" {
+  if (hasCommits === null) return "unknown";
+  return hasCommits ? "yes" : "no";
 }
 
 /**
@@ -190,10 +195,7 @@ function siblingTasksBrief(tasks?: readonly SiblingTask[]): string {
 function prerequisitesBrief(task: Task, states?: readonly PrerequisiteState[]): string {
   if (!task.prerequisites.length) return "";
   const byId = new Map(states?.map((s) => [s.id, s]));
-  const list = task.prerequisites.map((id) => {
-    const s = byId.get(id);
-    return s ? `- ${s.id}: ${s.title} (${STATUS_LABEL[s.status]}${s.met ? ", landed" : ", not landed"})` : `- ${id}`;
-  }).join("\n");
+  const list = task.prerequisites.map((id) => prerequisiteLine(id, byId.get(id))).join("\n");
   const unmet = states?.some((s) => !s.met) ?? false;
   return [
     "## Prerequisites",
@@ -202,6 +204,12 @@ function prerequisitesBrief(task: Task, states?: readonly PrerequisiteState[]): 
       : "Crane started this task only after these tasks landed on the default branch, so their changes are in your checkout. Build on them rather than redoing them. If one turns out to be missing anyway, stop and report the unmet prerequisite and the unfinished scope; do not substitute a smaller or different scope.",
     list,
   ].join("\n\n");
+}
+
+function prerequisiteLine(id: string, state: PrerequisiteState | undefined): string {
+  if (!state) return `- ${id}`;
+  const landed = state.met ? ", landed" : ", not landed";
+  return `- ${state.id}: ${state.title} (${STATUS_LABEL[state.status]}${landed})`;
 }
 
 /** Observable criteria the agent must check and report on, one by one. */
