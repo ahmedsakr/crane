@@ -61,7 +61,9 @@ test("boundaries: factory status queries don't load the scheduler or drivers", (
   assert.deepEqual(importsOf("factory/settings.ts"), []);
   assert.deepEqual(importsOf("factory/state.ts").sort(), ["core/webbuild", "factory/settings"]);
   // Only `crane serve` composes a Factory; the API and the other CLI commands only ask about it.
-  for (const file of ["server/app.ts", "cli/index.ts"]) {
+  const server = sources.filter((f) => f.startsWith("server/"));
+  assert.ok(server.includes("server/app.ts") && server.includes("server/routes/tasks.ts"), "expected to find server sources");
+  for (const file of [...server, "cli/index.ts"]) {
     const bad = importsOf(file).filter((i) => i === "factory/orchestrator");
     assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
   }
