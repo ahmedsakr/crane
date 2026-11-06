@@ -44,6 +44,11 @@ export function listRuns(store: Store, taskId: string): AgentRun[] {
   return (store.db.prepare("SELECT * FROM runs WHERE task_id = ? ORDER BY id ASC").all(taskId) as Row[]).map(toRun);
 }
 
+/** Whether any of the task's runs is still open. */
+export function hasRunningRun(store: Store, taskId: string): boolean {
+  return !!store.db.prepare("SELECT 1 FROM runs WHERE task_id = ? AND outcome = 'running'").get(taskId);
+}
+
 /** The driver of the task's latest work run, which owns its session. Null before its first run. */
 export function lastWorkDriver(store: Store, taskId: string): string | null {
   const r = store.db

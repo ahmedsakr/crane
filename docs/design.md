@@ -32,7 +32,7 @@ The Home hero is a solid crane-yellow slab with a big number (tasks shipped in t
 
 ## The site
 
-Below the decisions on Home, "On site" shows the work in motion: a tower crane carries each task, as a crate, between six pads (Queued, Working, Needs you, Merging, Shipped, Didn't ship) as its status changes. It is ambient, not a control. Crates take their colour from their pad (blue for working, yellow only for Needs you, green for shipped, red for didn't ship), a legend names the pads, pointing at a crate shows the task, and tapping opens it. Like the slab, the crane goes graphite when the factory is off. It draws only while something moves, and lands every move at once for reduced motion. The model lives in `web/src/lib/site.ts`; the drawing in `web/src/components/site-view.ts`.
+Below the decisions on Home, "On site" shows the work in motion: a tower crane carries each task, as a crate, between six pads (Queued, Working, Needs you, Merging, Shipped, Didn't ship) as its status changes. It is ambient, not a control. Crates take their colour from their pad (blue for working, yellow only for Needs you, green for shipped, red for didn't ship), a legend names the pads, pointing at a crate shows the task, and tapping opens it. Like the slab, the crane goes graphite when the factory is off. It draws only while something moves, and lands every move at once for reduced motion. The model lives in `web/src/lib/site.ts` and `web/src/lib/site/` (layout, choreography and camera); the drawing in `web/src/components/site-view/`.
 
 ## Goals
 

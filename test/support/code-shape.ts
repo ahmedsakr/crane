@@ -5,7 +5,6 @@ import { parseSource } from "./imports.ts";
 
 export const RULES = ["nestedTernary", "functionLines", "parameters", "depth", "fileLines"] as const;
 export type ShapeRule = (typeof RULES)[number];
-export type ShapeCounts = Partial<Record<ShapeRule, number>>;
 
 /** The most each rule allows: a value above its limit is a violation. */
 export const LIMITS: Record<ShapeRule, number> = {
@@ -23,8 +22,6 @@ const MEASURES: Record<ShapeRule, string> = {
   depth: "block depth",
   fileLines: "physical lines",
 };
-
-export const BASELINE_DIR = "test/support/code-shape-baseline";
 
 const SCANNED_EXTENSIONS = /\.(ts|tsx|mjs)$/;
 const SKIPPED_DIRECTORIES = new Set(["dist", "node_modules"]);
@@ -301,87 +298,9 @@ export function scanTree(root: string): FileShape[] {
   return sourcePaths(root).map((path) => inspectSource(path, readFileSync(join(root, path), "utf8")));
 }
 
-/** The budget file for a source path: `/` becomes `__`, so each source has its own file. */
-export function budgetName(path: string): string {
-  return `${path.replaceAll("/", "__")}.json`;
-}
-
-export function countViolations(violations: Violation[]): ShapeCounts {
-  const counts: ShapeCounts = {};
-  for (const rule of RULES) {
-    const count = violations.filter((violation) => violation.rule === rule).length;
-    if (count > 0) counts[rule] = count;
-  }
-  return counts;
-}
-
-/** Each budget file's raw text, by file name. No directory means no allowances at all. */
-export function readBudgets(directory: string): Map<string, string> {
-  if (!existsSync(directory)) return new Map();
-  return new Map(readdirSync(directory).map((name) => [name, readFileSync(join(directory, name), "utf8")]));
-}
-
-function parseBudget(raw: string): ShapeCounts | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const valid = Object.entries(parsed).every(([rule, count]) => (
-    (RULES as readonly string[]).includes(rule) && Number.isInteger(count) && count >= 0
-  ));
-  return valid ? (parsed as ShapeCounts) : null;
-}
-
-function violationLines(file: FileShape, rule?: ShapeRule): string {
-  return file.violations
-    .filter((violation) => !rule || violation.rule === rule)
-    .map(({ rule: ruleName, line, name, measured }) => (
-      `  ${file.path}:${line} ${name}: ${measured} ${MEASURES[ruleName]} (limit ${LIMITS[ruleName]})`
-    ))
-    .join("\n");
-}
-
-function budgetRuleFailure(file: FileShape, rule: ShapeRule, budget: number, budgetPath: string): string | null {
-  const measured = file.violations.filter((violation) => violation.rule === rule).length;
-  if (measured === budget) return null;
-  if (measured > budget) {
-    return `${file.path} is over its ${rule} budget: ${measured} violations, budget ${budget}.\n`
-      + `${violationLines(file, rule)}\n`
-      + `Bring the code back within the limit. Don't raise ${budgetPath}.`;
-  }
-  const detail = violationLines(file, rule);
-  return `${file.path} is under its ${rule} budget: ${measured} violations, budget ${budget}.\n`
-    + (detail && `${detail}\n`)
-    + `Set "${rule}" to ${measured} in ${budgetPath} to lock in the improvement.`;
-}
-
-function unbudgetedFailure(file: FileShape, budgetPath: string): string {
-  return `${file.path} has violations and no budget.\n`
-    + `${violationLines(file)}\n`
-    + "Bring the code within the limits. Only if you moved these violations from a budgeted file, "
-    + `move their counts to ${budgetPath}: ${JSON.stringify(countViolations(file.violations))}`;
-}
-
-function fileFailures(file: FileShape, raw: string | undefined): string[] {
-  const budgetPath = `${BASELINE_DIR}/${budgetName(file.path)}`;
-  if (raw === undefined) return file.violations.length > 0 ? [unbudgetedFailure(file, budgetPath)] : [];
-  const budget = parseBudget(raw);
-  if (!budget) {
-    return [`${budgetPath} isn't a valid budget for ${file.path}. It must be JSON mapping rule names (${RULES.join(", ")}) to counts.`];
-  }
-  if (file.violations.length === 0) return [`${file.path} has no violations left. Delete ${budgetPath}.`];
-  return RULES.flatMap((rule) => budgetRuleFailure(file, rule, budget[rule] ?? 0, budgetPath) ?? []);
-}
-
-/** What must change for the scanned files to match their budgets exactly; empty when they do. */
-export function compareToBudgets(files: FileShape[], budgets: Map<string, string>): string[] {
-  const scanned = new Set(files.map((file) => budgetName(file.path)));
-  const orphans = [...budgets.keys()].filter((name) => !scanned.has(name)).map((name) => (
-    `${BASELINE_DIR}/${name} names a file that isn't scanned: ${name.replace(/\.json$/, "").replaceAll("__", "/")}. `
-    + "Delete the budget, or if the source moved, rename the budget to match its new path."
-  ));
-  return [...files.flatMap((file) => fileFailures(file, budgets.get(budgetName(file.path)))), ...orphans];
+/** One line per violation: where it is, what it measured, and the limit. Empty when the files are clean. */
+export function shapeFailures(files: FileShape[]): string[] {
+  return files.flatMap((file) => file.violations.map(({ rule, line, name, measured }) => (
+    `${file.path}:${line} ${name}: ${measured} ${MEASURES[rule]} (limit ${LIMITS[rule]})`
+  )));
 }
