@@ -16,6 +16,13 @@ export function screenshotPath(taskId: string, name: string): string | null {
   return join(craneHome(), "attachments", taskId, name);
 }
 
+/** The file's leading bytes match the format its extension claims. */
+function hasImageSignature(ext: string, bytes: Buffer): boolean {
+  if (ext === ".png") return bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
+  if (ext === ".jpg" || ext === ".jpeg") return bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  return ext === ".webp" && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP";
+}
+
 /** Read a bounded regular file without following a final symlink or blocking on a pipe. */
 function readImage(root: string, path: string): { bytes: Buffer; mime: string } {
   const real = realpathSync(path);
@@ -26,10 +33,7 @@ function readImage(root: string, path: string): { bytes: Buffer; mime: string } 
     if (!stat.isFile() || stat.size === 0 || stat.size > MAX_BYTES) throw new Error("Image must be a regular file of at most 10 MiB");
     const bytes = readFileSync(fd);
     const ext = extname(path).toLowerCase();
-    const valid = ext === ".png" ? bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
-      : ext === ".jpg" || ext === ".jpeg" ? bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
-      : ext === ".webp" && bytes.toString("ascii", 0, 4) === "RIFF" && bytes.toString("ascii", 8, 12) === "WEBP";
-    if (!valid || bytes.length > MAX_BYTES) throw new Error("Expected a PNG, JPEG, or WebP image");
+    if (!hasImageSignature(ext, bytes) || bytes.length > MAX_BYTES) throw new Error("Expected a PNG, JPEG, or WebP image");
     return { bytes, mime: MIME[ext]! };
   } finally {
     closeSync(fd);

@@ -2,9 +2,17 @@ import { DRIVER_NAMES, EFFORT_LEVELS, type Goal, type NewTask, type Repo, type T
 import type { Store } from "../core/store.js";
 import { driverSettings } from "./drivers.js";
 
+export interface GoalResearchRequest {
+  outcome: string;
+  research: TaskRunOptions;
+  /** The goal being revised, whose plan and feedback the new research builds on. */
+  previous?: Pick<Goal, "plan" | "feedback">;
+  feedback?: string;
+}
+
 /** Planning uses the same read-only driver guards, limits, cost ledger and recovery as any research task. */
-export function goalResearchTask(store: Store, repo: Repo, outcome: string, research: TaskRunOptions,
-  previous?: Pick<Goal, "plan" | "feedback">, feedback?: string): NewTask {
+export function goalResearchTask(store: Store, repo: Repo, request: GoalResearchRequest): NewTask {
+  const { outcome, research, previous, feedback } = request;
   const catalog = DRIVER_NAMES.map((driver) => ({ driver, ...driverSettings((key) => store.getSetting(key), driver), efforts: EFFORT_LEVELS[driver] }));
   return { kind: repo.isFactory ? "factory_feature" : "repo_feature", title: `Plan: ${outcome.slice(0, 100)}`,
     repoId: repo.id, autonomy: "observe", ...research,

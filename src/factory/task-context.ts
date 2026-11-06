@@ -27,9 +27,15 @@ export async function siblingTasksFor(store: Store, task: Task, repo: Repo): Pro
   } catch {
     // A missing/deleted ref or an unreadable repo is unknown, not evidence of no work.
   }
-  return siblings.map(({ id, title, status, branch }) => {
-    const ref = `refs/heads/${branch}`;
-    const hasCommits = !branch ? false : branches?.has(ref) && unmerged ? unmerged.has(ref) : null;
-    return { id, title, status, branch, hasCommits };
-  });
+  return siblings.map(({ id, title, status, branch }) => ({
+    id, title, status, branch, hasCommits: branchHasCommits(branch, branches, unmerged),
+  }));
+}
+
+/** Null when the refs couldn't be read or the branch is missing: unknown, not evidence of no work. */
+function branchHasCommits(branch: string | null, branches: Set<string> | null, unmerged: Set<string> | null): boolean | null {
+  if (!branch) return false;
+  const ref = `refs/heads/${branch}`;
+  if (!branches?.has(ref) || !unmerged) return null;
+  return unmerged.has(ref);
 }

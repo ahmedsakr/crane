@@ -9,6 +9,17 @@ export function hasVisualDecision(review: VisualReview | null | undefined): revi
   return review?.status === "inspected" || review?.status === "waived";
 }
 
+export interface VisualCandidate {
+  /** The merge candidate's commit and tree. */
+  commit: string;
+  tree: string;
+  /** The task branch's tip that the candidate merges. */
+  branchCommit: string;
+  changedFiles: string[];
+  /** An agent changed UI files while resolving this candidate's conflicts. */
+  conflictChangedUi?: boolean;
+}
+
 /**
  * Whether a merge candidate may land. A decision covers the task's own work, so
  * it carries across a clean merge onto a newer default branch: that adds only
@@ -17,7 +28,8 @@ export function hasVisualDecision(review: VisualReview | null | undefined): revi
  * resolving conflicts, since nobody has seen that result. Task pre-approval
  * authorizes a fresh waiver for any such candidate, including UI conflicts.
  */
-export function requireCandidateVisualReview(store: Store, taskId: string, commit: string, tree: string, branchCommit: string, changedFiles: string[], conflictChangedUi = false): void {
+export function requireCandidateVisualReview(store: Store, taskId: string, candidate: VisualCandidate): void {
+  const { commit, tree, branchCommit, changedFiles, conflictChangedUi = false } = candidate;
   const review = store.getTask(taskId)?.visualReview;
   if (hasVisualDecision(review) && review.tree === tree) return;
   if (!conflictChangedUi) {

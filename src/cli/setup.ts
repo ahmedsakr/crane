@@ -37,13 +37,18 @@ export function probeCommand(bin: string, launch = spawn): Promise<ProbeResult> 
       }));
       child.once("exit", (code, signal) => resolve({
         ok: code === 0 && signal === null,
-        detail: signal ? `Version check stopped by ${signal} (limit: ${PROBE_TIMEOUT_MS / 1000}s)`
-          : code === 0 ? "Version check passed" : `Version check exited with ${code ?? "unknown status"}`,
+        detail: probeExitDetail(code, signal),
       }));
     } catch {
       resolve({ ok: false, detail: "Could not start version check" });
     }
   });
+}
+
+function probeExitDetail(code: number | null, signal: NodeJS.Signals | null): string {
+  if (signal) return `Version check stopped by ${signal} (limit: ${PROBE_TIMEOUT_MS / 1000}s)`;
+  if (code === 0) return "Version check passed";
+  return `Version check exited with ${code ?? "unknown status"}`;
 }
 
 /** Loading the JS wrapper alone doesn't prove its native binding matches this Node runtime. */
@@ -111,6 +116,12 @@ export async function inspectSetup(runtime: SetupRuntime = {
   };
 }
 
+const CHECK_MARK: Record<SetupCheck["status"], () => string> = {
+  pass: () => pc.green("✓"),
+  fail: () => pc.red("✕"),
+  info: () => pc.dim("○"),
+};
+
 /** Kept independent of Store and workspace packages so setup can diagnose a broken installation. */
 export function setupCommand(inspect = inspectSetup): Command {
   return new Command("setup")
@@ -122,8 +133,7 @@ export function setupCommand(inspect = inspectSetup): Command {
       else {
         console.log("\nCrane setup\n");
         for (const check of report.checks) {
-          const mark = check.status === "pass" ? pc.green("✓") : check.status === "fail" ? pc.red("✕") : pc.dim("○");
-          console.log(`  ${mark} ${check.label}: ${check.detail}`);
+          console.log(`  ${CHECK_MARK[check.status]()} ${check.label}: ${check.detail}`);
           if (check.fix) console.log(`    ${check.fix}`);
         }
         console.log(`\n${report.ready ? "Required dependencies are available." : "Setup needs attention. Fix the failed checks and rerun crane setup."}`);

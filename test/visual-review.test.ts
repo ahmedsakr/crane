@@ -8,13 +8,17 @@ import { parseReport } from "@crane/agent-protocol";
 import { Store } from "../src/core/store.js";
 import { OperatorActions } from "../src/factory/actions.js";
 import { createApp } from "../src/server/app.js";
-import { requireCandidateVisualReview, visualReviewRequired } from "../src/factory/visual-review.js";
+import { requireCandidateVisualReview, visualReviewRequired, type VisualCandidate } from "../src/factory/visual-review.js";
 
 const commit = "a".repeat(40);
 const tree = "b".repeat(40);
 const pending: VisualReview = { status: "pending", commit, tree, note: "UI changed; browser review outstanding", decidedAt: null };
 const report: Report = { summary: "Done", findings: [], changedFiles: ["src/server.ts"],
   completion: { status: "completed", reason: "Implemented", evidence: "Implementation tests" }, hasContribution: true };
+
+function candidate(commit: string, tree: string, branchCommit: string, changedFiles: string[], conflictChangedUi?: boolean): VisualCandidate {
+  return { commit, tree, branchCommit, changedFiles, ...(conflictChangedUi === undefined ? {} : { conflictChangedUi }) };
+}
 
 function setup(path = ":memory:", preApprove = false, acceptance: string[] = []) {
   const store = new Store(path);
@@ -93,7 +97,7 @@ test("visual review: pre-approval waives pending candidates and allows legacy ca
         assert.deepEqual(event?.data?.visualReview, review);
         assert.equal(event?.data?.preApprovedAt, task.preApprovedAt);
       }
-      requireCandidateVisualReview(store, task.id, "c".repeat(40), "d".repeat(40), commit, ["web/src/App.tsx"], true);
+      requireCandidateVisualReview(store, task.id, candidate("c".repeat(40), "d".repeat(40), commit, ["web/src/App.tsx"], true));
       assert.equal(store.getTask(task.id)!.visualReview!.status, "waived", "UI conflict resolutions are covered too");
     } finally { store.close(); }
   }
@@ -109,7 +113,7 @@ test("visual review: pre-approval during a run applies, and undo restores candid
       assert.equal(store.finishWork(task.id, "needs_review"), undo ? "needs_review" : "merging");
       if (undo) {
         assert.equal(store.getTask(task.id)!.visualReview!.status, "pending");
-        assert.throws(() => requireCandidateVisualReview(store, task.id, commit, tree, commit, ["web/src/App.tsx"]), /visual inspection/);
+        assert.throws(() => requireCandidateVisualReview(store, task.id, candidate(commit, tree, commit, ["web/src/App.tsx"])), /visual inspection/);
         assert.equal(store.listEvents(task.id).some(e => e.message === "Visual review waived by pre-approval"), false);
       }
     } finally { store.close(); }
@@ -184,9 +188,9 @@ test("visual review: a decision carries across a clean merge onto a newer defaul
       store.finishWork(task.id, "needs_review");
       await actions.recordVisualReview(task.id, { status, commit, note: "Task view at all sizes" });
       const decided = store.getTask(task.id)!.visualReview;
-      requireCandidateVisualReview(store, task.id, "c".repeat(40), tree, commit, [], false);
+      requireCandidateVisualReview(store, task.id, candidate("c".repeat(40), tree, commit, [], false));
       // The task's own UI files are what the decision was about, so they don't reopen it.
-      requireCandidateVisualReview(store, task.id, "d".repeat(40), "e".repeat(40), commit, ["web/src/App.tsx"]);
+      requireCandidateVisualReview(store, task.id, candidate("d".repeat(40), "e".repeat(40), commit, ["web/src/App.tsx"]));
       assert.deepEqual(store.getTask(task.id)!.visualReview, decided);
     } finally { store.close(); }
   }
@@ -199,17 +203,17 @@ test("visual review: new branch commits and UI conflict resolutions need a fresh
   try {
     store.finishWork(task.id, "needs_review");
     await actions.recordVisualReview(task.id, { status: "waived", commit, note: "Urgent fix; task view unreviewed at all sizes" });
-    assert.throws(() => requireCandidateVisualReview(store, task.id, merged, mergedTree, commit, [], true), /visual inspection/);
+    assert.throws(() => requireCandidateVisualReview(store, task.id, candidate(merged, mergedTree, commit, [], true)), /visual inspection/);
     assert.deepEqual(store.getTask(task.id)!.visualReview, { status: "pending", commit: merged, tree: mergedTree, branchCommit: commit, decidedAt: null,
       note: "An agent changed UI files while resolving conflicts. Inspect this merge before it lands, or explicitly waive visual review." });
 
     await actions.recordVisualReview(task.id, { status: "inspected", commit: merged, note: "Inspected merged candidate at all sizes; screenshot paths recorded" });
     assert.equal(store.getTask(task.id)!.visualReview!.branchCommit, commit, "the decision remembers which branch it covers");
-    requireCandidateVisualReview(store, task.id, "f".repeat(40), mergedTree, commit, [], true);
-    requireCandidateVisualReview(store, task.id, "f".repeat(40), "1".repeat(40), commit, []);
+    requireCandidateVisualReview(store, task.id, candidate("f".repeat(40), mergedTree, commit, [], true));
+    requireCandidateVisualReview(store, task.id, candidate("f".repeat(40), "1".repeat(40), commit, []));
     assert.equal(store.getTask(task.id)!.visualReview!.status, "inspected");
 
-    assert.throws(() => requireCandidateVisualReview(store, task.id, "2".repeat(40), "3".repeat(40), "4".repeat(40), []), /visual inspection/, "the branch got new commits");
+    assert.throws(() => requireCandidateVisualReview(store, task.id, candidate("2".repeat(40), "3".repeat(40), "4".repeat(40), [])), /visual inspection/, "the branch got new commits");
     assert.equal(store.getTask(task.id)!.visualReview!.note, "No visual decision covers these changes. Inspect this candidate before merging, or explicitly waive visual review.");
   } finally { store.close(); }
 });
@@ -221,12 +225,12 @@ test("visual review: a non-UI classification holds for its branch, unless UI app
   const classify = () => store.updateTask(task.id, { visualReview: { ...pending, status: "not_required" } });
   try {
     classify();
-    requireCandidateVisualReview(store, task.id, next, nextTree, commit, []);
-    assert.throws(() => requireCandidateVisualReview(store, task.id, next, nextTree, next, []), /visual inspection/, "stale non-UI classifications cannot authorize changed branches");
+    requireCandidateVisualReview(store, task.id, candidate(next, nextTree, commit, []));
+    assert.throws(() => requireCandidateVisualReview(store, task.id, candidate(next, nextTree, next, [])), /visual inspection/, "stale non-UI classifications cannot authorize changed branches");
     classify();
-    assert.throws(() => requireCandidateVisualReview(store, task.id, next, nextTree, commit, ["src/App.tsx"]), /visual inspection/, "UI files in the merge require a decision");
+    assert.throws(() => requireCandidateVisualReview(store, task.id, candidate(next, nextTree, commit, ["src/App.tsx"])), /visual inspection/, "UI files in the merge require a decision");
     classify();
-    assert.throws(() => requireCandidateVisualReview(store, task.id, next, nextTree, commit, [], true), /visual inspection/, "UI introduced during conflict resolution requires a decision");
+    assert.throws(() => requireCandidateVisualReview(store, task.id, candidate(next, nextTree, commit, [], true)), /visual inspection/, "UI introduced during conflict resolution requires a decision");
   } finally { store.close(); }
 });
 

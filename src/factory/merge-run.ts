@@ -58,7 +58,9 @@ function mergeRequest(deps: MergeRunDeps, run: MergeRun, repo: Repo, workdir: st
     signal,
     checks: store.repoChecks(repo.id),
     reviewedCandidate: hasVisualDecision(task.visualReview) ? task.visualReview.commit : undefined,
-    verifyVisualReview: async (commit, tree, branchCommit, changedFiles) => requireCandidateVisualReview(store, task.id, commit, tree, branchCommit, changedFiles, resolver.changedUi()),
+    verifyVisualReview: async (commit, tree, branchCommit, changedFiles) => requireCandidateVisualReview(store, task.id, {
+      commit, tree, branchCommit, changedFiles, conflictChangedUi: resolver.changedUi(),
+    }),
     recordValidation: (validation) => recordMergeCheck(deps, run, validation),
     resolveConflicts: resolver.run,
     validateResolution: resolver.run,

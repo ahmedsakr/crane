@@ -1,5 +1,6 @@
 import { serve as honoServe, type ServerType } from "@hono/node-server";
 import pc from "picocolors";
+import type { AgentDriver } from "@crane/agent-protocol";
 import type { Store } from "../core/store.js";
 import { createApp, isLoopbackAddress } from "../server/app.js";
 import { Factory } from "../factory/orchestrator.js";
@@ -48,14 +49,7 @@ export async function serve(store: Store, opts: ServeOptions) {
   // Before the factory starts: without its port it would claim tasks, then die under them.
   const hostname = opts.host ?? DEFAULT_HOST;
   const exposed = !isLoopbackAddress(hostname);
-  const app = createApp(store, { exposed });
-  const server = await listen({ fetch: app.fetch, port: opts.port, hostname }).catch((err: NodeJS.ErrnoException) =>
-    ui.fail(
-      err.code === "EADDRINUSE"
-        ? `Port ${opts.port} is already in use. Stop what's using it, or choose another with --port.`
-        : `Couldn't listen on ${hostname}:${opts.port}: ${err.message}`,
-    ),
-  );
+  const server = await listenOrFail(store, { port: opts.port, hostname, exposed });
 
   const factory = new Factory(store, [driver, ...others], {
     crewSize: opts.agents,
@@ -66,8 +60,36 @@ export async function serve(store: Store, opts: ServeOptions) {
   });
   factory.start();
 
+  await printBanner({ store, factory, driver, others, port: opts.port, hostname, exposed, buildDashboard });
+  handleShutdown(store, factory, server);
+}
+
+async function listenOrFail(store: Store, address: { port: number; hostname: string; exposed: boolean }): Promise<ServerType> {
+  const { port, hostname, exposed } = address;
+  const app = createApp(store, { exposed });
+  return listen({ fetch: app.fetch, port, hostname }).catch((err: NodeJS.ErrnoException) =>
+    ui.fail(
+      err.code === "EADDRINUSE"
+        ? `Port ${port} is already in use. Stop what's using it, or choose another with --port.`
+        : `Couldn't listen on ${hostname}:${port}: ${err.message}`,
+    ),
+  );
+}
+
+interface Banner {
+  store: Store;
+  factory: Factory;
+  driver: AgentDriver;
+  others: AgentDriver[];
+  port: number;
+  hostname: string;
+  exposed: boolean;
+  buildDashboard: boolean;
+}
+
+async function printBanner({ store, factory, driver, others, port, hostname, exposed, buildDashboard }: Banner) {
   console.log(`\n${ui.brand()}  ${pc.green("◉")} Factory is running\n`);
-  console.log(`  ${ui.dim("Dashboard")}  ${pc.bold(`http://localhost:${opts.port}`)}`);
+  console.log(`  ${ui.dim("Dashboard")}  ${pc.bold(`http://localhost:${port}`)}`);
   if (exposed) {
     console.log(
       `  ${ui.accent("!")} ${ui.dim(`Listening on ${hostname}. Anyone who can reach it can approve and merge tasks; the dashboard has no login.`)}`,
@@ -94,7 +116,9 @@ export async function serve(store: Store, opts: ServeOptions) {
     console.log(`  ${ui.accent("!")} ${ui.dim("The dashboard is older than its source. Run npm run build -w web to see the latest UI.")}`);
   }
   console.log(`\n${ui.hint(['crane do "…"', "in another terminal, to give it work"])}\n`);
+}
 
+function handleShutdown(store: Store, factory: Factory, server: ServerType) {
   let stopping = false;
   const shutdown = async () => {
     // A second Ctrl-C exits at once. The next factory still requeues whatever was running.
