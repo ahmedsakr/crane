@@ -22,12 +22,14 @@ export function registerTasks(program: Command, ctx: CliContext): void {
     .action((opts: TasksOptions) => listTasks(ctx, opts));
 }
 
+/** `--status` as given, every status with `--all`, else the open ones. */
+function statusFilter(opts: TasksOptions): TaskStatus[] | undefined {
+  if (opts.status) return opts.status.split(",") as TaskStatus[];
+  return opts.all ? undefined : ["needs_review", "merging", "running", "queued"];
+}
+
 function listTasks({ store }: CliContext, opts: TasksOptions): void {
-  const status = opts.status
-    ? (opts.status.split(",") as TaskStatus[])
-    : opts.all
-      ? undefined
-      : (["needs_review", "merging", "running", "queued"] as TaskStatus[]);
+  const status = statusFilter(opts);
   const repoId = opts.repo ? (store.getRepo(opts.repo) ?? ui.fail(`No repo called ${opts.repo}. See \`crane repos\`.`)).id : undefined;
   const limit = Number(opts.limit);
   if (!Number.isInteger(limit) || limit < 1) ui.fail(`--limit takes a whole number above 0, not ${opts.limit}`);

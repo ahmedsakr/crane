@@ -7,6 +7,7 @@ import {
   driverLabel,
   errorMessage,
   settingsLabel,
+  type DriverInfo,
 } from "@crane/contracts";
 import type { Command } from "commander";
 import pc from "picocolors";
@@ -22,6 +23,17 @@ function parsePostmortemCrew(store: Store, value: string): string[] {
   const names = value.split(",").map((name) => name.trim()).filter(Boolean);
   if (!names.length) throw new Error("Name at least one crew member, or use default for any active member");
   return names.map((name) => crewMember(store, name).id);
+}
+
+function driverMark(d: DriverInfo): string {
+  if (d.isDefault) return ui.accent("●");
+  return pc.dim(d.available ? "○" : "·");
+}
+
+/** `--active` → true, `--on-call` → false, neither → leave it. */
+function activeChoice(opts: { active?: boolean; onCall?: boolean }): boolean | undefined {
+  if (opts.active) return true;
+  return opts.onCall ? false : undefined;
 }
 
 /** The crew and which agent they run on. Subcommands register in the order help lists them. */
@@ -52,7 +64,7 @@ async function showCrew({ store, actions }: CliContext): Promise<void> {
   const catalog = await actions.drivers();
   console.log(ui.section("Runs on"));
   for (const d of catalog) {
-    const mark = d.isDefault ? ui.accent("●") : d.available ? pc.dim("○") : pc.dim("·");
+    const mark = driverMark(d);
     const name = d.label.padEnd(12);
     console.log(`  ${mark} ${d.available ? name : pc.dim(name)} ${ui.dim(d.isDefault ? `default · ${d.hint}` : d.hint)}`);
     if (d.efforts.length && d.available) {
@@ -97,7 +109,7 @@ function registerMemberCommands(agents: Command, { store, actions }: CliContext)
         const updated = await actions.configureCrew(a.id, {
           defaultDriver: opts.agent,
           role: opts.role,
-          active: opts.active ? true : opts.onCall ? false : undefined,
+          active: activeChoice(opts),
         });
         ui.ok(`Updated ${a.name}`);
         if (opts.role !== undefined && updated.role) {

@@ -10,17 +10,19 @@ export function registerHome(program: Command, ctx: CliContext): void {
   program.action(() => showHome(ctx));
 }
 
+/** This week's shipped count against last week's. */
+function weekDelta(delta: number): string {
+  if (delta === 0) return ui.dim("same as last week");
+  return delta > 0 ? pc.green(`+${delta} vs last week`) : pc.red(`${delta} vs last week`);
+}
+
 function showHome({ store }: CliContext): void {
   const o = store.overview(factoryState(store));
   const delta = o.shippedThisWeek - o.shippedLastWeek;
   const last24 = o.activity.slice(-24).map((b) => b.events + b.done * 5);
 
   console.log(`\n${ui.brand()}   ${factoryLine(store)}\n`);
-  console.log(
-    `  ${pc.bold(String(o.shippedThisWeek))} shipped this week  ${
-      delta === 0 ? ui.dim("same as last week") : delta > 0 ? pc.green(`+${delta} vs last week`) : pc.red(`${delta} vs last week`)
-    }`,
-  );
+  console.log(`  ${pc.bold(String(o.shippedThisWeek))} shipped this week  ${weekDelta(delta)}`);
   console.log(`  ${ui.sparkline(last24)}  ${ui.dim("activity, last 24h")}`);
 
   if (o.needsReview.length) {

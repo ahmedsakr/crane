@@ -43,6 +43,8 @@ function registerAddAndList(schedules: Command, { store, actions }: CliContext):
     });
 }
 
+const SCHEDULE_DONE = { remove: "Removed", pause: "Paused", resume: "Resumed" } as const;
+
 function registerScheduleStates(schedules: Command, { store, actions }: CliContext): void {
   for (const operation of ["remove", "pause", "resume"] as const) {
     schedules.command(`${operation} <member> <schedule>`).action((member: string, id: string) => {
@@ -52,7 +54,7 @@ function registerScheduleStates(schedules: Command, { store, actions }: CliConte
         if (!s) throw new Error("No such crew schedule");
         if (operation === "remove") actions.removeCrewSchedule(a.id, id);
         else actions.saveCrewSchedule(a.id, { ...s, enabled: operation === "resume" }, id);
-        ui.ok(`${operation === "remove" ? "Removed" : operation === "pause" ? "Paused" : "Resumed"} ${id}`);
+        ui.ok(`${SCHEDULE_DONE[operation]} ${id}`);
       } catch (err) { ui.fail(errorMessage(err)); }
     });
   }
