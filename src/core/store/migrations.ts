@@ -1,10 +1,26 @@
 import type Database from "better-sqlite3";
 import type { Report } from "@crane/contracts";
-import { RUNS_SCHEMA } from "./schema.js";
+import { RUNS_SCHEMA, SCHEMA } from "./schema.js";
 import type { Row } from "./rows.js";
 
 export const hasTable = (db: Database.Database, name: string) =>
   !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+
+/** True before the first schema is created. */
+export const isEmptyDatabase = (db: Database.Database) =>
+  !db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table'").get();
+
+/** Create the schema and bring an older database up to date, in order. */
+export function migrate(db: Database.Database) {
+  migrateMissionsToTasks(db);
+  db.exec(SCHEMA);
+  addMissingColumns(db);
+  migrateFollowUpLinks(db);
+  migratePostmortemLinks(db);
+  migratePostmortemBriefs(db);
+  migrateCostsToRuns(db);
+  migrateCostStatus(db);
+}
 
 /**
  * Costs used to live only on the task row. Give every task that already cost
