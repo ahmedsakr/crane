@@ -1,5 +1,5 @@
 import pc from "picocolors";
-import type { Agent, BlockedTool, Task, TaskEvent, TaskStatus } from "@crane/contracts";
+import type { Agent, AgentState, BlockedTool, Task, TaskEvent, TaskStatus } from "@crane/contracts";
 import { isScheduled, KIND_LABEL, STATUS_LABEL } from "@crane/contracts";
 
 /** Crane yellow: the one accent colour, used sparingly (brand mark, the thing that needs you). */
@@ -28,8 +28,13 @@ const STATUS_COLOR: Record<TaskStatus, (s: string) => string> = {
 };
 
 export function statusDot(status: TaskStatus): string {
-  const glyph = status === "running" || status === "merging" ? "◉" : status === "queued" ? "○" : "●";
-  return STATUS_COLOR[status](glyph);
+  return STATUS_COLOR[status](statusGlyph(status));
+}
+
+function statusGlyph(status: TaskStatus): string {
+  if (status === "running" || status === "merging") return "◉";
+  if (status === "queued") return "○";
+  return "●";
 }
 
 export function statusText(status: TaskStatus): string {
@@ -82,9 +87,14 @@ export function sparkline(values: number[]): string {
   return values.map((v) => (v === 0 ? dim("▁") : BARS[Math.min(7, Math.round((v / max) * 7))])).join("");
 }
 
+const AGENT_STATE_TEXT: Record<AgentState, () => string> = {
+  working: () => pc.cyan("working"),
+  paused: () => yellow("paused"),
+  idle: () => dim("idle"),
+};
+
 export function agentLine(a: Agent, taskTitle?: string): string {
-  const state =
-    a.state === "working" ? pc.cyan("working") : a.state === "paused" ? yellow("paused") : dim("idle");
+  const state = AGENT_STATE_TEXT[a.state]();
   return `  ${a.state === "working" ? pc.cyan("◉") : dim("○")} ${a.name.padEnd(9)} ${state.padEnd(16)} ${
     taskTitle ? truncate(taskTitle, width() - 34) : dim(`${a.tasksCompleted} tasks done`)
   }`;
@@ -113,8 +123,13 @@ export function eventLine(e: TaskEvent): string {
 
 /** One line per blocked command: what, where, and how often. */
 export function blockedLine(b: BlockedTool): string {
-  const often = b.tasks > 1 ? `in ${b.tasks} tasks` : b.times > 1 ? `${b.times} times` : "once";
-  return `  ${accent("⊘")} ${bold(b.label)}  ${dim(`${b.repoName} · blocked ${often} · ${ago(b.lastAt)}`)}`;
+  return `  ${accent("⊘")} ${bold(b.label)}  ${dim(`${b.repoName} · blocked ${blockedFrequency(b)} · ${ago(b.lastAt)}`)}`;
+}
+
+function blockedFrequency(b: BlockedTool): string {
+  if (b.tasks > 1) return `in ${b.tasks} tasks`;
+  if (b.times > 1) return `${b.times} times`;
+  return "once";
 }
 
 export function kindLabel(m: Task): string {

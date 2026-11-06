@@ -146,7 +146,9 @@ function processFixture(build: boolean) {
     signals.push(`group:${signal}`);
     return true;
   }) as typeof process.kill;
-  const managed = launchCommand("fixture", ["arg"], "/fixture", controller.signal, build, launch, kill);
+  const managed = launchCommand({
+    command: "fixture", args: ["arg"], cwd: "/fixture", signal: controller.signal, build, launch, killGroup: kill,
+  });
   return { controller, child, managed, signals };
 }
 

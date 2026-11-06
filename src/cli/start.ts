@@ -25,61 +25,85 @@ export interface StartRuntime {
 const succeeded = (result: Outcome) => result.code === 0 && !result.signal && !result.error;
 const describe = (result: Outcome) => result.error ?? (result.signal ? `signal ${result.signal}` : `exit ${result.code}`);
 
+interface SuperviseState {
+  active?: StartChild;
+  serverExit?: Outcome;
+  attempted?: string;
+  hasServed: boolean;
+}
+
+/** What the supervisor does after a rebuild attempt: an exit code, poll again now, or wait for the next poll. */
+type RebuildStep = number | "recheck" | "wait";
+
 /** Serial builds keep commits arriving during a build from starting stale output. */
 export async function supervise(runtime: StartRuntime, signal: AbortSignal): Promise<number> {
-  let active: StartChild | undefined;
-  let serverExit: Outcome | undefined;
-  let attempted: string | undefined;
-  let hasServed = false;
+  const state: SuperviseState = { hasServed: false };
   try {
     while (!signal.aborted) {
-      if (serverExit) {
-        runtime.log(`crane serve stopped (${describe(serverExit)}).`);
-        return succeeded(serverExit) ? 0 : serverExit.code || 1;
+      if (state.serverExit) {
+        runtime.log(`crane serve stopped (${describe(state.serverExit)}).`);
+        return succeeded(state.serverExit) ? 0 : state.serverExit.code || 1;
       }
       const head = await runtime.head();
       if (signal.aborted) break;
-      if (head !== attempted) {
-        if (active) {
-          runtime.log(`Commit ${head.slice(0, 12)} detected. Stopping the factory before rebuilding…`);
-          await active.stop();
-          active = undefined;
-          serverExit = undefined;
-        }
-        if (signal.aborted) break;
-        attempted = head;
-        runtime.log(`Building Crane at ${head.slice(0, 12)} with npm run build…`);
-        active = runtime.launch("build", signal);
-        const built = await active.done;
-        active = undefined;
-        if (signal.aborted) break;
-        if (!succeeded(built)) {
-          runtime.log(`npm run build failed (${describe(built)}). Factory remains stopped. Check the build output; if dependencies changed, run npm install yourself.`);
-          if (!hasServed) return built.code || 1;
-          runtime.log("Waiting for another commit, or stop and rerun crane start after fixing the build.");
-        } else {
-          // HEAD may have moved while npm was running. Build the latest tree before serving.
-          if (await runtime.head() !== head) continue;
-          if (signal.aborted) break;
-          runtime.log("Starting crane serve. Watching checkout HEAD for new commits…");
-          active = runtime.launch("serve", signal);
-          void active.done.then(result => { serverExit = result; });
-          hasServed = true;
-        }
+      if (head !== state.attempted) {
+        const step = await rebuild(runtime, signal, state, head);
+        if (typeof step === "number") return step;
+        if (step === "recheck") continue;
       }
       await runtime.wait(signal);
     }
     return 0;
   } finally {
-    await active?.stop();
+    await state.active?.stop();
   }
 }
 
+/** Stops any running factory, builds `head`, and serves it when the build passed and HEAD hasn't moved. */
+async function rebuild(runtime: StartRuntime, signal: AbortSignal, state: SuperviseState, head: string): Promise<RebuildStep> {
+  if (state.active) {
+    runtime.log(`Commit ${head.slice(0, 12)} detected. Stopping the factory before rebuilding…`);
+    await state.active.stop();
+    state.active = undefined;
+    state.serverExit = undefined;
+  }
+  if (signal.aborted) return 0;
+  state.attempted = head;
+  runtime.log(`Building Crane at ${head.slice(0, 12)} with npm run build…`);
+  state.active = runtime.launch("build", signal);
+  const built = await state.active.done;
+  state.active = undefined;
+  if (signal.aborted) return 0;
+  if (!succeeded(built)) {
+    runtime.log(`npm run build failed (${describe(built)}). Factory remains stopped. Check the build output; if dependencies changed, run npm install yourself.`);
+    if (!state.hasServed) return built.code || 1;
+    runtime.log("Waiting for another commit, or stop and rerun crane start after fixing the build.");
+    return "wait";
+  }
+  // HEAD may have moved while npm was running. Build the latest tree before serving.
+  if (await runtime.head() !== head) return "recheck";
+  if (signal.aborted) return 0;
+  runtime.log("Starting crane serve. Watching checkout HEAD for new commits…");
+  state.active = runtime.launch("serve", signal);
+  void state.active.done.then(result => { state.serverExit = result; });
+  state.hasServed = true;
+  return "wait";
+}
+
+export interface LaunchOptions {
+  command: string;
+  args: string[];
+  cwd: string;
+  signal: AbortSignal;
+  /** Builds are stopped as a whole process group, so npm's children stop too. */
+  build: boolean;
+  launch?: typeof spawn;
+  killGroup?: typeof process.kill;
+}
+
 /** Separate process groups prevent terminal Ctrl-C from also interrupting the child's shutdown. */
-export function launchCommand(
-  command: string, args: string[], cwd: string, signal: AbortSignal, build: boolean,
-  launch = spawn, killGroup = process.kill,
-): StartChild {
+export function launchCommand(options: LaunchOptions): StartChild {
+  const { command, args, cwd, signal, build, launch = spawn, killGroup = process.kill } = options;
   const grouped = process.platform !== "win32";
   const child = launch(command, args, { cwd, stdio: "inherit", detached: grouped });
   let finished = false;
@@ -144,9 +168,12 @@ export async function start(opts: ServeOptions): Promise<number> {
     return await supervise({
       head: () => git("rev-parse", "--verify", "HEAD"),
       launch: (kind, signal) => kind === "build"
-        ? launchCommand("npm", ["run", "build"], root, signal, true)
+        ? launchCommand({ command: "npm", args: ["run", "build"], cwd: root, signal, build: true })
         // Always use the rebuilt entry point, even when the supervisor was started via tsx.
-        : launchCommand(process.execPath, [join(root, "dist", "cli", "index.js"), ...serveArguments(opts)], process.cwd(), signal, false),
+        : launchCommand({
+          command: process.execPath, args: [join(root, "dist", "cli", "index.js"), ...serveArguments(opts)],
+          cwd: process.cwd(), signal, build: false,
+        }),
       wait: signal => delay(POLL_MS, undefined, { signal }).catch(error => {
         if (!signal.aborted) throw error;
       }),

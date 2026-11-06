@@ -19,6 +19,18 @@ interface CheckExit {
   logs: string;
 }
 
+function exitNote(code: number | null, killedBy: NodeJS.Signals | null): string | null {
+  if (killedBy) return `Killed by ${killedBy}`;
+  if (code) return `Exited with code ${code}`;
+  return null;
+}
+
+/** 126 and 127 are the shell's "can't execute" and "not found": the command never judged the candidate. */
+function checkStatus(exit: CheckExit): ValidationRun["status"] {
+  if (exit.noVerdict || exit.code === 126 || exit.code === 127) return "blocked";
+  return exit.code === 0 ? "passed" : "failed";
+}
+
 /**
  * Run a check in its own process group, so stopping it stops its test runners
  * too: they'd otherwise keep going in a worktree that's about to be reused or
@@ -76,7 +88,7 @@ function runCommand(command: string, cwd: string, timeoutMs: number, signal?: Ab
       const exitCode = child.pid ? code : null;
       resolve({
         code: exitCode,
-        note: problem ?? (killedBy ? `Killed by ${killedBy}` : exitCode ? `Exited with code ${exitCode}` : null),
+        note: problem ?? exitNote(exitCode, killedBy),
         noVerdict: problem !== null || exitCode === null,
         logs: (omitted ? `[${omitted} earlier characters omitted]\n${logs}` : logs) + await storage.finish(),
       });
@@ -112,7 +124,7 @@ export async function runChecks(cwd: string, commands: string[], phase: Validati
       // Stopped by the operator or the factory. That says nothing about the candidate, so it isn't evidence.
       signal?.throwIfAborted();
       result = { ...result,
-        status: exit.noVerdict || exit.code === 126 || exit.code === 127 ? "blocked" : exit.code === 0 ? "passed" : "failed",
+        status: checkStatus(exit),
         exitCode: exit.code,
         logs: exit.note ? `${exit.logs}\n${exit.note}` : exit.logs };
     }

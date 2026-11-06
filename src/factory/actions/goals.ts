@@ -12,7 +12,7 @@ export function createGoal(store: Store, input: NewGoal): Goal {
   const outcome = input.outcome.trim();
   const research = checkTaskRunOptions(input);
   return store.createGoal({ outcome, title: outcome.split("\n")[0]!.slice(0, 120), repoId: repo.id, research },
-    goalResearchTask(store, repo, outcome, research));
+    goalResearchTask(store, repo, { outcome, research }));
 }
 
 export function reviseGoal(store: Store, id: string, revision: unknown, feedback: unknown): Goal {
@@ -21,7 +21,9 @@ export function reviseGoal(store: Store, id: string, revision: unknown, feedback
   if (typeof feedback !== "string" || !feedback.trim() || feedback.trim().length > 20000) throw new Error("Give feedback in 1 to 20000 characters");
   const repo = store.getRepo(goal.repoId);
   if (!repo) throw new Error("The goal's repo is no longer connected");
-  return store.reviseGoal(id, revision, feedback.trim(), goalResearchTask(store, repo, goal.outcome, goal.research, goal, feedback.trim()));
+  const text = feedback.trim();
+  return store.reviseGoal(id, revision, text,
+    goalResearchTask(store, repo, { outcome: goal.outcome, research: goal.research, previous: goal, feedback: text }));
 }
 
 export function editGoalPlan(store: Store, id: string, revision: unknown, input: unknown): Goal {
