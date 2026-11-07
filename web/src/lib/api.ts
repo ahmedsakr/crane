@@ -35,7 +35,12 @@ import type {
   AuthStatus,
   OperatorProfile,
   OperatorSession,
+  OperatorSummary,
+  OperatorRole,
+  InviteSummary,
+  InviteCheck,
 } from "@crane/contracts";
+import type { InviteLink } from "./operators";
 import { SignedOutError, isSignInRefusal, notifySignInRequired } from "./auth";
 
 export type { DiffFile, DiffHunk, DiffLine } from "@crane/contracts";
@@ -141,6 +146,17 @@ export const api = {
   /** Keeps this device signed in and signs out the operator's others. A wrong current password is refused. */
   changeMyPassword: (current: string, next: string) => post<{ ok: true }>("/auth/me/password", { current, next }),
   renameMe: (name: string) => post<OperatorProfile>("/auth/me/name", { name }),
+  operators: () => req<OperatorSummary[]>("/operators"),
+  invites: () => req<InviteSummary[]>("/operators/invites"),
+  inviteOperator: (role: OperatorRole, name?: string) => post<InviteLink>("/operators/invites", { role, name }),
+  revokeInvite: (id: string) => req<InviteSummary[]>(`/operators/invites/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  setOperatorRole: (id: string, role: OperatorRole) => post<OperatorSummary[]>(`/operators/${encodeURIComponent(id)}/role`, { role }),
+  resetOperatorPassword: (id: string) => post<InviteLink>(`/operators/${encodeURIComponent(id)}/reset`),
+  signOutOperator: (id: string) => post<OperatorSummary[]>(`/operators/${encodeURIComponent(id)}/sign-out`),
+  removeOperator: (id: string) => req<OperatorSummary[]>(`/operators/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  checkInvite: (token: string) => post<InviteCheck>("/auth/invites/check", { token }),
+  acceptInvite: (token: string, input: { username?: string; name?: string; password: string }) =>
+    post<AuthStatus>("/auth/invites/accept", { token, ...input }),
   goals:() => req<GoalListItem[]>("/goals"),
   goal: (id: string) => req<GoalDetail>(`/goals/${id}`),
   createGoal: (input: NewGoal) => post<Goal>("/goals", input),
