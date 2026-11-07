@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type DriverInfo, type TaskEvent } from "./api";
 import { createPollRequest } from "./poll";
+import { authStore } from "./use-auth";
 
 /**
  * The agents tasks can run on, and the default. Fetched once per mount:
@@ -49,16 +50,33 @@ export function usePoll<T>(fetcher: () => Promise<T>, intervalMs = 2000, deps: u
   return { data, error, refresh };
 }
 
-/** Subscribe to live events for a task (or "all"). */
+/** How long a stream the server refused waits before opening again. */
+const STREAM_RETRY_MS = 5000;
+
+/**
+ * Subscribe to live events for a task (or "all"). A browser gives up for good on a stream the server refuses, which
+ * is how a signed-out session ends one. So a closed stream asks whether the session ended, which returns the app to
+ * sign-in, and otherwise opens again shortly. Events repeat from `after`; callers already drop the ones they have.
+ */
 export function useEventStream(id: string | null, onEvent: (e: TaskEvent) => void, after = 0) {
   const cb = useRef(onEvent);
   cb.current = onEvent;
+  const [opening, reopen] = useState(0);
   useEffect(() => {
     if (!id) return;
     const es = new EventSource(`/api/tasks/${id}/stream?after=${after}`);
+    let retry: ReturnType<typeof setTimeout> | undefined;
     es.addEventListener("event", (msg) => cb.current(JSON.parse((msg as MessageEvent).data)));
-    return () => es.close();
-  }, [id, after]);
+    es.addEventListener("error", () => {
+      if (es.readyState !== EventSource.CLOSED || retry) return;
+      void authStore.refresh();
+      retry = setTimeout(() => reopen((n) => n + 1), STREAM_RETRY_MS);
+    });
+    return () => {
+      es.close();
+      clearTimeout(retry);
+    };
+  }, [id, after, opening]);
 }
 
 /** Re-render on an interval so relative times ("4m ago") stay honest. */

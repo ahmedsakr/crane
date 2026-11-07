@@ -2,6 +2,7 @@ import { errorMessage } from "@crane/contracts";
 import { Link, useNavigate } from "react-router-dom";
 import { useApp } from "../lib/app-context";
 import { api, type Overview, type TaskSummary } from "../lib/api";
+import { isSignedOut } from "../lib/auth";
 import { ago, plural } from "../lib/format";
 import { useTick } from "../lib/hooks";
 import { goalReviewLabel, hasTargetRepo, isSiteEmpty, needsYouCount, repoNamer } from "../lib/overview";
@@ -27,7 +28,7 @@ function ReviewItem({ task, repoName, onDone }: { task: TaskSummary; repoName?: 
       await api.approve(task.id);
       toast({ text: isChange ? "Approved. Merging it now." : "Marked as reviewed" });
     } catch (e) {
-      toast({ text: errorMessage(e) });
+      if (!isSignedOut(e)) toast({ text: errorMessage(e) });
     }
     onDone();
   };

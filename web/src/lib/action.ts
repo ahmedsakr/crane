@@ -1,5 +1,6 @@
 import { errorMessage } from "@crane/contracts";
 import { useState } from "react";
+import { isSignedOut } from "./auth.js";
 import { useToast, type ToastMessage } from "./toast.js";
 
 /** What to say when an action succeeds: fixed text, or a toast built from its result. Returning nothing says nothing. */
@@ -33,7 +34,8 @@ export async function runAction<R>(effects: ActionEffects, step: ActionStep<R>):
     effects.refresh?.();
     step.after?.(result);
   } catch (e) {
-    effects.toast({ text: errorMessage(e) });
+    // Signed out: the app is already returning to sign-in, which says so better than a toast.
+    if (!isSignedOut(e)) effects.toast({ text: errorMessage(e) });
   } finally {
     effects.setBusy(null);
   }

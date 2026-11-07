@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
 import type { Overview } from "@crane/contracts";
 import { Mark } from "../Mark";
+import { AccountMenu } from "./AccountMenu";
 import { FactoryPill } from "./FactoryPill";
 
 function NavBadge({ count }: { count: number }) {
@@ -36,6 +37,7 @@ export function TopBar({ overview, refresh, onInstruct }: { overview: Overview |
           <button className="btn btn-primary btn-sm" onClick={onInstruct}>
             Instruct <span className="kbd">⌘K</span>
           </button>
+          <AccountMenu />
         </div>
       </div>
     </header>

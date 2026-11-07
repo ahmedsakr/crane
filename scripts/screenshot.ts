@@ -19,6 +19,12 @@
  *   --size <WxH>      viewport, default 1280x800
  *   --media <f>=<v>   emulate a media feature for the whole run, like
  *                     prefers-color-scheme=dark or prefers-reduced-motion=reduce (repeatable)
+ *   --operator <username> --password <pw>
+ *                     add this admin to the demo before it serves (crane operators add
+ *                     --admin --password-stdin), so the dashboard requires sign-in.
+ *                     With --url, only names who --sign-in signs in as.
+ *   --sign-in         sign that operator in before opening [path], through
+ *                     POST /api/auth/sign-in from the page, so steps start signed in
  *   --wait-for <sel>  wait until a selector exists
  *   --click <sel>     click the first match with a real mouse event
  *   --type <text>     type into the focused element
@@ -32,18 +38,15 @@
  *
  * Finds Chromium on PATH, in Playwright's cache, or at $CRANE_CHROMIUM.
  */
-import { spawn, execFileSync, type ChildProcess } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
-import { homedir, tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { Readable, Writable } from "node:stream";
-import { webBuildOutdated } from "../src/core/webbuild.js";
-import { FIXTURE, FIXTURE_NODE_ARGS, STILL_PAGE_SOURCE, createFixtureHome, fixedClockSource, fixtureEnv } from "./fixture/fixture.ts";
+import { FIXTURE, STILL_PAGE_SOURCE, fixedClockSource } from "./fixture/fixture.ts";
 import { withPngMetadata } from "./fixture/png.ts";
-
-const root = resolve(dirname(new URL(import.meta.url).pathname), "..");
+import { bootDemo, bootFixture, fail, root, tempDir, track, waitFor } from "./screenshot/boot.ts";
 
 type Step = { op: string; arg: string };
 const args = process.argv.slice(2);
@@ -52,6 +55,9 @@ let origin: string | null = null;
 let fixture = false;
 let target: string | null = null;
 let size = "1280x800";
+let username: string | null = null;
+let password: string | null = null;
+let signIn = false;
 let out = join(root, ".crane", "screenshot.png");
 const steps: Step[] = [];
 const media: { name: string; value: string }[] = [];
@@ -66,6 +72,9 @@ for (let i = 0; i < args.length; i++) {
   else if (a === "--fixture") fixture = true;
   else if (a === "--target") target = next();
   else if (a === "--size") size = next();
+  else if (a === "--operator") username = next();
+  else if (a === "--password") password = next();
+  else if (a === "--sign-in") signIn = true;
   else if (a === "--media") {
     const [name, value] = next().split("=");
     if (!name || !value) fail(`--media should look like prefers-color-scheme=dark`);
@@ -80,13 +89,12 @@ for (let i = 0; i < args.length; i++) {
 const [width, height] = size.split("x").map(Number) as [number, number];
 if (!width || !height) fail(`--size should look like 1280x800, got ${size}`);
 if (fixture && origin) fail("--fixture boots its own factory, so it can't be used with --url.");
+if ((username === null) !== (password === null)) fail("--operator and --password go together.");
+if (fixture && username) fail("--fixture holds its data still, so it can't add an operator. Use the live demo for signed-in views.");
+if (signIn && !username) fail("--sign-in needs --operator and --password.");
+const operator = username && password ? { username, password } : null;
 // The site's work lights and camera only hold still for reduced motion.
 if (fixture && !media.some((m) => m.name === "prefers-reduced-motion")) media.push({ name: "prefers-reduced-motion", value: "reduce" });
-
-function fail(msg: string): never {
-  console.error(msg);
-  process.exit(1);
-}
 
 function findChromium(): string {
   const env = process.env.CRANE_CHROMIUM;
@@ -106,83 +114,6 @@ function findChromium(): string {
     }
   }
   fail("No Chromium found. Install one, run `npx playwright install chromium`, or set CRANE_CHROMIUM.");
-}
-
-function freePort(): Promise<number> {
-  return new Promise((ok, no) => {
-    const s = createServer();
-    s.listen(0, () => {
-      const port = (s.address() as { port: number }).port;
-      s.close(() => ok(port));
-    });
-    s.on("error", no);
-  });
-}
-
-async function waitFor<T>(what: string, fn: () => Promise<T | undefined | null | false>, ms = 15_000): Promise<T> {
-  const until = Date.now() + ms;
-  while (Date.now() < until) {
-    const v = await fn().catch(() => undefined);
-    if (v) return v;
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  throw new Error(`Timed out waiting for ${what}`);
-}
-
-const children: ChildProcess[] = [];
-const cleanup: (() => void)[] = [];
-const done = () => {
-  for (const c of children) c.kill("SIGTERM");
-  for (const f of cleanup) {
-    try {
-      f();
-    } catch {
-      // A temp dir left behind is harmless.
-    }
-  }
-};
-process.on("exit", done);
-
-async function bootDemo(): Promise<string> {
-  if (!existsSync(join(root, "web", "dist", "index.html"))) fail("Build the UI first: npm run build -w web");
-  const home = mkdtempSync(join(tmpdir(), "crane-shot-"));
-  cleanup.push(() => rmSync(home, { recursive: true, force: true }));
-  const env = { ...process.env, CRANE_HOME: home };
-  execFileSync(process.execPath, ["--import", "tsx", "scripts/seed-demo.ts"], { cwd: root, env, stdio: "ignore" });
-  const port = await freePort();
-  // --no-build-dashboard: screenshot this checkout's web/dist, never a build of its default branch.
-  const args = ["serve", "--port", String(port), "--driver", "simulated", "--no-build-dashboard"];
-  const server = spawn(process.execPath, ["--import", "tsx", "src/cli/index.ts", ...args], {
-    cwd: root,
-    env,
-    stdio: "ignore",
-  });
-  children.push(server);
-  // The factory listens on 127.0.0.1; "localhost" can resolve to ::1 first.
-  const url = `http://127.0.0.1:${port}`;
-  await waitFor("the demo factory", () => fetch(`${url}/api/overview`).then((r) => r.ok));
-  return url;
-}
-
-/** Like bootDemo, with the seed and server pinned and no factory process. */
-async function bootFixture(): Promise<string> {
-  if (!existsSync(join(root, "web", "dist", "index.html"))) fail("Build the UI first: npm run build -w web");
-  // An outdated build shows a notice in the page, and would compare the wrong UI anyway.
-  if (webBuildOutdated(root)) fail("web/dist is older than its source. Rebuild it first: npm run build -w web");
-  const home = createFixtureHome();
-  cleanup.push(() => rmSync(home, { recursive: true, force: true }));
-  execFileSync(process.execPath, [...FIXTURE_NODE_ARGS, "scripts/seed-demo.ts"], { cwd: root, env: fixtureEnv(home, "seed"), stdio: ["ignore", "ignore", "inherit"] });
-  const port = await freePort();
-  const server = spawn(process.execPath, [...FIXTURE_NODE_ARGS, "scripts/fixture/serve.ts", String(port)], {
-    cwd: root,
-    env: fixtureEnv(home, "serve"),
-    stdio: ["ignore", "ignore", "inherit"],
-  });
-  children.push(server);
-  server.on("exit", (code) => fail(`The fixture server exited (${code}) before the screenshot.`));
-  const url = `http://127.0.0.1:${port}`;
-  await waitFor("the fixture server", () => fetch(`${url}/api/overview`).then((r) => r.ok));
-  return url;
 }
 
 /** Chrome DevTools Protocol over --remote-debugging-pipe: NUL-delimited JSON on fds 3 (in) and 4 (out). */
@@ -229,8 +160,7 @@ class Cdp {
 }
 
 function launchBrowser() {
-  const profile = mkdtempSync(join(tmpdir(), "crane-chromium-"));
-  cleanup.push(() => rmSync(profile, { recursive: true, force: true }));
+  const profile = tempDir("crane-chromium-");
   const chrome = spawn(
     findChromium(),
     [
@@ -249,7 +179,7 @@ function launchBrowser() {
     ],
     { stdio: ["ignore", "ignore", "pipe", "pipe", "pipe"] },
   );
-  children.push(chrome);
+  track(chrome);
   let stderr = "";
   chrome.stderr!.on("data", (d) => (stderr = (stderr + d).slice(-4000)));
   const crashed = (code: number | null) => fail(`Chromium exited (${code}) before the screenshot.\n${stderr.trim()}`);
@@ -399,15 +329,34 @@ async function closeBrowser({ chrome, cdp, crashed }: ReturnType<typeof launchBr
   await Promise.race([exited, new Promise((r) => setTimeout(r, 3000))]);
 }
 
+async function navigate(cdp: Cdp, page: PageCommand, url: string) {
+  const loaded = cdp.once("Page.loadEventFired");
+  await page("Page.navigate", { url });
+  await loaded;
+}
+
+/**
+ * Sign in the way the dashboard does, from a page on the factory's origin, so the browser keeps the session cookie
+ * the page then opens with. The public session route is that page: it needs no session and loads no app.
+ */
+async function signInFromPage(cdp: Cdp, page: PageCommand, evaluate: Evaluate, base: string, who: { username: string; password: string }) {
+  await navigate(cdp, page, `${base}/api/auth/session`);
+  const result = await evaluate(`fetch("/api/auth/sign-in", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: ${JSON.stringify(JSON.stringify(who))},
+  }).then(async (r) => ({ ok: r.ok, status: r.status, body: await r.json().catch(() => ({})) }))`);
+  if (!result.ok) throw new Error(`--sign-in failed (${result.status}): ${result.body?.error ?? "no reason given"}`);
+}
+
 async function main() {
-  const base = fixture ? await bootFixture() : (origin ?? (await bootDemo()));
+  const base = fixture ? await bootFixture() : (origin ?? (await bootDemo(operator)));
   const browser = launchBrowser();
   const page = await configurePage(browser.cdp);
   const metadata = fixture ? await fixtureMetadata(base, browser.cdp) : null;
   const tools = pageTools(page, metadata);
-  const loaded = browser.cdp.once("Page.loadEventFired");
-  await page("Page.navigate", { url: base + path });
-  await loaded;
+  if (signIn && operator) await signInFromPage(browser.cdp, page, tools.evaluate, base, operator);
+  await navigate(browser.cdp, page, base + path);
   await tools.evaluate("document.fonts.ready.then(() => true)");
   await runSteps(page, tools);
   await tools.shoot(out);

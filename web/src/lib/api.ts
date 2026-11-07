@@ -32,7 +32,9 @@ import type {
   TaskGates,
   TaskRunOptions,
   RoleRunOptions,
+  AuthStatus,
 } from "@crane/contracts";
+import { SignedOutError, isSignInRefusal, notifySignInRequired } from "./auth";
 
 export type { DiffFile, DiffHunk, DiffLine } from "@crane/contracts";
 export type {
@@ -90,6 +92,26 @@ export {
 /** What the Make this change form schedules a follow-up with. */
 export type FollowUpOptions = TaskRunOptions & TaskGates & { lookouts?: Lookout[] };
 
+/** A refused call, with what the server answered, such as a sign-in's `retryAfterSeconds`. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+    readonly body: unknown,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+/** The error a failed response throws. A refusal for want of a session also tells the app to show sign-in. */
+export function responseError(status: number, body: unknown): Error {
+  const message = (body as { error?: string } | null)?.error ?? `Request failed (${status})`;
+  if (!isSignInRefusal(status, body)) return new ApiError(message, status, body);
+  notifySignInRequired();
+  return new SignedOutError(message);
+}
+
 async function req<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
   const res = await fetch(`/api${path}`, {
     ...init,
@@ -97,14 +119,19 @@ async function req<T>(path: string, init?: RequestInit & { json?: unknown }): Pr
     body: init?.json !== undefined ? JSON.stringify(init.json) : init?.body,
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((body as { error?: string }).error ?? `Request failed (${res.status})`);
+  if (!res.ok) throw responseError(res.status, body);
   return body as T;
 }
 
 const post = <T>(path: string, json: unknown = {}) => req<T>(path, { method: "POST", json });
 
 export const api = {
-  goals: () => req<GoalListItem[]>("/goals"),
+  /** Whether sign-in is required here, and who this device is signed in as. Answers without a session. */
+  session: () => req<AuthStatus>("/auth/session"),
+  /** Sets the session cookie. A wrong username or password is a 401, and too many attempts a 429 with `retryAfterSeconds`. */
+  signIn: (username: string, password: string) => post<AuthStatus>("/auth/sign-in", { username, password }),
+  signOut: () => post<AuthStatus>("/auth/sign-out"),
+  goals:() => req<GoalListItem[]>("/goals"),
   goal: (id: string) => req<GoalDetail>(`/goals/${id}`),
   createGoal: (input: NewGoal) => post<Goal>("/goals", input),
   goalFeedback: (id: string, revision: number, feedback: string) => post<Goal>(`/goals/${id}/feedback`, { revision, feedback }),
