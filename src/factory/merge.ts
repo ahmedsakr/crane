@@ -1,9 +1,10 @@
 import { existsSync } from "node:fs";
 import { basename } from "node:path";
-import type { Repo } from "@crane/contracts";
+import type { Repo, ValidationRun } from "@crane/contracts";
 import { runChecks } from "./checks.js";
 import { clearResolution, nonvisualRef, resolutionRef, resolveMergeConflicts, unmergedFiles, validateResolution } from "./merge-conflicts.js";
 import { fetchForMerge } from "./merge-fetch.js";
+import { fixableFailures, fixFailedChecks } from "./merge-fixes.js";
 import { g, identity, isAncestor, newestDefault, remoteFor, revParse, succeeds, why } from "./merge-git.js";
 import { MergeError, prepareDependencies, type MergeBase, type MergeRequest } from "./merge-request.js";
 
@@ -15,8 +16,8 @@ export { MergeError, type MergeRequest } from "./merge-request.js";
  * Landing an approved task on the default branch.
  *
  * Crane's own code does every git step here; agents never do. Only conflict
- * resolution goes to an agent, which edits files inside Crane's worktree and
- * nothing else. The shape is the one an operator would do by hand:
+ * resolution and fixing failed merge checks go to an agent, which edits files
+ * inside Crane's worktree and nothing else. The shape is the one an operator would do by hand:
  *
  *   1. Fetch the default branch and take the newest of local and remote. A
  *      temporary network failure gets a few spaced-out tries; nothing goes on
@@ -25,9 +26,12 @@ export { MergeError, type MergeRequest } from "./merge-request.js";
  *      branch, so the default branch gets one "Merge branch 'crane/…'" commit.
  *   3. If that conflicts, hand the conflicted files to `resolveConflicts`, check
  *      no markers are left, and commit.
- *   4. Push the merge commit to the remote as a plain fast-forward. Crane never
+ *   4. Run the merge checks on the merge commit. If some fail on a merge Crane
+ *      built, hand them to `fixChecks` once, amend its edits into the merge
+ *      commit, and run every check again.
+ *   5. Push the merge commit to the remote as a plain fast-forward. Crane never
  *      force-pushes; if the remote moved meanwhile, start again from 1.
- *   5. Move the local default branch forward. A checkout of it is only touched
+ *   6. Move the local default branch forward. A checkout of it is only touched
  *      when it has no local changes, using `merge --ff-only`, so git itself
  *      refuses anything that would lose work. Otherwise it's left for the
  *      operator to pull.
@@ -184,6 +188,10 @@ async function buildCandidate(req: MergeRequest, base: MergeBase): Promise<Candi
     commit = await buildMerge(req, base);
   }
   stopIfAborted(signal);
+  return describeCandidate(workdir, base, commit, branchSha);
+}
+
+async function describeCandidate(workdir: string, base: MergeBase, commit: string | null, branchSha: string): Promise<Candidate> {
   const head = commit ?? base.sha;
   const changedFiles = commit
     ? (await g(workdir, ["diff", "--name-only", "--no-renames", "-z", base.sha, head])).split("\0")
@@ -193,8 +201,36 @@ async function buildCandidate(req: MergeRequest, base: MergeBase): Promise<Candi
   return { commit, head, tree, branchSha, changedFiles };
 }
 
-/** Everything a candidate must pass before anything is pushed or moved. */
-async function verifyCandidate(req: MergeRequest, { head, tree, branchSha, changedFiles }: Candidate): Promise<void> {
+/** Checks that didn't pass on a candidate: the error to hand back, and every result. */
+interface CheckFailure {
+  error: unknown;
+  runs: ValidationRun[];
+}
+
+/**
+ * Everything a candidate must pass before anything is pushed or moved. Failed
+ * checks on a merge Crane built go to `fixChecks` once; the fixed merge is a
+ * new candidate, so it's gated and checked from the start. Returns the
+ * candidate that passed.
+ */
+async function verifyCandidate(req: MergeRequest, base: MergeBase, candidate: Candidate): Promise<Candidate> {
+  const failure = await checkCandidate(req, candidate);
+  if (!failure) return candidate;
+  const failed = fixableFailures(failure.runs);
+  if (!candidate.commit || !req.fixChecks || req.signal?.aborted || !failed.length) throw failure.error;
+  const commit = await fixFailedChecks(req, { commit: candidate.commit, base, branchSha: candidate.branchSha }, failed);
+  stopIfAborted(req.signal);
+  const fixed = await describeCandidate(req.workdir, base, commit, candidate.branchSha);
+  const again = await checkCandidate(req, fixed);
+  if (again) {
+    req.emit("note", "Merge checks still fail after the agent's fix");
+    throw again.error;
+  }
+  return fixed;
+}
+
+/** Gate, prepare and check one candidate. Returns what failed, or null when it may land. */
+async function checkCandidate(req: MergeRequest, { head, tree, branchSha, changedFiles }: Candidate): Promise<CheckFailure | null> {
   const { workdir, signal } = req;
   // Fail before expensive validation when this candidate needs an operator's
   // decision. Each remote-moved retry must authorize its own candidate.
@@ -204,9 +240,19 @@ async function verifyCandidate(req: MergeRequest, { head, tree, branchSha, chang
   // install: merge checks run only against dependencies Crane prepared for the
   // merge commit's manifests (it reinstalls whenever they changed).
   await prepareDependencies(req);
-  await runChecks(workdir, req.checks ?? [], "merge", req.recordValidation ?? (() => {}), { signal });
+  const runs: ValidationRun[] = [];
+  const record = (run: ValidationRun) => {
+    runs.push(run);
+    req.recordValidation?.(run);
+  };
+  try {
+    await runChecks(workdir, req.checks ?? [], "merge", record, { signal });
+  } catch (error) {
+    return { error, runs };
+  }
   stopIfAborted(signal);
   await req.verifyVisualReview?.(head, tree, branchSha, changedFiles);
+  return null;
 }
 
 async function push(repo: Repo, remote: string, commit: string): Promise<"ok" | "moved"> {
@@ -268,8 +314,7 @@ export async function landTask(req: MergeRequest): Promise<MergeResult> {
   for (let attempt = 1; attempt <= attempts; attempt++) {
     stopIfAborted(signal);
     const base = await resolveBase(req, remote);
-    const candidate = await buildCandidate(req, base);
-    await verifyCandidate(req, candidate);
+    const candidate = await verifyCandidate(req, base, await buildCandidate(req, base));
     if ((await publish(req, remote, candidate.head)) === "moved") continue;
 
     const checkoutBehind = await moveLocalDefault(repo, workdir, candidate.head);

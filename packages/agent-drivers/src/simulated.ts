@@ -30,6 +30,7 @@ export class SimulatedDriver implements AgentDriver {
 
   async run(ctx: RunContext): Promise<RunResult> {
     if (ctx.job?.kind === "resolve_conflicts") return this.resolve(ctx, ctx.job.files);
+    if (ctx.job?.kind === "fix_checks") return this.lookAtFailedChecks(ctx, ctx.job.failures.map((f) => f.command));
     if (ctx.task.autonomy === "observe" && ctx.task.brief.startsWith("Crane goal research\n")) {
       ctx.emit("note", "Simulating goal research; no repository analysis or implementation has occurred.", { simulated: true });
       await sleep(this.stepMs, ctx.signal);
@@ -88,6 +89,17 @@ export class SimulatedDriver implements AgentDriver {
         visualReview: { required: false, reason: "The simulated driver only writes a Markdown note, with no UI changes." },
         completion: { status: "completed", reason: "Simulated task delivered", evidence: "Markdown note written" },
       },
+    };
+  }
+
+  /** A simulated agent can't fix real code, so it changes nothing and Crane hands the merge back. */
+  private async lookAtFailedChecks(ctx: RunContext, commands: string[]): Promise<RunResult> {
+    ctx.emit("note", `Reading why ${commands.join(", ")} failed on the merge.`, { simulated: true });
+    await sleep(this.stepMs, ctx.signal);
+    return {
+      report: { summary: "Simulated run. Looked at the failed merge checks and changed nothing, so the merge goes back to the operator.", findings: [], changedFiles: [],
+        completion: { status: "blocked", reason: "A simulated agent can't fix real check failures", evidence: "No files changed" },
+        visualReview: { required: false, reason: "Nothing was changed." } },
     };
   }
 

@@ -77,7 +77,29 @@ export interface ResolveConflictsJob {
   deferredDependencies?: string[];
 }
 
-export type AgentJob = ResolveConflictsJob;
+/** One merge check that failed on Crane's merge commit, as the agent is shown it. */
+export interface FailedCheck {
+  command: string;
+  exitCode: number | null;
+  /** The part of the check's output worth reading: failures first, then the end. */
+  logs: string;
+}
+
+/**
+ * Fix a merge Crane built cleanly in `cwd` that then failed the repository's
+ * merge checks. HEAD is detached at that merge commit. The agent edits files
+ * only; Crane folds them into the merge commit and runs every check again.
+ */
+export interface FixChecksJob {
+  kind: "fix_checks";
+  /** What the task branch is being merged into, e.g. `origin/main`. */
+  base: string;
+  /** The merge commit that failed. */
+  commit: string;
+  failures: FailedCheck[];
+}
+
+export type AgentJob = ResolveConflictsJob | FixChecksJob;
 
 export interface RunResult {
   report: Report;

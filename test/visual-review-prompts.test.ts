@@ -20,6 +20,7 @@ test("visual handoffs expose pre-approval for work, resolver edits, validation a
     const jobs: (AgentJob | undefined)[] = [undefined,
       { kind: "resolve_conflicts", phase: "edit", base: "main", files: ["web/src/Home.tsx"] },
       { kind: "resolve_conflicts", phase: "validate", checkpoint: "db98771b", base: "main", files: ["web/src/Home.tsx"] },
+      { kind: "fix_checks", base: "main", commit: "f1x0c4e", failures: [{ command: "npm test", exitCode: 1, logs: "not ok 1" }] },
     ];
     for (const job of jobs) {
       for (const prompt of prompts(task, job)) {
@@ -29,8 +30,9 @@ test("visual handoffs expose pre-approval for work, resolver edits, validation a
         assert.match(prompt, /no additional operator visual decision is required/);
         assert.match(prompt, /visualReview.required: true even when pre-approved/);
         assert.match(prompt, /preserve sandbox restrictions/);
-        if (job) assert.match(prompt, /does not by itself cover UI changed during conflict resolution/);
-        if (job?.phase === "validate") assert.match(prompt, /checkpoint candidate: db98771b/);
+        if (job?.kind === "resolve_conflicts") assert.match(prompt, /does not by itself cover UI changed during conflict resolution/);
+        if (job?.kind === "resolve_conflicts" && job.phase === "validate") assert.match(prompt, /checkpoint candidate: db98771b/);
+        if (job?.kind === "fix_checks") assert.match(prompt, /Merge-check fix of candidate f1x0c4e. A decision for the original task candidate does not by itself cover UI changed by this fix/);
       }
     }
     const resolution = userPrompt(task, jobs[2]);

@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import { errorMessage, type Repo, type Report, type Task, type ValidationRun } from "@crane/contracts";
+import type { AgentJob } from "@crane/agent-protocol";
 import { worktreesDir } from "../core/paths.js";
 import { retainScreenshots } from "../core/screenshots.js";
 import { runAgent } from "./agent-runner.js";
@@ -7,6 +8,7 @@ import type { DashboardBuilder } from "./dashboard.js";
 import { driverFor } from "./driver-selection.js";
 import { removeWorktree } from "./git.js";
 import { deleteMergedBranch, landTask, MergeError, type MergeRequest, type MergeResult } from "./merge.js";
+import { filesChangedSince } from "./merge-fixes.js";
 import { minutes } from "./run-limits.js";
 import { hasVisualDecision, requireCandidateVisualReview, visualReviewRequired } from "./visual-review.js";
 import type { CrewMember, WorkRunDeps } from "./work-run.js";
@@ -26,7 +28,7 @@ export interface MergeRun {
   emit: MergeRequest["emit"];
 }
 
-/** Land an approved task on its repo's default branch, with an agent on hand for conflicts. A failure is for `handleMergeFailure`. */
+/** Land an approved task on its repo's default branch, with an agent on hand for conflicts and failed checks. A failure is for `handleMergeFailure`. */
 export async function runMerge(deps: MergeRunDeps, run: MergeRun) {
   const { store, log, dashboard } = deps;
   const { task, repo } = run;
@@ -64,6 +66,7 @@ function mergeRequest(deps: MergeRunDeps, run: MergeRun, repo: Repo, workdir: st
     recordValidation: (validation) => recordMergeCheck(deps, run, validation),
     resolveConflicts: resolver.run,
     validateResolution: resolver.run,
+    fixChecks: resolver.fix,
   };
 }
 
@@ -77,27 +80,41 @@ interface ResolverContext {
   visualReviewRequired?: boolean;
 }
 
-/** The agent that resolves this merge's conflicts, remembering whether any of its runs changed UI. */
+/** What the check fixer is handed: the merge commit that failed, and how. */
+type FixContext = Parameters<NonNullable<MergeRequest["fixChecks"]>>[0];
+
+/**
+ * The agent that resolves this merge's conflicts and fixes its failed checks,
+ * remembering whether any of its runs changed UI.
+ */
 function conflictResolver(deps: MergeRunDeps, run: MergeRun, repo: Repo) {
   let changedUi = false;
-  const resolve = async (ctx: ResolverContext) => {
-    changedUi ||= ctx.visualReviewRequired ?? false;
-    const report = await runResolverAgent(deps, run, repo, ctx);
-    changedUi ||= visualReviewRequired({ ...report, changedFiles: [...report.changedFiles, ...ctx.files] });
-    keepResolverScreenshots(deps, run, ctx.cwd, report);
+  const finish = (cwd: string, report: Report, files: string[]) => {
+    changedUi ||= visualReviewRequired({ ...report, changedFiles: [...report.changedFiles, ...files] });
+    keepResolverScreenshots(deps, run, cwd, report);
     for (const f of report.findings) run.emit("finding", f.title, { impact: f.impact, effort: f.effort });
     return { visualReviewRequired: changedUi };
   };
-  return { run: resolve, changedUi: () => changedUi };
+  const resolve = async (ctx: ResolverContext) => {
+    changedUi ||= ctx.visualReviewRequired ?? false;
+    const { cwd, base, files, deferredDependencies, checkpoint } = ctx;
+    const report = await runMergeAgent(deps, run, repo, cwd, { kind: "resolve_conflicts", phase: checkpoint ? "validate" : "edit", base, files,
+      ...(checkpoint ? { checkpoint } : {}), ...(deferredDependencies ? { deferredDependencies } : {}) });
+    return finish(cwd, report, files);
+  };
+  const fix = async ({ cwd, base, commit, failures }: FixContext) => {
+    const report = await runMergeAgent(deps, run, repo, cwd, { kind: "fix_checks", base, commit, failures });
+    // A fix that changed nothing doesn't land, so it can't need a visual decision.
+    const files = await filesChangedSince(cwd, commit);
+    return files.length ? finish(cwd, report, files) : { visualReviewRequired: changedUi };
+  };
+  return { run: resolve, fix, changedUi: () => changedUi };
 }
 
-async function runResolverAgent({ store, drivers, agentRunner }: MergeRunDeps, { agent, task, signal, emit }: MergeRun, repo: Repo, ctx: ResolverContext): Promise<Report> {
-  const { cwd, base, files, deferredDependencies, checkpoint } = ctx;
+async function runMergeAgent({ store, drivers, agentRunner }: MergeRunDeps, { agent, task, signal, emit }: MergeRun, repo: Repo, cwd: string, job: AgentJob): Promise<Report> {
   const current = store.getTask(task.id)!;
   const { report } = await runAgent(agentRunner, agent.id, driverFor(store, drivers, current, agent.id), {
-    task: current, repo, cwd, signal, emit,
-    job: { kind: "resolve_conflicts", phase: checkpoint ? "validate" : "edit", base, files,
-      ...(checkpoint ? { checkpoint } : {}), ...(deferredDependencies ? { deferredDependencies } : {}) },
+    task: current, repo, cwd, signal, emit, job,
     checks: store.repoChecks(repo.id),
   });
   return report;

@@ -21,6 +21,8 @@ export {
   type AgentDriver,
   type AgentJob,
   type ResolveConflictsJob,
+  type FixChecksJob,
+  type FailedCheck,
   type RunContext,
   type RunResult,
   type SiblingTask,

@@ -1,7 +1,7 @@
 /** Agent run history and usage accounting. */
 
-/** Why an agent ran: to work the task itself, or to resolve a merge's conflicts. */
-export type RunKind = "work" | "resolve_conflicts";
+/** Why an agent ran: to work the task itself, to resolve a merge's conflicts, or to fix a merge that failed its checks. */
+export type RunKind = "work" | "resolve_conflicts" | "fix_checks";
 
 export type RunOutcome = "running" | "succeeded" | "failed" | "cancelled";
 
@@ -25,7 +25,7 @@ export interface RunUsage {
 
 /**
  * One agent run against a task. A task can have several: a run per attempt
- * (a factory restart re-runs it) plus any conflict resolution while merging.
+ * (a factory restart re-runs it) plus any conflict resolution or check fix while merging.
  * The task's `costUsd` is the sum of its runs.
  */
 export interface AgentRun extends RunUsage {
@@ -42,4 +42,5 @@ export interface AgentRun extends RunUsage {
 export const RUN_KIND_LABEL: Record<RunKind, string> = {
   work: "Work",
   resolve_conflicts: "Resolve conflicts",
+  fix_checks: "Fix merge checks",
 };

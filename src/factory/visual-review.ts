@@ -16,7 +16,7 @@ export interface VisualCandidate {
   /** The task branch's tip that the candidate merges. */
   branchCommit: string;
   changedFiles: string[];
-  /** An agent changed UI files while resolving this candidate's conflicts. */
+  /** An agent changed UI files while resolving this candidate's conflicts or fixing its merge checks. */
   conflictChangedUi?: boolean;
 }
 
@@ -25,7 +25,7 @@ export interface VisualCandidate {
  * it carries across a clean merge onto a newer default branch: that adds only
  * what has already landed. It stops covering the candidate when the branch gets
  * new commits, or when `conflictChangedUi` says an agent changed UI files while
- * resolving conflicts, since nobody has seen that result. Task pre-approval
+ * resolving conflicts or fixing merge checks, since nobody has seen that result. Task pre-approval
  * authorizes a fresh waiver for any such candidate, including UI conflicts.
  */
 export function requireCandidateVisualReview(store: Store, taskId: string, candidate: VisualCandidate): void {
@@ -41,7 +41,7 @@ export function requireCandidateVisualReview(store: Store, taskId: string, candi
   store.updateTask(taskId, { visualReview: {
     status: "pending", commit, tree, branchCommit, decidedAt: null,
     note: conflictChangedUi
-      ? "An agent changed UI files while resolving conflicts. Inspect this merge before it lands, or explicitly waive visual review."
+      ? "An agent changed UI files while resolving conflicts or fixing merge checks. Inspect this merge before it lands, or explicitly waive visual review."
       : "No visual decision covers these changes. Inspect this candidate before merging, or explicitly waive visual review.",
   } });
   throw new Error("Candidate visual inspection or an explicit operator waiver is required before merging");

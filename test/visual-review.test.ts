@@ -205,7 +205,7 @@ test("visual review: new branch commits and UI conflict resolutions need a fresh
     await actions.recordVisualReview(task.id, { status: "waived", commit, note: "Urgent fix; task view unreviewed at all sizes" });
     assert.throws(() => requireCandidateVisualReview(store, task.id, candidate(merged, mergedTree, commit, [], true)), /visual inspection/);
     assert.deepEqual(store.getTask(task.id)!.visualReview, { status: "pending", commit: merged, tree: mergedTree, branchCommit: commit, decidedAt: null,
-      note: "An agent changed UI files while resolving conflicts. Inspect this merge before it lands, or explicitly waive visual review." });
+      note: "An agent changed UI files while resolving conflicts or fixing merge checks. Inspect this merge before it lands, or explicitly waive visual review." });
 
     await actions.recordVisualReview(task.id, { status: "inspected", commit: merged, note: "Inspected merged candidate at all sizes; screenshot paths recorded" });
     assert.equal(store.getTask(task.id)!.visualReview!.branchCommit, commit, "the decision remembers which branch it covers");

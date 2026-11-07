@@ -1,4 +1,5 @@
 import type { EventType, Repo, Task, ValidationRun } from "@crane/contracts";
+import type { FailedCheck } from "@crane/agent-protocol";
 import { installDependencies } from "@crane/worktree-deps";
 
 export class MergeError extends Error {}
@@ -23,6 +24,13 @@ export interface MergeRequest {
   resolveConflicts: (ctx: { cwd: string; base: string; files: string[]; deferredDependencies?: string[] }) => Promise<void | ResolutionReview>;
   /** Runs after Crane durably commits the edits, including on recovery. No approval or check is implied by the checkpoint. */
   validateResolution?: (ctx: { cwd: string; base: string; files: string[]; checkpoint: string; visualReviewRequired: boolean }) => Promise<void | ResolutionReview>;
+  /**
+   * Called when merge checks fail on a merge commit Crane built, with HEAD
+   * detached at `commit`. Should leave its fix in the working tree; Crane folds
+   * it into the merge commit and runs every check again. Unset hands the
+   * failure straight back to the operator.
+   */
+  fixChecks?: (ctx: { cwd: string; base: string; commit: string; failures: FailedCheck[] }) => Promise<void | ResolutionReview>;
   /** How many times to start over when the remote moves under us. */
   maxAttempts?: number;
   /** The wait before each retry of a temporary fetch failure. Tries = waits + 1. */

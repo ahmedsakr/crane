@@ -41,6 +41,7 @@ Crane never merges into your default branch or pushes without operator approval.
 - It fetches the default branch first. A temporary network failure, such as a DNS or connection error, gets up to three more tries over about a minute, each recorded on the task. Authentication, permission, and policy failures aren't retried, and Crane never merges without a fetch that succeeded.
 - It builds one `Merge branch 'crane/…'` commit on top of the latest default branch, in Crane's own worktree.
 - If that conflicts, an agent resolves the conflicts. Crane checks that no conflict markers are left before it commits.
+- It runs the repository checks on the merge commit. If some fail on a merge that git built without conflicts (often because something that landed on the default branch no longer fits the task's change), an agent gets one try to fix them in Crane's worktree, with the failed checks' logs. Crane folds its edits into the merge commit and runs every check again. If the agent changes nothing, or a check still fails, the task comes back to you.
 - It pushes as a plain fast-forward and never force-pushes. If someone else pushed in the meantime, Crane starts over from the new tip.
 - Your checkout of the default branch is fast-forwarded only when it has no local changes. Otherwise Crane leaves it alone and tells you to pull.
 - If anything goes wrong, the task comes back to you with the reason, and nothing is pushed.
@@ -347,8 +348,8 @@ The local API also supports `GET /api/repos/:id/checks` and
 
 After committing agent changes, Crane runs checks before marking work ready.
 After explicit operator merge approval, it checks the actual merge commit
-before pushing or updating the local default branch. Conflict resolutions and
-remote-moved retries each receive fresh checks. No previous passing result is
+before pushing or updating the local default branch. Conflict resolutions,
+merge-check fixes, and remote-moved retries each receive fresh checks. No previous passing result is
 reused for a different commit.
 
 Task reports retain factory-owned evidence for every check: phase, command,

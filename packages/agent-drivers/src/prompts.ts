@@ -1,5 +1,5 @@
 import { LOOKOUT, STATUS_LABEL, type PrerequisiteState, type Task, type Repo } from "@crane/contracts";
-import { REPORT_FENCE, type AgentJob, type ResolveConflictsJob, type RunContext, type SiblingTask } from "@crane/agent-protocol";
+import { REPORT_FENCE, type AgentJob, type FixChecksJob, type ResolveConflictsJob, type RunContext, type SiblingTask } from "@crane/agent-protocol";
 
 const KIND_BRIEF: Record<Task["kind"], string> = {
   maintenance:
@@ -89,6 +89,7 @@ export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob, opts
   const sandbox = opts.sandboxed ? SANDBOX_BRIEF : "";
   const checks = checksBrief(opts.checks, !!opts.sandboxed);
   if (job?.kind === "resolve_conflicts") return conflictSystemPrompt(repo, job, commits, sandbox, checks);
+  if (job?.kind === "fix_checks") return fixChecksSystemPrompt(repo, job, sandbox, checks);
   return [
     "You are an agent in Crane, an autonomous software factory steered by a human operator.",
     KIND_BRIEF[task.kind],
@@ -147,6 +148,47 @@ function conflictSystemPrompt(
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+function fixChecksSystemPrompt(repo: Repo | null, job: FixChecksJob, sandbox: string, checks: string): string {
+  const main = repo?.defaultBranch ?? "the default branch";
+  return [
+    "You are an agent in Crane, an autonomous software factory steered by a human operator.",
+    `The operator approved a task and asked Crane to merge its branch into ${main}. Crane merged it without conflicts in this directory, which is Crane's own isolated worktree: HEAD is detached at merge commit ${job.commit}, whose first parent is ${job.base} and whose second parent is the task branch. Then the repository's merge checks failed on that merge. Usually that means something that landed on ${main} after the task branched off no longer fits the task's change, even though they touch different lines. Your job is to make the merge pass its checks.`,
+    [
+      "How to fix:",
+      "- Work out why each failed check fails on this merge. Start from the log excerpts you're given, then run the check yourself.",
+      "- `git log --oneline HEAD^2..HEAD^1` is what landed on the default branch since the task branched off; `git log --oneline HEAD^1..HEAD^2` is the task's work; `git diff HEAD^1 HEAD` is what the merge brings onto the default branch.",
+      "- Keep the intent of both sides: the task's change and what landed. Usually that means adapting the task's change to what landed. Never delete, skip, or weaken a test or check just to make it pass, and never change which checks run.",
+      "- Keep the fix as small as the failure needs, and don't take on other work.",
+      "- Leave your edits in the working tree. Do not commit, and do not run git merge, checkout, reset, rebase, stash, or push. Crane folds your edits into the merge commit and runs every merge check again.",
+      "- If the merge didn't cause the failure (a flaky test, the environment, or something already broken on the task branch alone), or you can't fix it with confidence, change nothing and explain why in your report. Crane hands the task back to the operator.",
+    ].join("\n"),
+    "Narrate briefly as you go: one short sentence before each significant step, so the operator can follow along.",
+    BLOCKED_BRIEF,
+    sandbox,
+    VALIDATION_BRIEF,
+    checks,
+    FILE_EDIT_BRIEF,
+    SCREENSHOT_BRIEF,
+    reportInstructions(),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** A code fence longer than any run of backticks in `text`, so a log can't close it early. */
+function fenceFor(text: string): string {
+  const longest = Math.max(2, ...(text.match(/`+/g) ?? []).map((run) => run.length));
+  return "`".repeat(longest + 1);
+}
+
+function failedChecksBrief(job: FixChecksJob): string {
+  return job.failures.map(({ command, exitCode, logs }) => {
+    const fence = fenceFor(logs);
+    const exit = exitCode === null ? "no exit code" : `exit ${exitCode}`;
+    return `## \`${command}\` (${exit})\n\n${fence}text\n${logs}\n${fence}`;
+  }).join("\n\n");
 }
 
 /**
@@ -268,11 +310,19 @@ function visualDecisionBrief(task?: Task, job?: AgentJob): string {
       ? "Pre-approval authorizes Crane to record automatic candidate waivers, including resolved merge candidates. Disclose missing inspection and offer capture instructions as optional; no additional operator visual decision is required while this authorization remains active."
       : "No pre-approval authorizes an automatic waiver. If UI work has no covering candidate decision, include the required operator checklist before approval or merge.",
     `Recorded visual review: ${JSON.stringify(task.visualReview ?? null)}.`,
-    job?.kind === "resolve_conflicts"
-      ? `Resolution phase: ${job.phase ?? "unspecified"}; checkpoint candidate: ${job.checkpoint ?? "not yet saved"}. A decision for the original task candidate does not by itself cover UI changed during conflict resolution.`
-      : "Further edits can invalidate a recorded candidate decision.",
+    jobDecisionLine(job),
     "Crane verifies candidate coverage after your edits; do not infer coverage from an old inspected, waived, or not_required status, and do not grant a waiver yourself. Keep classifying UI work as visualReview.required: true even when pre-approved, and preserve sandbox restrictions.",
   ].join("\n\n");
+}
+
+function jobDecisionLine(job?: AgentJob): string {
+  if (job?.kind === "resolve_conflicts") {
+    return `Resolution phase: ${job.phase ?? "unspecified"}; checkpoint candidate: ${job.checkpoint ?? "not yet saved"}. A decision for the original task candidate does not by itself cover UI changed during conflict resolution.`;
+  }
+  if (job?.kind === "fix_checks") {
+    return `Merge-check fix of candidate ${job.commit}. A decision for the original task candidate does not by itself cover UI changed by this fix.`;
+  }
+  return "Further edits can invalidate a recorded candidate decision.";
 }
 
 function commandEvidenceBrief(context: TaskContext): string {
@@ -294,6 +344,17 @@ function commandEvidenceBrief(context: TaskContext): string {
 }
 
 export function userPrompt(task: Task, job?: AgentJob, context: TaskContext = {}): string {
+  if (job?.kind === "fix_checks") {
+    const summary = task.report?.summary ? `\n\nWhat the task did: ${task.report.summary}` : "";
+    return [
+      `# Fix merge checks: ${task.title}`,
+      `Merging \`${task.branch}\` into \`${job.base}\` made merge commit \`${job.commit}\`, which failed ${job.failures.length === 1 ? "this check" : "these checks"}:`,
+      failedChecksBrief(job),
+      `## The original task\n\n${task.brief}${summary}`,
+      visualDecisionBrief(task, job),
+      commandEvidenceBrief(context),
+    ].filter(Boolean).join("\n\n");
+  }
   if (job?.kind === "resolve_conflicts") {
     const summary = task.report?.summary ? `\n\nWhat the task did: ${task.report.summary}` : "";
     return [

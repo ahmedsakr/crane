@@ -139,7 +139,8 @@ export function nonvisualRef(taskId: string): string {
   return `${resolutionRef(taskId)}-nonvisual`;
 }
 
-async function saveResolution(req: MergeRequest, head: string, needsReview: boolean): Promise<void> {
+/** Point the checkpoint at `head`, with a visual-review opt-out only when `needsReview` is false. */
+export async function saveResolution(req: MergeRequest, head: string, needsReview: boolean): Promise<void> {
   const nonvisual = nonvisualRef(req.task.id);
   // Save an opt-out first. Missing or mismatched metadata always requires review,
   // including a crash between these writes. Neither ref grants operator approval.
