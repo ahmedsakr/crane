@@ -23,6 +23,7 @@ import type {
 } from "@crane/contracts";
 import type { Store } from "../core/store.js";
 import type { SessionListing } from "../core/store/access.js";
+import { generatePassword } from "./auth-crypto.js";
 import * as access from "./actions/access.js";
 import * as invites from "./actions/access-invites.js";
 import type { AccessDeps } from "./actions/access-rules.js";
@@ -313,6 +314,11 @@ export class OperatorActions {
 
   addOperator(by: EventActor, input: access.NewOperatorInput): Promise<OperatorProfile> {
     return access.addOperator(this.access, by, input);
+  }
+
+  /** A random password for `crane operators add --generate`; nothing keeps it. */
+  generatePassword(): string {
+    return generatePassword();
   }
 
   listOperators(): OperatorSummary[] {

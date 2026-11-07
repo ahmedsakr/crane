@@ -19,7 +19,10 @@ import { registerServe } from "./commands/serve.js";
 import { registerShow } from "./commands/show.js";
 import { registerTasks } from "./commands/tasks.js";
 import { registerWatch } from "./commands/watch.js";
-import { createCliContext, type CliContext } from "./context.js";
+import { withActor } from "../core/actor.js";
+import { registerAuth } from "./commands/auth.js";
+import { registerOperators } from "./commands/operators.js";
+import { createCliContext, type CliContext, type CliIo } from "./context.js";
 import { setupCommand } from "./setup.js";
 
 /** A fresh `crane` command tree. Help lists commands in the order they register here. */
@@ -50,12 +53,20 @@ export function buildProgram(ctx: CliContext): Command {
   registerAnalytics(program, ctx);
   registerFactoryControl(program, ctx);
   registerServe(program, ctx);
+  registerOperators(program, ctx);
+  registerAuth(program, ctx);
   return program;
 }
 
-/** Runs one CLI command against `target`. `argv` is shaped like `process.argv`: node, script, then arguments. */
-export async function runCli(argv: string[], target: Store): Promise<void> {
-  const ctx = createCliContext(target);
-  await ctx.actions.ensureFactoryRepo();
-  await buildProgram(ctx).parseAsync(argv);
+/**
+ * Runs one CLI command against `target`. `argv` is shaped like `process.argv`:
+ * node, script, then arguments. The command runs as the host, so what it
+ * records is attributed to whoever ran crane on this machine.
+ */
+export async function runCli(argv: string[], target: Store, io: Partial<CliIo> = {}): Promise<void> {
+  const ctx = createCliContext(target, io);
+  await withActor(ctx.host, async () => {
+    await ctx.actions.ensureFactoryRepo();
+    await buildProgram(ctx).parseAsync(argv);
+  });
 }

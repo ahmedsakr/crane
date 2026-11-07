@@ -1,4 +1,4 @@
-import { createHash, randomBytes, scrypt, timingSafeEqual, type ScryptOptions } from "node:crypto";
+import { createHash, randomBytes, randomInt, scrypt, timingSafeEqual, type ScryptOptions } from "node:crypto";
 
 /**
  * Password hashing and token digests for operator sign-in. Agents can read
@@ -62,6 +62,17 @@ const DUMMY_HASH = JSON.stringify({
 /** Spends one password check's time, so an unknown username answers as slowly as a wrong password. */
 export async function dummyVerify(): Promise<void> {
   await verifyPassword("not a password", DUMMY_HASH);
+}
+
+// No 0/O or 1/l/I, so a password read off a terminal can be typed back.
+const PASSWORD_ALPHABET = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+export const GENERATED_PASSWORD_LENGTH = 24;
+
+/** A random password of 24 characters (about 140 bits), chosen uniformly. */
+export function generatePassword(): string {
+  let out = "";
+  for (let i = 0; i < GENERATED_PASSWORD_LENGTH; i++) out += PASSWORD_ALPHABET[randomInt(PASSWORD_ALPHABET.length)];
+  return out;
 }
 
 /** 32 random bytes, URL-safe. */
