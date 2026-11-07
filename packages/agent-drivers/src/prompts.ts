@@ -1,5 +1,6 @@
 import { LOOKOUT, STATUS_LABEL, type PrerequisiteState, type Task, type Repo } from "@crane/contracts";
 import { REPORT_FENCE, type AgentJob, type FixChecksJob, type ResolveConflictsJob, type RunContext, type SiblingTask } from "@crane/agent-protocol";
+import { priorRefusalsBrief } from "./refusal-prompts.js";
 
 const KIND_BRIEF: Record<Task["kind"], string> = {
   maintenance:
@@ -19,7 +20,7 @@ const AUTONOMY_BRIEF: Record<Task["autonomy"], string> = {
 };
 
 const BLOCKED_BRIEF =
-  "Some commands are not allowed. If one is blocked, don't hunt for a workaround that does the same thing: say what you needed it for, carry on without it if you can, and mention it in your report. Do not retry the blocked operation through a script, node, Python, another shell, or a rewritten command. A refused compound command does not mean compound commands in general need approval; do not guess which part was denied or repackage it to get past the refusal. Crane shows the operator every blocked command so they can allow it for next time.";
+  "Some commands are not allowed. If one is blocked, don't hunt for a workaround that does the same thing: say what you needed it for, carry on without it if you can, and mention it in your report. Do not retry the blocked operation through a script, node, Python, another shell, a rewritten command, or an equivalent native-tool call (such as replacing a refused marker search with Grep, Glob, or Read). This applies across editing, validation, resumed, and fresh sessions. A refused compound command does not mean compound commands in general need approval; do not guess which part was denied or repackage it to get past the refusal. If a conflict-marker scan is unavailable because of a refusal, report that unavailable scan and its purpose for operator review. Crane shows the operator every blocked command so they can allow it for next time.";
 
 const VALIDATION_BRIEF =
   "A successful tool call (is_error=false) or passing TAP counts do not establish a process exit code. If the command result supplies no authoritative exit status, report its process outcome as unknown and disclose the missing exit evidence in your validation summary. " +
@@ -298,7 +299,7 @@ function lookoutsBrief(task: Task): string {
 }
 
 /** What the factory knows about the task's surroundings when the run starts. */
-type TaskContext = Pick<RunContext, "siblingTasks" | "prerequisites" | "commandEvidence" | "postmortemPrompt" | "dependencyProblem"> & Partial<Pick<RunContext, "task" | "job">>;
+type TaskContext = Pick<RunContext, "siblingTasks" | "prerequisites" | "commandEvidence" | "priorRefusals" | "postmortemPrompt" | "dependencyProblem"> & Partial<Pick<RunContext, "task" | "job">>;
 
 function dependencyBrief(context: TaskContext): string {
   if (!context.dependencyProblem) return "";
@@ -362,6 +363,7 @@ export function userPrompt(task: Task, job?: AgentJob, context: TaskContext = {}
       `## The original task\n\n${task.brief}${summary}`,
       visualDecisionBrief(task, job),
       commandEvidenceBrief(context),
+      priorRefusalsBrief(context.priorRefusals),
     ].filter(Boolean).join("\n\n");
   }
   if (job?.kind === "resolve_conflicts") {
@@ -374,6 +376,7 @@ export function userPrompt(task: Task, job?: AgentJob, context: TaskContext = {}
       `## The original task\n\n${task.brief}${summary}`,
       visualDecisionBrief(task, job),
       commandEvidenceBrief(context),
+      priorRefusalsBrief(context.priorRefusals),
     ].join("\n\n");
   }
   return [
@@ -381,6 +384,7 @@ export function userPrompt(task: Task, job?: AgentJob, context: TaskContext = {}
     visualDecisionBrief(task),
     dependencyBrief(context),
     commandEvidenceBrief(context),
+    priorRefusalsBrief(context.priorRefusals),
     prerequisitesBrief(task, context.prerequisites),
     acceptanceBrief(task),
     acceptanceChecksBrief(task),
@@ -401,6 +405,7 @@ export function resumePrompt(context: TaskContext = {}): string {
     "A restart stops the commands you had running, so an install you started may not have finished. In an isolated worktree, Crane prepares the dependencies again and waits for that to finish before resuming you; check the current state rather than assuming your install completed.",
     dependencyBrief(context),
     commandEvidenceBrief(context),
+    priorRefusalsBrief(context.priorRefusals),
     BLOCKED_BRIEF,
     VALIDATION_BRIEF,
     FILE_EDIT_BRIEF,

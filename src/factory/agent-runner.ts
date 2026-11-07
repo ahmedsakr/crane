@@ -31,6 +31,7 @@ async function runWithRetry(deps: AgentRunnerDeps, driver: AgentDriver, ctx: Run
       task: { ...ctx.task, preApprovedAt: current.preApprovedAt, visualReview: current.visualReview },
       resumeSession,
       commandEvidence: store.commandEvidence(ctx.task.id),
+      priorRefusals: store.priorRefusals(ctx.task.id),
       siblingTasks: ctx.repo && !ctx.job ? await siblingTasksFor(store, ctx.task, ctx.repo) : undefined,
       prerequisites: !ctx.job && ctx.task.prerequisites.length ? store.prerequisiteStates(ctx.task) : undefined,
       postmortemPrompt: !ctx.job && ctx.task.postmortemOf ? store.postmortemPrompt(ctx.task.postmortemOf) : undefined,

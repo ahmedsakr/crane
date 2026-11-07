@@ -30,6 +30,13 @@ export function listEvents(store: Store, taskId: string, afterId = 0): TaskEvent
   ).map(toEvent);
 }
 
+/** Bound the refusal history independently of noisy tool and command events. */
+export function priorRefusals(store: Store, taskId: string): TaskEvent[] {
+  return (store.db.prepare(
+    "SELECT * FROM events WHERE task_id = ? AND type = 'blocked' ORDER BY id DESC LIMIT 40",
+  ).all(taskId) as Row[]).reverse().map(toEvent);
+}
+
 /** Latest lifecycle event per command, bounded for the next agent's prompt. */
 export function commandEvidence(store: Store, taskId: string): CommandEvidence[] {
   const rows = store.db.prepare(`

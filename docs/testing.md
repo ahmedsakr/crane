@@ -58,6 +58,7 @@ agent CLIs or listen on ports.
 | Configured checks and factory-owned evidence | `node --import tsx test/checks.test.ts` |
 | Token pricing and cost ledger | `node --import tsx test/codex-costs.test.ts` |
 | Command lifecycle evidence, redaction, and recovery prompts | `node --import tsx test/command-evidence.test.ts` |
+| Refusal history across editing, validation, fresh sessions and retries | `node --import tsx test/refusal-context.test.ts` |
 | Claude tool result metadata and diagnostic redaction | `node --import tsx test/claude-evidence.test.ts` |
 | Dependency install progress, diagnostic bounds, and process outcomes (in-process fixtures) | `node --import tsx test/install-process.test.ts` |
 | Credential redaction corpus for every diagnostic consumer | `node --import tsx test/diagnostics.test.ts` |
@@ -244,9 +245,19 @@ a code finding. Crane records its own command, commit, logs, and exit status.
 
 For unexpected failures, retain the actual diagnostics. Do not assume an
 assertion failure or missing stream output proves a sandbox error. Never retry
-a refused operation through another shell, interpreter, script, or rewritten
-command, or change tests, scripts, production code, permissions, or sandbox
+a refused operation through another shell, interpreter, script, rewritten
+command, or equivalent native-tool call (including Grep, Glob, or Read), or change tests, scripts, production code, permissions, or sandbox
 settings to bypass restrictions. Continue independent supported checks and
 report the refused command's purpose and remaining validation. Checks not
 covered by Crane's configured commands still require an explicit handoff;
 screenshots and behavioral driver evaluation are not supplied by `npm test`.
+
+The actionable-refusal evidence and compound-command guidance from t-h75934
+also apply across phases. Each agent attempt receives up to 40 recent persisted
+`blocked` events for its task, independently of command lifecycle history;
+fresh, resumed, conflict-edit, conflict-validation, and check-fix prompts carry
+a redacted, bounded snapshot. Missing refusal reasons remain unknown; suggested
+permission rules do not explain a refusal. If a marker scan is refused, leave
+it unavailable and report its purpose and remaining validation for operator
+review rather than replacing it with a native search tool. No permissions are
+broadened by this handoff, and older refusals may be omitted from the snapshot.
