@@ -5,6 +5,7 @@ import type { Store } from "../../core/store.js";
 import { readScreenshot } from "../../core/screenshots.js";
 import { draftTask } from "../../factory/instruct.js";
 import { diffForTask } from "../../factory/git.js";
+import { admit } from "../auth.js";
 import { optionalJsonObject } from "../body.js";
 import type { RouteDeps } from "./deps.js";
 
@@ -36,15 +37,23 @@ function screenshot(store: Store, c: Context, id: string, name: string) {
   });
 }
 
-/** Live events for one task, or for the whole factory when id is "all". */
-function eventStream(store: Store, c: Context, id: string) {
+/** How often an open stream asks whether its request may still use the API, so signing out ends it. */
+export const STREAM_RECHECK_MS = 30_000;
+
+/** Live events for one task, or for the whole factory when id is "all". Ends once its request would be refused. */
+function eventStream({ store, access }: RouteDeps, c: Context, id: string) {
   let cursor = Number(c.req.query("after") ?? (id === "all" ? store.latestEventId() : 0));
   return streamSSE(c, async (stream) => {
     let alive = true;
     stream.onAbort(() => {
       alive = false;
     });
+    let checkedAt = access.now();
     while (alive) {
+      if (access.now() - checkedAt >= STREAM_RECHECK_MS) {
+        if (!admit(access, c).ok) break;
+        checkedAt = access.now();
+      }
       const events = id === "all" ? store.eventsSince(cursor) : store.listEvents(id, cursor);
       for (const e of events) {
         await stream.writeSSE({ data: JSON.stringify(e), event: "event", id: String(e.id) });
@@ -56,7 +65,8 @@ function eventStream(store: Store, c: Context, id: string) {
 }
 
 /** Listing, reading and creating tasks. `/tasks/queue` must come before `/tasks/:id`. */
-export function registerTaskRoutes(api: Hono, { store, actions }: RouteDeps): void {
+export function registerTaskRoutes(api: Hono, deps: RouteDeps): void {
+  const { store, actions } = deps;
   api.get("/tasks", (c) => {
     const status = c.req.query("status")?.split(",").filter(Boolean) as TaskStatus[] | undefined;
     const repoId = c.req.query("repo") || undefined;
@@ -80,7 +90,7 @@ export function registerTaskRoutes(api: Hono, { store, actions }: RouteDeps): vo
     const merged = m.status === "merged" ? lastMergeOutcome(store.listEvents(m.id))?.commit : null;
     return c.json(await diffForTask(repo, m, merged));
   });
-  api.get("/tasks/:id/stream", (c) => eventStream(store, c, c.req.param("id")));
+  api.get("/tasks/:id/stream", (c) => eventStream(deps, c, c.req.param("id")));
   api.post("/instruct/draft", async (c) => {
     const { text } = await c.req.json<{ text: string }>();
     const draft: TaskDraft = draftTask(text ?? "", store.listRepos(), { lastRepoId: store.getSetting("last_repo") });

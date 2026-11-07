@@ -40,6 +40,7 @@ import * as tasks from "./actions/tasks.js";
 
 export { checkLookouts, checkScheduledAt, toRule } from "./action-inputs.js";
 export { AccessError } from "./actions/access-errors.js";
+export { SESSION_LIFETIME_MS, SIGN_IN_FIRST, WRONG_CURRENT_PASSWORD } from "./actions/access-rules.js";
 export type { Authenticated, SignedIn } from "./actions/access-sessions.js";
 export type { AcceptInput, IssuedInvite } from "./actions/access-invites.js";
 

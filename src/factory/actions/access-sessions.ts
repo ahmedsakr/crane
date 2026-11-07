@@ -7,6 +7,7 @@ import {
   SESSION_LIFETIME_MS,
   SESSION_TOUCH_MS,
   SIGN_IN_FIRST,
+  WRONG_CURRENT_PASSWORD,
   WRONG_SIGN_IN,
   checkClient,
   checkName,
@@ -122,7 +123,7 @@ export async function changeMyPassword(deps: AccessDeps, token: unknown, current
   const password = checkPassword(next);
   const record = needOperator(deps.store, operator.id);
   if (typeof currentPassword !== "string" || !(await verifyPassword(currentPassword, record.passwordHash))) {
-    throw new Error("Your current password isn't right");
+    throw new Error(WRONG_CURRENT_PASSWORD);
   }
   const hash = await hashPassword(password);
   return deps.store.transaction(() => {

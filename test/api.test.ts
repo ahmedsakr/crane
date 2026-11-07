@@ -144,9 +144,12 @@ test("api: cross-origin and rebound requests change nothing", async () => {
     });
     assert.equal(script.status, 200);
 
-    // Exposed on purpose (crane serve --host 0.0.0.0): other hosts may reach it, but forged origins still can't write.
+    // Exposed on purpose (crane serve --host 0.0.0.0): other hosts get past the Host check to the sign-in gate, which
+    // refuses everything until an operator exists (test/api-auth.test.ts), and forged origins still can't write.
     const exposed = createApp(store, { exposed: true });
-    assert.equal((await exposed.request("http://192.168.1.20:4471/api/overview")).status, 200);
+    const reached = await exposed.request("http://192.168.1.20:4471/api/overview");
+    assert.equal(reached.status, 401);
+    assert.equal((await reached.json()).signIn, true);
     const lan = await exposed.request(`http://192.168.1.20:4471/api/repos/${repo.id}/tools/keep-blocked`, {
       method: "POST", headers: { origin: "https://evil.example" }, body: JSON.stringify({ rule: "Bash(curl:*)" }),
     });

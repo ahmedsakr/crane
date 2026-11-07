@@ -44,18 +44,19 @@ export async function serve(store: Store, opts: ServeOptions) {
   store.setSetting(DEFAULT_DRIVER_KEY, driver.name);
   const others = drivers.filter((d) => d !== driver);
   const time = () => ui.dim(new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+  const log = (line: string) => console.log(`${time()}  ${line}`);
   const buildDashboard = opts.buildDashboard ?? true;
 
   // Before the factory starts: without its port it would claim tasks, then die under them.
   const hostname = opts.host ?? DEFAULT_HOST;
   const exposed = !isLoopbackAddress(hostname);
-  const server = await listenOrFail(store, { port: opts.port, hostname, exposed });
+  const server = await listenOrFail(store, { port: opts.port, hostname, exposed, log });
 
   const factory = new Factory(store, [driver, ...others], {
     crewSize: opts.agents,
     maxTurns: opts.maxTurns,
     timeLimitMin: opts.timeLimit,
-    log: (l) => console.log(`${time()}  ${l}`),
+    log,
     buildDashboard,
   });
   factory.start();
@@ -64,9 +65,11 @@ export async function serve(store: Store, opts: ServeOptions) {
   handleShutdown(store, factory, server);
 }
 
-async function listenOrFail(store: Store, address: { port: number; hostname: string; exposed: boolean }): Promise<ServerType> {
-  const { port, hostname, exposed } = address;
-  const app = createApp(store, { exposed });
+type Address = { port: number; hostname: string; exposed: boolean; log: (line: string) => void };
+
+async function listenOrFail(store: Store, address: Address): Promise<ServerType> {
+  const { port, hostname, exposed, log } = address;
+  const app = createApp(store, { exposed, log });
   return listen({ fetch: app.fetch, port, hostname }).catch((err: NodeJS.ErrnoException) =>
     ui.fail(
       err.code === "EADDRINUSE"
@@ -91,9 +94,10 @@ async function printBanner({ store, factory, driver, others, port, hostname, exp
   console.log(`\n${ui.brand()}  ${pc.green("◉")} Factory is running\n`);
   console.log(`  ${ui.dim("Dashboard")}  ${pc.bold(`http://localhost:${port}`)}`);
   if (exposed) {
-    console.log(
-      `  ${ui.accent("!")} ${ui.dim(`Listening on ${hostname}. Anyone who can reach it can approve and merge tasks; the dashboard has no login.`)}`,
-    );
+    const access = store.access.countOperators() > 0
+      ? "Every request needs a signed-in operator."
+      : "Sign-in isn't set up, so it refuses every request: run crane operators add <username> --admin.";
+    console.log(`  ${ui.accent("!")} ${ui.dim(`Listening on ${hostname}. ${access}`)}`);
   }
   console.log(`  ${ui.dim("Agents   ")}  ${store.listAgents().filter((a) => a.active).length} active · factory default ${driver.label}`);
   const installed = (
