@@ -1,15 +1,17 @@
 import {
   AUTONOMY_LABEL,
   KIND_LABEL,
+  STATUS_LABEL,
   driverLabel,
   settingsLabel,
   type NewTask,
   type Task,
   type TaskGates,
   type TaskRunOptions,
+  type TaskStatus,
 } from "@crane/contracts";
 import type { Store } from "../../core/store.js";
-import type { NewTaskRecord } from "../../core/store/tasks.js";
+import type { NewTaskRecord, StatusTransition } from "../../core/store/tasks.js";
 import {
   MAX_GATES,
   checkAcceptance,
@@ -25,6 +27,40 @@ export function needTask(store: Store, id: string): Task {
   const m = store.getTask(id);
   if (!m) throw new Error(`No task ${id}`);
   return m;
+}
+
+/** An operator decision that applies only while the task is still in one of `from`. */
+export type Decision = StatusTransition & {
+  /** The operator event, written only by the caller that wins. */
+  event: string;
+  /** What the task was doing that allowed the decision, for the loser's error, such as "waiting for review". */
+  waiting: string;
+};
+
+/**
+ * Claim a decision synchronously, before any await. The operator event, the
+ * status change and `also` commit together only while the task is still in
+ * `from`; otherwise nothing is written and this throws, naming the task's
+ * current status. Of operators racing, in one process or several sharing the
+ * database, exactly one wins, and side effects belong after the claim.
+ */
+export function claimDecision(store: Store, id: string, decision: Decision, also?: () => void) {
+  store.transaction(() => {
+    store.addEvent(id, "operator", decision.event);
+    if (!store.transitionStatus(id, decision)) {
+      throw new Error(`Task ${id} isn't ${decision.waiting} any more. It's ${statusPhrase(needTask(store, id).status)}`);
+    }
+    also?.();
+  }, { immediate: true });
+}
+
+/** Refuse a decision up front when the task isn't in one of `from`, naming the status it's in. */
+export function requireStatus(task: Task, from: TaskStatus[], waiting: string) {
+  if (!from.includes(task.status)) throw new Error(`Task ${task.id} isn't ${waiting}. It's ${statusPhrase(task.status)}`);
+}
+
+function statusPhrase(status: TaskStatus): string {
+  return status === "needs_review" ? "waiting for review" : STATUS_LABEL[status].toLowerCase();
 }
 
 function runLabel(run: TaskRun): string {
@@ -151,9 +187,9 @@ export function waivePrerequisites(store: Store, id: string, note?: string): Tas
 
 export function cancel(store: Store, id: string): Task {
   const m = needTask(store, id);
-  if (!["queued", "running"].includes(m.status)) throw new Error(`Task ${m.id} isn't in progress`);
-  store.addEvent(m.id, "operator", "Cancelled by operator");
-  store.setStatus(m.id, "cancelled", "Cancelled");
+  const from: TaskStatus[] = ["queued", "running"];
+  requireStatus(m, from, "in progress");
+  claimDecision(store, m.id, { event: "Cancelled by operator", from, to: "cancelled", message: "Cancelled", waiting: "in progress" });
   return needTask(store, id);
 }
 
@@ -162,14 +198,23 @@ export function cancel(store: Store, id: string): Task {
  * it, unless `driver` names another (null or "default" for the factory's default).
  */
 export function retry(store: Store, id: string, opts: { driver?: string | null } = {}): Task {
-  const goalId = store.goalForTask(needTask(store, id).id);
-  if (goalId) throw new Error(`This task belongs to goal ${goalId}. Send feedback or retry the task from that goal to preserve its dependencies`);
-  return retryTask(store, id, opts);
+  // One transaction, so a goal can't adopt the task between the check and the retry.
+  return store.transaction(() => {
+    const goalId = store.goalForTask(needTask(store, id).id);
+    if (goalId) throw new Error(`This task belongs to goal ${goalId}. Send feedback or retry the task from that goal to preserve its dependencies`);
+    return retryTask(store, id, opts);
+  }, { immediate: true });
 }
 
-/** `retry` without the goal check, for the goal actions that keep a retried task in its goal. */
+/**
+ * `retry` without the goal check, for the goal actions that keep a retried
+ * task in its goal. The new task and the "Retried as" event commit together.
+ */
 export function retryTask(store: Store, id: string, opts: TaskRunOptions = {}): Task {
-  const m = needTask(store, id);
+  return store.transaction(() => queueRetry(store, needTask(store, id), opts), { immediate: true });
+}
+
+function queueRetry(store: Store, m: Task, opts: TaskRunOptions): Task {
   const run = nextRun(m, opts);
   const tuned = opts.model !== undefined || opts.effort !== undefined;
   // A maintenance run goes back to the member it was started for.
