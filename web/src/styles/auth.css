@@ -72,6 +72,10 @@
   border-radius: 6px;
   background: var(--surface-2);
   border: 1px solid var(--hairline);
+  line-height: 1.9;
+  /* On a phone the command wraps; each line keeps its own box rather than one box split open. */
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 @media (max-width: 560px) {
   .sign-in {
