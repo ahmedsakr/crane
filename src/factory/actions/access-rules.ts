@@ -29,6 +29,7 @@ const MAX_CLIENT_LENGTH = 100;
 export const WRONG_SIGN_IN = "That username or password isn't right";
 export const EXPIRED_LINK = "This link has expired or was already used";
 export const SIGN_IN_FIRST = "Sign in to continue";
+export const WRONG_CURRENT_PASSWORD = "Your current password isn't right";
 export const LAST_ADMIN = "Keep at least one admin";
 
 export const iso = (ms: number) => new Date(ms).toISOString();

@@ -184,7 +184,7 @@ const ALLOWED_MODULES: Record<string, string[]> = {
   "core/store": ["Store"],
   "core/paths": ["*"],
   "core/screenshots": ["readScreenshot", "screenshotPath"],
-  "factory/actions": ["OperatorActions", "checkLookouts", "checkScheduledAt", "toRule"],
+  "factory/actions": ["OperatorActions", "WRONG_CURRENT_PASSWORD", "checkLookouts", "checkScheduledAt", "toRule"],
   "factory/git": ["diffForTask"],
   "factory/instruct": ["draftTask"],
   "factory/settings": ["*"],
@@ -193,6 +193,10 @@ const ALLOWED_MODULES: Record<string, string[]> = {
   "cli/context": ["*"],
   "server/body": ["*"],
   "server/security": ["*"],
+  // The session cookie and the gate's per-request check. Sessions change only through OperatorActions.
+  "server/auth": ["admit", "clearSessionCookie", "sessionToken", "setSessionCookie"],
+  // The in-memory sign-in limiter, which counts failed attempts and never touches the store.
+  "server/sign-in-limit": ["TooManyAttempts"],
 };
 
 const ALLOWED_PACKAGES: Record<string, string[]> = {
