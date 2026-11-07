@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { getConnInfo } from "@hono/node-server/conninfo";
+import { isIPv4, isIPv6 } from "node:net";
 import { AccessError } from "../factory/actions.js";
 
 const SECOND = 1000;
@@ -15,7 +16,7 @@ const MAX_KEY_LENGTH = 64;
 
 /** How many failures in `LIMIT_WINDOW_MS` each kind of key allows, and whether a success clears them. */
 const RULES = {
-  /** One client, such as one browser's address. */
+  /** One client: one IPv4 address, or one IPv6 /64 (`clientAddressKey`). */
   client: { max: 5, resetOnSuccess: true },
   /** One username, from anywhere. */
   username: { max: 10, resetOnSuccess: true },
@@ -35,17 +36,52 @@ export type Limit = { readonly kind: LimitKind; readonly key: string };
 type Bucket = { failures: number[]; strikes: number; blockedUntil: number; pending: number };
 type Outcome = "succeeded" | "failed" | "ignored";
 
-/** Which client a request comes from. serve-exposure swaps this for one that trusts a proxy's forwarded address. */
+/**
+ * Which client a request comes from. serve-exposure swaps this for one that trusts a proxy's forwarded address, which
+ * should go through `clientAddressKey` too.
+ */
 export type ClientKey = (c: Context) => string;
 
-/** The socket's address, or "unknown" when there is no socket, as under `app.request()`. */
+/** The socket's address as `clientAddressKey` keys it, or "unknown" when there is no socket, as under `app.request()`. */
 export const socketClientKey: ClientKey = (c) => {
   try {
-    return getConnInfo(c).remote.address || "unknown";
+    return clientAddressKey(getConnInfo(c).remote.address ?? "");
   } catch {
     return "unknown";
   }
 };
+
+/**
+ * The key a client's address counts under. An IPv6 address counts under its /64, such as `2001:db8:0:1::/64`, since
+ * one host usually holds the whole /64 and could otherwise rotate through addresses to get past the per-client
+ * limit. An IPv4 address, including one mapped into IPv6 (`::ffff:192.0.2.1`), counts on its own.
+ */
+export function clientAddressKey(address: string): string {
+  const bare = address.replace(/%.*$/, "");
+  if (!bare) return "unknown";
+  if (!isIPv6(bare)) return isIPv4(bare) ? bare : address;
+  const groups = ipv6Groups(bare);
+  const [high = 0, low = 0] = groups.slice(6);
+  const mapped = groups.slice(0, 5).every((group) => group === 0) && groups[5] === 0xffff;
+  if (mapped) return [high >> 8, high & 0xff, low >> 8, low & 0xff].join(".");
+  return `${groups.slice(0, 4).map((group) => group.toString(16)).join(":")}::/64`;
+}
+
+/** The eight 16-bit groups of an address `isIPv6` accepts, with `::` filled in and a trailing IPv4 part converted. */
+function ipv6Groups(address: string): number[] {
+  const dotted = /(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(address);
+  let text = address;
+  if (dotted) {
+    const [a = 0, b = 0, c = 0, d = 0] = dotted.slice(1).map(Number);
+    text = `${address.slice(0, dotted.index)}${((a << 8) | b).toString(16)}:${((c << 8) | d).toString(16)}`;
+  }
+  const [head, tail] = text.split("::");
+  const parse = (part: string | undefined) => (part ? part.split(":").map((group) => parseInt(group, 16)) : []);
+  const front = parse(head);
+  const back = parse(tail);
+  const gap = text.includes("::") ? 8 - front.length - back.length : 0;
+  return [...front, ...new Array<number>(gap).fill(0), ...back];
+}
 
 /** Text that's safe in a log line or as a map key: no control or formatting characters, and short. */
 export function printable(text: string): string {
