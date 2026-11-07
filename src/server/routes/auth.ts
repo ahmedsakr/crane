@@ -9,13 +9,17 @@ import type { RouteDeps } from "./deps.js";
 
 type Credentials = { username?: unknown; password?: unknown };
 
-/** Sign in under the client, username and overall limits. Logs who and from where, never the password. */
+/**
+ * Sign in under the client, username and overall limits. The overall limit doesn't hold back a username with no
+ * recent failures and no attempt in flight, so a spray of guesses can't lock out an operator nobody is guessing;
+ * each such username gets one try at a time. Logs who and from where, never the password.
+ */
 async function limitedSignIn(access: ApiAccess, c: Context, { username, password }: Credentials) {
   const { limiter } = access;
   const client = limiter.limit("client", access.clientKey(c));
   const name = limiter.limit("username", typeof username === "string" ? normalizeUsername(username) : "");
   try {
-    const signed = await limiter.attempt([client, name, limiter.limit("global", "sign-in")], () =>
+    const signed = await limiter.attempt([client, name, limiter.limit("global", "sign-in", name)], () =>
       access.actions.signIn(username, password, { client: describeClient(c.req.header("user-agent")) }));
     access.log(`Signed in ${signed.operator.username} from ${client.key}`);
     return signed;

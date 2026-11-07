@@ -19,14 +19,24 @@ const RULES = {
   client: { max: 5, resetOnSuccess: true },
   /** One username, from anywhere. */
   username: { max: 10, resetOnSuccess: true },
-  /** Every attempt together. A success doesn't clear it, so one valid account can't reset it. */
+  /**
+   * Every attempt together. A success doesn't clear it, so one valid account can't reset it. Sign-in waives it for
+   * a username with no recent failures, so a few clients can't lock everyone out.
+   */
   global: { max: 30, resetOnSuccess: false },
 } satisfies Record<string, { max: number; resetOnSuccess: boolean }>;
 
 export type LimitKind = keyof typeof RULES;
 
-/** One counter of failed attempts: `kind` sets its limit, `key` says whose attempts it counts. */
-export type Limit = { readonly kind: LimitKind; readonly key: string };
+/**
+ * One counter of failed attempts: `kind` sets its limit, `key` says whose attempts it counts. While `unlessFresh`
+ * has no failure counting and nothing in flight, this limit doesn't hold an attempt back, though a failure still
+ * counts against it.
+ */
+export type Limit = { readonly kind: LimitKind; readonly key: string; readonly unlessFresh?: Limit };
+
+/** Called each time a limit starts a wait, with how long it lasts. */
+export type OnLimited = (limit: Limit, waitMs: number) => void;
 
 /**
  * `failures` within the window; `strikes`, failures since the key reached its limit, which set the wait and
@@ -50,6 +60,11 @@ export const socketClientKey: ClientKey = (c) => {
 /** Text that's safe in a log line or as a map key: no control or formatting characters, and short. */
 export function printable(text: string): string {
   return text.replace(/[\p{Cc}\p{Cf}]/gu, "").slice(0, MAX_KEY_LENGTH);
+}
+
+/** A wait as a person says it, rounded up: "30 seconds", "2 minutes". */
+export function spellWait(waitMs: number): string {
+  return spell(Math.max(1, Math.ceil(waitMs / SECOND)));
 }
 
 function spell(seconds: number): string {
@@ -79,11 +94,25 @@ export class TooManyAttempts extends AccessError {
 export class AttemptLimiter {
   private readonly buckets = new Map<string, Bucket>();
 
-  constructor(private readonly now: () => number = Date.now) {}
+  constructor(
+    private readonly now: () => number = Date.now,
+    private readonly onLimited: OnLimited = () => {},
+  ) {}
 
-  /** The counter for `key` of `kind`, such as one client's address or one username. */
-  limit(kind: LimitKind, key: string): Limit {
-    return { kind, key: printable(key) };
+  /** The counter for `key` of `kind`, such as one client's address or one username. See `Limit` for `unlessFresh`. */
+  limit(kind: LimitKind, key: string, unlessFresh?: Limit): Limit {
+    return unlessFresh ? { kind, key: printable(key), unlessFresh } : { kind, key: printable(key) };
+  }
+
+  /** Whether `limit` has no failure still counting, nothing to wait out, and no attempt in flight. */
+  fresh(limit: Limit): boolean {
+    const bucket = this.buckets.get(bucketId(limit));
+    return !bucket || (bucket.pending === 0 && idle(bucket, this.now()));
+  }
+
+  /** How long `limit` holds back the next attempt: nothing while what it's waived for is fresh. */
+  private holdsBack(limit: Limit): number {
+    return limit.unlessFresh && this.fresh(limit.unlessFresh) ? 0 : this.waitMs(limit);
   }
 
   /** How long another attempt under `limit` must wait, or 0. */
@@ -103,7 +132,8 @@ export class AttemptLimiter {
    * `isFailure` accepts counts against every limit; a success clears those whose kind a success resets.
    */
   async attempt<T>(limits: Limit[], fn: () => Promise<T>, isFailure: (err: unknown) => boolean = () => true): Promise<T> {
-    const wait = Math.max(0, ...limits.map((limit) => this.waitMs(limit)));
+    // Nothing awaits between the check and holding, so parallel attempts see each other as in flight.
+    const wait = Math.max(0, ...limits.map((limit) => this.holdsBack(limit)));
     if (wait > 0) throw new TooManyAttempts(wait);
     const held = limits.map((limit) => ({ limit, bucket: this.hold(limit) }));
     let outcome: Outcome = "ignored";
@@ -115,7 +145,7 @@ export class AttemptLimiter {
       if (isFailure(err)) outcome = "failed";
       throw err;
     } finally {
-      for (const { limit, bucket } of held) this.settle(limit.kind, bucket, outcome);
+      for (const { limit, bucket } of held) this.settle(limit, bucket, outcome);
       this.sweep();
     }
   }
@@ -131,7 +161,8 @@ export class AttemptLimiter {
     return bucket;
   }
 
-  private settle(kind: LimitKind, bucket: Bucket, outcome: Outcome): void {
+  private settle(limit: Limit, bucket: Bucket, outcome: Outcome): void {
+    const { kind } = limit;
     bucket.pending--;
     if (outcome === "succeeded" && RULES[kind].resetOnSuccess) Object.assign(bucket, { failures: [], strikes: 0, blockedUntil: 0 });
     if (outcome !== "failed") return;
@@ -141,18 +172,24 @@ export class AttemptLimiter {
     if (bucket.strikes === 0 && bucket.failures.length < RULES[kind].max) return;
     bucket.strikes++;
     const wait = Math.min(MAX_WAIT_MS, FIRST_WAIT_MS * 2 ** (bucket.strikes - 1));
-    bucket.blockedUntil = Math.max(bucket.blockedUntil, at + wait);
+    const until = Math.max(bucket.blockedUntil, at + wait);
+    // An attempt let through by `unlessFresh` can fail while the limit is already waiting: only a new or longer wait reports.
+    if (until > bucket.blockedUntil) this.onLimited(limit, until - at);
+    bucket.blockedUntil = until;
   }
 
   /** Forget keys with nothing in flight, nothing to wait out, and no failure still counting. */
   private sweep(): void {
     const at = this.now();
     for (const [id, bucket] of this.buckets) {
-      const idle = bucket.pending === 0 && at >= bucket.blockedUntil && at >= coolsAt(bucket);
-      if (idle && recent(bucket.failures, at).length === 0) this.buckets.delete(id);
+      if (bucket.pending === 0 && idle(bucket, at)) this.buckets.delete(id);
     }
   }
 }
+
+/** Nothing to wait out and no failure still counting. */
+const idle = (bucket: Bucket, at: number) =>
+  at >= bucket.blockedUntil && at >= coolsAt(bucket) && recent(bucket.failures, at).length === 0;
 
 const bucketId = (limit: Limit) => `${limit.kind}:${limit.key}`;
 const recent = (failures: number[], at: number) => failures.filter((t) => t > at - LIMIT_WINDOW_MS);

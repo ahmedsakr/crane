@@ -4,7 +4,7 @@ import type { CookieOptions } from "hono/utils/cookie";
 import type { EventActor } from "@crane/contracts";
 import { withActor } from "../core/actor.js";
 import { AccessError, SESSION_LIFETIME_MS, SIGN_IN_FIRST, type Authenticated, type OperatorActions } from "../factory/actions.js";
-import { AttemptLimiter, TooManyAttempts, socketClientKey, type ClientKey } from "./sign-in-limit.js";
+import { AttemptLimiter, TooManyAttempts, socketClientKey, spellWait, type ClientKey, type Limit, type OnLimited } from "./sign-in-limit.js";
 
 declare module "hono" {
   interface ContextVariableMap {
@@ -49,14 +49,27 @@ export interface ApiAccess {
 
 export function apiAccess(actions: OperatorActions, opts: AccessOptions = {}): ApiAccess {
   const now = opts.clock ?? Date.now;
+  const log = opts.log ?? ((line: string) => console.log(line));
+  const onLimited: OnLimited = (limit, waitMs) => {
+    if (limit.kind === "global") log(overallLimitLine(limit, waitMs));
+  };
   return {
     actions,
     exposed: opts.exposed ?? false,
     now,
-    limiter: new AttemptLimiter(now),
+    limiter: new AttemptLimiter(now, onLimited),
     clientKey: opts.clientKey ?? socketClientKey,
-    log: opts.log ?? ((line) => console.log(line)),
+    log,
   };
+}
+
+/**
+ * What the log says when failures from every client together reach the overall limit, so the operator sees an
+ * attack while it happens. One line per wait, not per refused attempt.
+ */
+export function overallLimitLine(limit: Limit, waitMs: number): string {
+  const who = limit.unlessFresh ? "usernames with recent failures" : "every client";
+  return `Too many failed ${limit.key} attempts from all clients: ${who} must wait ${spellWait(waitMs)}`;
 }
 
 /**
