@@ -206,19 +206,56 @@ test("auth: wrong passwords answer 401, then the client waits with Retry-After u
 });
 
 test("auth: failures also count per username, from anywhere, and overall", async () => {
-  const { store, app } = await setup();
+  const { store, log, app } = await setup();
   try {
+    await new OperatorActions(store).addOperator(HOST, { username: "kim", name: "Kim", role: "operator", password: PASSWORD });
     const wrong = (client: string, username = "sam") => signIn(app, { client, username, password: WRONG_PASSWORD });
     // Ten failures for Sam from five clients, none of them at its own limit.
     for (let i = 0; i < 10; i++) assert.equal((await wrong(`10.0.1.${i % 5}`)).status, 401);
     assert.equal((await signIn(app, { client: "10.0.2.1", username: "SAM" })).status, 429, "Sam waits, from anywhere");
     assert.equal((await wrong("10.0.2.1", "lee")).status, 401, "other usernames don't");
-    // Thirty failures in all, and everyone waits.
+    // Thirty failures in all, and every username with a recent failure waits.
     for (let i = 0; i < 19; i++) assert.equal((await wrong(`10.0.3.${i}`, `guess${i}`)).status, 401);
     const everyone = await signIn(app, { client: "10.0.4.1", username: "lee" });
     assert.equal(everyone.status, 429);
     assert.equal(everyone.headers.get("retry-after"), "30");
+    const tripped = "Too many failed sign-in attempts from all clients: usernames with recent failures must wait 30 seconds";
+    assert.deepEqual(log.filter((line) => line.startsWith("Too many")), [tripped], "the log says once, not per refusal");
+
+    // A username nobody has been guessing still gets its tries, one failure at a time.
+    assert.equal((await signIn(app, { client: "10.0.4.2", username: "kim" })).status, 200, "Kim signs in during the attack");
+    assert.equal((await wrong("10.0.4.3", "fresh")).status, 401);
+    assert.equal((await wrong("10.0.4.4", "fresh")).status, 429, "then it waits like the rest");
+    assert.ok(log.includes("Too many failed sign-in attempts from all clients: usernames with recent failures must wait 1 minute"));
   } finally { store.close(); }
+});
+
+test("auth: a limit waived for a fresh key lets one attempt at a time through, and reports each new wait", async () => {
+  const now = 0;
+  const limited: [string, number][] = [];
+  const limiter = new AttemptLimiter(() => now, (limit, waitMs) => limited.push([limit.key, waitMs]));
+  const fail = (limits: Parameters<AttemptLimiter["attempt"]>[0]) =>
+    limiter.attempt(limits, async () => { throw new Error("wrong"); }).catch((err: Error) => err);
+  const overall = limiter.limit("global", "links");
+  for (let i = 0; i < 30; i++) await fail([overall]);
+  assert.deepEqual(limited, [["links", FIRST_WAIT_MS]]);
+  assert.ok((await fail([overall])) instanceof TooManyAttempts);
+
+  const name = limiter.limit("username", "kim");
+  const waived = limiter.limit("global", "links", name);
+  assert.equal(limiter.fresh(name), true);
+  let release = () => {};
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const first = limiter.attempt([name, waived], async () => { await held; return "ran"; });
+  const second = await limiter.attempt([name, waived], async () => "ran").catch((err: Error) => err);
+  assert.ok(second instanceof TooManyAttempts, "a second attempt waits while the first is in flight");
+  release();
+  assert.equal(await first, "ran");
+  assert.equal(limiter.fresh(name), true, "a success leaves the username fresh");
+  assert.ok((await fail([name, waived])) instanceof Error);
+  assert.equal(limiter.fresh(name), false);
+  assert.ok((await fail([name, waived])) instanceof TooManyAttempts);
+  assert.deepEqual(limited, [["links", FIRST_WAIT_MS], ["links", 2 * FIRST_WAIT_MS]], "the waived failure still counts overall");
 });
 
 test("auth: the limiter's wait doubles to 15 minutes, cools down after a quiet window, and counts attempts in flight", async () => {
