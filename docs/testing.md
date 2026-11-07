@@ -104,6 +104,64 @@ CLI process. It does **not** validate process startup or persistent-home
 behavior; those still need separate validation when relevant. This harness
 does not broaden permissions or replace incomplete manual CLI validation.
 
+## Screenshot comparisons
+
+Plain `npm run screenshot` boots a live demo: new ids, dates relative to now,
+random usage figures, and simulated agents working while it captures. Reduced
+motion can't make that repeatable, so two captures of one build differ wherever
+a view shows any of it: in one measurement with identical framing, 2,498 pixels
+on the site and 19,574 on analytics, against none for the fixture. A view that
+happens to match, as `/tasks` did, proves nothing about the next one. To compare
+images, use the fixture and a matrix:
+
+```sh
+npm run build -w web &&
+npm run screenshot:matrix -- scripts/matrices/site.json --out-dir .crane/screenshots/before
+
+# Then on the changed build:
+npm run build -w web &&
+npm run screenshot:matrix -- scripts/matrices/site.json --out-dir .crane/screenshots/after --baseline .crane/screenshots/before
+```
+
+**The fixture** (`npm run screenshot -- <path> --fixture`) pins everything the
+demo leaves open:
+
+| Pinned | How |
+| --- | --- |
+| Ids and seeded data | `scripts/fixture/preload.ts` seeds `Math.random` and `randomBytes` for `seed-demo.ts`; demo commits get fixed dates |
+| Displayed time | One stopped clock in the seed, the server and the page, in UTC and `en-US` |
+| Factory state | `scripts/fixture/serve.ts` serves the real API with no factory: always running, one task held working, the rest held queued |
+| Paths | API responses show `/fixture/home` and `/fixture/crane`, not the temp home and checkout |
+| Motion | Reduced motion unless you set `prefers-reduced-motion`, with CSS animation, transitions and the caret off |
+| Readiness | Capture waits for three matching frames and fails after 10 seconds of change |
+
+It only runs in a home it just created under the temp directory; the preload
+exits for any other `CRANE_HOME`, so none of this can reach a real home or the
+factory. Production code has no fixture mode. It refuses a `web/dist` older than
+its source, and `--url`, whose data it can't pin.
+
+**A matrix** names one `target` to crop to, one `ready` selector, and one `scroll`
+position, across its `sizes` and `media`. Use `{ "center": ".site-canvas" }` when
+the target's offset changes with the layout, or `{ "selector": "html", "top": 0 }`
+for a fixed position. A target outside the viewport fails instead of capturing
+something else.
+
+**Check repeats first.** Each cell is captured twice from fresh fixtures. A cell
+that differs from itself is reported as not repeatable, never compared, and makes
+the command exit 1: its differences can't be told apart from noise. Differences
+from the baseline are results, so they exit 0.
+
+**Metadata stays with the image.** Each fixture PNG carries a text chunk with the
+fixture version, framing, build and data hashes and browser version, so it survives
+being attached to a task under a new name. Read it with
+`npm run screenshot:matrix -- --inspect <file.png>`. Images only compare when their
+fixture and framing match. Bump `FIXTURE.version` when a change to the fixture or
+`seed-demo.ts` moves pixels.
+
+The fixture doesn't pin the browser or the machine's font rendering. Compare
+images from one machine and browser; the bundled UI fonts are the same everywhere,
+but the `browser` field shows when two images came from different versions.
+
 ## Checks delegated to Crane
 
 In this known restricted sandbox, defer these checks without first attempting
@@ -115,7 +173,7 @@ them:
 | Complete `test/limits.test.ts` | Claude Code stand-in CLI tests require piped child stdio. |
 | Complete `test/drivers.test.ts` | Codex stand-in CLI tests require piped child stdio. |
 | Complete `test/restart.test.ts` | Includes a Claude Code stand-in CLI resume test requiring piped child stdio. |
-| `npm run screenshot` | Requires local servers and Chromium; follow the separate [visual review handoff](../README.md#visual-review-before-approval). |
+| `npm run screenshot` and `npm run screenshot:matrix` | Require local servers and Chromium; follow the separate [visual review handoff](../README.md#visual-review-before-approval). |
 
 The three mixed suites contain useful pure or simulated tests too, but running
 the complete file directly still starts incompatible subprocess tests. Leave

@@ -41,7 +41,8 @@
     "test": "node --import tsx --test test/*.test.ts",
     "precrane": "npm run build:packages",
     "crane": "tsx src/cli/index.ts",
-    "screenshot": "node --import tsx scripts/screenshot.ts"
+    "screenshot": "node --import tsx scripts/screenshot.ts",
+    "screenshot:matrix": "node --import tsx scripts/screenshot-matrix.ts"
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",
