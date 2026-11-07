@@ -1,7 +1,7 @@
 import type { Context } from "hono";
-import { getConnInfo } from "@hono/node-server/conninfo";
 import { isIPv4, isIPv6 } from "node:net";
 import { AccessError } from "../factory/actions.js";
+import { forwardedValue, peerAddress } from "./security.js";
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
@@ -46,20 +46,23 @@ export type OnLimited = (limit: Limit, waitMs: number) => void;
 type Bucket = { failures: number[]; strikes: number; blockedUntil: number; pending: number };
 type Outcome = "succeeded" | "failed" | "ignored";
 
-/**
- * Which client a request comes from. serve-exposure swaps this for one that trusts a proxy's forwarded address, which
- * should go through `clientAddressKey` too.
- */
+/** Which client a request comes from. */
 export type ClientKey = (c: Context) => string;
 
 /** The socket's address as `clientAddressKey` keys it, or "unknown" when there is no socket, as under `app.request()`. */
-export const socketClientKey: ClientKey = (c) => {
-  try {
-    return clientAddressKey(getConnInfo(c).remote.address ?? "");
-  } catch {
-    return "unknown";
-  }
-};
+export const socketClientKey: ClientKey = (c) => clientAddressKey(peerAddress(c) ?? "");
+
+/**
+ * The client key for a factory served with or without `--trust-proxy`. Behind a trusted proxy on this machine, the
+ * last X-Forwarded-For hop, the address the proxy saw; from any other peer, or without the flag, the socket's.
+ */
+export function clientKeyFor(trustProxy: boolean): ClientKey {
+  if (!trustProxy) return socketClientKey;
+  return (c) => {
+    const forwarded = forwardedValue(c, true, "x-forwarded-for");
+    return forwarded ? clientAddressKey(forwarded) : socketClientKey(c);
+  };
+}
 
 /**
  * The key a client's address counts under. An IPv6 address counts under its /64, such as `2001:db8:0:1::/64`, since

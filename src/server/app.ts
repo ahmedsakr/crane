@@ -3,7 +3,7 @@ import type { Store } from "../core/store.js";
 import { OperatorActions } from "../factory/actions.js";
 import { factoryState } from "../factory/state.js";
 import { apiAccess, errorResponse, requireSignIn, type AccessOptions } from "./auth.js";
-import { refuseUntrusted } from "./security.js";
+import { refuseUntrusted, secureResponses } from "./security.js";
 import { registerDashboard } from "./static.js";
 import type { RegisterRoutes, RouteDeps } from "./routes/deps.js";
 import { overviewCache, registerOverviewRoutes } from "./routes/overview.js";
@@ -16,8 +16,6 @@ import { registerRepoRoutes } from "./routes/repos.js";
 import { registerCrewRoutes } from "./routes/crew.js";
 import { registerFactoryRoutes } from "./routes/factory.js";
 
-export { isLoopbackAddress } from "./security.js";
-
 /** In registration order. Hono tries routes in this order, so `/tasks/queue` stays ahead of `/tasks/:id`. */
 const ROUTES: RegisterRoutes[] = [
   registerAuthRoutes, registerOperatorsRoutes, registerTaskRoutes, registerGoalRoutes, registerTaskDecisionRoutes,
@@ -27,8 +25,8 @@ const ROUTES: RegisterRoutes[] = [
 export type AppOptions = AccessOptions;
 
 /**
- * The dashboard's HTTP server: the refusal check before anything else, then the API under `/api` behind the
- * sign-in gate, then the built web app, which stays public. Refusals about who is asking answer with their own
+ * The dashboard's HTTP server: security headers and the refusal check before anything else, then the API under
+ * `/api` behind the sign-in gate, then the built web app, which stays public. Refusals about who is asking answer with their own
  * status; any other error an action throws answers 400 with its message.
  */
 export function createApp(store: Store, opts: AppOptions = {}) {
@@ -38,7 +36,9 @@ export function createApp(store: Store, opts: AppOptions = {}) {
   const deps: RouteDeps = { store, actions, factoryState: () => factoryState(store), access };
 
   app.onError(errorResponse);
-  app.use("*", refuseUntrusted(access.exposed));
+  // First, so refusals carry the security headers too.
+  app.use("*", secureResponses(access));
+  app.use("*", refuseUntrusted(access));
 
   const api = new Hono();
   // Ahead of the shared overview and every route, so nothing cached or routed answers a request without a session.

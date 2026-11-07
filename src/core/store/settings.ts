@@ -14,6 +14,18 @@ export function setSetting(store: Store, key: string, value: string) {
     .run(key, value);
 }
 
+const PUBLIC_URL_KEY = "public_url";
+
+/** The origin operators browse to, as `crane serve --public-url` last saved it, or null when it was served without one. */
+export function publicUrl(store: Store): string | null {
+  return getSetting(store, PUBLIC_URL_KEY);
+}
+
+export function setPublicUrl(store: Store, origin: string | null): void {
+  if (origin) setSetting(store, PUBLIC_URL_KEY, origin);
+  else store.db.prepare("DELETE FROM settings WHERE key = ?").run(PUBLIC_URL_KEY);
+}
+
 export function retentionSettings(store: Store): RetentionSettings {
   const days = Number(getSetting(store, "retention_finished_task_days"));
   return { finishedTaskDays: Number.isInteger(days) && days >= 1 && days <= 36500 ? days : null };

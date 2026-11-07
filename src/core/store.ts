@@ -18,8 +18,8 @@ import { completeMerge, finishWork, postmortemPrompt, setPreApproval, waivePreAp
 import { claimNextMerge, claimNextTask, pendingWork, type ClaimOptions } from "./store/claims.js";
 import { addEvent, closeUnresolvedCommands, commandEvidence, eventsSince, latestEventId, listEvents } from "./store/events.js";
 import { closeStaleRuns, finishRun, hasRunningRun, lastWorkDriver, listRuns, startRun } from "./store/runs.js";
-import { getSetting, isPaused, postmortemCrew, postmortemSettings, pruneTaskHistory, retentionSettings, setPaused,
-  setPostmortemSettings, setSetting, vacuumHistory } from "./store/settings.js";
+import { getSetting, isPaused, postmortemCrew, postmortemSettings, pruneTaskHistory, publicUrl, retentionSettings, setPaused,
+  setPostmortemSettings, setPublicUrl, setSetting, vacuumHistory } from "./store/settings.js";
 import { addRepo, getRepo, listRepos, removeRepo, repoChecks, repoTools, setRepoChecks, setRepoTools,
   type NewRepo } from "./store/repos.js";
 import { bumpAgentCompleted, crewActive, crewDefaultDriver, crewRole, listAgents, pruneAgents, setAgentDriver,
@@ -182,6 +182,14 @@ export class Store {
 
   setSetting(key: string, value: string) {
     setSetting(this, key, value);
+  }
+
+  publicUrl(): string | null {
+    return publicUrl(this);
+  }
+
+  setPublicUrl(origin: string | null): void {
+    setPublicUrl(this, origin);
   }
 
   retentionSettings(): RetentionSettings {

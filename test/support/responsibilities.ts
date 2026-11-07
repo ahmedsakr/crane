@@ -165,7 +165,7 @@ export function pageImportViolations(path: string, source: string): string[] {
 /** Store methods that only read. Commands and routes may call these and nothing else on the store. */
 export const STORE_READS = new Set([
   "getGoal", "listGoals", "listGoalSummaries", "goalListItems", "goalDetail", "goalForTask", "listCrewSchedules",
-  "getSetting", "retentionSettings", "postmortemSettings", "postmortemCrew", "isPaused", "listRepos", "getRepo",
+  "getSetting", "publicUrl", "retentionSettings", "postmortemSettings", "postmortemCrew", "isPaused", "listRepos", "getRepo",
   "repoTools", "repoChecks", "blockedTools", "getTask", "listTasks", "listTaskSummaries", "tasksWithWorktrees",
   "listQueuedTasks", "listQueuedTaskSummaries", "queuedForAnyone", "prerequisiteStates", "prerequisiteCommits",
   "unmetPrerequisites", "followUps", "followUpSource", "listEvents", "commandEvidence", "eventsSince", "latestEventId",

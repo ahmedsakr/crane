@@ -49,7 +49,7 @@ function registerInvites(operators: Command, ctx: CliContext): void {
     .option("--name <name>", "suggest the name they'll be shown as")
     .action((opts: { admin?: boolean; name?: string }) => attempt(() => {
       const { invite, token } = actions.inviteOperator(host, { role: opts.admin ? "admin" : "operator", name: opts.name });
-      printLink(`Invite link for ${roleWords(invite.role ?? "operator")}`, token, invite.expiresAt);
+      printLink(ctx, `Invite link for ${roleWords(invite.role ?? "operator")}`, token, invite.expiresAt);
       console.log(`\n${ui.hint(["crane operators invites", "see links not used yet"], [`crane operators revoke-invite ${invite.id}`, "cancel this link"])}\n`);
     }));
   operators.command("invites").description("List invite and reset links not used yet")
@@ -156,7 +156,7 @@ async function resetPassword(ctx: CliContext, username: string, opts: ResetOptio
   const operator = findOperator(ctx, username);
   if (!direct) {
     const { invite, token } = ctx.actions.createPasswordReset(ctx.host, operator.id);
-    printLink(`Reset link for ${operator.username}`, token, invite.expiresAt);
+    printLink(ctx, `Reset link for ${operator.username}`, token, invite.expiresAt);
     console.log(ui.dim("  Any earlier reset link for them stops working."));
     return;
   }

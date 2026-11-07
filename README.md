@@ -256,7 +256,7 @@ In a Crane source checkout with dependencies installed, `crane start` runs `npm 
 
 For Codex commands, Crane persists correlated start and completion records in task events, including the session, command, status, and received exit code. Commands without a received completion become interrupted or unknown; this does not prove they failed or stopped. Resumed and replacement sessions receive up to 40 recent command records within a 32,000-character prompt budget. Each command is limited to 8,192 characters with a truncation flag; stdout and stderr are not retained. Common credential arguments, environment assignments, authentication headers, URL credentials and query strings are redacted before storage, but arbitrary secrets embedded in scripts or unnamed positional arguments cannot be reliably recognized: avoid putting credentials in command text. These records are agent evidence and do not replace Crane's external review or merge checks. Older events that recorded only starts cannot establish a command's outcome.
 
-By default `crane serve` listens on `127.0.0.1` only, answers only to `localhost`, `127.0.0.1` and `[::1]`, and refuses changes sent from any other origin. Until you add an operator, the dashboard on this machine needs no sign-in; once one exists, every API call needs a signed-in operator (see [Operators and sign-in](#operators-and-sign-in)). To reach it from another machine, pass `--host 0.0.0.0` (or a LAN address). An exposed factory always requires sign-in and refuses every API call until an operator exists, so run `crane operators add <username> --admin` first. Sign-in travels over plain HTTP, so expose it only on a network you trust.
+By default `crane serve` listens on `127.0.0.1` only, answers only to `localhost`, `127.0.0.1` and `[::1]`, and refuses changes sent from any other origin. Until you add an operator, the dashboard on this machine needs no sign-in; once one exists, every API call needs a signed-in operator (see [Operators and sign-in](#operators-and-sign-in)). To use it from another machine, see [Reaching the dashboard from another machine](#reaching-the-dashboard-from-another-machine).
 
 When a change to Crane itself is merged, Crane builds the dashboard from that commit in its own directory (`$CRANE_HOME/builds/<sha>`, never your checkout) and serves it, so UI fixes show up without you running `npm run build`. Open pages offer to reload. If you run `npm run build -w web` yourself, your newer `web/dist` is served instead. `crane serve --no-build-dashboard` turns this off.
 
@@ -272,7 +272,7 @@ crane operators add ci --admin --password-stdin < pw.txt   # or one line of stan
 crane operators add riley --generate               # or a random 24-character password, printed once
 ```
 
-To onboard someone else, make an invite link and send it to them. It works once and expires in 7 days; they choose their own username and password. Crane prints only the path, `/join#<token>`: open it at your dashboard's address, for example `https://crane.example.com/join#…`. The token is in the URL fragment, which browsers never send to a server, and Crane keeps only its SHA-256 digest.
+To onboard someone else, make an invite link and send it to them. It works once and expires in 7 days; they choose their own username and password. When the factory was last served with `--public-url`, Crane prints the whole link, such as `https://crane.example.com/join#<token>`; otherwise it prints only the path, `/join#<token>`, to open at your dashboard's address. The token is in the URL fragment, which browsers never send to a server, and Crane keeps only its SHA-256 digest.
 
 ```sh
 crane operators invite [--admin] [--name "Jo"]   # a single-use join link
@@ -289,6 +289,60 @@ The dashboard can do everything here except three things, which only the host ca
 - **Add an operator with a password.** On the dashboard, operators join through invite links. A first-run setup page could be claimed by whoever reached it first.
 - **Set another operator's password directly.** On the dashboard, admins make a reset link instead.
 - **Turn sign-in off** (`crane auth off`). Doing it from a browser would leave the dashboard open to whoever can reach it.
+
+### Reaching the dashboard from another machine
+
+Crane listens on loopback unless you tell it otherwise. There are two safe ways to use it from somewhere else.
+
+**Option 1: an SSH tunnel.** Nothing on the host changes. From your own machine:
+
+```sh
+ssh -L 4471:127.0.0.1:4471 you@your-host
+```
+
+Then open `http://localhost:4471`. If the host has operators, sign in as one; if it has none, the dashboard needs no sign-in, as on the host itself.
+
+**Option 2: an EC2 instance behind HTTPS.** Crane stays on `127.0.0.1` and a reverse proxy on the same instance terminates TLS for your domain.
+
+1. On the instance, add the first admin: `crane operators add <username> --admin`.
+2. Start Crane for your domain:
+
+   ```sh
+   crane start --host 127.0.0.1 --public-url https://crane.example.com --trust-proxy
+   ```
+
+   `crane serve` takes the same options in an installed package. `--public-url` is the address operators browse to: Crane answers only to that host and loopback, accepts changes only from that origin and loopback, and prints full invite links for it. `--trust-proxy` honours `X-Forwarded-Proto` and `X-Forwarded-For`, but only from a peer on this machine, so session cookies are marked Secure and sign-in limits count each real client rather than the proxy.
+3. Put a reverse proxy in front that keeps the browser's `Host` and sets `X-Forwarded-Proto`. A minimal Caddyfile, which also gets the certificate for you:
+
+   ```
+   crane.example.com {
+     reverse_proxy 127.0.0.1:4471
+   }
+   ```
+
+   Or with nginx:
+
+   ```nginx
+   server {
+     listen 443 ssl;
+     server_name crane.example.com;
+     ssl_certificate     /etc/letsencrypt/live/crane.example.com/fullchain.pem;
+     ssl_certificate_key /etc/letsencrypt/live/crane.example.com/privkey.pem;
+     location / {
+       proxy_pass http://127.0.0.1:4471;
+       proxy_set_header Host $host;
+       proxy_set_header X-Forwarded-Proto $scheme;
+       proxy_set_header X-Forwarded-For $remote_addr;
+       proxy_buffering off;      # live task events stream through
+       proxy_read_timeout 1h;
+     }
+   }
+   ```
+
+4. In the instance's security group, open only 443, and 80 if your proxy uses it to get certificates. Never open 4471.
+5. Invite teammates from the Operators page or with `crane operators invite`, and send them the link it prints.
+
+`crane serve` and `crane start` refuse to start exposed (a `--host` other than loopback, or any `--public-url`) when no operator exists yet, and when there's no https `--public-url`, since passwords and session cookies would otherwise cross the network unencrypted. `--allow-insecure-http` serves anyway with a warning, for a network you trust. Every response tells browsers not to frame the dashboard or send its address to other sites, and over HTTPS to keep using HTTPS for a year (`Strict-Transport-Security`).
 
 ## Configuration
 

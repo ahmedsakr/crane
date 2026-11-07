@@ -131,6 +131,27 @@ test("cli operators: invite prints a single-use /join# link that signs the new o
   await assert.rejects(actions.acceptInvite(second, { username: "kim", password: PASSWORD }), /expired or was already used/);
 });
 
+test("cli operators: invite and reset links are full https links once served with --public-url", async () => {
+  const { store, actions } = await withAdmin();
+  store.setPublicUrl("https://crane.example.com");
+  const invited = await crane(store, ["operators", "invite", "--name", "Jo"]);
+  assert.equal(invited.code, 0, invited.err);
+  const link = /^\s+(https:\/\/crane\.example\.com\/join#[A-Za-z0-9_-]+)$/m.exec(invited.out)?.[1] ?? assert.fail(invited.out);
+  assert.doesNotMatch(invited.out, /Open it at your dashboard's address/);
+  const joined = await actions.acceptInvite(new URL(link).hash.slice(1), { username: "jordan", password: PASSWORD });
+  assert.equal(joined.operator.username, "jordan");
+
+  const reset = await crane(store, ["operators", "reset-password", "jordan", "--link"]);
+  assert.match(reset.out, /^\s+https:\/\/crane\.example\.com\/join#[A-Za-z0-9_-]+$/m);
+
+  // Served again without one: the setting is cleared, and links go back to a path to open at the dashboard.
+  store.setPublicUrl(null);
+  assert.equal(store.publicUrl(), null);
+  const bare = await crane(store, ["operators", "invite"]);
+  assert.match(bare.out, /^\s+\/join#[A-Za-z0-9_-]+$/m);
+  assert.match(bare.out, /Open it at your dashboard's address/);
+});
+
 test("cli operators: role changes, and the last admin can't be demoted or removed", async () => {
   const { store } = await withAdmin();
   const demote = await crane(store, ["operators", "role", "sam", "operator"]);
