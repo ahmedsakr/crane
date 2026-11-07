@@ -4,6 +4,7 @@ import { isEmptyDatabase, migrate } from "./store/migrations.js";
 import { analytics } from "./store/analytics.js";
 import { overview } from "./store/overview.js";
 import { BlockedToolsReader } from "./store/blocked-tools.js";
+import { AccessStore } from "./store/access.js";
 import { approveGoal, cancelGoal, createGoal, getGoal, goalDetail, goalForTask, listGoals, listGoalSummaries,
   retryGoalTask, reviseGoal, saveGoalPlan, syncGoals, type NewGoal } from "./store/goals.js";
 import { goalListItems } from "./store/goal-progress.js";
@@ -67,10 +68,12 @@ export { crewSettingKey } from "./store/crew.js";
  * The single source of truth. Every process (the factory server, the CLI)
  * opens the same SQLite file in WAL mode, so the CLI works whether or not
  * the factory is running, and live views just tail the events table.
- * Each domain lives in store/; these methods only delegate to it.
+ * Each domain lives in store/; these methods only delegate to it. Operators,
+ * sessions and invites are reached through `access` instead of delegates.
  */
 export class Store {
   readonly db: Database.Database;
+  readonly access: AccessStore;
   private readonly blockedToolsReader = new BlockedToolsReader();
 
   constructor(file = dbPath()) {
@@ -82,6 +85,7 @@ export class Store {
     if (isEmptyDatabase(this.db)) this.db.pragma("auto_vacuum = INCREMENTAL");
     this.db.pragma("journal_mode = WAL");
     migrate(this.db);
+    this.access = new AccessStore(this.db);
   }
 
   /** Execute atomically; nested calls use SQLite savepoints. */

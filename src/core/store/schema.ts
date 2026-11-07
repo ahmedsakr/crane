@@ -94,6 +94,39 @@ CREATE TABLE IF NOT EXISTS crew_schedules (
   last_outcome TEXT
 );
 CREATE INDEX IF NOT EXISTS crew_schedules_due ON crew_schedules(enabled, next_fire_at);
+-- Operators sign in to the dashboard. Passwords are scrypt hashes; session and invite tokens are kept only as SHA-256 digests.
+CREATE TABLE IF NOT EXISTS operators (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  name TEXT NOT NULL,
+  role TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  password_changed_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  operator_id TEXT NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+  token_hash TEXT NOT NULL UNIQUE,
+  created_at TEXT NOT NULL,
+  last_seen_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  client TEXT
+);
+CREATE INDEX IF NOT EXISTS sessions_operator ON sessions(operator_id);
+CREATE TABLE IF NOT EXISTS invites (
+  id TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL,
+  role TEXT,
+  name TEXT,
+  operator_id TEXT REFERENCES operators(id) ON DELETE CASCADE,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS invites_operator ON invites(operator_id);
 `;
 
 /** Created by migrateCostsToRuns, so the first open can backfill it from older tasks. */

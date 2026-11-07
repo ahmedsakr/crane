@@ -1,4 +1,11 @@
 import type {
+  AuthStatus,
+  EventActor,
+  InviteCheck,
+  InviteSummary,
+  OperatorProfile,
+  OperatorSession,
+  OperatorSummary,
   CrewSchedule,
   CrewScheduleInput,
   DriverInfo,
@@ -15,6 +22,11 @@ import type {
   TaskRunOptions,
 } from "@crane/contracts";
 import type { Store } from "../core/store.js";
+import type { SessionListing } from "../core/store/access.js";
+import * as access from "./actions/access.js";
+import * as invites from "./actions/access-invites.js";
+import type { AccessDeps } from "./actions/access-rules.js";
+import * as sessions from "./actions/access-sessions.js";
 import * as crew from "./actions/crew.js";
 import * as drivers from "./actions/drivers.js";
 import * as goals from "./actions/goals.js";
@@ -26,14 +38,22 @@ import * as settings from "./actions/settings.js";
 import * as tasks from "./actions/tasks.js";
 
 export { checkLookouts, checkScheduledAt, toRule } from "./action-inputs.js";
+export { AccessError } from "./actions/access-errors.js";
+export type { Authenticated, SignedIn } from "./actions/access-sessions.js";
+export type { AcceptInput, IssuedInvite } from "./actions/access-invites.js";
 
 /**
  * Everything an operator can do, shared by the web UI and the CLI so both
  * behave identically. Task decisions record an `operator` event on the task.
  * This is the single public entry: each domain's rules live in `./actions/`.
+ * `clock` is when access actions think it is; tests move it to reach expiry.
  */
 export class OperatorActions {
-  constructor(private store: Store) {}
+  private readonly access: AccessDeps;
+
+  constructor(private store: Store, clock: () => number = Date.now) {
+    this.access = { store, now: clock };
+  }
 
   // Goals
 
@@ -223,5 +243,111 @@ export class OperatorActions {
 
   disallowTool(repoId: string, input: string): RepoTools {
     return permissions.disallowTool(this.store, repoId, input);
+  }
+
+  // Sign-in and own account. `token` is the device's session token.
+
+  authStatus(token: unknown, opts: { exposed: boolean }): AuthStatus {
+    return sessions.authStatus(this.access, token, opts);
+  }
+
+  signIn(username: unknown, password: unknown, opts: { client?: unknown } = {}): Promise<sessions.SignedIn> {
+    return sessions.signIn(this.access, username, password, opts);
+  }
+
+  authenticate(token: unknown): sessions.Authenticated | null {
+    return sessions.authenticate(this.access, token);
+  }
+
+  signOut(token: unknown): void {
+    sessions.signOut(this.access, token);
+  }
+
+  listMySessions(token: unknown): OperatorSession[] {
+    return sessions.listMySessions(this.access, token);
+  }
+
+  signOutMySession(token: unknown, id: string): void {
+    sessions.signOutMySession(this.access, token, id);
+  }
+
+  signOutMyOtherSessions(token: unknown): number {
+    return sessions.signOutMyOtherSessions(this.access, token);
+  }
+
+  changeMyPassword(token: unknown, current: unknown, next: unknown): Promise<OperatorProfile> {
+    return sessions.changeMyPassword(this.access, token, current, next);
+  }
+
+  renameMe(token: unknown, name: unknown): OperatorProfile {
+    return sessions.renameMe(this.access, token, name);
+  }
+
+  // Invites and reset links
+
+  inviteOperator(by: EventActor, input: { role: unknown; name?: unknown }): invites.IssuedInvite {
+    return invites.inviteOperator(this.access, by, input);
+  }
+
+  listInvites(by: EventActor): InviteSummary[] {
+    return invites.listInvites(this.access, by);
+  }
+
+  revokeInvite(by: EventActor, id: string): void {
+    invites.revokeInvite(this.access, by, id);
+  }
+
+  checkInvite(token: unknown): InviteCheck {
+    return invites.checkInvite(this.access, token);
+  }
+
+  acceptInvite(token: unknown, input: invites.AcceptInput, opts: { client?: unknown } = {}): Promise<sessions.SignedIn> {
+    return invites.acceptInvite(this.access, token, input, opts);
+  }
+
+  createPasswordReset(by: EventActor, operatorId: string): invites.IssuedInvite {
+    return invites.createPasswordReset(this.access, by, operatorId);
+  }
+
+  // Operators. The host counts as an admin; some actions are host-only.
+
+  addOperator(by: EventActor, input: access.NewOperatorInput): Promise<OperatorProfile> {
+    return access.addOperator(this.access, by, input);
+  }
+
+  listOperators(): OperatorSummary[] {
+    return access.listOperators(this.access);
+  }
+
+  setOperatorPassword(by: EventActor, operatorId: string, password: unknown): Promise<OperatorProfile> {
+    return access.setOperatorPassword(this.access, by, operatorId, password);
+  }
+
+  setOperatorRole(by: EventActor, id: string, role: unknown): OperatorProfile {
+    return access.setOperatorRole(this.access, by, id, role);
+  }
+
+  removeOperator(by: EventActor, id: string): void {
+    access.removeOperator(this.access, by, id);
+  }
+
+  signOutOperator(by: EventActor, id: string): number {
+    return access.signOutOperator(this.access, by, id);
+  }
+
+  listAllSessions(by: EventActor): SessionListing[] {
+    return access.listAllSessions(this.access, by);
+  }
+
+  signOutSessionById(by: EventActor, id: string): void {
+    access.signOutSessionById(this.access, by, id);
+  }
+
+  clearAccess(by: EventActor): void {
+    access.clearAccess(this.access, by);
+  }
+
+  pruneAccess(): { sessions: number; invites: number } {
+    return access.pruneAccess(this.access);
   }
 }
