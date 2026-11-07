@@ -16,7 +16,7 @@ import { followUps, followUpSource, prerequisiteCommits, prerequisiteStates, unm
   type LandedCommit } from "./store/prerequisites.js";
 import { completeMerge, finishWork, postmortemPrompt, setPreApproval, waivePreApprovedVisualReview } from "./store/review.js";
 import { claimNextMerge, claimNextTask, pendingWork, type ClaimOptions } from "./store/claims.js";
-import { addEvent, closeUnresolvedCommands, commandEvidence, eventsSince, latestEventId, listEvents } from "./store/events.js";
+import { addEvent, closeUnresolvedCommands, commandEvidence, eventsSince, latestEventId, listEvents, priorRefusals } from "./store/events.js";
 import { closeStaleRuns, finishRun, hasRunningRun, lastWorkDriver, listRuns, startRun } from "./store/runs.js";
 import { getSetting, isPaused, postmortemCrew, postmortemSettings, pruneTaskHistory, publicUrl, retentionSettings, setPaused,
   setPostmortemSettings, setPublicUrl, setSetting, vacuumHistory } from "./store/settings.js";
@@ -389,6 +389,10 @@ export class Store {
 
   commandEvidence(taskId: string): CommandEvidence[] {
     return commandEvidence(this, taskId);
+  }
+
+  priorRefusals(taskId: string): TaskEvent[] {
+    return priorRefusals(this, taskId);
   }
 
   closeUnresolvedCommands(taskId?: string) {
