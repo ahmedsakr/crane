@@ -262,7 +262,7 @@ When a change to Crane itself is merged, Crane builds the dashboard from that co
 
 ### Operators and sign-in
 
-Operators are the people who can sign in to the dashboard. Each has a username, a display name shown on their decisions, a password Crane keeps only as a scrypt hash, and a role: **admins** manage operators, invites, roles, reset links and other operators' devices; **operators** do all factory work and manage their own account. Until the first operator exists, the dashboard on this machine needs no sign-in. Once one does, every API call needs a signed-in operator, from this machine too.
+Operators are the people who can sign in to the dashboard. Each has a username, a display name shown on their decisions, a password Crane keeps only as a scrypt hash, and a role: **admins** manage operators, invites, roles, reset links and other operators' devices; **operators** do all factory work and manage their own account. Until the first operator exists, the dashboard on this machine needs no sign-in. Once one does, every API call needs a signed-in operator, from this machine too, except session status, sign-in, and checking and accepting an invite or reset link. The dashboard's pages and assets stay public so operators can reach sign-in and join.
 
 Anyone running `crane` on the host acts as an admin, so the CLI is how you set sign-in up and recover it:
 
@@ -342,7 +342,7 @@ Then open `http://localhost:4471`. If the host has operators, sign in as one; if
 4. In the instance's security group, open only 443, and 80 if your proxy uses it to get certificates. Never open 4471.
 5. Invite teammates from the Operators page or with `crane operators invite`, and send them the link it prints.
 
-`crane serve` and `crane start` refuse to start exposed (a `--host` other than loopback, or any `--public-url`) when no operator exists yet, and when there's no https `--public-url`, since passwords and session cookies would otherwise cross the network unencrypted. `--allow-insecure-http` serves anyway with a warning, for a network you trust. Every response tells browsers not to frame the dashboard or send its address to other sites, and over HTTPS to keep using HTTPS for a year (`Strict-Transport-Security`).
+`crane serve` and `crane start` refuse to start exposed (a `--host` other than loopback, or any `--public-url`) when no operator exists yet, and when there's no https `--public-url`, since passwords and session cookies would otherwise cross the network unencrypted. `--allow-insecure-http` waives only the HTTPS requirement, with a warning, for a network you trust; an exposed factory still needs an operator. Every response tells browsers not to frame the dashboard or send its address to other sites, and over HTTPS to keep using HTTPS for a year (`Strict-Transport-Security`).
 
 ## Configuration
 
