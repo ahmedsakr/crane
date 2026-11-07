@@ -77,6 +77,14 @@ export function normalizeUsername(username: string): string {
   return username.trim().toLowerCase();
 }
 
+/**
+ * The path a join or reset link opens. The token rides in the fragment, which browsers never send to a server, so
+ * no proxy or access log sees it.
+ */
+export function inviteLinkPath(token: string): string {
+  return `/join#${token}`;
+}
+
 export function actorLabel(actor: EventActor): string {
   return actor.kind === "operator" ? actor.name : `${actor.name} on the host`;
 }

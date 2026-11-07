@@ -184,7 +184,8 @@ const ALLOWED_MODULES: Record<string, string[]> = {
   "core/store": ["Store"],
   "core/paths": ["*"],
   "core/screenshots": ["readScreenshot", "screenshotPath"],
-  "factory/actions": ["OperatorActions", "WRONG_CURRENT_PASSWORD", "checkLookouts", "checkScheduledAt", "toRule"],
+  // AccessError only so the invite routes can tell a bad link (401) from bad input when counting guesses.
+  "factory/actions": ["AccessError", "OperatorActions", "WRONG_CURRENT_PASSWORD", "checkLookouts", "checkScheduledAt", "toRule"],
   "factory/git": ["diffForTask"],
   "factory/instruct": ["draftTask"],
   "factory/settings": ["*"],
@@ -193,8 +194,9 @@ const ALLOWED_MODULES: Record<string, string[]> = {
   "cli/context": ["*"],
   "server/body": ["*"],
   "server/security": ["*"],
-  // The session cookie and the gate's per-request check. Sessions change only through OperatorActions.
-  "server/auth": ["admit", "clearSessionCookie", "sessionToken", "setSessionCookie"],
+  // The session cookie, the gate's per-request check, and who a signed-in request acts as. Sessions change only
+  // through OperatorActions.
+  "server/auth": ["admit", "clearSessionCookie", "sessionToken", "setSessionCookie", "signedInActor"],
   // The in-memory sign-in limiter, which counts failed attempts and never touches the store.
   "server/sign-in-limit": ["TooManyAttempts"],
 };

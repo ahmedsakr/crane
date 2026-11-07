@@ -1,6 +1,5 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { setTimeout as sleep } from "node:timers/promises";
 import { Hono } from "hono";
 import type { AuthStatus, EventActor, OperatorProfile, OperatorSession } from "@crane/contracts";
 import { Store } from "../src/core/store.js";
@@ -10,6 +9,7 @@ import { createApp } from "../src/server/app.js";
 import { NOT_SET_UP, PUBLIC_ROUTES, errorResponse } from "../src/server/auth.js";
 import { STREAM_RECHECK_MS } from "../src/server/routes/tasks.js";
 import { AttemptLimiter, FIRST_WAIT_MS, LIMIT_WINDOW_MS, MAX_WAIT_MS, TooManyAttempts } from "../src/server/sign-in-limit.js";
+import { NOTE, call, cookieFrom, openStream, within, type App, type Call } from "./support/api-client.js";
 
 const HOST: EventActor = { kind: "host", name: "ahmed" };
 const PASSWORD = "correct horse battery";
@@ -17,10 +17,6 @@ const WRONG_PASSWORD = "not the right password";
 const SIGN_IN_FIRST = { error: "Sign in to continue", signIn: true };
 const WRONG = { error: "That username or password isn't right" };
 const DAY = 24 * 60 * 60_000;
-const NOTE = "Hello from the factory";
-
-type App = ReturnType<typeof createApp>;
-type Call = { cookie?: string; body?: unknown; client?: string; headers?: Record<string, string> };
 
 /**
  * An in-memory factory whose clock the test moves, with a task waiting for review and, unless `operators` is
@@ -44,24 +40,9 @@ async function setup(opts: { exposed?: boolean; operators?: boolean } = {}) {
   return { store, clock, log, sam, addSam, task, app };
 }
 
-function call(app: App, method: string, path: string, opts: Call = {}) {
-  const headers: Record<string, string> = { "content-type": "application/json", ...opts.headers };
-  if (opts.cookie) headers.cookie = opts.cookie;
-  if (opts.client) headers["x-client"] = opts.client;
-  const body = method === "GET" ? undefined : JSON.stringify(opts.body ?? {});
-  return app.request(path, { method, headers, body });
-}
-
 function signIn(app: App, opts: { username?: string; password?: string } & Call = {}) {
   const body = { username: opts.username ?? "sam", password: opts.password ?? PASSWORD };
   return call(app, "POST", "/api/auth/sign-in", { ...opts, body });
-}
-
-/** The `crane_session=…` pair a response sets. */
-function cookieFrom(res: Response): string {
-  const set = res.headers.get("set-cookie") ?? "";
-  assert.match(set, /^crane_session=[^;]+;/);
-  return set.split(";")[0]!;
 }
 
 async function signedIn(app: App, opts: Parameters<typeof signIn>[1] = {}): Promise<string> {
@@ -89,27 +70,6 @@ function spyActors(store: Store): (EventActor | null)[] {
   };
   return actors;
 }
-
-/** Open a task's event stream and read it up to the note `NOTE`; `ended` settles once the server closes it. */
-async function openStream(app: App, taskId: string, cookie?: string) {
-  const res = await call(app, "GET", `/api/tasks/${taskId}/stream?after=0`, { cookie });
-  assert.equal(res.status, 200);
-  const reader = res.body!.getReader();
-  const decoder = new TextDecoder();
-  let seen = "";
-  while (!seen.includes(NOTE)) {
-    const chunk = await reader.read();
-    assert.ok(!chunk.done, `the stream ended before ${NOTE}: ${seen}`);
-    seen += decoder.decode(chunk.value, { stream: true });
-  }
-  const ended = (async () => {
-    while (!(await reader.read()).done) { /* later events */ }
-    return "ended";
-  })();
-  return { reader, ended };
-}
-
-const within = <T>(promise: Promise<T>, ms: number) => Promise.race([promise, sleep(ms).then(() => "open")]);
 
 test("auth: with an operator, every route but the public ones answers 401 without a session", async () => {
   const { store, clock, task, app } = await setup();

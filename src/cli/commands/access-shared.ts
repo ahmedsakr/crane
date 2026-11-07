@@ -1,5 +1,5 @@
 import * as p from "@clack/prompts";
-import { errorMessage, normalizeUsername, type OperatorRole, type OperatorSummary } from "@crane/contracts";
+import { errorMessage, inviteLinkPath, normalizeUsername, type OperatorRole, type OperatorSummary } from "@crane/contracts";
 import type { CliContext } from "../context.js";
 import * as ui from "../ui.js";
 
@@ -36,12 +36,9 @@ export function expiresIn(iso: string, now = Date.now()): string {
   return hours > 48 ? plural(Math.round(hours / 24), "day") : plural(hours, "hour");
 }
 
-/** The path a join or reset link opens. The token rides in the fragment, which browsers never send to a server. */
-export const linkPath = (token: string) => `/join#${token}`;
-
 export function printLink(title: string, token: string, expiresAt: string): void {
   ui.ok(`${title} ${ui.dim(`(expires in ${expiresIn(expiresAt)})`)}`);
-  console.log(`  ${linkPath(token)}`);
+  console.log(`  ${inviteLinkPath(token)}`);
   console.log(ui.dim("  Open it at your dashboard's address, for example https://crane.example.com/join#…"));
   console.log(ui.dim("  It works once. Crane keeps only a digest of it, so this is the only time it's shown."));
 }

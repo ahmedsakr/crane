@@ -1,6 +1,7 @@
 import type { Context, MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import type { CookieOptions } from "hono/utils/cookie";
+import type { EventActor } from "@crane/contracts";
 import { withActor } from "../core/actor.js";
 import { AccessError, SESSION_LIFETIME_MS, SIGN_IN_FIRST, type Authenticated, type OperatorActions } from "../factory/actions.js";
 import { AttemptLimiter, TooManyAttempts, socketClientKey, type ClientKey } from "./sign-in-limit.js";
@@ -109,9 +110,20 @@ export function requireSignIn(access: ApiAccess): MiddlewareHandler {
     if (!admission.ok) return c.json({ error: admission.error, signIn: true }, 401);
     if (!admission.auth) return next();
     c.set("auth", admission.auth);
-    const { id, name } = admission.auth.operator;
-    return withActor({ kind: "operator", id, name }, next);
+    return withActor(actorOf(admission.auth), next);
   };
+}
+
+const actorOf = ({ operator: { id, name } }: Authenticated): EventActor => ({ kind: "operator", id, name });
+
+/**
+ * Who a request acts as, for actions that decide what they may do, such as admin-only ones. Refuses with 401 when
+ * nobody is signed in, which on loopback with no operators is every request: the host manages access with crane.
+ */
+export function signedInActor(c: Context): EventActor {
+  const auth = c.get("auth");
+  if (!auth) throw new AccessError(401, SIGN_IN_FIRST);
+  return actorOf(auth);
 }
 
 /** Refusals about who is asking keep their status, with `Retry-After` when rate limited. Anything else is a 400. */
