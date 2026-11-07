@@ -2,7 +2,7 @@
  * Who is signed in, and the signal that says they no longer are. Nothing here imports the API client, so
  * `req()` can raise the signal without a cycle; `use-auth.ts` binds the store to the real calls.
  */
-import type { AuthStatus, OperatorRole } from "@crane/contracts";
+import type { AuthStatus, OperatorProfile, OperatorRole } from "@crane/contracts";
 
 /** Thrown for a call refused for want of a session. The app returns to sign-in, so callers needn't say so. */
 export class SignedOutError extends Error {
@@ -100,6 +100,11 @@ export function createAuthStore(calls: AuthCalls) {
     },
     set,
     refresh,
+    /** The operator changed their own profile, such as their name; everything showing it updates without a reload. */
+    setOperator(operator: OperatorProfile) {
+      const { status } = snapshot;
+      if (status?.operator?.id === operator.id) set({ ...status, operator });
+    },
     /** A call was refused for want of a session. */
     refused() {
       const { status } = snapshot;

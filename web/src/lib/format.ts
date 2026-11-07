@@ -7,6 +7,16 @@ export function ago(iso: string | null | undefined): string {
   return `${Math.round(s / 86400)}d ago`;
 }
 
+/** How far off a future time is, in `ago`'s units: "in 29d". A time already past is "now". */
+export function until(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const s = (Date.parse(iso) - Date.now()) / 1000;
+  if (s < 45) return "now";
+  if (s < 3600) return `in ${Math.round(s / 60)}m`;
+  if (s < 86400) return `in ${Math.round(s / 3600)}h`;
+  return `in ${Math.round(s / 86400)}d`;
+}
+
 export function duration(from: string | null, to: string | null): string {
   if (!from) return "—";
   const s = Math.max(0, ((to ? Date.parse(to) : Date.now()) - Date.parse(from)) / 1000);
