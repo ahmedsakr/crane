@@ -74,8 +74,7 @@ export async function serve(store: Store, opts: ServeOptions) {
   const { exposed, publicUrl } = exposure;
   const app = { exposed, publicUrl: publicUrl?.origin, trustProxy: opts.trustProxy };
   const server = await listenOrFail(store, { port: opts.port, hostname, log, app });
-  // For links the CLI prints, such as invites. Cleared when served without one, so no link names an old address.
-  store.setPublicUrl(publicUrl?.origin ?? null);
+  saveServeAddress(store, exposure);
 
   const factory = new Factory(store, [driver, ...others], {
     crewSize: opts.agents,
@@ -88,6 +87,11 @@ export async function serve(store: Store, opts: ServeOptions) {
 
   await printBanner({ store, factory, driver, others, port: opts.port, hostname, exposure, buildDashboard });
   handleShutdown(store, factory, server);
+}
+
+/** Save the address for CLI links after listening succeeds; clear any old address when serving without one. */
+export function saveServeAddress(store: Store, exposure: ExposureCheck): void {
+  store.setPublicUrl(exposure.publicUrl?.origin ?? null);
 }
 
 type Address = { port: number; hostname: string; log: (line: string) => void; app: AppOptions };
