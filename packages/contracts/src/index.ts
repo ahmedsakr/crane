@@ -125,3 +125,21 @@ export {
 export type { DiffLine, DiffHunk, DiffFile, ParsedDiff, SplitRow } from "./diff.js";
 export { parseDiff, diffFiles, splitRows } from "./diff.js";
 export { ruleLabel } from "./rules.js";
+export type {
+  OperatorRole,
+  OperatorProfile,
+  OperatorSummary,
+  OperatorSession,
+  InviteSummary,
+  InviteCheck,
+  AuthStatus,
+  EventActor,
+} from "./access.js";
+export {
+  MIN_PASSWORD_LENGTH,
+  USERNAME_PATTERN,
+  MAX_NAME_LENGTH,
+  normalizeUsername,
+  describeClient,
+  actorLabel,
+} from "./access.js";

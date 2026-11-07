@@ -12,18 +12,20 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 test("contracts preserve the complete public type and runtime export names", async () => {
   // Captured from index.ts before splitting, including main's acceptanceCheckRun addition.
-  const types = `AcceptanceResult Agent AgentRun AgentState Analytics Autonomy BlockedCall BlockedTool CommandEvidence
-CrewSchedule CrewScheduleInput DiffFile DiffHunk DiffLine DriverInfo DriverName DriverSettings EventType
-Finding FollowUpSource FollowUpState Goal GoalDetail GoalListItem GoalPlan GoalProgress GoalSummary GoalTask GoalTaskPhase Lookout LookoutInfo
-MaintenanceRole MaintenanceRoleInfo MergeOutcome NewGoal NewTask Overview ParsedDiff PostmortemSettings
+  const types = `AcceptanceResult Agent AgentRun AgentState Analytics AuthStatus Autonomy BlockedCall BlockedTool CommandEvidence
+CrewSchedule CrewScheduleInput DiffFile DiffHunk DiffLine DriverInfo DriverName DriverSettings EventActor EventType
+Finding FollowUpSource FollowUpState Goal GoalDetail GoalListItem GoalPlan GoalProgress GoalSummary GoalTask GoalTaskPhase
+InviteCheck InviteSummary Lookout LookoutInfo MaintenanceRole MaintenanceRoleInfo MergeOutcome NewGoal NewTask
+OperatorProfile OperatorRole OperatorSession OperatorSummary Overview ParsedDiff PostmortemSettings
 PrerequisiteState Repo RepoTools Report RetentionSettings ReviewCheckpoint RoleRunOptions RunKind
 RunOutcome RunUsage Screenshot SpendSlice SplitRow Task TaskDetail TaskDiff TaskDraft TaskEvent TaskGates
 TaskKind TaskRunOptions TaskStatus TaskSummary ValidationRun VisualReview`.split(/\s+/).sort();
   const values = `ACTIVE_STATUSES ALL_STATUSES AUTONOMY_LABEL DRIVER_LABEL DRIVER_NAMES EFFORT_LEVELS FINISHED_STATUSES
-GOAL_TASK_PHASES KIND_LABEL LOOKOUT LOOKOUTS MAINTENANCE_ROLE MAINTENANCE_ROLES MODEL_SUGGESTIONS RUN_KIND_LABEL
-SHIPPED_STATUSES STATUS_LABEL UNSHIPPED_STATUSES acceptanceCheckRun acceptanceFor choosableDrivers completionReviewReason
-crewScheduleLabel diffFiles driverLabel errorMessage followUpFor goalProgress goalTaskPhase goalWaves isDriverName isLookout
-isMaintenanceRole isScheduled isTunable lastMergeOutcome lookoutsLabel nextCrewFire parseDiff
+GOAL_TASK_PHASES KIND_LABEL LOOKOUT LOOKOUTS MAINTENANCE_ROLE MAINTENANCE_ROLES MAX_NAME_LENGTH MIN_PASSWORD_LENGTH
+MODEL_SUGGESTIONS RUN_KIND_LABEL SHIPPED_STATUSES STATUS_LABEL UNSHIPPED_STATUSES USERNAME_PATTERN acceptanceCheckRun
+acceptanceFor actorLabel choosableDrivers completionReviewReason crewScheduleLabel describeClient diffFiles driverLabel
+errorMessage followUpFor goalProgress goalTaskPhase goalWaves isDriverName isLookout
+isMaintenanceRole isScheduled isTunable lastMergeOutcome lookoutsLabel nextCrewFire normalizeUsername parseDiff
 prerequisiteMet ruleLabel runCostLabel runTokens settingsLabel splitRows unmetAcceptance
 validateCrewSchedule validateGoalPlan visualReviewPending visualReviewWaivedByPreApproval`.split(/\s+/).sort();
   const file = join(root, "packages/contracts/src/index.ts");
@@ -44,7 +46,7 @@ validateCrewSchedule validateGoalPlan visualReviewPending visualReviewWaivedByPr
 test("contract domain modules use erased imports between domains", () => {
   const domains = [
     "task.ts", "report.ts", "repo.ts", "events.ts", "crew.ts",
-    "lookouts.ts", "runs.ts", "overview.ts", "drivers.ts", "merge.ts",
+    "lookouts.ts", "runs.ts", "overview.ts", "drivers.ts", "merge.ts", "access.ts",
   ];
   const src = join(root, "packages/contracts/src");
   for (const file of domains) {
