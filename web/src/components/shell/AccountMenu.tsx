@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
+import { useNavigate } from "react-router-dom";
 import { errorMessage, type OperatorProfile } from "@crane/contracts";
 import { ROLE_LABEL, initialOf, isSignedOut } from "../../lib/auth";
 import { useToast } from "../../lib/toast";
@@ -47,6 +48,7 @@ export function AccountMenuList({ operator, items, onPick }: { operator: Operato
 
 /** Who is signed in, one tap from anywhere: their initial, with their name beside it where there's room. */
 export function AccountMenu() {
+  const navigate = useNavigate();
   const { status, operator, signOut } = useAuth();
   const toast = useToast();
   const [open, setOpen] = useState(false);
@@ -68,6 +70,7 @@ export function AccountMenu() {
   const items: AccountMenuItem[] = [
     // Focus the button first, so the sheet hands focus back to it on close.
     { key: "account", label: "Your account", onSelect: () => { button.current?.focus(); setSheet(true); } },
+    { key: "operators", label: "Operators", onSelect: () => navigate("/operators") },
     { key: "sign-out", label: "Sign out", onSelect: () => void signOut().catch(failed) },
   ];
   return (

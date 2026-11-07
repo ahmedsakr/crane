@@ -20,6 +20,8 @@ import { Analytics } from "./pages/Analytics";
 import { Goals } from "./pages/Goals";
 import { GoalPage } from "./pages/GoalPage";
 import { SignIn } from "./pages/SignIn";
+import { Operators } from "./pages/Operators";
+import { Join } from "./pages/Join";
 
 /** Tasks used to be called missions. Keep old links and bookmarks working. */
 function LegacyTaskRedirect() {
@@ -40,6 +42,7 @@ function AppRoutes() {
       <Route path="/repos" element={<Repos />} />
       <Route path="/crew" element={<Crew />} />
       <Route path="/analytics" element={<Analytics />} />
+      <Route path="/operators" element={<Operators />} />
     </Routes>
   );
 }
@@ -73,7 +76,7 @@ function Shell() {
  * Pages that open without a session, outside the shell: what someone reaches before they can sign in, such as an
  * invite link. They may call only the API's public routes.
  */
-const PUBLIC_PAGES: { path: string; element: ReactNode }[] = [];
+const PUBLIC_PAGES: { path: string; element: ReactNode }[] = [{ path: "/join", element: <Join /> }];
 
 /** Until the factory answers there's nothing to show; if it can't, say so and keep asking. */
 function Connecting({ error, retry }: { error: string | null; retry: () => void }) {
@@ -103,8 +106,9 @@ function Connecting({ error, retry }: { error: string | null; retry: () => void 
 function Gate() {
   const { status, error, refresh } = useAuth();
   const { pathname } = useLocation();
-  useEffect(() => void refresh(), [refresh]);
   const publicPage = PUBLIC_PAGES.find((p) => matchPath(p.path, pathname));
+  // Public links need no session check; an old in-flight check must not overwrite invite acceptance.
+  useEffect(() => { if (!publicPage) void refresh(); }, [refresh, publicPage]);
   if (publicPage) return publicPage.element;
   if (!status) return <Connecting error={error} retry={refresh} />;
   if (needsSignIn(status)) return <SignIn status={status} onSignedIn={authStore.set} />;

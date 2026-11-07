@@ -132,6 +132,8 @@ export const PAGE_PARTS: Record<string, string> = {
   Crew: "crew",
   Goals: "goals",
   GoalPage: "goals",
+  Operators: "operators",
+  Join: "join",
   Repos: "repos",
   TaskPage: "task",
 };

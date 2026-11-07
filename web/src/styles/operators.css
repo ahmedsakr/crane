@@ -1,0 +1,28 @@
+.operator-intro { margin: 12px 0 6px; }
+.operator-host { font-size: 13px; margin: 0 0 24px; }
+.operator-list { list-style: none; padding: 0 18px; margin: 0; }
+.operator-list > li + li { border-top: 1px solid var(--hairline); }
+.operator-row {
+  width: 100%;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 18px 0;
+  text-align: left;
+}
+button.operator-row { background: none; border: 0; color: inherit; cursor: pointer; }
+button.operator-row:hover strong { text-decoration: underline; text-underline-offset: 3px; }
+.operator-info { display: grid; gap: 4px; min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.operator-info > .mono { font-size: 13px; }
+.operator-info > small { font-size: 12px; }
+.operator-row > .chip, .operator-row > button, .operator-row > svg { flex: none; }
+.operator-actions .sheet-link { width: 100%; text-align: left; }
+.operator-actions .sheet-link.error-text { color: var(--bad); }
+.operator-link { width: 100%; min-width: 0; font-family: var(--font-mono); font-size: 14px; overflow-wrap: anywhere; resize: vertical; }
+.join-card { width: min(100%, 440px); }
+.join-card .sign-in-title { overflow-wrap: anywhere; }
+.join-hint { font-size: 12px; font-weight: 400; line-height: 1.5; color: var(--graphite); }
+@media (max-width: 560px) {
+  .operator-list { padding: 0 14px; }
+  .operator-row { gap: 10px; }
+}
