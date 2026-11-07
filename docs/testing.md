@@ -163,6 +163,76 @@ The fixture doesn't pin the browser or the machine's font rendering. Compare
 images from one machine and browser; the bundled UI fonts are the same everywhere,
 but the `browser` field shows when two images came from different versions.
 
+## Multi-operator remote access
+
+`test/auth-e2e.test.ts` uses the same Node HTTP adapter as `serve`, bound to
+`127.0.0.1:0`, with a disposable persistent Crane home. It bootstraps Robin
+through `runCli`, sends the public Host and HTTPS proxy headers over real
+sockets, onboards Kai, checks the complete protected/admin route tables,
+races an approval against a decline, and verifies attributed events, PNG
+attachments, live SSE delivery, revocation and CLI sign-out. Its secret scan
+includes every home file, SQLite's WAL and captured CLI/API log output.
+This verifies the proxy-to-Crane hop; it does not obtain a certificate or
+exercise an actual EC2 security group or TLS terminator.
+
+In an environment that allows sockets and git subprocesses, run:
+
+```sh
+npm run build:packages && node --import tsx test/auth-e2e.test.ts
+```
+
+The separate `node --import tsx test/auth-docs.test.ts` check exercises the
+README's command help and scans secrets in a persistent home without sockets.
+The broader command behavior is covered by `test/cli-operators.test.ts` and
+`test/api-exposure.test.ts`. A passing subset does not establish the socket
+suite's result. Codex's restricted sandbox defers the socket suite to Crane's
+external `npm test` check, and defers screenshots without attempting a server.
+
+Optional visual verification in an approved environment: the commands below
+use the existing screenshot tool and throwaway demo homes. They exercise
+sign-in as Robin, the invite form, joining as Kai, an attributed task decision,
+and signing out, at all three required sizes. The task is scheduled far ahead
+so the demo factory cannot claim it before Kai cancels it; its page subscribes
+to live events while queued. These captures supplement the approval race in
+the socket test. The four captures per viewport fit Crane's 12-image limit.
+These demo credentials must never be used on a real factory.
+
+```sh
+npm run build -w web &&
+for viewport in 1280x800 1280x600 390x844; do
+  npm run screenshot -- /operators --size "$viewport" \
+    --operator robin --password demo-password-123 \
+    --wait-for '.sign-in-form' \
+    --click 'input[name="username"]' --type robin \
+    --click 'input[name="password"]' --type demo-password-123 \
+    --click '.sign-in-submit' --wait-for '.page-head .btn-primary' \
+    --click '.page-head .btn-primary' \
+    --click '.sheet-pane input[name="name"]' --type Kai \
+    --shot ".crane/screenshots/invite-$viewport.png" \
+    --click '.sheet-pane-foot .btn-primary' --wait-for '.operator-link' \
+    --eval 'location.assign(document.querySelector(".operator-link").value)' \
+    --wait-for 'input[name="confirm"]' \
+    --click 'input[name="username"]' --type kai \
+    --click 'input[name="password"]' --type kai-demo-password-123 \
+    --click 'input[name="confirm"]' --type kai-demo-password-123 \
+    --shot ".crane/screenshots/join-$viewport.png" \
+    --click '.sign-in-submit' --wait-for '.account-button[aria-label="Account: Kai"]' \
+    --eval 'fetch("/api/tasks", {method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify({kind:"factory_feature", title:"Verify operator attribution", brief:"Disposable screenshot task", autonomy:"observe", scheduledAt:"2099-01-01T00:00:00.000Z"})}).then(async r => {if (!r.ok) throw new Error(await r.text()); const task = await r.json(); location.assign("/tasks/" + task.id)})' \
+    --wait-for '.detail-title' \
+    --eval 'Array.from(document.querySelectorAll("button")).find(b => b.textContent.trim() === "Cancel task").click()' \
+    --wait-for '.tl-operator .muted' --scroll-to '.tl-operator' \
+    --shot ".crane/screenshots/attributed-task-$viewport.png" \
+    --click '.account-button' --click '[role="menuitem"]:last-child' \
+    --wait-for '.sign-in-form' \
+    --out ".crane/screenshots/signed-out-$viewport.png" || exit "$?"
+done
+```
+
+Open every resulting PNG to inspect clipping, overflow, form scrolling, the
+actor name and the signed-out screen. Capturing images alone does not record
+an operator visual decision; current task pre-approval and candidate coverage
+still govern whether a separate decision is needed.
+
 ## Checks delegated to Crane
 
 In this known restricted sandbox, defer these checks without first attempting
