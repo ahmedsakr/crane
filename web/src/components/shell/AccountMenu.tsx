@@ -3,6 +3,7 @@ import { errorMessage, type OperatorProfile } from "@crane/contracts";
 import { ROLE_LABEL, initialOf, isSignedOut } from "../../lib/auth";
 import { useToast } from "../../lib/toast";
 import { useAuth } from "../../lib/use-auth";
+import { AccountSheet } from "../account/AccountSheet";
 
 /** One line in the account menu. Account settings and operator management add theirs here. */
 export interface AccountMenuItem {
@@ -49,6 +50,7 @@ export function AccountMenu() {
   const { status, operator, signOut } = useAuth();
   const toast = useToast();
   const [open, setOpen] = useState(false);
+  const [sheet, setSheet] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
   const [close] = useState(() => (refocus: boolean) => {
@@ -63,7 +65,11 @@ export function AccountMenu() {
   if (!status?.required || !operator) return null;
   const name = operator.name || operator.username;
   const failed = (e: unknown) => !isSignedOut(e) && toast({ text: `Couldn't sign out: ${errorMessage(e)}` });
-  const items: AccountMenuItem[] = [{ key: "sign-out", label: "Sign out", onSelect: () => void signOut().catch(failed) }];
+  const items: AccountMenuItem[] = [
+    // Focus the button first, so the sheet hands focus back to it on close.
+    { key: "account", label: "Your account", onSelect: () => { button.current?.focus(); setSheet(true); } },
+    { key: "sign-out", label: "Sign out", onSelect: () => void signOut().catch(failed) },
+  ];
   return (
     <div className="account" ref={root}>
       <button ref={button} type="button" className="account-button" aria-haspopup="menu" aria-expanded={open}
@@ -72,6 +78,7 @@ export function AccountMenu() {
         <span className="account-name">{name}</span>
       </button>
       {open && <AccountMenuList operator={operator} items={items} onPick={(item) => { close(false); item.onSelect(); }} />}
+      {sheet && <AccountSheet onClose={() => setSheet(false)} />}
     </div>
   );
 }

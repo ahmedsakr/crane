@@ -33,6 +33,8 @@ import type {
   TaskRunOptions,
   RoleRunOptions,
   AuthStatus,
+  OperatorProfile,
+  OperatorSession,
 } from "@crane/contracts";
 import { SignedOutError, isSignInRefusal, notifySignInRequired } from "./auth";
 
@@ -131,6 +133,14 @@ export const api = {
   /** Sets the session cookie. A wrong username or password is a 401, and too many attempts a 429 with `retryAfterSeconds`. */
   signIn: (username: string, password: string) => post<AuthStatus>("/auth/sign-in", { username, password }),
   signOut: () => post<AuthStatus>("/auth/sign-out"),
+  /** This operator's signed-in devices, with this one marked `current`. */
+  mySessions: () => req<OperatorSession[]>("/auth/me/sessions"),
+  /** Signs out one of this operator's devices and answers with those left; signing out this one answers []. */
+  signOutMySession: (id: string) => req<OperatorSession[]>(`/auth/me/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  signOutMyOtherSessions: () => post<OperatorSession[]>("/auth/me/sessions/sign-out-others"),
+  /** Keeps this device signed in and signs out the operator's others. A wrong current password is refused. */
+  changeMyPassword: (current: string, next: string) => post<{ ok: true }>("/auth/me/password", { current, next }),
+  renameMe: (name: string) => post<OperatorProfile>("/auth/me/name", { name }),
   goals:() => req<GoalListItem[]>("/goals"),
   goal: (id: string) => req<GoalDetail>(`/goals/${id}`),
   createGoal: (input: NewGoal) => post<Goal>("/goals", input),

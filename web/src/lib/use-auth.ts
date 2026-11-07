@@ -15,5 +15,6 @@ export function useAuth() {
     operator: status?.operator ?? null,
     refresh: authStore.refresh,
     signOut: authStore.signOut,
+    setOperator: authStore.setOperator,
   };
 }
