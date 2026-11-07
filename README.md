@@ -245,6 +245,8 @@ Start a run with the button on their row (**Review security**, **Reduce duplicat
 | `crane pause` / `crane resume` | Stop or restart picking up new tasks |
 | `crane serve` | Run the factory: agents, API, and dashboard |
 | `crane start` | Build and run the factory, rebuilding and restarting on new checkout commits |
+| `crane operators` | Who can sign in to the dashboard: `add`, `invite`, `invites`, `revoke-invite`, `role`, `reset-password`, `sign-out`, `remove` |
+| `crane auth` | Whether sign-in is set up, signed-in `devices`, `sign-out`, and `off` |
 
 You can stop or restart `crane serve` at any time, even while agents are working. Running tasks go back in the queue with their worktree and their agent's session, and when the factory starts again each task resumes its session on the agent that started it, even if you've changed the default since. Merges that were under way run again from the start, which is safe to repeat.
 
@@ -257,6 +259,36 @@ For Codex commands, Crane persists correlated start and completion records in ta
 The dashboard has no login, so `crane serve` listens on `127.0.0.1` only, answers only to `localhost`, `127.0.0.1` and `[::1]`, and refuses changes sent from any other origin. To reach it from another machine, pass `--host 0.0.0.0` (or a LAN address) on a network you trust: anyone who can reach it can approve and merge tasks.
 
 When a change to Crane itself is merged, Crane builds the dashboard from that commit in its own directory (`$CRANE_HOME/builds/<sha>`, never your checkout) and serves it, so UI fixes show up without you running `npm run build`. Open pages offer to reload. If you run `npm run build -w web` yourself, your newer `web/dist` is served instead. `crane serve --no-build-dashboard` turns this off.
+
+### Operators and sign-in
+
+Operators are the people who can sign in to the dashboard. Each has a username, a display name shown on their decisions, a password Crane keeps only as a scrypt hash, and a role: **admins** manage operators, invites, roles, reset links and other operators' devices; **operators** do all factory work and manage their own account. Until the first operator exists, the dashboard on this machine needs no sign-in. Once one does, every API call needs a signed-in operator, from this machine too.
+
+Anyone running `crane` on the host acts as an admin, so the CLI is how you set sign-in up and recover it:
+
+```sh
+crane operators add sam --name "Sam Lee" --admin   # the first admin; asks for the password twice
+crane operators add ci --admin --password-stdin < pw.txt   # or one line of standard input
+crane operators add riley --generate               # or a random 24-character password, printed once
+```
+
+To onboard someone else, make an invite link and send it to them. It works once and expires in 7 days; they choose their own username and password. Crane prints only the path, `/join#<token>`: open it at your dashboard's address, for example `https://crane.example.com/join#…`. The token is in the URL fragment, which browsers never send to a server, and Crane keeps only its SHA-256 digest.
+
+```sh
+crane operators invite [--admin] [--name "Jo"]   # a single-use join link
+crane operators invites                           # links not used yet
+crane operators revoke-invite <id>
+```
+
+When someone forgets their password, `crane operators reset-password <username>` prints a reset link that works once within 24 hours; using it sets a new password and signs them out of their other devices. On the host you can also set it directly with `--password-stdin` or `--generate`, which signs them out everywhere. `crane operators role <username> admin|operator` changes a role, `crane operators sign-out <username>` signs someone out on every device, and `crane operators remove <username>` removes them with their devices and links. Crane always keeps at least one admin: the last one can't be demoted or removed.
+
+`crane auth status` says whether sign-in is set up, how many operators and admins there are, and how many devices are signed in. `crane auth devices [--operator <username>]` lists signed-in devices, and `crane auth sign-out <id>` or `--all` signs them out. `crane auth off` removes every operator, invite and device, turning sign-in off; a factory served on a public address then refuses every API call until you add an operator again.
+
+The dashboard can do everything here except three things, which only the host can do:
+
+- **Add an operator with a password.** On the dashboard, operators join through invite links. A first-run setup page could be claimed by whoever reached it first.
+- **Set another operator's password directly.** On the dashboard, admins make a reset link instead.
+- **Turn sign-in off** (`crane auth off`). Doing it from a browser would leave the dashboard open to whoever can reach it.
 
 ## Configuration
 
