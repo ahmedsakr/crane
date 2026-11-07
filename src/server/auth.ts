@@ -4,7 +4,8 @@ import type { CookieOptions } from "hono/utils/cookie";
 import type { EventActor } from "@crane/contracts";
 import { withActor } from "../core/actor.js";
 import { AccessError, SESSION_LIFETIME_MS, SIGN_IN_FIRST, type Authenticated, type OperatorActions } from "../factory/actions.js";
-import { AttemptLimiter, TooManyAttempts, socketClientKey, type ClientKey } from "./sign-in-limit.js";
+import { parsePublicUrl, type Exposure } from "./security.js";
+import { AttemptLimiter, TooManyAttempts, clientKeyFor, type ClientKey } from "./sign-in-limit.js";
 
 declare module "hono" {
   interface ContextVariableMap {
@@ -29,6 +30,10 @@ export const NOT_SET_UP = "Sign-in isn't set up. On the host, run crane operator
 export interface AccessOptions {
   /** Listening beyond loopback: every API call needs a session, even before any operator exists. */
   exposed?: boolean;
+  /** The origin operators browse to (`crane serve --public-url`). Setting one also makes the app exposed. */
+  publicUrl?: string;
+  /** Honour X-Forwarded-Proto and X-Forwarded-For from a loopback peer (`crane serve --trust-proxy`). */
+  trustProxy?: boolean;
   /** When the app thinks it is, for sessions, sign-in limits and stream re-checks. Tests move it. */
   clock?: () => number;
   /** Which client a request counts as for sign-in limits and logs. Defaults to the socket's address. */
@@ -38,9 +43,8 @@ export interface AccessOptions {
 }
 
 /** What the gate and the sign-in routes share, built once per app by `createApp`. */
-export interface ApiAccess {
+export interface ApiAccess extends Exposure {
   actions: OperatorActions;
-  exposed: boolean;
   now: () => number;
   limiter: AttemptLimiter;
   clientKey: ClientKey;
@@ -49,19 +53,24 @@ export interface ApiAccess {
 
 export function apiAccess(actions: OperatorActions, opts: AccessOptions = {}): ApiAccess {
   const now = opts.clock ?? Date.now;
+  const publicUrl = opts.publicUrl === undefined ? null : parsePublicUrl(opts.publicUrl);
+  const trustProxy = opts.trustProxy ?? false;
   return {
     actions,
-    exposed: opts.exposed ?? false,
+    exposed: (opts.exposed ?? false) || publicUrl !== null,
+    publicUrl,
+    trustProxy,
     now,
     limiter: new AttemptLimiter(now),
-    clientKey: opts.clientKey ?? socketClientKey,
+    clientKey: opts.clientKey ?? clientKeyFor(trustProxy),
     log: opts.log ?? ((line) => console.log(line)),
   };
 }
 
 /**
  * The session cookie's attributes: scripts can't read it, other sites' requests never carry it, and it lasts as
- * long as a session can. Secure when the request came over HTTPS.
+ * long as a session can. Secure when the browser is on HTTPS, which `secureResponses` works out from the public
+ * URL or a trusted proxy.
  */
 export function sessionCookieOptions(c: Context): CookieOptions {
   return {
@@ -69,7 +78,7 @@ export function sessionCookieOptions(c: Context): CookieOptions {
     sameSite: "Strict",
     path: "/",
     maxAge: SESSION_LIFETIME_MS / 1000,
-    secure: new URL(c.req.url).protocol === "https:",
+    secure: c.get("https") ?? new URL(c.req.url).protocol === "https:",
   };
 }
 

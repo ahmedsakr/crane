@@ -53,6 +53,16 @@ test("start forwards every serve option, including zero limits and dashboard opt
   assert.deepEqual(serveArguments({ port: 4471, agents: 2, driver: "auto" }), ["serve", "--port", "4471", "--agents", "2", "--driver", "auto"]);
 });
 
+test("start forwards the public URL, proxy trust and the insecure-HTTP override to serve", () => {
+  const base = { port: 4471, agents: 2, driver: "auto" };
+  assert.deepEqual(serveArguments({ ...base, host: "127.0.0.1", publicUrl: "https://crane.example.com", trustProxy: true }), [
+    "serve", "--port", "4471", "--agents", "2", "--driver", "auto", "--host", "127.0.0.1",
+    "--public-url", "https://crane.example.com", "--trust-proxy",
+  ]);
+  assert.deepEqual(serveArguments({ ...base, host: "0.0.0.0", allowInsecureHttp: true }).slice(-3), ["--host", "0.0.0.0", "--allow-insecure-http"]);
+  assert.deepEqual(serveArguments({ ...base, trustProxy: false, allowInsecureHttp: false }), ["serve", "--port", "4471", "--agents", "2", "--driver", "auto"]);
+});
+
 test("start builds initially, ignores unchanged HEAD, and stops before rebuilding a new commit", async () => {
   const f = fixture();
   f.state.onWait = () => {

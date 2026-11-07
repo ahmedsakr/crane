@@ -34,5 +34,8 @@ export function factoryRoot(): string {
 }
 
 export const DEFAULT_PORT = 4471;
-/** Loopback only: the dashboard has no login, so exposing it is the operator's explicit choice (`crane serve --host`). */
+/**
+ * Loopback only. Exposing the dashboard is the operator's explicit choice (`crane serve --host` or `--public-url`),
+ * and `crane serve` then refuses to start without an operator to sign in as and an https public URL.
+ */
 export const DEFAULT_HOST = "127.0.0.1";

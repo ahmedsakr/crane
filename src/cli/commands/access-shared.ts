@@ -36,10 +36,15 @@ export function expiresIn(iso: string, now = Date.now()): string {
   return hours > 48 ? plural(Math.round(hours / 24), "day") : plural(hours, "hour");
 }
 
-export function printLink(title: string, token: string, expiresAt: string): void {
+/**
+ * A join or reset link: the full address when the factory was served with `--public-url`, which `crane serve` saves,
+ * otherwise the path to open at the dashboard's address.
+ */
+export function printLink({ store }: CliContext, title: string, token: string, expiresAt: string): void {
+  const origin = store.publicUrl();
   ui.ok(`${title} ${ui.dim(`(expires in ${expiresIn(expiresAt)})`)}`);
-  console.log(`  ${inviteLinkPath(token)}`);
-  console.log(ui.dim("  Open it at your dashboard's address, for example https://crane.example.com/join#…"));
+  console.log(`  ${origin ?? ""}${inviteLinkPath(token)}`);
+  if (!origin) console.log(ui.dim("  Open it at your dashboard's address, for example https://crane.example.com/join#…"));
   console.log(ui.dim("  It works once. Crane keeps only a digest of it, so this is the only time it's shown."));
 }
 

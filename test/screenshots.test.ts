@@ -59,6 +59,8 @@ test("screenshots: retained images survive worktree removal, restart, and are se
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("content-type"), "image/png");
     assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    // The app-wide frame-ancestors joins the image's own policy rather than replacing it.
+    assert.equal(response.headers.get("content-security-policy"), "default-src 'none'; sandbox; frame-ancestors 'none'");
     assert.deepEqual(Buffer.from(await response.arrayBuffer()), png);
     for (const id of [other.id, "t-missing"]) {
       assert.equal((await app.request(`/api/tasks/${id}/screenshots/${name}`)).status, 404);

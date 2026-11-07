@@ -2,7 +2,8 @@ import { serve as honoServe, type ServerType } from "@hono/node-server";
 import pc from "picocolors";
 import type { AgentDriver } from "@crane/agent-protocol";
 import type { Store } from "../core/store.js";
-import { createApp, isLoopbackAddress } from "../server/app.js";
+import { createApp, type AppOptions } from "../server/app.js";
+import { checkExposure, type ExposureCheck } from "../server/security.js";
 import { Factory } from "../factory/orchestrator.js";
 import { factoryIsRunning } from "../factory/state.js";
 import { DEFAULT_DRIVER_KEY } from "../factory/settings.js";
@@ -30,12 +31,33 @@ export interface ServeOptions {
   buildDashboard?: boolean;
   maxTurns?: number;
   timeLimit?: number;
+  /** The origin operators browse to, such as https://crane.example.com. */
+  publicUrl?: string;
+  /** Honour X-Forwarded-Proto and X-Forwarded-For from a proxy on this machine. */
+  trustProxy?: boolean;
+  /** Serve an exposed factory without HTTPS, with a warning. */
+  allowInsecureHttp?: boolean;
+}
+
+/**
+ * Whether these address options may serve, failing with the reason if not. Checked before the factory takes any
+ * work, since exposed without an operator or HTTPS is never safe. `crane start` also checks before building.
+ */
+function exposureOrFail(store: Store, opts: ServeOptions): ExposureCheck {
+  const check = checkExposure({
+    host: opts.host ?? DEFAULT_HOST, publicUrl: opts.publicUrl, allowInsecureHttp: opts.allowInsecureHttp,
+    operators: store.access.countOperators(),
+  });
+  if (check.error) ui.fail(check.error);
+  return check;
 }
 
 export async function serve(store: Store, opts: ServeOptions) {
   if (factoryIsRunning(store)) {
     ui.fail("A factory is already running against this Crane home. Stop it first, or set CRANE_HOME to run another.");
   }
+  const exposure = exposureOrFail(store, opts);
+  if (exposure.warning) console.log(`${ui.accent("!")} ${exposure.warning}`);
   const drivers = sharedDrivers();
   const driver = await resolveDefaultDriver(opts.driver, store.getSetting(DEFAULT_DRIVER_KEY), drivers).catch(
     (err: Error) => ui.fail(err.message),
@@ -49,8 +71,11 @@ export async function serve(store: Store, opts: ServeOptions) {
 
   // Before the factory starts: without its port it would claim tasks, then die under them.
   const hostname = opts.host ?? DEFAULT_HOST;
-  const exposed = !isLoopbackAddress(hostname);
-  const server = await listenOrFail(store, { port: opts.port, hostname, exposed, log });
+  const { exposed, publicUrl } = exposure;
+  const app = { exposed, publicUrl: publicUrl?.origin, trustProxy: opts.trustProxy };
+  const server = await listenOrFail(store, { port: opts.port, hostname, log, app });
+  // For links the CLI prints, such as invites. Cleared when served without one, so no link names an old address.
+  store.setPublicUrl(publicUrl?.origin ?? null);
 
   const factory = new Factory(store, [driver, ...others], {
     crewSize: opts.agents,
@@ -61,15 +86,15 @@ export async function serve(store: Store, opts: ServeOptions) {
   });
   factory.start();
 
-  await printBanner({ store, factory, driver, others, port: opts.port, hostname, exposed, buildDashboard });
+  await printBanner({ store, factory, driver, others, port: opts.port, hostname, exposure, buildDashboard });
   handleShutdown(store, factory, server);
 }
 
-type Address = { port: number; hostname: string; exposed: boolean; log: (line: string) => void };
+type Address = { port: number; hostname: string; log: (line: string) => void; app: AppOptions };
 
 async function listenOrFail(store: Store, address: Address): Promise<ServerType> {
-  const { port, hostname, exposed, log } = address;
-  const app = createApp(store, { exposed, log });
+  const { port, hostname, log } = address;
+  const app = createApp(store, { ...address.app, log });
   return listen({ fetch: app.fetch, port, hostname }).catch((err: NodeJS.ErrnoException) =>
     ui.fail(
       err.code === "EADDRINUSE"
@@ -86,19 +111,25 @@ interface Banner {
   others: AgentDriver[];
   port: number;
   hostname: string;
-  exposed: boolean;
+  exposure: ExposureCheck;
   buildDashboard: boolean;
 }
 
-async function printBanner({ store, factory, driver, others, port, hostname, exposed, buildDashboard }: Banner) {
-  console.log(`\n${ui.brand()}  ${pc.green("◉")} Factory is running\n`);
-  console.log(`  ${ui.dim("Dashboard")}  ${pc.bold(`http://localhost:${port}`)}`);
-  if (exposed) {
-    const access = store.access.countOperators() > 0
-      ? "Every request needs a signed-in operator."
-      : "Sign-in isn't set up, so it refuses every request: run crane operators add <username> --admin.";
-    console.log(`  ${ui.accent("!")} ${ui.dim(`Listening on ${hostname}. ${access}`)}`);
+/** Where operators browse to, where Crane listens when that differs, and whether they must sign in. */
+function printAccess(store: Store, port: number, hostname: string, { exposed, publicUrl }: ExposureCheck) {
+  console.log(`  ${ui.dim("Dashboard")}  ${pc.bold(publicUrl?.origin ?? `http://localhost:${port}`)}`);
+  if (exposed) console.log(`  ${ui.dim("Listening")}  ${hostname}:${port}`);
+  const operators = store.access.countOperators();
+  if (operators > 0) {
+    console.log(`  ${ui.dim("Sign-in  ")}  on · ${operators} ${operators === 1 ? "operator" : "operators"}`);
+    return;
   }
+  console.log(`  ${ui.dim("Sign-in  ")}  off on this machine until an operator exists  ${ui.dim("crane operators add <username> --admin")}`);
+}
+
+async function printBanner({ store, factory, driver, others, port, hostname, exposure, buildDashboard }: Banner) {
+  console.log(`\n${ui.brand()}  ${pc.green("◉")} Factory is running\n`);
+  printAccess(store, port, hostname, exposure);
   console.log(`  ${ui.dim("Agents   ")}  ${store.listAgents().filter((a) => a.active).length} active · factory default ${driver.label}`);
   const installed = (
     await Promise.all(others.filter((d) => d.name !== "simulated").map(async (d) => ((await isAvailable(d)) ? d.label : null)))
