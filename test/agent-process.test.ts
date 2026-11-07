@@ -127,6 +127,39 @@ test("agent process: an abort sends SIGTERM, which an obliging CLI stops on", as
   assert.deepEqual(stream.exits, [{ code: null, stderr: "" }]);
 });
 
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+test("agent process: an abort stops what the CLI started too, so nothing outlives the run", { skip: process.platform === "win32" }, async () => {
+  const controller = new AbortController();
+  const stream = recordingStream();
+  let child = 0;
+  // An install or test runner the agent started, which ignores the CLI's own exit.
+  const script = `
+    const { spawn } = require("node:child_process");
+    const c = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: "ignore" });
+    console.log(JSON.stringify({ child: c.pid }));
+    setTimeout(() => {}, 60000);`;
+  const { run } = processFor(script, {
+    ...stream,
+    handle: (msg) => {
+      child = Number(msg.child);
+      controller.abort();
+    },
+    finish: (exit) => stream.finish(exit),
+  }, controller.signal);
+  await runAgentProcess(run);
+  assert.ok(child > 0);
+  for (let i = 0; i < 100 && alive(child); i++) await new Promise((r) => setTimeout(r, 20));
+  assert.equal(alive(child), false, "the agent's own child process was stopped with it");
+});
+
 function resumeContext(resumeSession?: string, signal = new AbortController().signal) {
   const notes: string[] = [];
   return { notes, ctx: { resumeSession, signal, emit: (_type: string, message: string) => void notes.push(message) } };
