@@ -42,6 +42,12 @@ export interface RunContext {
   /** Where each of `task.prerequisites` stood when the run started, supplied by the factory. */
   prerequisites?: readonly PrerequisiteState[];
   /**
+   * Why Crane couldn't get the worktree's dependencies ready before this run,
+   * so the agent knows missing modules come from that. Unset when they're
+   * ready or the run needs none.
+   */
+  dependencyProblem?: string;
+  /**
    * A post-mortem's full brief, rendered from the merged task's history when
    * the run starts. It stands in for `task.brief`, which stores only one line.
    */

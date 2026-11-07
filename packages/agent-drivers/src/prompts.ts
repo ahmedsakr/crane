@@ -298,7 +298,16 @@ function lookoutsBrief(task: Task): string {
 }
 
 /** What the factory knows about the task's surroundings when the run starts. */
-type TaskContext = Pick<RunContext, "siblingTasks" | "prerequisites" | "commandEvidence" | "postmortemPrompt"> & Partial<Pick<RunContext, "task" | "job">>;
+type TaskContext = Pick<RunContext, "siblingTasks" | "prerequisites" | "commandEvidence" | "postmortemPrompt" | "dependencyProblem"> & Partial<Pick<RunContext, "task" | "job">>;
+
+function dependencyBrief(context: TaskContext): string {
+  if (!context.dependencyProblem) return "";
+  return [
+    "## Dependencies are not ready",
+    `Crane couldn't prepare this worktree's dependencies before starting you: ${context.dependencyProblem}`,
+    "Missing-module or missing-binary errors are likely to come from this, not from the code. Don't change code to work around missing packages. If your permissions allow a lockfile install, run it and confirm it finishes before building or testing; otherwise report the affected checks as blocked by the missing dependencies.",
+  ].join("\n\n");
+}
 
 function visualDecisionBrief(task?: Task, job?: AgentJob): string {
   if (!task || (task.autonomy === "observe" && !job)) return "";
@@ -370,6 +379,7 @@ export function userPrompt(task: Task, job?: AgentJob, context: TaskContext = {}
   return [
     `# ${task.title}\n\n${context.postmortemPrompt ?? task.brief}`,
     visualDecisionBrief(task),
+    dependencyBrief(context),
     commandEvidenceBrief(context),
     prerequisitesBrief(task, context.prerequisites),
     acceptanceBrief(task),
@@ -388,6 +398,8 @@ export function resumePrompt(context: TaskContext = {}): string {
   return [
     "You were stopped mid-step while working on this task, because Crane restarted or the API had a temporary error, and Crane has resumed this session. Your work so far is still in this directory.",
     "Pick up where you left off without redoing finished work. If you were in the middle of a command or an edit, check whether it finished (`git status`, `git diff`) before moving on. Only re-run a command if it was not denied and repeating it is safe.",
+    "A restart stops the commands you had running, so an install you started may not have finished. In an isolated worktree, Crane prepares the dependencies again and waits for that to finish before resuming you; check the current state rather than assuming your install completed.",
+    dependencyBrief(context),
     commandEvidenceBrief(context),
     BLOCKED_BRIEF,
     VALIDATION_BRIEF,

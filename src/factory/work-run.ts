@@ -43,6 +43,8 @@ interface Workspace {
   repo: Repo;
   cwd: string;
   branch: string | null;
+  /** Why the worktree's dependencies couldn't be prepared, for the agent to hear. */
+  dependencyProblem?: string;
 }
 
 /** What review checks and the outcome are judged on. */
@@ -83,11 +85,12 @@ async function prepareWorkspace(deps: WorkRunDeps, run: WorkRun): Promise<Worksp
   const wt = await createWorktree(repo, task, { required, signal: run.signal, note: (message) => emit("note", message) });
   store.updateTask(task.id, { branch: wt.branch, worktree: wt.path });
   emit("note", `${task.worktree ? "Back on" : "Working on"} branch ${wt.branch}`, { branch: wt.branch, ...(wt.base ? { base: wt.base } : {}) });
-  await installWorktreeDependencies(run, wt.path, repo.path);
-  return { repo, cwd: wt.path, branch: wt.branch };
+  const dependencyProblem = await installWorktreeDependencies(run, wt.path, repo.path);
+  return { repo, cwd: wt.path, branch: wt.branch, ...(dependencyProblem ? { dependencyProblem } : {}) };
 }
 
-async function installWorktreeDependencies({ signal, emit }: WorkRun, worktree: string, from: string) {
+/** Prepare before the agent starts, so it never works alongside an install. Returns why that failed, if it did. */
+async function installWorktreeDependencies({ signal, emit }: WorkRun, worktree: string, from: string): Promise<string | null> {
   const started = Date.now();
   try {
     const note = await installDependencies(worktree, {
@@ -96,11 +99,13 @@ async function installWorktreeDependencies({ signal, emit }: WorkRun, worktree: 
       onProgress: (progress) => emit("note", progress),
     });
     if (note) emit("note", note);
+    return null;
   } catch (err) {
     if (signal.aborted) throw err;
-    // Not fatal: the agent can still read code and may be able to install itself.
-    const after = elapsed(Date.now() - started);
-    emit("note", `Couldn't install dependencies after ${after}: ${errorMessage(err).split("\n")[0]}`);
+    // Not fatal: the agent can still read code and may be able to install itself. It's told why.
+    const problem = `Couldn't install dependencies after ${elapsed(Date.now() - started)}: ${errorMessage(err).split("\n")[0]}`;
+    emit("note", problem);
+    return problem;
   }
 }
 
@@ -117,7 +122,7 @@ async function resumeCheckpoint({ store }: WorkRunDeps, { task, emit }: WorkRun,
   return null;
 }
 
-async function runWorkAgent(deps: WorkRunDeps, { agent, task, signal, emit }: WorkRun, { repo, cwd }: Workspace): Promise<Report> {
+async function runWorkAgent(deps: WorkRunDeps, { agent, task, signal, emit }: WorkRun, { repo, cwd, dependencyProblem }: Workspace): Promise<Report> {
   const { store, drivers, agentRunner, recording } = deps;
   const driver = driverFor(store, drivers, task, agent.id);
   // A session belongs to the agent that started it. Older runs didn't record theirs, so trust those.
@@ -133,6 +138,7 @@ async function runWorkAgent(deps: WorkRunDeps, { agent, task, signal, emit }: Wo
     signal,
     emit,
     resumeSession: resumable ? task.sessionId! : undefined,
+    ...(dependencyProblem ? { dependencyProblem } : {}),
     onSession: (sessionId) => recording(() => store.updateTask(task.id, { sessionId })),
     // Run below as review checks. Investigate-only runs get none.
     checks: task.autonomy !== "observe" ? store.repoChecks(repo.id) : undefined,

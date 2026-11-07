@@ -51,14 +51,54 @@ export function stderrExcerpt(stderr: string): string {
 }
 
 /**
+ * Each agent runs in its own process group, so stopping it stops the shells,
+ * installs and test runners it started too. Signalling only the CLI left them
+ * running in a worktree the next run was about to prepare and use: an orphaned
+ * `npm ci` kept emptying `node_modules` after the factory had restarted.
+ */
+const grouped = process.platform !== "win32";
+/** Groups still running, for the factory's exit to stop: they no longer hear its terminal's Ctrl-C. */
+const liveGroups = new Set<number>();
+let exitHooked = false;
+
+function signalAgent(child: ChildProcess, name: NodeJS.Signals) {
+  try {
+    if (grouped && child.pid) process.kill(-child.pid, name);
+    else child.kill(name);
+  } catch {
+    // Already gone.
+  }
+}
+
+function trackGroup(child: ChildProcess): () => void {
+  const pid = child.pid;
+  if (!grouped || !pid) return () => {};
+  if (!exitHooked) {
+    exitHooked = true;
+    process.on("exit", () => {
+      for (const group of liveGroups) {
+        try { process.kill(-group, "SIGKILL"); } catch { /* already gone */ }
+      }
+    });
+  }
+  liveGroups.add(pid);
+  return () => liveGroups.delete(pid);
+}
+
+/**
  * A stuck agent may ignore SIGTERM, and the factory waits only a few seconds
  * for agents to stop before it exits. Don't hold a crew slot, or outlive that.
  * Returns how to stop listening.
  */
 function stopOnAbort(child: ChildProcess, signal: AbortSignal): () => void {
   const onAbort = () => {
-    child.kill("SIGTERM");
-    setTimeout(() => child.exitCode === null && child.signalCode === null && child.kill("SIGKILL"), KILL_AFTER_MS).unref();
+    signalAgent(child, "SIGTERM");
+    setTimeout(() => {
+      signalAgent(child, "SIGKILL");
+      // Something that left the group may still hold the pipes, and `close` waits for them.
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+    }, KILL_AFTER_MS).unref();
   };
   signal.addEventListener("abort", onAbort, { once: true });
   return () => signal.removeEventListener("abort", onAbort);
@@ -79,8 +119,13 @@ export function runAgentProcess(run: AgentProcess): Promise<RunResult> {
   return new Promise<RunResult>((resolve, reject) => {
     // Aborted while the factory got ready: that event has fired, so the listener below would never hear it.
     if (signal.aborted) return reject(cancelledRun(run.resume ?? null));
-    const child = spawn(bin, run.args, { cwd, env: run.env, stdio: ["pipe", "pipe", "pipe"] });
-    const stopListening = stopOnAbort(child, signal);
+    const child = spawn(bin, run.args, { cwd, env: run.env, stdio: ["pipe", "pipe", "pipe"], detached: grouped });
+    const untrack = trackGroup(child);
+    const stopAborting = stopOnAbort(child, signal);
+    const stopListening = () => {
+      untrack();
+      stopAborting();
+    };
 
     child.stdin.on("error", () => {}); // it exited before reading the prompt; `close` reports why
     child.stdin.end(run.prompt);

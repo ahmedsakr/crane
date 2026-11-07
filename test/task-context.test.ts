@@ -129,6 +129,34 @@ test("task context: factory supplies snapshots for fresh and resumed work runs",
   assert.equal(seen.find((ctx) => ctx.task.id === resumed.id)?.resumeSession, "earlier-session");
 });
 
+test("task context: an agent hears why its worktree's dependencies couldn't be prepared", async (t) => {
+  const { root, store, base } = setup();
+  // A lockfile Crane must install from, beside a manifest no install can read.
+  writeFileSync(join(root, "package.json"), "{not a manifest");
+  writeFileSync(join(root, "package-lock.json"), JSON.stringify({ name: "x", version: "1.0.0", lockfileVersion: 3, packages: {} }));
+  sh(root, "add", "package.json", "package-lock.json");
+  sh(root, "commit", "-q", "-m", "broken manifest");
+  const task = store.createTask({ ...base, autonomy: "propose", title: "Work without dependencies" });
+  let problem: string | undefined;
+  const driver: AgentDriver = {
+    name: "test", label: "Test", available: async () => true,
+    run: async (ctx) => {
+      problem = ctx.dependencyProblem;
+      return { report: { summary: "Done", findings: [], changedFiles: [] } };
+    },
+  };
+  const factory = new Factory(store, driver, { crewSize: 1, tickMs: 10 });
+  t.after(async () => { await factory.stop(); store.close(); });
+  factory.start();
+  for (let i = 0; i < 1000 && ["queued", "running"].includes(store.getTask(task.id)!.status); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.match(problem ?? "", /^Couldn't install dependencies after /);
+  assert.match(userPrompt(store.getTask(task.id)!, undefined, { dependencyProblem: problem }), /## Dependencies are not ready\n\nCrane couldn't prepare this worktree's dependencies before starting you: Couldn't install/);
+  assert.match(resumePrompt({ dependencyProblem: problem }), /Dependencies are not ready/);
+  assert.doesNotMatch(resumePrompt(), /Dependencies are not ready/);
+});
+
 test("task context: transient retries refresh sibling state before resuming", async (t) => {
   const { root, store, base, current } = setup();
   const sibling = store.createTask({ ...base, title: "Shared setup" });
