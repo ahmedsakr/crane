@@ -7,8 +7,8 @@ import { BlockedToolsReader } from "./store/blocked-tools.js";
 import { approveGoal, cancelGoal, createGoal, getGoal, goalDetail, goalForTask, listGoals, listGoalSummaries,
   retryGoalTask, reviseGoal, saveGoalPlan, syncGoals, type NewGoal } from "./store/goals.js";
 import { goalListItems } from "./store/goal-progress.js";
-import { createTask, getTask, listTasks, listTaskSummaries, setStatus, tasksWithWorktrees, updateTask,
-  type NewTaskRecord, type TaskListOptions, type TaskPatch } from "./store/tasks.js";
+import { createTask, getTask, listTasks, listTaskSummaries, setStatus, tasksWithWorktrees, transitionStatus, updateTask,
+  type NewTaskRecord, type StatusTransition, type TaskListOptions, type TaskPatch } from "./store/tasks.js";
 import { listQueuedTasks, listQueuedTaskSummaries, moveQueuedTask, queuedForAnyone, setTaskAgent, setTaskSchedule,
   type TaskAgent } from "./store/queue.js";
 import { followUps, followUpSource, prerequisiteCommits, prerequisiteStates, unmetPrerequisites, waivePrerequisites,
@@ -278,6 +278,9 @@ export class Store {
   setStatus(id: string, status: TaskStatus, message?: string, data?: Record<string, unknown>) {
     setStatus(this, id, status, message, data);
   }
+
+  /** setStatus only while the task is still in `change.from`; returns whether this caller won. */
+  transitionStatus(id: string, change: StatusTransition): boolean { return transitionStatus(this, id, change); }
 
   // Queue order and scheduling live in store/queue.ts.
   listQueuedTasks(): Task[] {

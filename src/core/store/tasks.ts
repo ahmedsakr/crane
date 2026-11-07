@@ -155,3 +155,23 @@ export function setStatus(store: Store, id: string, status: TaskStatus, message?
   store.updateTask(id, patch);
   store.addEvent(id, "status", message ?? status, { ...data, status });
 }
+
+/** A status change that applies only while the task is still in one of `from`. */
+export type StatusTransition = { from: TaskStatus[]; to: TaskStatus; message?: string; data?: Record<string, unknown> };
+
+/**
+ * Move a task to `to` only if it is still in one of `from`, writing the status
+ * event as `setStatus` does, in one transaction. The conditional update is the
+ * claim, so of several callers racing, in this process or another on the same
+ * database, exactly one wins. Returns whether this caller won; a loser changes nothing.
+ */
+export function transitionStatus(store: Store, id: string, change: StatusTransition): boolean {
+  if (!change.from.length) return false;
+  return store.db.transaction(() => {
+    const won = store.db
+      .prepare(`UPDATE tasks SET status = ? WHERE id = ? AND status IN (${change.from.map(() => "?").join(",")})`)
+      .run(change.to, id, ...change.from).changes > 0;
+    if (won) setStatus(store, id, change.to, change.message, change.data);
+    return won;
+  }).immediate();
+}

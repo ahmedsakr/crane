@@ -1,8 +1,8 @@
-import { visualReviewPending, type Task } from "@crane/contracts";
+import { errorMessage, visualReviewPending, type Task, type TaskStatus } from "@crane/contracts";
 import type { Store } from "../../core/store.js";
 import { git } from "../../core/git.js";
 import { removeWorktree } from "../git.js";
-import { needTask } from "./tasks.js";
+import { claimDecision, needTask, requireStatus, type Decision } from "./tasks.js";
 
 /** Record candidate inspection or an explicit waiver; task pre-approval also authorizes waivers. */
 export async function recordVisualReview(store: Store, id: string, input: { status: "inspected" | "waived"; commit: string; note: string }): Promise<Task> {
@@ -37,21 +37,26 @@ function requireVisualReview(task: Task) {
   if (visualReviewPending(task)) throw new Error("Record candidate visual inspection or an explicit operator waiver before approval or merge");
 }
 
+/** Where approve and decline start from, and how a refusal describes it. */
+const IN_REVIEW: { from: TaskStatus[]; waiting: string } = { from: ["needs_review"], waiting: "waiting for review" };
+
 /**
  * Approve a task. When it changed code, this also merges its branch into the
  * repo's default branch and pushes it, unless `merge: false` ("Approve only").
  */
 export async function approve(store: Store, id: string, note?: string, opts: { merge?: boolean } = {}): Promise<Task> {
   const m = needTask(store, id);
-  if (m.status !== "needs_review") throw new Error(`Task ${m.id} isn't waiting for review`);
+  requireStatus(m, IN_REVIEW.from, IN_REVIEW.waiting);
   if (note !== undefined && typeof note !== "string") throw new Error("Note must be text");
   if (opts.merge !== undefined && typeof opts.merge !== "boolean") throw new Error("Merge must be a boolean");
   requireVisualReview(m);
   const merging = (opts.merge ?? true) && !!m.branch;
-  store.addEvent(m.id, "operator", note ? `Approved: ${note}` : "Approved");
-  if (merging) return queueMerge(store, m);
-  await cleanupWorktree(store, m, false);
-  store.setStatus(m.id, "approved", m.branch ? `Approved. Branch ${m.branch} is kept for you to merge` : "Approved");
+  const event = note ? `Approved: ${note}` : "Approved";
+  if (merging) return queueMerge(store, m, { ...IN_REVIEW, event });
+  // Claimed before the cleanup awaits, so a decline or second approve meanwhile finds it decided.
+  claimDecision(store, m.id, { ...IN_REVIEW, event, to: "approved",
+    message: m.branch ? `Approved. Branch ${m.branch} is kept for you to merge` : "Approved" });
+  await cleanupWorktree(store, m, "approved");
   return needTask(store, id);
 }
 
@@ -89,35 +94,49 @@ export async function merge(store: Store, id: string): Promise<Task> {
   const m = needTask(store, id);
   if (m.status === "needs_review") return approve(store, id);
   if (!m.branch) throw new Error(`Task ${m.id} didn't change any code, so there's nothing to merge`);
-  if (!["approved", "done"].includes(m.status)) throw new Error(`Task ${m.id} isn't ready to merge`);
+  const ready = { from: ["approved", "done"] as TaskStatus[], waiting: "ready to merge" };
+  requireStatus(m, ready.from, ready.waiting);
   requireVisualReview(m);
-  store.addEvent(m.id, "operator", "Asked to merge");
-  return queueMerge(store, m);
+  return queueMerge(store, m, { ...ready, event: "Asked to merge" });
 }
 
-/** Hand the task to the factory, which merges it with the next free agent. */
-function queueMerge(store: Store, m: Task): Task {
+/** Hand the task to the factory, which merges it with the next free agent, once this caller claims it. */
+function queueMerge(store: Store, m: Task, decision: Omit<Decision, "to" | "message">): Task {
   const repo = m.repoId ? store.getRepo(m.repoId) : null;
   if (!repo) throw new Error(`Task ${m.id} has no repo to merge into`);
-  store.updateTask(m.id, { agentId: null });
-  store.setStatus(m.id, "merging", `Waiting to merge into ${repo.defaultBranch}`);
+  claimDecision(store, m.id, { ...decision, to: "merging", message: `Waiting to merge into ${repo.defaultBranch}` },
+    () => store.updateTask(m.id, { agentId: null }));
   return needTask(store, m.id);
 }
 
 export async function reject(store: Store, id: string, note?: string): Promise<Task> {
   const m = needTask(store, id);
-  if (m.status !== "needs_review") throw new Error(`Task ${m.id} isn't waiting for review`);
+  requireStatus(m, IN_REVIEW.from, IN_REVIEW.waiting);
   if (note !== undefined && typeof note !== "string") throw new Error("Note must be text");
-  store.addEvent(m.id, "operator", note ? `Declined: ${note}` : "Declined");
-  await cleanupWorktree(store, m, true);
-  store.setStatus(m.id, "rejected", "Declined");
+  // Claimed before the cleanup awaits: an approve that won keeps its worktree and branch for the merge.
+  claimDecision(store, m.id, { ...IN_REVIEW, event: note ? `Declined: ${note}` : "Declined", to: "rejected", message: "Declined" });
+  await cleanupWorktree(store, m, "rejected");
   return needTask(store, id);
 }
 
-async function cleanupWorktree(store: Store, m: Task, deleteBranch: boolean) {
+/**
+ * Remove a decided task's worktree, and a declined task's branch too. The
+ * decision stands if this fails: the task keeps its status, with an error event.
+ */
+async function cleanupWorktree(store: Store, m: Task, decided: "approved" | "rejected") {
   if (!m.worktree || !m.repoId) return;
   const repo = store.getRepo(m.repoId);
   if (!repo) return;
-  await removeWorktree(repo, m.worktree, deleteBranch && m.branch ? { deleteBranch: m.branch } : {});
-  store.updateTask(m.id, { worktree: null, ...(deleteBranch ? { branch: null } : {}) });
+  const deleteBranch = decided === "rejected";
+  try {
+    await removeWorktree(repo, m.worktree, deleteBranch && m.branch ? { deleteBranch: m.branch } : {});
+    store.transaction(() => {
+      // A merge asked for meanwhile may have taken the worktree over; leave its record alone.
+      const current = needTask(store, m.id);
+      if (current.status !== decided) return;
+      store.updateTask(m.id, { ...(current.worktree === m.worktree ? { worktree: null } : {}), ...(deleteBranch ? { branch: null } : {}) });
+    }, { immediate: true });
+  } catch (err) {
+    store.addEvent(m.id, "error", `Couldn't remove the worktree at ${m.worktree}: ${errorMessage(err)}`, { worktree: m.worktree });
+  }
 }
