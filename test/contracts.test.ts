@@ -24,7 +24,7 @@ TaskKind TaskRunOptions TaskStatus TaskSummary ValidationRun VisualReview`.split
 GOAL_TASK_PHASES KIND_LABEL LOOKOUT LOOKOUTS MAINTENANCE_ROLE MAINTENANCE_ROLES MAX_NAME_LENGTH MIN_PASSWORD_LENGTH
 MODEL_SUGGESTIONS RUN_KIND_LABEL SHIPPED_STATUSES STATUS_LABEL UNSHIPPED_STATUSES USERNAME_PATTERN acceptanceCheckRun
 acceptanceFor actorLabel choosableDrivers completionReviewReason crewScheduleLabel describeClient diffFiles driverLabel
-errorMessage eventActor followUpFor goalProgress goalTaskPhase goalWaves isDriverName isEventActor isLookout
+errorMessage eventActor followUpFor goalProgress goalTaskPhase goalWaves inviteLinkPath isDriverName isEventActor isLookout
 isMaintenanceRole isScheduled isTunable lastMergeOutcome lookoutsLabel nextCrewFire normalizeUsername parseDiff
 prerequisiteMet ruleLabel runCostLabel runTokens settingsLabel splitRows unmetAcceptance
 validateCrewSchedule validateGoalPlan visualReviewPending visualReviewWaivedByPreApproval`.split(/\s+/).sort();

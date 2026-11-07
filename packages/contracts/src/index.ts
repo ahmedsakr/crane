@@ -141,6 +141,7 @@ export {
   MAX_NAME_LENGTH,
   normalizeUsername,
   describeClient,
+  inviteLinkPath,
   actorLabel,
   isEventActor,
   eventActor,

@@ -8,6 +8,7 @@ import { registerDashboard } from "./static.js";
 import type { RegisterRoutes, RouteDeps } from "./routes/deps.js";
 import { overviewCache, registerOverviewRoutes } from "./routes/overview.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerOperatorsRoutes } from "./routes/operators.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
 import { registerTaskDecisionRoutes } from "./routes/task-decisions.js";
 import { registerGoalRoutes } from "./routes/goals.js";
@@ -19,7 +20,7 @@ export { isLoopbackAddress } from "./security.js";
 
 /** In registration order. Hono tries routes in this order, so `/tasks/queue` stays ahead of `/tasks/:id`. */
 const ROUTES: RegisterRoutes[] = [
-  registerAuthRoutes, registerTaskRoutes, registerGoalRoutes, registerTaskDecisionRoutes,
+  registerAuthRoutes, registerOperatorsRoutes, registerTaskRoutes, registerGoalRoutes, registerTaskDecisionRoutes,
   registerRepoRoutes, registerCrewRoutes, registerFactoryRoutes,
 ];
 
