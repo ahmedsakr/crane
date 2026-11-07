@@ -2,6 +2,7 @@ import { errorMessage } from "@crane/contracts";
 import { useState } from "react";
 import { useApp } from "../../lib/app-context";
 import { api, settingsLabel, type DriverInfo } from "../../lib/api";
+import { isSignedOut } from "../../lib/auth";
 import { useToast } from "../../lib/toast";
 import { Chevron } from "../../components/Chevron";
 import { Section } from "../../components/Section";
@@ -48,7 +49,7 @@ export function RunsOn({ drivers, onChange }: { drivers: DriverInfo[]; onChange:
       toast({ text: `Factory default set to ${d.label}` });
       refresh();
     } catch (e) {
-      toast({ text: errorMessage(e) });
+      if (!isSignedOut(e)) toast({ text: errorMessage(e) });
     } finally {
       setBusy(null);
     }

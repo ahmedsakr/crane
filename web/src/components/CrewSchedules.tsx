@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { errorMessage, MAINTENANCE_ROLE, type Agent, type CrewSchedule, type CrewScheduleInput, type Repo } from "@crane/contracts";
 import { api } from "../lib/api";
+import { isSignedOut } from "../lib/auth";
 import {
   browserTimezone,
   DAY_PRESETS,
@@ -38,7 +39,7 @@ export function ScheduleList({ member, repos, schedules, error, reload, onEdit }
       await api.saveCrewSchedule(member.id, { ...toInput(s), enabled: !s.enabled }, s.id);
       await reload();
     } catch (e) {
-      toast({ text: errorMessage(e) });
+      if (!isSignedOut(e)) toast({ text: errorMessage(e) });
     } finally {
       setBusy(null);
     }

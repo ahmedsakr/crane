@@ -1,0 +1,184 @@
+/* ── sign-in ────────────────────────────────────────────── */
+.sign-in {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: max(24px, env(safe-area-inset-top, 0px)) var(--gutter) 48px;
+}
+.sign-in-card {
+  width: min(100%, 380px);
+  display: grid;
+  justify-items: start;
+  gap: 18px;
+  padding: 32px 30px 28px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+}
+.sign-in-card .brand-mark {
+  border-radius: 11px;
+}
+.sign-in-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 26px;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+.sign-in-form {
+  width: 100%;
+  display: grid;
+  gap: 14px;
+}
+.sign-in-field {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.sign-in-field .input {
+  width: 100%;
+  min-width: 0;
+  font-size: 16px; /* 16px keeps iOS from zooming in on focus. */
+  font-weight: 400;
+}
+.sign-in-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--bad-soft);
+  color: var(--bad);
+  font-size: 14px;
+}
+.sign-in-submit {
+  width: 100%;
+  margin-top: 4px;
+}
+.sign-in-note {
+  margin: 0;
+  font-size: 13px;
+}
+.sign-in-setup {
+  margin: 0;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+.sign-in-setup code {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+}
+@media (max-width: 560px) {
+  .sign-in {
+    place-items: start center;
+    padding-top: max(56px, env(safe-area-inset-top, 0px));
+  }
+  .sign-in-card {
+    padding: 26px 22px 22px;
+  }
+}
+
+/* ── account menu ───────────────────────────────────────── */
+.account {
+  position: relative;
+}
+.account-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  max-width: 180px;
+  padding: 0 12px 0 3px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--surface);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.account-button:hover,
+.account-button[aria-expanded="true"] {
+  border-color: var(--hairline-strong);
+}
+.account-initial {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--concrete);
+  font-size: 12px;
+  font-weight: 700;
+}
+.account-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 30;
+  width: max-content;
+  min-width: 200px;
+  max-width: min(280px, calc(100vw - 24px));
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lift);
+}
+.account-menu-who {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--hairline);
+  overflow-wrap: anywhere;
+}
+.account-menu-who small {
+  color: var(--graphite);
+  font-size: 12px;
+}
+.account-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  padding: 9px 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.account-menu button:hover,
+.account-menu button:focus-visible {
+  background: var(--surface-2);
+  outline: none;
+}
+@media (max-width: 760px) {
+  /* Phones show the initial alone, so the top row keeps room for the pill and Instruct. */
+  .account-button {
+    padding: 0;
+    width: 32px;
+    justify-content: center;
+    border-color: transparent;
+    background: transparent;
+  }
+  .account-name {
+    display: none;
+  }
+  .account-initial {
+    width: 30px;
+    height: 30px;
+  }
+}
