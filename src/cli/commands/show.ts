@@ -3,6 +3,7 @@ import {
   RUN_KIND_LABEL,
   acceptanceCheckRun,
   acceptanceFor,
+  actorLabel,
   driverLabel,
   followUpFor,
   lastMergeOutcome,
@@ -105,6 +106,7 @@ function visualReviewLines(task: Task): string[] {
 /** Model settings, look-outs, start time, and the finding it follows up. */
 function detailLines(store: Store, task: Task): string[] {
   const lines: string[] = [];
+  if (task.createdBy) lines.push(ui.dim(`  Started by ${actorLabel(task.createdBy)}`));
   const settings = settingsLabel(task);
   if (settings) lines.push(ui.dim(`  Model settings: ${settings}`));
   if (task.lookouts.length) lines.push(ui.dim(`  Also looks for: ${lookoutsLabel(task.lookouts)}`));

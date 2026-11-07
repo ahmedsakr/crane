@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { hostActor, withActor } from "../core/actor.js";
 import type { Store } from "../core/store.js";
 import { registerAgents } from "./commands/agents.js";
 import { registerAnalytics } from "./commands/analytics.js";
@@ -57,5 +58,10 @@ export function buildProgram(ctx: CliContext): Command {
 export async function runCli(argv: string[], target: Store): Promise<void> {
   const ctx = createCliContext(target);
   await ctx.actions.ensureFactoryRepo();
-  await buildProgram(ctx).parseAsync(argv);
+  const run = () => buildProgram(ctx).parseAsync(argv);
+  // Commands run as the host, so their decisions say so. The factory itself
+  // doesn't: its schedules and every request it serves would inherit the host.
+  await (FACTORY_COMMANDS.has(argv[2] ?? "") ? run() : withActor(hostActor(), run));
 }
+
+const FACTORY_COMMANDS = new Set(["serve", "start"]);

@@ -1,4 +1,5 @@
 /** Operators, their sessions and invites, and who did something. */
+import type { TaskEvent } from "./events.js";
 
 export type OperatorRole = "admin" | "operator";
 
@@ -78,6 +79,22 @@ export function normalizeUsername(username: string): string {
 
 export function actorLabel(actor: EventActor): string {
   return actor.kind === "operator" ? actor.name : `${actor.name} on the host`;
+}
+
+const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.trim() !== "";
+
+/** Whether stored JSON is a usable actor snapshot, so a malformed record shows no name rather than a broken one. */
+export function isEventActor(v: unknown): v is EventActor {
+  if (!v || typeof v !== "object") return false;
+  const a = v as Record<string, unknown>;
+  if (!nonEmpty(a.name)) return false;
+  return a.kind === "host" || (a.kind === "operator" && nonEmpty(a.id));
+}
+
+/** Who made an event, from the snapshot Crane stored with it; null when unattributed or malformed. */
+export function eventActor(e: Pick<TaskEvent, "data">): EventActor | null {
+  const actor = e.data?.actor;
+  return isEventActor(actor) ? actor : null;
 }
 
 // Order matters: Edge and Opera also claim Chrome, Chrome claims Safari, and iPads claim macOS.
