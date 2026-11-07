@@ -12,7 +12,8 @@ import { dirname, join } from "node:path";
 import { Store } from "../src/core/store.js";
 import { craneHome } from "../src/core/paths.js";
 import { OperatorActions } from "../src/factory/actions.js";
-import type { TaskKind, Autonomy, TaskStatus } from "@crane/contracts";
+import { withActor } from "../src/core/actor.js";
+import type { TaskKind, Autonomy, TaskStatus, EventActor } from "@crane/contracts";
 
 if (!process.env.CRANE_HOME) {
   console.error("Set CRANE_HOME to a scratch directory first. This script writes sample data.");
@@ -23,6 +24,12 @@ const home = craneHome();
 const store = new Store();
 const actions = new OperatorActions(store);
 await actions.ensureFactoryRepo();
+
+// Two invented operators, so the history shows who started and decided things.
+// They are snapshots only: no operator accounts exist, so the demo needs no sign-in.
+const robin: EventActor = { kind: "operator", id: "op-demo-robin", name: "Robin" };
+const kai: EventActor = { kind: "operator", id: "op-demo-kai", name: "Kai" };
+const as = <T>(actor: EventActor | null, fn: () => T): T => (actor ? withActor(actor, fn) : fn());
 
 function makeRepo(name: string) {
   const dir = join(home, "demo-repos", name);
@@ -86,7 +93,7 @@ function seedGoalInProgress() {
       tasks: tasks.map(({ status: _status, ...t }) => ({ ...t, rationale: "Demo assignment.", brief: "This is a demo task for goal orchestration. Write only a simulated note describing the named change.", acceptance: ["Simulated note written"] })) },
   } });
   store.syncGoals();
-  const approved = actions.approveGoal(goal.id, store.getGoal(goal.id)!.revision);
+  const approved = withActor(kai, () => actions.approveGoal(goal.id, store.getGoal(goal.id)!.revision));
   for (const { key, status } of tasks) {
     if (status !== "queued") store.updateTask(approved.tasks.find((t) => t.key === key)!.taskId, { status });
   }
@@ -138,13 +145,27 @@ function historyStatus(n: number, autonomy: Autonomy): TaskStatus {
   return autonomy === "propose" ? "approved" : "done";
 }
 
+/** Every third task has no starter, like one a schedule started. */
+function historyStarter(n: number): EventActor | null {
+  if (n % 3 === 0) return null;
+  return n % 2 ? robin : kai;
+}
+
+/** The operator's decision on a reviewed task, made by whoever started it (or Robin). */
+function seedDecision(taskId: string, status: TaskStatus, at: number, actor: EventActor | null) {
+  if (status !== "approved" && status !== "rejected") return;
+  const event = as(actor ?? robin, () => store.addEvent(taskId, "operator", status === "approved" ? "Approved" : "Declined"));
+  store.db.prepare("UPDATE events SET ts = ? WHERE id = ?").run(iso(Math.min(at, now)), event.id);
+}
+
 function seedHistory() {
   let n = 0;
   for (let day = 20; day >= 0; day--) {
     const perDay = 2 + ((day * 7) % 4);
     for (let i = 0; i < perDay; i++) {
       const [kind, title, repoId, autonomy] = history[n++ % history.length]!;
-      const m = store.createTask({ kind, title, brief: title, repoId, autonomy });
+      const starter = historyStarter(n);
+      const m = as(starter, () => store.createTask({ kind, title, brief: title, repoId, autonomy }));
       const start = now - day * 24 * hour - (9 + i * 3) * hour + Math.random() * hour;
       const end = start + (8 + Math.random() * 40) * 60_000;
       if (end > now) continue;
@@ -158,6 +179,7 @@ function seedHistory() {
       });
       seedRuns(m.id, { n, start, end, status });
       seedEvents(m.id, { n, start, end, repoId });
+      seedDecision(m.id, status, end + 5 * 60_000, starter);
     }
   }
   return n;
@@ -206,13 +228,13 @@ function seedEvents(taskId: string, { n, start, end, repoId }: { n: number; star
 // Fresh work for the simulated crew to pick up.
 function seedQueuedWork() {
   store.createTask({ kind: "maintenance", title: "Investigate the flaky webhook retry tests", brief: "Investigate the flaky webhook retry tests in payments-api", repoId: api.id, autonomy: "observe" });
-  store.createTask({ kind: "repo_feature", title: "Add a dark mode toggle to the storefront header", brief: "Add a dark mode toggle to the storefront header", repoId: web.id, autonomy: "propose" });
+  withActor(kai, () => store.createTask({ kind: "repo_feature", title: "Add a dark mode toggle to the storefront header", brief: "Add a dark mode toggle to the storefront header", repoId: web.id, autonomy: "propose" }));
   store.createTask({ kind: "maintenance", title: "Find unused exports across the storefront", brief: "Find unused exports across the storefront", repoId: web.id, autonomy: "observe" });
 }
 
 // A package split that came back with part of its scope unmet, and the follow-up waiting for it to land.
 function seedClientReview() {
-  const client = store.createTask({
+  const client = withActor(robin, () => store.createTask({
     kind: "maintenance",
     title: "Extract the payments client into its own package",
     brief: "Move src/client into a packages/client workspace package, and point callers at it.",
@@ -221,7 +243,7 @@ function seedClientReview() {
     acceptance: ["Callers import @payments/client, not ../client", "npm run build emits packages/client/dist"],
     acceptanceChecks: ["npm test", "npm run typecheck"],
     lookouts: ["refactoring", "test_gaps"],
-  });
+  }));
   store.updateTask(client.id, {
     status: "needs_review",
     branch: `crane/extract-the-payments-client-${client.id.slice(2)}`,

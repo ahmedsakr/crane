@@ -1,4 +1,5 @@
 /** Task lifecycle, scheduling and operator inputs. */
+import type { EventActor } from "./access.js";
 import type { DriverSettings } from "./drivers.js";
 import type { Lookout } from "./lookouts.js";
 import type { Report, ReviewCheckpoint, VisualReview } from "./report.js";
@@ -137,6 +138,8 @@ export interface Task {
   report: Report | null;
   costUsd: number;
   createdAt: string;
+  /** Who started it, as their name was then. Null for schedules, the factory itself, and tasks from before attribution. */
+  createdBy: EventActor | null;
   /** Earliest pickup time, in UTC. Null means immediately eligible; prerequisites still apply. */
   scheduledAt: string | null;
   /** Recurring crew schedule that started this run, retained after removal. */

@@ -1,4 +1,5 @@
 import { FINISHED_STATUSES, type DriverSettings, type NewTask, type Task, type TaskStatus, type TaskSummary } from "@crane/contracts";
+import { actorSnapshot } from "../actor.js";
 import { shortId } from "../ids.js";
 import type { Store } from "../store.js";
 import { toTask, type Row } from "./rows.js";
@@ -49,15 +50,21 @@ function insertTask(store: Store, input: NewTaskRecord, id: string, scheduledAt:
   store.db
     .prepare(
       `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, driver_settings,
-         prerequisites, acceptance, acceptance_checks, lookouts, status, created_at, scheduled_at, pre_approved_at, follow_up_of, follow_up_finding, schedule_id, postmortem_of, queue_position)
-       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?,
+         prerequisites, acceptance, acceptance_checks, lookouts, status, created_at, created_by, scheduled_at, pre_approved_at, follow_up_of, follow_up_finding, schedule_id, postmortem_of, queue_position)
+       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?,
          (SELECT COALESCE(MAX(queue_position), 0) + 1 FROM tasks WHERE status = 'queued'))`,
     )
     .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null,
       input.model ?? null, input.effort ?? null, input.assignee ?? null,
       input.driverSettings ? JSON.stringify(input.driverSettings) : null,
-      list(input.prerequisites), list(input.acceptance), list(input.acceptanceChecks), list(input.lookouts), ts, scheduledAt, input.preApprove ? ts : null,
-      input.followUp?.of ?? null, input.followUp?.finding ?? null, input.scheduleId ?? null, input.postmortemOf ?? null);
+      list(input.prerequisites), list(input.acceptance), list(input.acceptanceChecks), list(input.lookouts), ts, starter(input), scheduledAt,
+      input.preApprove ? ts : null, input.followUp?.of ?? null, input.followUp?.finding ?? null, input.scheduleId ?? null, input.postmortemOf ?? null);
+}
+
+/** A crew schedule starts its runs, whoever's context it fires in. */
+function starter(input: NewTaskRecord): string | null {
+  const actor = input.scheduleId ? null : actorSnapshot();
+  return actor ? JSON.stringify(actor) : null;
 }
 
 export function createTask(store: Store, input: NewTaskRecord): Task {

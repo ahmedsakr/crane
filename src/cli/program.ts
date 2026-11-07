@@ -1,7 +1,9 @@
 import { Command } from "commander";
+import { withActor } from "../core/actor.js";
 import type { Store } from "../core/store.js";
 import { registerAgents } from "./commands/agents.js";
 import { registerAnalytics } from "./commands/analytics.js";
+import { registerAuth } from "./commands/auth.js";
 import { registerChangeAgent } from "./commands/change-agent.js";
 import { registerDecisions } from "./commands/decisions.js";
 import { registerDiff } from "./commands/diff.js";
@@ -10,6 +12,7 @@ import { registerFactoryControl } from "./commands/factory-control.js";
 import { registerFollowUps } from "./commands/follow-ups.js";
 import { registerGoals } from "./commands/goals.js";
 import { registerHome } from "./commands/home.js";
+import { registerOperators } from "./commands/operators.js";
 import { registerPermissions } from "./commands/permissions.js";
 import { registerQueue } from "./commands/queue.js";
 import { registerRepos } from "./commands/repos.js";
@@ -19,9 +22,6 @@ import { registerServe } from "./commands/serve.js";
 import { registerShow } from "./commands/show.js";
 import { registerTasks } from "./commands/tasks.js";
 import { registerWatch } from "./commands/watch.js";
-import { withActor } from "../core/actor.js";
-import { registerAuth } from "./commands/auth.js";
-import { registerOperators } from "./commands/operators.js";
 import { createCliContext, type CliContext, type CliIo } from "./context.js";
 import { setupCommand } from "./setup.js";
 
@@ -65,8 +65,13 @@ export function buildProgram(ctx: CliContext): Command {
  */
 export async function runCli(argv: string[], target: Store, io: Partial<CliIo> = {}): Promise<void> {
   const ctx = createCliContext(target, io);
-  await withActor(ctx.host, async () => {
+  const run = async () => {
     await ctx.actions.ensureFactoryRepo();
     await buildProgram(ctx).parseAsync(argv);
-  });
+  };
+  // The factory itself doesn't run as the host: its schedules and every
+  // request it serves would inherit the host.
+  await (FACTORY_COMMANDS.has(argv[2] ?? "") ? run() : withActor(ctx.host, run));
 }
+
+const FACTORY_COMMANDS = new Set(["serve", "start"]);

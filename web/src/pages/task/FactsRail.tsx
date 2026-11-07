@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import type { TaskDetail } from "@crane/contracts";
+import { actorLabel, type TaskDetail } from "@crane/contracts";
 import { AUTONOMY_LABEL, lookoutsLabel, settingsLabel, STATUS_LABEL } from "../../lib/api";
 import { ago, duration, usd } from "../../lib/format";
 import { Runs } from "./Runs";
@@ -44,6 +44,10 @@ function Facts({ detail, view }: { detail: TaskDetail; view: TaskView }) {
     <dl className="facts">
       <dt>Task</dt>
       <dd className="mono">{task.id}</dd>
+      {task.createdBy && <>
+        <dt>Started by</dt>
+        <dd>{actorLabel(task.createdBy)}</dd>
+      </>}
       <dt>Freedom</dt>
       <dd>{AUTONOMY_LABEL[task.autonomy]}</dd>
       <dt>Agent</dt>

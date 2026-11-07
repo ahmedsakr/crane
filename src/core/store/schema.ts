@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   report TEXT,
   cost_usd REAL NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
+  created_by TEXT,
   scheduled_at TEXT,
   follow_up_of TEXT,
   follow_up_finding INTEGER,

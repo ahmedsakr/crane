@@ -1,9 +1,22 @@
 import type { CommandEvidence, EventType, TaskEvent } from "@crane/contracts";
+import { actorSnapshot } from "../actor.js";
 import type { Store } from "../store.js";
 import { toEvent, type Row } from "./rows.js";
 import { now } from "./shared.js";
 
-export function addEvent(store: Store, taskId: string, type: EventType, message: string, data?: Record<string, unknown> | null): TaskEvent {
+/**
+ * Operator events record who made them, as a snapshot of the current actor.
+ * Callers that pass their own `actor` keep it; events with no actor in
+ * context, such as schedules firing, stay unattributed.
+ */
+function attributed(type: EventType, data: Record<string, unknown> | null | undefined) {
+  if (type !== "operator" || (data && "actor" in data)) return data;
+  const actor = actorSnapshot();
+  return actor ? { ...data, actor } : data;
+}
+
+export function addEvent(store: Store, taskId: string, type: EventType, message: string, rawData?: Record<string, unknown> | null): TaskEvent {
+  const data = attributed(type, rawData);
   const ts = now();
   const info = store.db
     .prepare("INSERT INTO events(task_id, ts, type, message, data) VALUES(?, ?, ?, ?, ?)")

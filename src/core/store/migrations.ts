@@ -95,6 +95,8 @@ const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
   ["schedule_id", "TEXT"],
   ["visual_review", "TEXT"],
   ["review_checkpoint", "TEXT"],
+  // JSON EventActor snapshot of who started the task.
+  ["created_by", "TEXT"],
   // Older tasks share 0 and keep their original FIFO order until moved.
   ["queue_position", "INTEGER NOT NULL DEFAULT 0"],
 ];

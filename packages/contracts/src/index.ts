@@ -142,4 +142,6 @@ export {
   normalizeUsername,
   describeClient,
   actorLabel,
+  isEventActor,
+  eventActor,
 } from "./access.js";

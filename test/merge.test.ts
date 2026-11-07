@@ -63,6 +63,7 @@ function setup(ctx: TestContext, opts: { remote?: boolean } = {}) {
     report: null,
     costUsd: 0,
     createdAt: "",
+    createdBy: null,
     scheduledAt: null,
     scheduleId: null,
     followUpOf: null,

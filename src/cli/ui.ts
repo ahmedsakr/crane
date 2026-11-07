@@ -1,6 +1,6 @@
 import pc from "picocolors";
 import type { Agent, AgentState, BlockedTool, Task, TaskEvent, TaskStatus } from "@crane/contracts";
-import { isScheduled, KIND_LABEL, STATUS_LABEL } from "@crane/contracts";
+import { actorLabel, eventActor, isScheduled, KIND_LABEL, STATUS_LABEL } from "@crane/contracts";
 
 /** Crane yellow: the one accent colour, used sparingly (brand mark, the thing that needs you). */
 const yellow = (s: string) => (pc.isColorSupported ? `\x1b[38;2;242;184;7m${s}\x1b[39m` : s);
@@ -114,8 +114,10 @@ export function eventLine(e: TaskEvent): string {
       return `${t}  ${pc.red("✕")} ${pc.red(body)}`;
     case "blocked":
       return `${t}  ${accent("⊘")} ${truncate(body, width() - 14)}`;
-    case "operator":
-      return `${t}  ${pc.magenta("›")} ${body}`;
+    case "operator": {
+      const actor = eventActor(e);
+      return `${t}  ${pc.magenta("›")} ${body}${actor ? dim(` · ${actorLabel(actor)}`) : ""}`;
+    }
     case "status":
       return `${t}  ${dim("—")} ${dim(body)}`;
   }

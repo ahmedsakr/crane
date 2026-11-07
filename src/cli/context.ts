@@ -1,6 +1,6 @@
-import { userInfo } from "node:os";
 import { createInterface } from "node:readline";
 import type { EventActor } from "@crane/contracts";
+import { hostActor } from "../core/actor.js";
 import type { Store } from "../core/store.js";
 import { OperatorActions } from "../factory/actions.js";
 
@@ -23,16 +23,8 @@ export function createCliContext(store: Store, io: Partial<CliIo> = {}): CliCont
   return { store, actions: new OperatorActions(store), host: hostActor(), io: { readLine: io.readLine ?? readStdinLine } };
 }
 
-/** The host's login name, or "host" when the system can't say. */
-export function hostActor(): EventActor {
-  let name = "";
-  try {
-    name = userInfo().username;
-  } catch {
-    // Some containers run as a uid with no passwd entry.
-  }
-  return { kind: "host", name: name || "host" };
-}
+/** The host's login name, or "host" when the system can't say. One definition, shared with `runCli`. */
+export { hostActor };
 
 function readStdinLine(): Promise<string> {
   return new Promise((resolve) => {

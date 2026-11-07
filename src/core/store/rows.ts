@@ -1,4 +1,4 @@
-import { isLookout, type Repo, type Task, type TaskStatus, type DriverSettings, type Report,
+import { isEventActor, isLookout, type EventActor, type Repo, type Task, type TaskStatus, type DriverSettings, type Report,
   type TaskEvent, type EventType, type AgentRun, type RunKind, type RunOutcome, type RunUsage,
   type Agent, type AgentState } from "@crane/contracts";
 
@@ -46,6 +46,7 @@ export function toTask(r: Row): Task {
     report: r.report ? (JSON.parse(r.report as string) as Report) : null,
     costUsd: (r.cost_usd as number) ?? 0,
     createdAt: r.created_at as string,
+    createdBy: storedActor(r.created_by),
     scheduledAt: (r.scheduled_at as string) ?? null,
     scheduleId: (r.schedule_id as string) ?? null,
     followUpOf: (r.follow_up_of as string) ?? null,
@@ -53,6 +54,16 @@ export function toTask(r: Row): Task {
     startedAt: (r.started_at as string) ?? null,
     finishedAt: (r.finished_at as string) ?? null,
   };
+}
+
+function storedActor(raw: unknown): EventActor | null {
+  if (typeof raw !== "string") return null;
+  try {
+    const actor: unknown = JSON.parse(raw);
+    return isEventActor(actor) ? actor : null;
+  } catch {
+    return null;
+  }
 }
 
 export function toEvent(r: Row): TaskEvent {
