@@ -1,0 +1,38 @@
+{
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "name": "backend",
+  "projectType": "application",
+  "tags": ["kind:backend"],
+  "implicitDependencies": [
+    "@crane/agent-drivers",
+    "@crane/agent-policy",
+    "@crane/agent-protocol",
+    "@crane/contracts",
+    "@crane/diagnostics",
+    "@crane/worktree-deps"
+  ],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node scripts/check-workspace-links.mjs && esbuild \"src/**/*.ts\" --outdir=dist --outbase=src --platform=node --format=esm --target=es2022 --sourcemap --log-level=warning",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": ["^build"],
+      "inputs": ["default", "{workspaceRoot}/bin/**/*", "^default"],
+      "outputs": ["{workspaceRoot}/dist"],
+      "cache": true
+    },
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node scripts/check-workspace-links.mjs && tsc -p tsconfig.json --noEmit",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": ["^build"],
+      "inputs": ["default", "^default"],
+      "outputs": [],
+      "cache": true
+    }
+  }
+}

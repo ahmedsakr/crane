@@ -1,0 +1,63 @@
+{
+  "$schema": "../node_modules/nx/schemas/project-schema.json",
+  "name": "checks",
+  "projectType": "application",
+  "tags": ["kind:checks"],
+  "implicitDependencies": [
+    "@crane/agent-drivers",
+    "@crane/agent-policy",
+    "@crane/agent-protocol",
+    "@crane/contracts",
+    "@crane/diagnostics",
+    "@crane/web",
+    "@crane/worktree-deps",
+    "backend"
+  ],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node scripts/check-workspace-links.mjs && tsc -p tsconfig.test.json",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": [
+        {
+          "projects": [
+            "@crane/agent-drivers",
+            "@crane/agent-policy",
+            "@crane/agent-protocol",
+            "@crane/contracts",
+            "@crane/diagnostics",
+            "@crane/worktree-deps"
+          ],
+          "target": "build"
+        }
+      ],
+      "inputs": ["default", "{workspaceRoot}/scripts/**/*", "^default"],
+      "outputs": [],
+      "cache": true
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node scripts/check-workspace-links.mjs && node --import tsx --test test/*.test.ts",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": [
+        {
+          "projects": [
+            "@crane/agent-drivers",
+            "@crane/agent-policy",
+            "@crane/agent-protocol",
+            "@crane/contracts",
+            "@crane/diagnostics",
+            "@crane/worktree-deps"
+          ],
+          "target": "build"
+        }
+      ],
+      "inputs": ["{workspaceRoot}/**/*", "sharedGlobals"],
+      "cache": false
+    }
+  }
+}

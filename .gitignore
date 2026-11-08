@@ -2,6 +2,7 @@ node_modules/
 dist/
 web/dist/
 .crane/
+.nx/
 *.log
 .DS_Store
 .env
