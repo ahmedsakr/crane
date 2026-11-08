@@ -11,6 +11,8 @@ export interface RunContext {
   repo: Repo | null;
   /** Directory the agent works in: the repo itself (observe) or an isolated worktree. */
   cwd: string;
+  /** Existing, ignored directory inside cwd for this attempt's command logs; absent for observe runs. */
+  logDirectory?: string;
   signal: AbortSignal;
   emit: (type: EventType, message: string, data?: Record<string, unknown>) => void;
   /** Set when the run is a narrower job than working the task itself. */

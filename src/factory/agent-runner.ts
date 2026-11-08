@@ -5,6 +5,7 @@ import type { Store } from "../core/store.js";
 import { driverSettings, isAvailable } from "./drivers.js";
 import { sleep } from "./run-limits.js";
 import { siblingTasksFor } from "./task-context.js";
+import { prepareAgentLogs } from "./agent-logs.js";
 
 export interface AgentRunnerDeps {
   store: Store;
@@ -17,7 +18,7 @@ export interface AgentRunnerDeps {
 /** What the caller decides about a run. The runner fills in usage, tools, limits and settings. */
 export type AgentRunRequest = Omit<
   RunContext,
-  "onUsage" | "allowedTools" | "commandAccess" | "craneHome" | "maxTurns" | "model" | "effort"
+  "onUsage" | "allowedTools" | "commandAccess" | "craneHome" | "maxTurns" | "model" | "effort" | "logDirectory"
 >;
 
 /**
@@ -31,6 +32,7 @@ async function runWithRetry(deps: AgentRunnerDeps, driver: AgentDriver, ctx: Run
     const current = store.getTask(ctx.task.id) ?? ctx.task;
     return driver.run({
       ...ctx,
+      logDirectory: await prepareAgentLogs(ctx),
       // Operator authorization may change between resolver phases or retry attempts.
       task: { ...ctx.task, preApprovedAt: current.preApprovedAt, visualReview: current.visualReview },
       resumeSession,

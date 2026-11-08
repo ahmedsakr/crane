@@ -245,7 +245,17 @@ function lookoutsBrief(task: Task): string {
 }
 
 /** What the factory knows about the task's surroundings when the run starts. */
-type TaskContext = Pick<RunContext, "siblingTasks" | "prerequisites" | "commandEvidence" | "priorRefusals" | "postmortemPrompt" | "dependencyProblem"> & Partial<Pick<RunContext, "task" | "job">>;
+type TaskContext = Pick<RunContext, "siblingTasks" | "prerequisites" | "commandEvidence" | "priorRefusals" | "postmortemPrompt" | "dependencyProblem" | "logDirectory"> & Partial<Pick<RunContext, "task" | "job">>;
+
+function logsBrief(context: TaskContext): string {
+  if (!context.logDirectory) return "";
+  return [
+    "## Command logs",
+    `Crane created this ignored, task-local log directory before starting this attempt: ${JSON.stringify(context.logDirectory)}.`,
+    "If you need to save command output, write logs inside that existing directory using a shell-quoted path. It is inside your worktree; do not use a destination outside the worktree or create a placeholder first. This does not expand command permissions: if a command is refused, do not retry it through another path or tool. Logs remain scratch files and are removed with the worktree.",
+    "Run each check separately and retain its authoritative process exit status. Text such as exit=0 in a log or echoed by a shell is not process metadata; if the tool supplies no authoritative exit status, report the outcome as unknown.",
+  ].join("\n\n");
+}
 
 function dependencyBrief(context: TaskContext): string {
   if (!context.dependencyProblem) return "";
@@ -307,6 +317,7 @@ export function userPrompt(task: Task, job?: AgentJob, context: TaskContext = {}
       `Merging \`${task.branch}\` into \`${job.base}\` made merge commit \`${job.commit}\`, which failed ${job.failures.length === 1 ? "this check" : "these checks"}:`,
       failedChecksBrief(job),
       `## The original task\n\n${task.brief}${summary}`,
+      logsBrief(context),
       visualDecisionBrief(task, job),
       commandEvidenceBrief(context),
       priorRefusalsBrief(context.priorRefusals),
@@ -320,6 +331,7 @@ export function userPrompt(task: Task, job?: AgentJob, context: TaskContext = {}
         ? `Validate resolution checkpoint \`${job.checkpoint}\` for \`${task.branch}\` into \`${job.base}\`. Saved merge files:\n\n${job.files.map((f) => `- ${f}`).join("\n")}`
         : `Merging \`${task.branch}\` into \`${job.base}\` conflicts in:\n\n${job.files.map((f) => `- ${f}`).join("\n")}`,
       `## The original task\n\n${task.brief}${summary}`,
+      logsBrief(context),
       visualDecisionBrief(task, job),
       commandEvidenceBrief(context),
       priorRefusalsBrief(context.priorRefusals),
@@ -328,6 +340,7 @@ export function userPrompt(task: Task, job?: AgentJob, context: TaskContext = {}
   return [
     `# ${task.title}\n\n${context.postmortemPrompt ?? task.brief}`,
     visualDecisionBrief(task),
+    logsBrief(context),
     dependencyBrief(context),
     commandEvidenceBrief(context),
     priorRefusalsBrief(context.priorRefusals),
@@ -349,6 +362,7 @@ export function resumePrompt(context: TaskContext = {}, opts: PromptOptions = {}
     "You were stopped mid-step while working on this task, because Crane restarted or the API had a temporary error, and Crane has resumed this session. Your work so far is still in this directory.",
     "Pick up where you left off without redoing finished work. If you were in the middle of a command or an edit, check whether it finished (`git status`, `git diff`) before moving on. Only re-run a command if it was not denied and repeating it is safe.",
     "A restart stops the commands you had running, so an install you started may not have finished. In an isolated worktree, Crane prepares the dependencies again and waits for that to finish before resuming you; check the current state rather than assuming your install completed.",
+    logsBrief(context),
     dependencyBrief(context),
     commandEvidenceBrief(context),
     priorRefusalsBrief(context.priorRefusals),

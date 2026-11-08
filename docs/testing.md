@@ -12,6 +12,19 @@ skip tests in the full suite, or replace either gate.
 
 ## Validation order
 
+Before each editing agent attempt (including resumed sessions, merge resolution,
+and check fixes), the trusted runner creates an ignored `.crane-logs-<suffix>/`
+directory inside the isolated worktree. The fresh or resume prompt supplies its
+exact absolute path. Use that existing directory with a shell-quoted path when
+saving command output; no placeholder or outside-worktree log destination is
+needed. The directory ignores its own contents even in repositories without
+Crane ignore rules, and is removed with the worktree. Investigate-only runs do
+not create a directory or gain write permission. This preparation does not
+change command permissions or authorize retrying a refused command.
+
+Log text and shell-echoed `exit=0` do not establish authoritative process metadata.
+If the command tool provides no exit status, report the process outcome as unknown.
+
 Run `git diff --check` as a separate command from informational Git commands
 such as `git status`, `git diff --stat`, or diff inspection, and retain its own
 exit status. Do not combine them as `git diff --check; git status`: the recorded
