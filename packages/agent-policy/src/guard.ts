@@ -33,7 +33,7 @@ function hardBash(raw: string, parts: GuardCommand[], ctx: GuardContext): GuardC
   if (raw.includes("crane.db")) return "operator-actions";
   for (const part of parts) {
     for (const target of redirectTargets(part.words)) {
-      if (ctx.profile === "inspect" && target === "/dev/null") continue;
+      if (target === "/dev/null") continue;
       const category = writeCategory(target, part.cwd, ctx);
       if (category) return category;
     }
