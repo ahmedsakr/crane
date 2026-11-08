@@ -26,29 +26,38 @@ export interface SetupReport {
 
 /** No shell, login, network request, or captured CLI output. Bound hung version checks. */
 export function probeCommand(bin: string, launch = spawn): Promise<ProbeResult> {
+  return probeProcess(bin, ["--version"], "Version check", launch);
+}
+
+/** Exercise bubblewrap's user and network namespaces without changing the host. */
+export function probeCodexSandbox(launch = spawn): Promise<ProbeResult> {
+  return probeProcess("bwrap", ["--ro-bind", "/", "/", "--unshare-user", "--unshare-net", "true"], "Sandbox probe", launch);
+}
+
+function probeProcess(bin: string, args: string[], label: string, launch: typeof spawn): Promise<ProbeResult> {
   return new Promise(resolve => {
     try {
-      const child = launch(bin, ["--version"], {
+      const child = launch(bin, args, {
         stdio: "ignore", timeout: PROBE_TIMEOUT_MS, killSignal: "SIGKILL",
       });
       child.once("error", (error: NodeJS.ErrnoException) => resolve({
         ok: false,
-        detail: error.code === "ENOENT" ? "Executable not found" : `Could not run version check (${error.code ?? "spawn error"})`,
+        detail: error.code === "ENOENT" ? "Executable not found" : `Could not run ${label.toLowerCase()} (${error.code ?? "spawn error"})`,
       }));
       child.once("exit", (code, signal) => resolve({
         ok: code === 0 && signal === null,
-        detail: probeExitDetail(code, signal),
+        detail: probeExitDetail(code, signal, label),
       }));
     } catch {
-      resolve({ ok: false, detail: "Could not start version check" });
+      resolve({ ok: false, detail: `Could not start ${label.toLowerCase()}` });
     }
   });
 }
 
-function probeExitDetail(code: number | null, signal: NodeJS.Signals | null): string {
-  if (signal) return `Version check stopped by ${signal} (limit: ${PROBE_TIMEOUT_MS / 1000}s)`;
-  if (code === 0) return "Version check passed";
-  return `Version check exited with ${code ?? "unknown status"}`;
+function probeExitDetail(code: number | null, signal: NodeJS.Signals | null, label: string): string {
+  if (signal) return `${label} stopped by ${signal} (limit: ${PROBE_TIMEOUT_MS / 1000}s)`;
+  if (code === 0) return `${label} passed`;
+  return `${label} exited with ${code ?? "unknown status"}`;
 }
 
 /** Loading the JS wrapper alone doesn't prove its native binding matches this Node runtime. */
@@ -69,13 +78,43 @@ export async function probeSqlite(): Promise<ProbeResult> {
 
 interface SetupRuntime {
   nodeVersion: string;
+  platform: NodeJS.Platform;
   env: NodeJS.ProcessEnv;
   command: (bin: string) => Promise<ProbeResult>;
   sqlite: () => Promise<ProbeResult>;
+  codexSandbox: () => Promise<ProbeResult>;
+}
+
+const CODEX_SANDBOX_FIX = `Make sure bwrap is installed. On Ubuntu 24.04+ with kernel.apparmor_restrict_unprivileged_userns=1, AppArmor can cause "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted". Ask the host administrator to grant userns to /usr/bin/bwrap with this profile (Crane does not run these commands):
+sudo tee /etc/apparmor.d/bwrap >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/bwrap>
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/bwrap
+Rerun crane setup afterward. Keep Codex's sandbox enabled.`;
+
+async function codexSandboxCheck(runtime: SetupRuntime, codex: ProbeResult, claude: ProbeResult): Promise<SetupCheck> {
+  const base = { id: "codex-sandbox", label: "Codex Linux sandbox" };
+  if (runtime.platform !== "linux" || !codex.ok) {
+    const reason = runtime.platform !== "linux" ? "not Linux" : "Codex CLI unavailable";
+    return { ...base, status: "info", detail: `Not applicable: ${reason}` };
+  }
+  const result = await runtime.codexSandbox();
+  if (result.ok) return { ...base, status: "pass", detail: result.detail };
+  return {
+    ...base, status: claude.ok ? "info" : "fail",
+    detail: `Not ready: ${result.detail}`, fix: CODEX_SANDBOX_FIX,
+  };
 }
 
 export async function inspectSetup(runtime: SetupRuntime = {
-  nodeVersion: process.versions.node, env: process.env, command: probeCommand, sqlite: probeSqlite,
+  nodeVersion: process.versions.node, platform: process.platform, env: process.env,
+  command: probeCommand, sqlite: probeSqlite, codexSandbox: probeCodexSandbox,
 }): Promise<SetupReport> {
   const version = runtime.nodeVersion.split(".").map(Number);
   const minimum = MIN_NODE_VERSION.split(".").map(Number);
@@ -87,6 +126,8 @@ export async function inspectSetup(runtime: SetupRuntime = {
     runtime.command(runtime.env.CRANE_CLAUDE_BIN ?? "claude"),
     runtime.command(runtime.env.CRANE_CODEX_BIN ?? "codex"),
   ]);
+  const sandbox = await codexSandboxCheck(runtime, codex, claude);
+  const agentOk = claude.ok || (codex.ok && sandbox.status !== "fail");
   const required = (id: string, label: string, result: ProbeResult, fix: string): SetupCheck => ({
     id, label, status: result.ok ? "pass" : "fail", detail: result.detail, ...(!result.ok ? { fix } : {}),
   });
@@ -104,10 +145,11 @@ export async function inspectSetup(runtime: SetupRuntime = {
       "Install Claude Code (https://code.claude.com), then run claude to log in. Check CRANE_CLAUDE_BIN if set."),
     agent("codex", "Codex", codex,
       "Run npm install -g @openai/codex, then codex login. Check CRANE_CODEX_BIN if set."),
+    sandbox,
     required("agent", "At least one real agent", {
-      ok: claude.ok || codex.ok,
-      detail: claude.ok || codex.ok ? "A real agent CLI is available; login has not been checked"
-        : "Neither Claude Code nor Codex works here; Crane can only run simulated agents",
+      ok: agentOk,
+      detail: agentOk ? "A real agent CLI is available; login has not been checked"
+        : "Neither Claude Code nor Codex is ready here; Crane can only run simulated agents",
     }, "Install and log in to either Claude Code or Codex using the steps above. You only need one."),
   ];
   return {
