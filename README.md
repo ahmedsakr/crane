@@ -178,9 +178,14 @@ crane do "investigate why the checkout tests are flaky in my-app"
 
 `crane setup` checks the running Node.js version (20.19 or newer), npm, Git,
 Crane's native SQLite binding, and the Claude Code and Codex executables. Only
-one real agent CLI is required; a missing alternative does not fail setup.
+one ready real agent CLI is required; a missing alternative or a broken Codex
+sandbox does not fail setup when Claude Code is available. On Linux, when Codex
+is installed, setup also probes `bwrap` with a read-only root and new user and
+network namespaces to verify its network-off sandbox can start. Ubuntu 24.04+
+may need the AppArmor profile below; setup reports the symptom and fix.
 It respects `CRANE_CLAUDE_BIN` and `CRANE_CODEX_BIN`. Checks are local, run each
-CLI with `--version` with a ten-second limit, and do not install tools, log in,
+CLI with `--version`, give each command (including the sandbox probe) a ten-second
+limit, and do not install tools, run sudo, log in,
 open Crane's persistent database, or change settings. A failed requirement
 exits with status 1; successful checks exit with status 0. Use
 `crane setup --json` for structured results (`ready`, `checks`, and `unchecked`).
@@ -192,7 +197,26 @@ its normal workspace preflight runs first.
 Agents run through a coding agent CLI you already have, using its existing login:
 
 - [Claude Code](https://code.claude.com), headless (`claude -p`).
-- [Codex](https://github.com/openai/codex), non-interactive (`codex exec`). Investigate-only tasks run in Codex's read-only sandbox. Everything else runs in its workspace sandbox with the network off, confined to the task's worktree, so Codex can't commit, push, or touch your checkout. Crane commits what it leaves. Codex reports tokens but not cost, so its runs count as $0 in analytics.
+- [Codex](https://github.com/openai/codex), non-interactive (`codex exec`). Investigate-only tasks run in Codex's read-only sandbox. Everything else runs in its workspace sandbox with the network off, confined to the task's worktree, so Codex can't commit, push, or touch your checkout. Crane commits what it leaves. On Linux, `bwrap` must be installed and able to create user and network namespaces. On Ubuntu 24.04+ with `kernel.apparmor_restrict_unprivileged_userns=1`, AppArmor can prevent loopback configuration, failing every command with `bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`. Apply the host profile below and rerun `crane setup`; keep Codex's sandbox enabled. Codex reports tokens but not cost, so its runs count as $0 in analytics.
+
+For that Ubuntu AppArmor restriction, ask the host administrator to create and
+load this profile granting user namespaces to `/usr/bin/bwrap`:
+
+```sh
+sudo tee /etc/apparmor.d/bwrap >/dev/null <<'EOF'
+abi <abi/4.0>,
+include <tunables/global>
+
+profile bwrap /usr/bin/bwrap flags=(unconfined) {
+  userns,
+  include if exists <local/bwrap>
+}
+EOF
+sudo apparmor_parser -r /etc/apparmor.d/bwrap
+```
+
+These commands change the host's AppArmor policy; `crane setup` only probes and
+prints guidance, and never applies the fix itself.
 
 The Crew page keeps eight members available, split into active and on-call, and flags queued work when no one is free to take it. Use **Activate** on an on-call member's row to bring them into the pool. Tap a member's row to open their sheet, where **Put on-call** lets them finish current work and stop taking assignments. Each member can have a default agent, also in their sheet; task choices and resumed sessions take priority. These preferences survive restarts. From the CLI, use `crane agents configure Hoist --active --agent codex`, `crane agents configure Hoist --on-call`, or `crane agents configure Hoist --agent default` to follow the factory default.
 
