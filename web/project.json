@@ -14,7 +14,7 @@
       "dependsOn": ["^build"],
       "inputs": ["default", "^default"],
       "outputs": ["{projectRoot}/dist"],
-      "cache": true
+      "cache": false
     },
     "typecheck": {
       "executor": "nx:run-commands",

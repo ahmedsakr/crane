@@ -79,6 +79,9 @@ export const TEST_GROUPS: readonly TestGroup[] = [
   {
     id: "build", kind: "build", projects: [], repositoryWide: true,
     // Build/lifecycle/fixture tests read configs, scripts and trees rather than just imports.
-    suites: suites("build", "dashboard", "screenshot-fixture", "test-runner", "test-runner-process", "webbuild", "workspace-links"),
+    suites: suites(
+      "build", "dashboard", "screenshot-fixture", "tasks", "tasks-process", "test-runner", "test-runner-process", "webbuild",
+      "workspace-links",
+    ),
   },
 ];

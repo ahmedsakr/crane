@@ -1,9 +1,9 @@
 # Root test ownership and runner interface
 
-The Nx foundation is unchanged. This layer publishes ownership and execution
-interfaces for command wiring; no root npm script or Nx target uses it yet.
-`npm test` still builds packages and runs `node --import tsx --test test/*.test.ts`.
-There is no test-result cache.
+This layer publishes ownership and execution interfaces. `npm test` builds the
+packages through Nx and runs every root suite with this runner, and
+`npm run affected:test` runs the suites `affectedTestGroups` selects; see
+[Commands](nx.md#commands). There is no test-result cache.
 
 `scripts/test-groups.ts` assigns every immediate `test/*.test.ts` suite exactly
 once. Group ids are stable interfaces for the wiring task:
@@ -65,7 +65,9 @@ configuration, root configuration/manifests, docs and unrecognized paths select
 all groups. A new or deleted suite also selects all groups with diagnostics;
 `test/test-ownership.test.ts` fails the full validation until its catalog is
 updated. A newly imported cross-project dependency likewise requires updating
-the group's declared projects. No affected npm command is enabled in this task.
+the group's declared projects. `npm run affected:test` (`scripts/tasks.ts`)
+resolves the change set from Git and never passes an empty one: no changes
+runs everything instead.
 
 ## Runner
 

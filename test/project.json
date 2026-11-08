@@ -40,7 +40,7 @@
     "test": {
       "executor": "nx:run-commands",
       "options": {
-        "command": "node scripts/check-workspace-links.mjs && node --import tsx --test test/*.test.ts",
+        "command": "node scripts/check-workspace-links.mjs && node --import tsx scripts/run-test-groups.ts --full",
         "cwd": "{workspaceRoot}"
       },
       "dependsOn": [
