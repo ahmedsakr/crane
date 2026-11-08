@@ -4,8 +4,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 import type { AgentDriver, RunContext, RunResult } from "@crane/agent-protocol";
-import type { Finding, TaskKind } from "@crane/contracts";
-import { suggestRules } from "@crane/agent-policy";
+import type { BlockedCall, Finding, TaskKind } from "@crane/contracts";
+import { classifyToolCall, suggestRules, type GuardContext } from "@crane/agent-policy";
 
 const run = promisify(execFile);
 
@@ -65,12 +65,10 @@ export class SimulatedDriver implements AgentDriver {
         await writeFile(note, `# ${task.title}\n\nSimulated change, in progress.\n`);
         emit("tool", `Wrote .crane-simulated/${task.id}.md`, { simulated: true });
       }
-      if (type === "blocked") {
-        // Shaped like the Claude Code driver's, so the decision flow can be tried offline.
-        const rules = suggestRules("Bash", { command: message }, ["Bash(tail:*)", "Bash(head:*)", "Bash(grep:*)"]);
-        emit("blocked", `Blocked: ${message}`, { tool: "Bash", command: message, rules, simulated: true });
-      } else emit(type, message, { simulated: true });
+      if (type === "blocked") emitAllowlistRefusal(ctx, message);
+      else emit(type, message, { simulated: true });
     }
+    await this.emitGuardRefusals(ctx);
     await sleep(this.stepMs, signal);
     // When allowed to change code, leave a real (harmless) change so the review and diff flow is exercised.
     if (task.autonomy !== "observe") {
@@ -90,6 +88,13 @@ export class SimulatedDriver implements AgentDriver {
         completion: { status: "completed", reason: "Simulated task delivered", evidence: "Markdown note written" },
       },
     };
+  }
+
+  private async emitGuardRefusals(ctx: RunContext) {
+    for (const refusal of guardRefusals(ctx)) {
+      await sleep(this.stepMs * 0.5, ctx.signal);
+      ctx.emit("blocked", `Blocked: ${refusal.command}`, { ...refusal, simulated: true });
+    }
   }
 
   /** A simulated agent can't fix real code, so it changes nothing and Crane hands the merge back. */
@@ -134,6 +139,46 @@ export function keepBothSides(text: string): string {
     else if (state !== "base") out.push(line);
   }
   return out.join("\n");
+}
+
+/** Shaped like the Claude Code driver's allowlist refusal, so the decision flow can be tried offline. */
+function emitAllowlistRefusal(ctx: RunContext, command: string) {
+  const rules = suggestRules("Bash", { command }, ["Bash(tail:*)", "Bash(head:*)", "Bash(grep:*)"]);
+  ctx.emit("blocked", `Blocked: ${command}`, { tool: "Bash", command, rules, simulated: true });
+}
+
+/** What a simulated agent tries in "Most commands" repos: one call the guard refuses for good, one the operator can allow. */
+const GUARDED_COMMANDS = ["git branch -f main HEAD", "npm publish"];
+/** And what auto mode's classifier refuses after the guard lets it through. */
+const AUTO_MODE_REFUSAL = { command: "npm run db:reset", reason: "Simulated: resetting the shared database goes beyond what the task asked for." };
+
+/**
+ * Guard and auto-mode refusals shaped like the Claude Code driver's, so each
+ * kind can be seen offline. The guard's verdicts are real; auto mode's is made up.
+ * Investigate-only runs have no guard, like the real driver.
+ */
+export function guardRefusals(ctx: Pick<RunContext, "task" | "repo" | "cwd" | "commandAccess" | "craneHome" | "allowedTools">): BlockedCall[] {
+  const access = ctx.commandAccess ?? "listed";
+  if (access === "listed" || ctx.task.autonomy === "observe") return [];
+  const guard: GuardContext = {
+    access, profile: "worktree", worktree: ctx.cwd, checkout: ctx.repo?.path ?? ctx.cwd,
+    defaultBranch: ctx.repo?.defaultBranch ?? "main", craneHome: ctx.craneHome ?? "", home: null, allowed: ctx.allowedTools ?? [],
+  };
+  const refusals: BlockedCall[] = [];
+  for (const [i, command] of GUARDED_COMMANDS.entries()) {
+    const verdict = classifyToolCall({ tool: "Bash", input: { command } }, guard);
+    if (verdict.decision !== "deny") continue;
+    refusals.push({
+      tool: "Bash", command, toolUseId: `sim-guard-${i}`, refusal: { source: "crane.guard", reason: verdict.reason },
+      guard: { category: verdict.category ?? "guard-error", overridable: verdict.overridable }, rules: verdict.rules,
+    });
+  }
+  if (access === "auto") {
+    const { command, reason } = AUTO_MODE_REFUSAL;
+    refusals.push({ tool: "Bash", command, toolUseId: "sim-auto-mode", refusal: { source: "claude.auto-mode", reason },
+      rules: suggestRules("Bash", { command }, guard.allowed) });
+  }
+  return refusals;
 }
 
 function sleep(ms: number, signal: AbortSignal) {

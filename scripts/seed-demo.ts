@@ -47,6 +47,27 @@ function makeRepo(name: string) {
 
 const api = makeRepo("payments-api");
 const web = makeRepo("storefront");
+// One repo of each wider command access, so the Repos page and simulated runs show both.
+actions.setCommandAccess(api.id, "auto");
+actions.setCommandAccess(web.id, "most");
+
+/** Refusals shaped like the Claude Code driver's: Crane's guard, for good and until allowed, and auto mode. */
+const GUARD_REFUSALS = {
+  hard: { tool: "Bash", command: "git branch -f main HEAD", rules: [],
+    refusal: { source: "crane.guard", reason: "Changing shared Git state is Crane's job and requires the operator's approval." },
+    guard: { category: "shared-git", overridable: false } },
+  publish: { tool: "Bash", command: "npm publish --access public", rules: ["Bash(npm publish:*)"],
+    refusal: { source: "crane.guard", reason: "Publishing or changing remote resources requires an operator rule for this repository." },
+    guard: { category: "publish", overridable: true } },
+  autoMode: { tool: "Bash", command: "npm run db:reset", rules: ["Bash(npm run db:reset:*)"],
+    refusal: { source: "claude.auto-mode", reason: "Resetting the shared database goes beyond what the task asked for." } },
+} as const;
+
+function seedRefusal(taskId: string, at: number, kind: keyof typeof GUARD_REFUSALS) {
+  const call = GUARD_REFUSALS[kind];
+  store.db.prepare("INSERT INTO events(task_id, ts, type, message, data) VALUES(?, ?, 'blocked', ?, ?)")
+    .run(taskId, iso(Math.min(at, now)), `Blocked: ${call.command}`, JSON.stringify({ ...call, toolUseId: `demo-${kind}-${taskId}` }));
+}
 
 // Keep every demo assignment simulated, including after the operator approves its plan.
 function seedGoal() {
@@ -222,6 +243,8 @@ function seedEvents(taskId: string, { n, start, end, repoId }: { n: number; star
     if (n % 4 === 0) {
       blocked.run(taskId, at, "Blocked: docker compose up -d db", JSON.stringify({ tool: "Bash", command: "docker compose up -d db", rules: ["Bash(docker compose:*)"] }));
     }
+    // Since the repo widened its commands, Crane's guard keeps refusing a publish the operator hasn't allowed.
+    if (n % 3 === 0) seedRefusal(taskId, start + (end - start) / 2, "publish");
   }
 }
 
@@ -274,6 +297,10 @@ function seedClientReview() {
   });
   const branch = store.getTask(client.id)!.branch!;
   seedClientBranch(api.path, branch);
+  // Each kind of refusal from the run, so the task page shows how they read.
+  seedRefusal(client.id, now - 40 * 60_000, "hard");
+  seedRefusal(client.id, now - 30 * 60_000, "publish");
+  seedRefusal(client.id, now - 20 * 60_000, "autoMode");
   // Crane's own results on the real candidate: one required check passed, the other never ran.
   const commit = execFileSync("git", ["rev-parse", branch], { cwd: api.path, encoding: "utf8" }).trim();
   const tree = execFileSync("git", ["rev-parse", `${branch}^{tree}`], { cwd: api.path, encoding: "utf8" }).trim();

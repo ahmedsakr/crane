@@ -1,6 +1,8 @@
-import { api, ruleLabel, type Overview, type Repo } from "../../lib/api";
+import { COMMAND_ACCESS_LABEL } from "@crane/contracts";
+import { api, ruleLabel, type Overview } from "../../lib/api";
 import { useAction } from "../../lib/action";
 import { useApp } from "../../lib/app-context";
+import { accessChip } from "../../lib/command-access";
 import { newTaskInstruction, openTasksNote } from "../../lib/repos";
 
 type ConnectedRepo = Overview["repos"][number];
@@ -29,13 +31,19 @@ function AllowedTools({ repo }: { repo: ConnectedRepo }) {
   );
 }
 
-function RepoActions({ repo, onChecks }: { repo: ConnectedRepo; onChecks: (repo: Repo) => void }) {
+/** Which sheet a row opens for its repo. */
+export type RepoSheet = { kind: "checks" | "commands"; repo: ConnectedRepo };
+
+function RepoActions({ repo, onOpen }: { repo: ConnectedRepo; onOpen: (sheet: RepoSheet) => void }) {
   const { refresh, instruct } = useApp();
   const { run } = useAction(refresh);
   return (
-    <span style={{ display: "flex", gap: 6 }}>
-      <button className="btn btn-quiet btn-sm" aria-label={`Checks for ${repo.name}`} onClick={() => onChecks(repo)}>
+    <span className="repo-actions">
+      <button className="btn btn-quiet btn-sm" aria-label={`Checks for ${repo.name}`} onClick={() => onOpen({ kind: "checks", repo })}>
         Checks
+      </button>
+      <button className="btn btn-quiet btn-sm" aria-label={`Commands for ${repo.name}`} onClick={() => onOpen({ kind: "commands", repo })}>
+        Commands
       </button>
       <button className="btn btn-quiet btn-sm" onClick={() => instruct(newTaskInstruction(repo))}>
         New task
@@ -52,13 +60,15 @@ function RepoActions({ repo, onChecks }: { repo: ConnectedRepo; onChecks: (repo:
   );
 }
 
-export function RepoRow({ repo, onChecks }: { repo: ConnectedRepo; onChecks: (repo: Repo) => void }) {
+export function RepoRow({ repo, onOpen }: { repo: ConnectedRepo; onOpen: (sheet: RepoSheet) => void }) {
+  const access = accessChip(repo.tools.commands);
   return (
-    <div className="row" style={{ gridTemplateColumns: "minmax(0,1fr) auto" }}>
+    <div className="row repo-row">
       <span style={{ minWidth: 0 }}>
-        <span className="row-title" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <span className="row-title" style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
           {repo.name}
           {repo.isFactory && <span className="chip chip-crane">factory</span>}
+          {access && <span className="chip" title={COMMAND_ACCESS_LABEL[repo.tools.commands]}>{access}</span>}
         </span>
         <span className="row-meta mono" style={{ display: "block" }}>
           {repo.path} · {repo.defaultBranch}
@@ -66,7 +76,7 @@ export function RepoRow({ repo, onChecks }: { repo: ConnectedRepo; onChecks: (re
         </span>
         <AllowedTools repo={repo} />
       </span>
-      <RepoActions repo={repo} onChecks={onChecks} />
+      <RepoActions repo={repo} onOpen={onOpen} />
     </div>
   );
 }

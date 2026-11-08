@@ -79,4 +79,14 @@ export interface BlockedTool {
   lastAt: string;
   /** The most recent task that hit it. */
   lastTaskId: string;
+  /**
+   * Why the latest refusal happened, when Crane's guard or Claude Code's auto
+   * mode refused it. Absent for allowlist refusals, whose text explains nothing.
+   */
+  refusal?: { source: "crane.guard" | "claude.auto-mode"; reason: string | null };
+}
+
+/** Refusal sources that say why a call was refused, rather than only that it wasn't allowed. */
+export function isReasonedRefusal(source: unknown): source is "crane.guard" | "claude.auto-mode" {
+  return source === "crane.guard" || source === "claude.auto-mode";
 }

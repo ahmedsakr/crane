@@ -896,10 +896,112 @@ a.row:hover .row-title {
   border-radius: 6px;
   padding: 1px 6px;
 }
+/* Why Crane's guard or auto mode refused it, under the command. */
+.blocked-reason {
+  font-size: 13.5px;
+  color: var(--ink-2);
+  margin: 3px 0 2px;
+  overflow-wrap: anywhere;
+}
+/* A hard guard refusal is already decided: no actions, quieter title. */
+.blocked-decided .blocked-title {
+  font-weight: 500;
+}
 @media (max-width: 560px) {
   .blocked-item {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* ── repos: rows and the commands sheet ─────────────────── */
+.row.repo-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.repo-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+@media (max-width: 560px) {
+  .row.repo-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+}
+.access-choices {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+.access-choice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 14px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.access-choice:hover {
+  border-color: var(--graphite);
+}
+.access-choice:has(input:checked) {
+  border-color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+.access-choice input {
+  margin: 3px 0 0;
+  accent-color: var(--ink);
+}
+.access-choice > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.access-choice strong {
+  font-weight: 600;
+  font-size: 14.5px;
+}
+.access-choice .muted {
+  font-size: 13px;
+  line-height: 1.4;
+}
+.access-choices:disabled .access-choice {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.access-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.access-details {
+  font-size: 13.5px;
+}
+.access-details summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.access-details h3 {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 14px 0 4px;
+}
+.access-details ul {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 2px;
+}
+.access-details p {
+  margin: 6px 0 0;
+  line-height: 1.4;
 }
 .section-note {
   font-size: 13px;
