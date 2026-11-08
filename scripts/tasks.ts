@@ -147,9 +147,26 @@ export function runTask(args: TaskArgs, host: TaskHost): Promise<number> {
   return args.kind === "typecheck" ? typecheck(args, host) : test(args, host);
 }
 
-/** Nx with no daemon, Cloud or TUI, whatever the caller's environment says. */
-function nxEnvironment(): NodeJS.ProcessEnv {
-  return { ...process.env, NX_DAEMON: "false", NX_NO_CLOUD: "true", NX_TUI: "false" };
+/**
+ * Nx with no daemon, Cloud, remote cache or TUI, whatever the caller's environment says.
+ * Its cache and task database stay in this checkout's ignored `.nx/`: without that,
+ * Nx 24 shares both between every checkout and worktree of the repo under `~/.nx`,
+ * so one task's worktree could replay results another wrote. `nx.json`'s
+ * `cacheDirectory` asks for the same; the variables here win over an inherited one.
+ */
+export function nxEnvironment(root: string, env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const local: NodeJS.ProcessEnv = {
+    ...env,
+    NX_DAEMON: "false",
+    NX_NO_CLOUD: "true",
+    NX_TUI: "false",
+    NX_SKIP_REMOTE_CACHE: "true",
+    NX_CACHE_DIRECTORY: join(root, ".nx", "cache"),
+    NX_WORKSPACE_DATA_DIRECTORY: join(root, ".nx", "workspace-data"),
+  };
+  delete local.NX_SELF_HOSTED_REMOTE_CACHE_SERVER;
+  delete local.NX_PROJECT_GRAPH_CACHE_DIRECTORY;
+  return local;
 }
 
 /** The installed Nx's own entry point, from its manifest's `bin`, or null when it isn't installed. */
@@ -174,7 +191,7 @@ export function productionHost(root: string): TaskHost {
         console.error(`Nx is not installed in ${join(root, "node_modules", "nx")}.\nPlease run npm install in your checkout, then retry.`);
         return Promise.resolve(1);
       }
-      return runProcess(process.execPath, [nxBin, ...args], { cwd: root, label: "Nx", env: nxEnvironment() });
+      return runProcess(process.execPath, [nxBin, ...args], { cwd: root, label: "Nx", env: nxEnvironment(root) });
     },
     runSuites: (suites) => runTestSuites(suites, { cwd: root }),
     git: gitIn(root),

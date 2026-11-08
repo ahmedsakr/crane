@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
@@ -188,9 +189,32 @@ test("nx: shared inputs cover lockfile, manifests, configs, task scripts and env
 test("nx: execution stays local, without the daemon, Cloud or plugins", () => {
   assert.equal(nx.useDaemonProcess, false);
   assert.equal(nx.neverConnectToCloud, true);
+  assert.equal(nx.cacheDirectory, ".nx/cache", "relative, so each checkout and worktree keeps its own");
   for (const key of ["nxCloudId", "nxCloudAccessToken", "nxCloudUrl", "tasksRunnerOptions", "plugins", "targetDefaults"]) {
     assert.equal(nx[key], undefined, `nx.json has no ${key}`);
   }
+});
+
+/**
+ * Asks the installed Nx where its cache and task database go for this checkout.
+ * Nx 24 otherwise shares both between every checkout of a repo under `~/.nx/<id>`,
+ * and every worktree of a repo has the same id. Loading the module resolves (and
+ * for a shared location creates) the directories, so HOME points somewhere disposable.
+ */
+const NX_LOCATIONS = `const m = require(process.argv[1]);
+console.log(JSON.stringify({ cache: m.cacheDir, db: m.sharedDataDirectory(process.cwd(), "workspace-data") }));`;
+
+test("nx: the cache and task database stay in this checkout's ignored .nx, never shared under HOME", (t) => {
+  const home = mkdtempSync(join(tmpdir(), "crane-nx-home-"));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home };
+  for (const name of ["NX_CACHE_DIRECTORY", "NX_WORKSPACE_DATA_DIRECTORY", "NX_PROJECT_GRAPH_CACHE_DIRECTORY"]) delete env[name];
+  const resolver = join(root, "node_modules", "nx", "dist", "src", "utils", "cache-directory.js");
+  assert.ok(existsSync(resolver), "Nx moved its cache resolver: find the new one and keep this check");
+  const run = spawnSync(process.execPath, ["-e", NX_LOCATIONS, resolver], { cwd: root, env, encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  assert.deepEqual(JSON.parse(run.stdout), { cache: join(root, ".nx", "cache"), db: join(root, ".nx", "workspace-data") });
+  assert.deepEqual(readdirSync(home), [], "nothing under HOME");
 });
 
 test("nx: npm installs a pinned Nx that brings no other compiler or plugin", () => {

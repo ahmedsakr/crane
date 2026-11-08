@@ -135,6 +135,30 @@ test("every package's inputs stale the factory; only contracts stale the dashboa
   }
 });
 
+test("Nx's config and local cache don't stale the factory or dashboard, since no build of either runs Nx", (ctx) => {
+  // test/build.test.ts checks that no build, dev or dashboard workflow starts Nx. If one ever does,
+  // these files become build inputs and this list has to move to the staling side.
+  const files = [
+    "nx.json", "web/project.json", "test/project.json", "packages/contracts/project.json",
+    ".nx/cache/123/outputs/dist/index.js", ".nx/workspace-data/project-graph.json",
+    "packages/contracts/dist/index.js",
+  ];
+  const c = checkout(ctx);
+  c.at("src/components/Sheet.tsx", 100);
+  c.at("dist/index.html", 50);
+  c.rootAt("src/factory/drivers.ts", 100);
+  c.rootAt("packages/contracts/src/index.ts", 100);
+  c.rootAt("dist/cli/index.js", 50);
+  const outdated = createFactoryBuildCheck(c.root, true);
+  assert.equal(outdated(0), false);
+  for (const file of files) c.rootAt(file, 10);
+  assert.equal(outdated(5_000), false, "Nx metadata alone");
+  assert.equal(webBuildOutdated(c.root), false, "Nx metadata alone");
+  // The backend's project.json sits in src/, which counts as a whole: conservative, never falsely current.
+  c.rootAt("src/project.json", 10);
+  assert.equal(outdated(10_000), true);
+});
+
 test("a package added while the factory runs stales it; a package's own build output doesn't", (ctx) => {
   const c = checkout(ctx);
   c.rootAt("src/factory/drivers.ts", 100);

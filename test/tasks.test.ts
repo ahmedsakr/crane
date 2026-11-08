@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { affectedTypecheckProjects, consumersOf } from "../scripts/affected-typecheck.ts";
 import { changedPaths, gitIn, type Git } from "../scripts/changes.ts";
-import { NX_FLAGS, runTask, taskArguments, UsageError, type TaskArgs, type TaskHost } from "../scripts/tasks.ts";
+import { NX_FLAGS, nxEnvironment, runTask, taskArguments, UsageError, type TaskArgs, type TaskHost } from "../scripts/tasks.ts";
 import { rootSuites } from "../scripts/test-ownership.ts";
 import { testProjects } from "../scripts/test-projects.ts";
 import { temporaryRoot } from "./support/fixtures.ts";
@@ -258,4 +258,28 @@ test("tasks: --list prints the selection without checking links, building or run
   const listed = JSON.parse(run.printed[0]!);
   assert.deepEqual([listed.full, listed.projects.sort()], [false, ["@crane/web", "checks"]]);
   assert.ok(ALL.length > listed.projects.length);
+});
+
+test("tasks: Nx keeps its cache and database in the checkout, overriding inherited locations and remote caches", () => {
+  const inherited: NodeJS.ProcessEnv = {
+    PATH: "/bin",
+    NX_DAEMON: "true",
+    NX_TUI: "true",
+    NX_CACHE_DIRECTORY: "/shared/nx-cache",
+    NX_WORKSPACE_DATA_DIRECTORY: "/shared/nx-data",
+    NX_PROJECT_GRAPH_CACHE_DIRECTORY: "/shared/nx-graph",
+    NX_SELF_HOSTED_REMOTE_CACHE_SERVER: "https://cache.example",
+  };
+  const env = nxEnvironment("/work/t-1", inherited);
+  assert.deepEqual(env, {
+    PATH: "/bin",
+    NX_DAEMON: "false",
+    NX_NO_CLOUD: "true",
+    NX_TUI: "false",
+    NX_SKIP_REMOTE_CACHE: "true",
+    NX_CACHE_DIRECTORY: join("/work/t-1", ".nx", "cache"),
+    NX_WORKSPACE_DATA_DIRECTORY: join("/work/t-1", ".nx", "workspace-data"),
+  });
+  assert.equal(inherited.NX_CACHE_DIRECTORY, "/shared/nx-cache", "the caller's environment is left alone");
+  assert.notEqual(nxEnvironment("/work/t-2", inherited).NX_CACHE_DIRECTORY, env.NX_CACHE_DIRECTORY, "worktrees never share");
 });

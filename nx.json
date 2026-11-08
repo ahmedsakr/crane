@@ -2,6 +2,7 @@
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
   "useDaemonProcess": false,
   "neverConnectToCloud": true,
+  "cacheDirectory": ".nx/cache",
   "namedInputs": {
     "sharedGlobals": [
       "{workspaceRoot}/nx.json",

@@ -1,10 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { specifiers } from "./support/imports.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -145,6 +146,45 @@ test("build: a failed step stops the build and keeps its exit status", t => {
   const { build, steps } = buildFixture(t, "exit 3");
   assert.equal(build().status, 3);
   assert.deepEqual(steps(), ["packages"]);
+});
+
+/** Nx itself, its plugins, or the scripts that drive it. */
+const NX_MODULE = /^(nx|@nx\/[\w-]+)(\/|$)|(^|\/)scripts\//;
+
+test("build: build, dev, source CLI and dashboard workflows never start Nx, so its config is no factory build input", () => {
+  // webbuild.ts stales the factory and dashboard on src/ and package sources only. That is complete
+  // while nothing here runs Nx: Nx's config would otherwise decide what the factory runs.
+  const { scripts } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  const web = JSON.parse(readFileSync(join(root, "web", "package.json"), "utf8"));
+  const workflows = ["build", "build:packages", "build:backend", "predev", "dev", "dev:packages", "predev:server", "dev:server", "dev:web", "precrane", "crane"];
+  for (const name of workflows) {
+    assert.ok(scripts[name], name);
+    assert.doesNotMatch(scripts[name], /\bnx\b|scripts\/tasks\.ts/, name);
+  }
+  for (const [name, command] of Object.entries<string>(web.scripts)) assert.doesNotMatch(command, /\bnx\b/, `web ${name}`);
+  assert.doesNotMatch(readFileSync(join(root, "scripts", "build.mjs"), "utf8"), /\bnx\b/i);
+  assert.deepEqual(specifiers(join(root, "scripts", "build.mjs")).filter((spec) => NX_MODULE.test(spec)), []);
+});
+
+test("build: the packaged CLI ships and imports nothing of Nx, which stays a development dependency", () => {
+  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  assert.deepEqual(manifest.files, ["bin/", "dist/", "web/dist/"], "no nx.json or project.json in the tarball");
+  assert.ok(manifest.devDependencies.nx);
+  assert.equal(manifest.dependencies.nx, undefined);
+  assert.ok(!manifest.bundledDependencies.some((name: string) => NX_MODULE.test(name)));
+  const workspaces = manifest.workspaces.map((dir: string) => JSON.parse(readFileSync(join(root, dir, "package.json"), "utf8")));
+  for (const ws of workspaces) {
+    for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+      assert.deepEqual(Object.keys(ws[field] ?? {}).filter((name) => NX_MODULE.test(name)), [], `${ws.name} ${field}`);
+    }
+  }
+  // The compiled CLI is these sources, one file each (build:backend doesn't bundle).
+  const dirs = ["src", ...readdirSync(join(root, "packages")).map((dir) => join("packages", dir, "src"))];
+  const sources = dirs.filter((dir) => existsSync(join(root, dir))).flatMap((dir) =>
+    (readdirSync(join(root, dir), { recursive: true }) as string[]).filter((f) => /\.tsx?$/.test(f)).map((f) => join(root, dir, f)));
+  sources.push(join(root, "bin", "crane.js"));
+  const found = sources.flatMap((file) => specifiers(file).filter((spec) => NX_MODULE.test(spec)).map((spec) => `${file}: ${spec}`));
+  assert.deepEqual(found, []);
 });
 
 test("build: web's prebuild compiles only contracts, without npm, since the root build skips it", () => {
