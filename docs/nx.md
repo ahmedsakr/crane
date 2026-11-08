@@ -1,13 +1,17 @@
 # Nx project graph
 
-Status: **foundation**, 2026-11-08. Nx models Crane's projects and targets so
+Status: **foundation and test ownership**, 2026-11-08. Nx models Crane's projects and targets so
 later work can run only the checks a change affects. Nothing calls Nx yet:
 `npm run build`, `npm run typecheck`, `npm test` and every other public script
 behave exactly as before, and npm is still the only installer. Wiring full and
-affected commands, splitting the root suites into test groups, and measuring
-whether Nx is faster are separate follow-up tasks. They build on the names and
+affected commands and measuring whether Nx is faster are separate follow-up
+tasks. They build on the names and
 contract below, so change them only together with this document and
 `test/nx-graph.test.ts`.
+
+Root suite ownership and a reusable, uncached runner are now published in
+[Root test ownership](test-groups.md). They do not change this foundation's
+targets or the public npm scripts; command wiring remains a follow-up.
 
 ## Version and compatibility
 
