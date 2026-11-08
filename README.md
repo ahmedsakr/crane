@@ -432,6 +432,30 @@ npm run typecheck
 npm test
 ```
 
+npm remains the installer and workspace manager; Nx is an npm-installed task
+orchestrator, not a replacement package manager. Full `npm run typecheck`
+checks every project through Nx; `npm test` builds all six packages through Nx
+and runs every root suite once. These remain Crane's factory gates.
+
+For development feedback, choose a known-good local commit explicitly:
+
+```sh
+# Committed candidate: HEAD must be checked out and the worktree clean.
+npm run affected:typecheck -- --base main --head HEAD --list
+npm run affected:typecheck -- --base main --head HEAD
+# Include staged, unstaged, deleted and non-ignored untracked files.
+npm run affected:test -- --base main --working-tree
+```
+
+There is no default base, implicit `HEAD~1`, fetch, or merge-base calculation.
+These compare trees, so choose `main` only if its local tip is the intended
+boundary. Missing history, self-comparison, no changes or uncertain ownership
+falls back to full work with a reason. Root config/lockfile changes are global;
+test helpers and docs select all test groups. `--list` previews selection only.
+A local affected pass is not full factory validation and must not replace
+operator-configured checks. See [affected execution, cache troubleshooting and
+benchmarks](docs/testing.md#full-and-affected-execution).
+
 `npm run build` transpiles `src/` to `dist/` with esbuild and doesn't check
 backend types, so run `npm run typecheck` to catch type errors. `prepack` runs it
 before packing. `scripts/build.mjs` runs the `build:packages`, `build:backend`,
@@ -445,7 +469,9 @@ then runs `tsc -b tsconfig.packages.json` to build packages in dependency order;
 run it before invoking source scripts directly. Each package is composite and
 references its workspace dependencies. Keep the solution's references in sync
 with `packages/*`; package boundary tests check both lists. Build caches live
-inside each package's `dist/`, so deleting that directory also clears its cache.
+inside each package's `dist/`; Nx additionally stores restorable package outputs
+in the worktree-local `.nx/` cache. Removing `dist/` alone does not clear Nx's
+cache. See [cache controls](docs/testing.md#cache-controls).
 `npm run dev` uses one `tsc -b` watcher for the package graph. Import policy helpers from
 `@crane/agent-policy`; its only runtime dependency is `@crane/contracts/rules`,
 and its command splitter stays internal. Import concrete drivers from
