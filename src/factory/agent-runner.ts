@@ -1,5 +1,6 @@
 import { driverLabel, type RunUsage } from "@crane/contracts";
 import { AgentRunError, addRunUsage, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
+import { craneHome } from "../core/paths.js";
 import type { Store } from "../core/store.js";
 import { driverSettings, isAvailable } from "./drivers.js";
 import { sleep } from "./run-limits.js";
@@ -14,7 +15,10 @@ export interface AgentRunnerDeps {
 }
 
 /** What the caller decides about a run. The runner fills in usage, tools, limits and settings. */
-export type AgentRunRequest = Omit<RunContext, "onUsage" | "allowedTools" | "maxTurns" | "model" | "effort">;
+export type AgentRunRequest = Omit<
+  RunContext,
+  "onUsage" | "allowedTools" | "commandAccess" | "craneHome" | "maxTurns" | "model" | "effort"
+>;
 
 /**
  * Run the agent, giving a transient failure (overload, rate limit, network)
@@ -81,13 +85,17 @@ export async function runAgent(
   };
   // Read at the start of every run, so a change on the Crew page applies to the next one without a restart.
   const { model, effort } = driverSettings((k) => store.getSetting(k), driver.name);
+  // Like the driver settings, so the operator's command decisions for the repo apply from the next run.
+  const tools = ctx.repo ? store.repoTools(ctx.repo.id) : null;
   // Task overrides belong to their chosen driver, including after a restart.
   const taskSettings = ctx.task.driver === driver.name ? ctx.task : null;
   try {
     const result = await runWithRetry(deps, driver, {
       ...ctx,
       onUsage,
-      allowedTools: ctx.repo ? store.repoTools(ctx.repo.id).allowed : [],
+      allowedTools: tools?.allowed ?? [],
+      commandAccess: tools?.commands ?? "listed",
+      craneHome: craneHome(),
       maxTurns: deps.maxTurns || undefined,
       model: taskSettings?.model ?? taskSettings?.driverSettings?.model ?? model ?? undefined,
       effort: taskSettings?.effort ?? taskSettings?.driverSettings?.effort ?? effort ?? undefined,

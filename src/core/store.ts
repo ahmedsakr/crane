@@ -253,8 +253,8 @@ export class Store {
     setRepoChecks(this, repoId, commands);
   }
 
-  setRepoTools(repoId: string, tools: RepoTools) {
-    setRepoTools(this, repoId, tools);
+  setRepoTools(repoId: string, change: Partial<RepoTools>) {
+    setRepoTools(this, repoId, change);
   }
 
   /** Rules agents were refused, excluding the repo's existing decisions. */

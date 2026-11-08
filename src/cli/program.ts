@@ -5,6 +5,7 @@ import { registerAgents } from "./commands/agents.js";
 import { registerAnalytics } from "./commands/analytics.js";
 import { registerAuth } from "./commands/auth.js";
 import { registerChangeAgent } from "./commands/change-agent.js";
+import { registerCommandAccess } from "./commands/command-access.js";
 import { registerDecisions } from "./commands/decisions.js";
 import { registerDiff } from "./commands/diff.js";
 import { registerDo } from "./commands/do.js";
@@ -48,6 +49,7 @@ export function buildProgram(ctx: CliContext): Command {
   registerDiff(program, ctx);
   registerRepos(program, ctx);
   registerPermissions(program, ctx);
+  registerCommandAccess(program, ctx);
   registerAgents(program, ctx);
   registerRetention(program, ctx);
   registerAnalytics(program, ctx);

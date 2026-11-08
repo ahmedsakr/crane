@@ -1,8 +1,8 @@
 import { ALWAYS_DENIED, overlapsDenied } from "@crane/agent-policy";
-import { ruleLabel, type RepoTools } from "@crane/contracts";
+import { COMMAND_ACCESS_LABEL, ruleLabel, type RepoTools } from "@crane/contracts";
 import { parseRule } from "@crane/contracts/rules";
 import type { Store } from "../../core/store.js";
-import { toRule } from "../action-inputs.js";
+import { checkCommandAccess, toRule } from "../action-inputs.js";
 import { needRepo } from "./repos.js";
 
 function noteOnTask(store: Store, taskId: string | undefined, message: string, data: Record<string, unknown>) {
@@ -28,6 +28,7 @@ export function allowTool(store: Store, repoId: string, input: string, taskId?: 
   }
   const tools = store.repoTools(repo.id);
   const next = {
+    ...tools,
     allowed: [...tools.allowed.filter((r) => r !== rule), rule],
     keptBlocked: tools.keptBlocked.filter((r) => r !== rule),
   };
@@ -42,6 +43,7 @@ export function keepBlocked(store: Store, repoId: string, input: string, taskId?
   const rule = toRule(input);
   const tools = store.repoTools(repo.id);
   const next = {
+    ...tools,
     allowed: tools.allowed.filter((r) => r !== rule),
     keptBlocked: [...tools.keptBlocked.filter((r) => r !== rule), rule],
   };
@@ -58,5 +60,19 @@ export function disallowTool(store: Store, repoId: string, input: string): RepoT
   if (!tools.allowed.includes(rule)) throw new Error(`${ruleLabel(rule)} isn't allowed for ${repo.name}`);
   const next = { ...tools, allowed: tools.allowed.filter((r) => r !== rule) };
   store.setRepoTools(repo.id, next);
+  return next;
+}
+
+/**
+ * Choose which commands Claude Code agents in this repo may run, from their
+ * next run. Allowed and kept-blocked commands stay as they are, so switching
+ * back to `listed` restores the same list. `taskId` notes it on that task.
+ */
+export function setCommandAccess(store: Store, repoId: string, input: unknown, taskId?: string): RepoTools {
+  const repo = needRepo(store, repoId);
+  const commands = checkCommandAccess(input);
+  const next = { ...store.repoTools(repo.id), commands };
+  store.setRepoTools(repo.id, next);
+  noteOnTask(store, taskId, `Set commands for ${repo.name} to “${COMMAND_ACCESS_LABEL[commands]}”`, { commands, repoId: repo.id });
   return next;
 }

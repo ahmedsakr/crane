@@ -1,4 +1,5 @@
 import type { Hono } from "hono";
+import { optionalJsonObject } from "../body.js";
 import type { RouteDeps } from "./deps.js";
 
 /** Connected repositories, their checks, and the command permissions their tasks run with. */
@@ -37,5 +38,10 @@ export function registerRepoRoutes(api: Hono, { store, actions }: RouteDeps): vo
   api.post("/repos/:id/tools/disallow", async (c) => {
     const { rule } = await c.req.json<{ rule: string }>();
     return c.json(actions.disallowTool(c.req.param("id"), rule));
+  });
+  api.put("/repos/:id/tools/commands", async (c) => {
+    const { commands, taskId } = await optionalJsonObject<{ commands?: unknown; taskId?: unknown }>(c.req.raw);
+    if (!store.getRepo(c.req.param("id"))) return c.json({ error: "No such repo" }, 404);
+    return c.json(actions.setCommandAccess(c.req.param("id"), commands, typeof taskId === "string" ? taskId : undefined));
   });
 }

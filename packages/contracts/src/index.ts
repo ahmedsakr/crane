@@ -30,8 +30,15 @@ export type {
   ReviewCheckpoint,
 } from "./report.js";
 export type {
+  CommandAccess,
   Repo,
   RepoTools,
+} from "./repo.js";
+export {
+  COMMAND_ACCESS,
+  COMMAND_ACCESS_DETAIL,
+  COMMAND_ACCESS_LABEL,
+  isCommandAccess,
 } from "./repo.js";
 export type {
   CommandEvidence,
