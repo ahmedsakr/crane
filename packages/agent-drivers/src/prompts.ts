@@ -1,7 +1,7 @@
 import { LOOKOUT, STATUS_LABEL, type CommandAccess, type PrerequisiteState, type Task, type Repo } from "@crane/contracts";
 import { REPORT_FENCE, type AgentJob, type FixChecksJob, type ResolveConflictsJob, type RunContext, type SiblingTask } from "@crane/agent-protocol";
 import { priorRefusalsBrief } from "./refusal-prompts.js";
-import { AUTONOMY_BRIEF, FILE_EDIT_BRIEF, KIND_BRIEF, SANDBOX_BRIEF, SANDBOXED_AUTONOMY_BRIEF, SCREENSHOT_BRIEF, VALIDATION_BRIEF, blockedBrief } from "./prompt-briefs.js";
+import { AUTONOMY_BRIEF, FILE_EDIT_BRIEF, KIND_BRIEF, SANDBOX_BRIEF, SANDBOXED_AUTONOMY_BRIEF, SCREENSHOT_BRIEF, VALIDATION_BRIEF, blockedBrief, checkHandleBrief } from "./prompt-briefs.js";
 
 /**
  * The repo's configured checks, which Crane runs itself once the agent
@@ -26,6 +26,8 @@ export interface PromptOptions {
   checks?: readonly string[];
   /** Claude Code's command access; omitted by Codex and unguarded runs. */
   commandAccess?: CommandAccess;
+  /** Shell words that start Crane's check handle; only Claude Code, whose Bash tool reports no exit code. */
+  checkHandle?: string;
 }
 
 interface PromptBriefs { sandbox: string; checks: string; blocked: string }
@@ -33,7 +35,7 @@ interface PromptBriefs { sandbox: string; checks: string; blocked: string }
 export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob, opts: PromptOptions = {}): string {
   const commits = opts.agentCommits ?? true;
   const sandbox = opts.sandboxed ? SANDBOX_BRIEF : "";
-  const checks = checksBrief(opts.checks, !!opts.sandboxed);
+  const checks = [checksBrief(opts.checks, !!opts.sandboxed), checkHandleBrief(opts.checkHandle)].filter(Boolean).join("\n\n");
   const blocked = blockedBrief({ ...opts, inspect: task.autonomy === "observe" && !job });
   const briefs = { sandbox, checks, blocked };
   if (job?.kind === "resolve_conflicts") return conflictSystemPrompt(repo, job, commits, briefs);
@@ -354,6 +356,7 @@ export function resumePrompt(context: TaskContext = {}, opts: PromptOptions = {}
     priorRefusalsBrief(context.priorRefusals),
     blockedBrief({ ...opts, inspect: context.task?.autonomy === "observe" && !context.job }),
     VALIDATION_BRIEF,
+    checkHandleBrief(opts.checkHandle),
     FILE_EDIT_BRIEF,
     SCREENSHOT_BRIEF,
     visualDecisionBrief(context.task, context.job),

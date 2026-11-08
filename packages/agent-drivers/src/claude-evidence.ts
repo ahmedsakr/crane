@@ -1,5 +1,6 @@
 import { safeEvidenceText } from "./command-evidence.js";
 import type { CommandEvidence } from "@crane/contracts";
+import { describeOutcome, type CheckRecord } from "./check-results.js";
 
 /** Keep only textual diagnostics and known result metadata, never images or arbitrary SDK fields. */
 export function claudeToolResult(block: Record<string, unknown>, metadata: unknown) {
@@ -34,6 +35,18 @@ function toolResultText(content: unknown): string {
 function exitCodeSource(exitCode: number | null, result: Record<string, unknown>): "exit_code" | "exitCode" | null {
   if (exitCode === null) return null;
   return result.exit_code != null ? "exit_code" : "exitCode";
+}
+
+/**
+ * Driver-owned evidence from Crane's check handle (`check-handle.ts`): what its
+ * records say about checks this invocation started. Exit codes here come from
+ * the handle's own process wait, not from tool success or output text.
+ */
+export function checkResultsSummary(records: readonly CheckRecord[]): string {
+  if (!records.length) return "";
+  const lines = records.map((record) =>
+    `${record.name}: ${describeOutcome(record)}, ${JSON.stringify(safeEvidenceText(record.command, 240).text)}`);
+  return `Crane check handle results for this invocation, read from the handle's records in .crane/checks: ${lines.join("; ")}. These are local agent checks, separate from Crane's review and merge checks.`;
 }
 
 /** Driver-owned qualification of agent validation claims, separate from external checks. */

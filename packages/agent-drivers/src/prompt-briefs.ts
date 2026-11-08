@@ -24,6 +24,20 @@ export const VALIDATION_BRIEF =
   "A successful tool call (is_error=false) or passing TAP counts do not establish a process exit code. If the command result supplies no authoritative exit status, report its process outcome as unknown and disclose the missing exit evidence in your validation summary. " +
   "Report validation accurately: distinguish checks that passed from checks that failed, were blocked, or were not run. Run each check separately without output-filtering pipelines (such as piping to tail, grep, or head), or capture each check's actual exit status before summarizing its logs. A pipeline's status may come from the output filter rather than the check; never infer success from shortened output. Run `git diff --check` as a separate command from informational Git commands such as status, stat, or diff inspection, and retain its own exit status. Do not use `git diff --check; git status` or similar semicolon chains: their recorded exit status belongs to the final command and cannot establish that whitespace validation passed. Finish all relevant edits before starting builds, typechecks, or tests; do not edit their inputs while they run. When direct tests import compiled workspace packages, await a successful package build after the final relevant edit before starting those tests. Further edits invalidate affected local results: rebuild changed packages and rerun dependent checks before reporting a pass for the final code. Chain prerequisite builds with && so checks do not run after a failed build, and retain failure diagnostics. If a blocked command prevents an end-to-end check, state that the check remains incomplete in your final report; passing unit tests or a clean diff does not complete it. Include the blocked command's purpose and any remaining validation in the report even if you can finish the code changes.";
 
+/**
+ * For Claude Code, whose Bash tool reports no exit code: run checks through
+ * Crane's check handle (`check-handle.ts`), which records one, instead of
+ * redirecting output and polling log files. `command` starts the handle.
+ */
+export function checkHandleBrief(command: string | undefined): string {
+  if (!command) return "";
+  return [
+    `Run builds, typechecks, and tests through Crane's check handle, which records each check's process exit code: \`${command} run <name> -- <command>\`, from the worktree root, with one short name per check (for example \`${command} run typecheck -- npm run typecheck\`). It writes the check's output to \`.crane/checks/<name>.log\` and its exit code to \`.crane/checks/<name>.json\`, prints the last lines and the outcome, and exits with the check's own exit code.`,
+    `For a long check, start that run in the background, then call \`${command} wait <name>\` instead of counting log lines, polling TAP output, or starting grep or until loops. \`wait\` blocks for up to 300 seconds (\`--timeout <seconds>\`, at most 540), then prints the outcome and exits with the check's exit code. Exit 75 means it is still running: call \`wait\` again. Exit 70 means its runner stopped without recording a result: report that outcome as unknown. Don't start a second run with the same name while one is running.`,
+    "Report each check's outcome from the handle's recorded result. Crane reads those records itself and adds them to your report, so an echoed `EXIT=` line, a passing test count, or a log you read is not a substitute for it.",
+  ].join(" ");
+}
+
 export const FILE_EDIT_BRIEF =
   "When file changes are authorized, use your native file-editing tools (such as Edit, Write, or apply_patch) to create and modify files. Avoid shell heredocs for file edits: they can trigger shell security checks even when the intended edit is allowed. Choose file-editing tools before attempting a shell write; a denied command is still subject to the blocked-command instructions.";
 
