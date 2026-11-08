@@ -5,6 +5,7 @@ import { ALWAYS_DENIED } from "@crane/agent-policy";
 import type { Autonomy } from "@crane/contracts";
 import { runAgentProcess, runResumingSession } from "./agent-process.js";
 import { ClaudeStream } from "./claude-stream.js";
+import { claudeSettings, guardContext } from "./claude-guard.js";
 
 export { describeBlocked, usageFromResult } from "./claude-stream.js";
 
@@ -56,19 +57,39 @@ const WRITE_TOOLS = [
   "Bash(go test:*)",
 ];
 
+/** Rules the operator chose: `CRANE_ALLOWED_TOOLS` for every repo, then this repo's. */
+function operatorRules(repoAllowed: string[] = []): string[] {
+  const extra = process.env.CRANE_ALLOWED_TOOLS?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
+  return [...new Set([...extra, ...repoAllowed])];
+}
+
 /**
  * What an agent may use. `repoAllowed` is what the operator allowed for the
  * repo (see OperatorActions.allowTool). Claude Code applies deny rules before
  * allow rules, so nothing allowed here can override ALWAYS_DENIED.
+ *
+ * Every run except investigate-only also has Crane's command guard
+ * (`classifyToolCall`) as a PreToolUse hook, in every command access mode. It
+ * denies hard-dangerous calls (shared Git state, operator actions, writes
+ * outside the worktree, credentials) even when this list would allow them.
+ * In "Most commands" its allow widens this list to almost any command; deny
+ * rules still win over that allow. A guard that fails to answer leaves the
+ * call to this list. See docs/command-guard.md.
  */
 export function toolsFor(autonomy: Autonomy, repoAllowed: string[] = []): { allowed: string[]; denied: string[] } {
-  const extra = process.env.CRANE_ALLOWED_TOOLS?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
   const base = autonomy === "observe" ? READ_ONLY_TOOLS : WRITE_TOOLS;
   const denied = autonomy === "observe" ? ["Edit", "Write", "MultiEdit", "NotebookEdit", ...ALWAYS_DENIED] : ALWAYS_DENIED;
-  return { allowed: [...new Set([...base, ...extra, ...repoAllowed])], denied };
+  return { allowed: [...new Set([...base, ...operatorRules(repoAllowed)])], denied };
+}
+
+/** Inline `--settings` for the run, or null for investigate-only runs, which get no guard. */
+function runSettings(ctx: RunContext, autonomy: Autonomy): Record<string, unknown> | null {
+  if (autonomy === "observe") return null;
+  return claudeSettings(guardContext(ctx, operatorRules(ctx.allowedTools)));
 }
 
 function claudeArgs(ctx: RunContext, autonomy: Autonomy, tools: { allowed: string[]; denied: string[] }, resume?: string): string[] {
+  const settings = runSettings(ctx, autonomy);
   const args = [
     "-p",
     "--output-format",
@@ -83,6 +104,8 @@ function claudeArgs(ctx: RunContext, autonomy: Autonomy, tools: { allowed: strin
     "--disallowedTools",
     tools.denied.join(","),
   ];
+  // Hook events let the stream check that the guard answered for each command.
+  if (settings) args.push("--settings", JSON.stringify(settings), "--include-hook-events");
   if (ctx.maxTurns) args.push("--max-turns", String(ctx.maxTurns));
   if (resume) args.push("--resume", resume);
   const model = ctx.model || process.env.CRANE_MODEL;
@@ -129,7 +152,7 @@ export class ClaudeCodeDriver implements AgentDriver {
       env: claudeEnv(),
       prompt: resume ? resumePrompt(ctx) : userPrompt(ctx.task, ctx.job, ctx),
       resume,
-      stream: new ClaudeStream(ctx, tools, resume),
+      stream: new ClaudeStream(ctx, tools, resume, autonomy !== "observe"),
       ctx,
     });
   }

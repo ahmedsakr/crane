@@ -5,6 +5,7 @@ import { cancelledRun, SessionNotResumed, stderrExcerpt, type AgentExit, type Ag
 import { claudeToolResult, claudeValidationSummary } from "./claude-evidence.js";
 import { emitAgentText } from "./cli.js";
 import { commandMessage, CommandTracker, safeEvidenceText } from "./command-evidence.js";
+import { GuardLiveness } from "./guard-liveness.js";
 
 /** What a stream hears the run through. */
 export type ClaudeStreamContext = Pick<RunContext, "emit" | "signal" | "effort" | "maxTurns" | "onSession" | "onUsage">;
@@ -115,17 +116,22 @@ export class ClaudeStream implements AgentStream {
   private commandOutcomes = new Map<string, CommandEvidence>();
   private commands = new CommandTracker((command) => this.onCommand(command));
   private reported = new Set<string>();
+  private guard: GuardLiveness;
 
+  /** `guarded`: the run has Crane's command guard hook and asked for hook events. */
   constructor(
     private ctx: ClaudeStreamContext,
     private tools: ToolRules,
     private resume?: string,
+    guarded = false,
   ) {
     this.sessionId = resume ?? null;
+    this.guard = new GuardLiveness(guarded, ctx.emit);
   }
 
   handle(msg: Record<string, any>) {
     if (msg.type === "system" && msg.subtype === "init") this.onInit(msg);
+    else if (msg.type === "system" && msg.subtype === "hook_response") this.guard.onHookResponse(msg);
     else if (msg.type === "assistant") this.onAssistant(msg);
     else if (msg.type === "user") this.onUser(msg);
     else if (msg.type === "result") this.onResult(msg);
@@ -218,6 +224,7 @@ export class ClaudeStream implements AgentStream {
     });
     if (call?.name === "Bash") {
       this.commands.record("completed", { id: block.tool_use_id, exit_code: result.exitCode, status: completedStatus(result) }, "", this.sessionId);
+      this.guard.onBashResult(block.tool_use_id);
     }
     if (block.is_error && call && DENIAL_TEXT.test(text)) {
       this.blocked(block.tool_use_id, call.name, call.input, { source: "claude-code.tool_result", reason: text });
