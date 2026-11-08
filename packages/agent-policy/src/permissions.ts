@@ -110,7 +110,7 @@ export function isAllowed(rules: string[], tool: string, input: Record<string, u
 }
 
 /** The narrowest rule worth suggesting for one simple command, e.g. `npm ci --silent` → `Bash(npm ci:*)`. */
-function ruleForCommand(command: string): string | null {
+export function ruleForCommand(command: string): string | null {
   const words = command.split(/\s+/).filter(Boolean);
   const first = words[0];
   if (!first || /[`$(){}<>]/.test(first)) return null;
