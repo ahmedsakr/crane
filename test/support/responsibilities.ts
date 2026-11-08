@@ -194,6 +194,8 @@ const ALLOWED_MODULES: Record<string, string[]> = {
   "factory/state": ["factoryState", "factoryIsRunning", "factoryDriverName"],
   "cli/ui": ["*"],
   "cli/context": ["*"],
+  // Startup certificate validation only reads files and creates a TLS context; it never changes factory state.
+  "cli/tls": ["loadTls", "TlsOptions"],
   "server/body": ["*"],
   "server/security": ["*"],
   // The session cookie, the gate's per-request check, and who a signed-in request acts as. Sessions change only

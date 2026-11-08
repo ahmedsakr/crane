@@ -59,6 +59,25 @@ function setup() {
   return { store, repo, task };
 }
 
+test("cli: serve and start reject incomplete and missing TLS files before claiming work", async () => {
+  const { store, task } = setup();
+  const queued = task("queued", false);
+  try {
+    for (const command of ["serve", "start"]) {
+      for (const flag of ["--tls-cert", "--tls-key"]) {
+        const result = await crane(store, command, flag, "/missing/crane.pem");
+        assert.equal(result.code, 1);
+        assert.match(result.err, /--tls-cert <file> and --tls-key <file> must be given together/);
+      }
+      const missing = await crane(store, command, "--tls-cert", "/missing/crane-cert.pem", "--tls-key", "/missing/crane-key.pem");
+      assert.equal(missing.code, 1);
+      assert.match(missing.err, /Couldn't read --tls-cert file.*\/missing\/crane-cert.pem/);
+      assert.equal(store.getTask(queued.id)?.status, "queued");
+      assert.equal(store.getSetting("factory.pid"), null);
+    }
+  } finally { store.close(); }
+});
+
 test("cli: follow-up takes acceptance checks, and show reports Crane's result on the candidate", async () => {
   const { store, repo } = setup();
   try {

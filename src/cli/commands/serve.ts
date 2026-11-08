@@ -6,8 +6,9 @@ import { factoryIsRunning } from "../../factory/state.js";
 import { checkExposure } from "../../server/security.js";
 import type { CliContext } from "../context.js";
 import * as ui from "../ui.js";
+import { loadTls, type TlsOptions } from "../tls.js";
 
-interface ServeOptions {
+interface ServeOptions extends TlsOptions {
   port: string;
   host: string;
   agents: string;
@@ -34,6 +35,8 @@ export function registerServe(program: Command, ctx: CliContext): void {
       )
       .option("--public-url <url>", "the https address operators browse to, such as https://crane.example.com behind a reverse proxy")
       .option("--trust-proxy", "trust X-Forwarded-Proto and X-Forwarded-For from a proxy on this machine")
+      .option("--tls-cert <file>", "PEM certificate chain for serving HTTPS directly (requires --tls-key)")
+      .option("--tls-key <file>", "PEM private key for serving HTTPS directly (requires --tls-cert)")
       .option("--allow-insecure-http", "serve an exposed dashboard without HTTPS, on a network you trust")
       .option("--agents <n>", "initial active crew size (saved member settings take priority)", process.env.CRANE_AGENTS ?? "2")
       .option(
@@ -68,8 +71,11 @@ async function runFactory({ store, actions }: CliContext, command: "serve" | "st
     publicUrl: opts.publicUrl,
     trustProxy: opts.trustProxy,
     allowInsecureHttp: opts.allowInsecureHttp,
+    tlsCert: opts.tlsCert,
+    tlsKey: opts.tlsKey,
   };
   if (command === "start") {
+    try { loadTls(settings); } catch (error) { ui.fail(errorMessage(error)); }
     if (factoryIsRunning(store)) ui.fail("A factory is already running against this Crane home. Stop it first, or set CRANE_HOME to run another.");
     // Fail before building rather than after: the supervised serve would refuse these options anyway.
     const exposure = checkExposure({ ...settings, operators: actions.listOperators().length });
