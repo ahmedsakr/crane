@@ -1,10 +1,10 @@
 # Command guard: how Claude Code hooks and auto mode decide permissions
 
-Crane's per-repo command access setting defaults to **Only allowed commands** (`listed`). **Most commands** (`most`) lets Claude Code run most commands in its task worktree, with Crane's deterministic command guard checking shell calls and file writes first. **Most commands, with auto mode** (`auto`) is reserved for Claude Code's model-based classifier behind the same guard; that classifier wiring is pending, so this choice currently keeps the allowlist and adds the guard's outward-command checks. This page also records what the installed CLI actually does, so the wiring follows observed behavior rather than documentation alone.
+Crane's per-repo command access setting defaults to **Only allowed commands** (`listed`). **Most commands** (`most`) lets Claude Code run most commands in its task worktree, with Crane's deterministic command guard checking shell calls and file writes first. **Most commands, with auto mode** (`auto`) runs Claude Code's model-based auto-mode classifier behind the same guard; see [Auto mode](#auto-mode). This page also records what the installed CLI actually does, so the wiring follows observed behavior rather than documentation alone.
 
 ## What agents may run
 
-Use `crane commands most -r <repo>` to choose Most commands, or `crane commands listed -r <repo>` to restore the allowlist. A change applies to the next run, including a resumed run. Existing allowed and kept-blocked rules are preserved. Investigate-only runs keep their read-only allowlist and do not use the hook yet. **Codex is unaffected**: command access, the hook and Claude Code's auto-mode classifier do not change its sandbox or prompts.
+Use `crane commands most -r <repo>` to choose Most commands, or `crane commands listed -r <repo>` to restore the allowlist. A change applies to the next run, including a resumed run. Existing allowed and kept-blocked rules are preserved. Investigate-only runs keep their read-only allowlist, do not use the hook yet, and never use auto mode. **Codex is unaffected**: command access, the hook and Claude Code's auto-mode classifier do not change its sandbox or prompts.
 
 The guard makes no model call. It blocks these hard categories even when a command is on Claude Code's allowlist:
 
@@ -17,13 +17,13 @@ The guard makes no model call. It blocks these hard categories even when a comma
 | `privilege`, `system` | Privilege escalation, destructive device operations, changing host services or processes |
 | `credentials`, `remote-code` | Accessing or transmitting host credentials; executing downloaded or concealed code |
 
-Hard refusals cannot be allowed. In most and pending auto access, outward-facing categories also require an explicit operator rule: `publish` (publishing, deploying or changing remote resources), `global-install` (installing outside the project), and `remote-shell` (remote shells and transfers). In listed access these commands remain subject to the existing allowlist, with hard guard checks first.
+Hard refusals cannot be allowed. In most and auto access, outward-facing categories also require an explicit operator rule: `publish` (publishing, deploying or changing remote resources), `global-install` (installing outside the project), and `remote-shell` (remote shells and transfers). In listed access these commands remain subject to the existing allowlist, with hard guard checks first.
 
 For an outward-facing refusal, inspect the recorded command, reason and suggested rule, then use the existing **Allow** action or `crane allow "<suggested rule>" -r <repo>`, for example `crane allow "Bash(npm publish:*)" -r app`. On the next run, the guard reads that operator rule and no longer denies the matching outward-facing command. Hard checks and `ALWAYS_DENIED` still win. `crane keep-blocked` dismisses a suggestion; `crane disallow` revokes an allowance. None of these flows asks the agent to retry a refused operation in its current run.
 
-Guard refusals are stored as blocked events with `refusal.source: "crane.guard"`, bounded marker-supplied `refusal.reason`, and `guard: { category, overridable }`. Crane re-runs the same classifier with the run's context to obtain suggestions. Hard refusals have `rules: []` and never produce an Allow prompt in Home or `crane blocked`; overridable rules reach Home after two tasks hit them. Reasonless `permission_denials` duplicates do not replace live marker evidence. A hook failure with the marker is recorded as non-overridable `guard-error`, with no suggested rules. Ordinary Claude Code refusals retain their existing evidence sources. The contract also reserves `claude.auto-mode` for the classifier's refusals; recording those belongs to the auto-mode wiring.
+Guard refusals are stored as blocked events with `refusal.source: "crane.guard"`, bounded marker-supplied `refusal.reason`, and `guard: { category, overridable }`. Crane re-runs the same classifier with the run's context to obtain suggestions. Hard refusals have `rules: []` and never produce an Allow prompt in Home or `crane blocked`; overridable rules reach Home after two tasks hit them. Reasonless `permission_denials` duplicates do not replace live marker evidence. A hook failure with the marker is recorded as non-overridable `guard-error`, with no suggested rules. Ordinary Claude Code refusals retain their existing evidence sources. Blocks from the auto-mode classifier are recorded with `refusal.source: "claude.auto-mode"` (see [Auto mode](#auto-mode)).
 
-Agents in most access are told that guard refusals are final: explain the purpose, continue independent work and report what remains. They must not retry through rewritten commands, scripts, other interpreters or equivalent native tools. Listed and pending auto access retain the existing refusal guidance with a reminder about operator actions and shared branches. Codex's refusal guidance stays unchanged.
+Agents in most access are told that guard refusals are final: explain the purpose, continue independent work and report what remains. They must not retry through rewritten commands, scripts, other interpreters or equivalent native tools. Agents in auto access get the same brief, adding that auto mode also reviews commands and that its blocks are final too. Listed access retains the existing refusal guidance with a reminder about operator actions and shared branches. Codex's refusal guidance stays unchanged.
 
 - **CLI:** Claude Code 2.1.319 (`claude --version`)
 - **Date:** 2026-11-08 (UTC)
@@ -254,7 +254,44 @@ Crane follows design A. Every Claude Code run except investigate-only gets inlin
 - `command-guard-hook.ts` reads the call from stdin and runs `classifyToolCall`. A deny answers with JSON whose reason starts `Crane's command guard blocked this:`. An allow is sent only in `most` mode, and a pass sends no decision. Unreadable context or input exits 2 with the same prefix. Each answer also writes `crane-guard <decision> <tool_use_id>` to stderr.
 - `guard-liveness.ts` matches those stderr lines in `hook_response` events. It records one note per run when a Bash result arrives with no guard answer, for example after a timeout or a hook that couldn't start. Then only the allowlist decided that call.
 
-`--allowedTools`, `--disallowedTools` (with `ALWAYS_DENIED`) and `--permission-mode` are the same in every mode. Auto mode doesn't start yet: an `auto` repo runs like `listed`, except that the guard also denies outward commands.
+`--allowedTools` and `--disallowedTools` (with `ALWAYS_DENIED`) are the same in every mode. `--permission-mode` is `acceptEdits` in listed and most access and `auto` in auto access; [Auto mode](#auto-mode) covers the rest of that wiring.
+
+## Auto mode
+
+**Most commands, with auto mode** adds Claude Code's own model-based classifier (`--permission-mode auto`) behind Crane's guard. Where most access lets the guard's allow free any command it doesn't deny, auto access never lets the guard allow: every call that the deterministic checks don't decide goes to a model that judges whether it fits the task. It catches subtler intent mismatches, such as uploading a file to an unknown host, at the cost of a round trip and classifier tokens per reviewed call.
+
+### Order of checks
+
+For each tool call in an auto-mode run:
+
+1. **`ALWAYS_DENIED`** (`--disallowedTools`) refuses pushing, merging, checking out the default branch and `rm -rf`, before anything else (question 12).
+2. **Crane's guard** denies hard categories, and outward-facing commands without an operator rule, as in most access. For everything else it gives no decision; it never answers allow in auto access, because a hook allow skips the classifier (question 11). The liveness check still applies.
+3. **Narrow allow rules** (Crane's default allowlist and the operator's rules) approve matching calls without the classifier. Claude Code suspends broad interpreter rules itself: on 2.1.319 that was `Bash(npm run:*)`, `Bash(node:*)` and `Bash(python3 -m pytest:*)`. Crane never adds broad `Bash`. Edit, Write, Read and Grep in the worktree were approved here without the classifier.
+4. **The classifier** reviews the rest and either lets the call run or blocks it.
+
+The driver passes `--permission-prompts none` in auto access, so anything that would prompt is refused, and adds an `autoMode` section to the same inline `--settings` as the hook (`packages/agent-drivers/src/auto-mode-settings.ts`). Each list starts with `"$defaults"`, so Claude Code's built-in rules stay. `environment` tells the classifier that the agent's project scope is its task worktree; that the operator's checkout and `CRANE_HOME` are outside it; that pushing, merging and moving the default branch happen only through Crane after the operator approves; and that the local Crane API (localhost paths under `/api/`) and the Crane CLI's state-changing commands are the operator's control plane. One `hard_deny` entry says operator actions through the Crane CLI or local API, pushing, and changes to the default branch are never part of the task. Crane adds no `allow` entries. Without these, the built-in rules allowed an agent to approve a task through the local API and to push (question 14).
+
+Your own user-level or managed `autoMode` settings also apply to Crane's runs, because Claude Code merges them with the inline settings. Project-level `autoMode` settings in the worktree are ignored by Claude Code.
+
+### Refusals
+
+A classifier block is recorded as a blocked event with `refusal.source: "claude.auto-mode"`, the classifier's `decision_reason` (such as `[Data Exfiltration]`) as the reason, bounded like other reasons, and Crane's suggested rules. The stream reads it from the `system/permission_denied` event (`decision_reason_type: "classifier"`), falling back to the `tool_result` text, and the run's `permission_denials` doesn't add a duplicate. Allowing a suggested rule through **Allow** or `crane allow` adds a narrow rule that resolves before the classifier on the next run, unless it is one of the broad interpreter rules Claude Code suspends. Guard refusals in auto access keep `crane.guard`; Claude Code's other refusals are unchanged.
+
+### Latency and cost
+
+Measured in the spike (question 15): calls resolved by narrow rules took 7–141 ms, while the classifier added about 2.3 s per block and 4.3–4.7 s per allow after full review. The guard's own Node start-up, about 0.5–0.7 s per call, is the same as in most access.
+
+The classifier's usage does not appear in Claude Code's `total_cost_usd` or `modelUsage`, so Crane's cost and token totals for auto-mode runs **understate** what the run used. Crane doesn't estimate it. The classifier's tokens count against your Claude account; the setting's description in the CLI and dashboard says so. Claude Code's documentation says the classifier defaults to Sonnet 5; set `CLAUDE_CODE_AUTO_MODE_MODEL` in the factory's environment to choose another model.
+
+### Eligibility, unavailability and pauses
+
+Auto mode needs a supported main model (on 2.1.319, `haiku` and `sonnet` resolved to supported models; `claude-haiku-4-5` didn't) and an account where it is enabled. An admin can turn it off with `permissions.disableAutoMode`. When it can't start, Claude Code starts the run in `default` mode anyway, with no error. Crane compares `system/init`'s `permissionMode` with `auto` and, if they differ, records one note: "Auto mode wasn't available for this run, so it ran with only allowed commands and Crane's guard." The run continues and fails closed to the allowlist and the guard.
+
+After 3 consecutive blocks (or, per Claude Code's documentation, 20 in total), auto mode pauses and falls back to prompting. With `--permission-prompts none` that call is refused. Crane recognizes the pause by `actions were blocked` in the `permission_denied` message, records one note per run, and records the refused call as a `claude.auto-mode` block. The run keeps going with the allowlist and the guard in force. In the spike, the next unlisted call ran normally after the pause, so the classifier may resume; whether a flagged action straight after a pause is checked again is unverified.
+
+### Limits
+
+Auto mode is not used for investigate-only runs or for Codex, whose sandbox is unchanged. Like the guard, the classifier is best-effort protection against agent mistakes and prompt injection, not a hard boundary against a determined adversary: the worktree, `ALWAYS_DENIED`, Claude Code's working-directory limits and Crane-only merging remain the boundaries. The classifier also reads CLAUDE.md; a CLAUDE.md present at session start didn't change its decision in the spike, but an agent's in-session edit to it is unverified (question 14).
 
 ## Unverified questions and operator follow-up
 

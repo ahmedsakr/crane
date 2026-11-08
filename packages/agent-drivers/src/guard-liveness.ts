@@ -12,9 +12,11 @@ export class GuardLiveness {
   private answered = new Set<string>();
   private missed = false;
 
+  /** `autoMode`: the run asked for Claude Code's auto mode, whose classifier also decides calls the guard missed. */
   constructor(
     private installed: boolean,
     private emit: RunContext["emit"],
+    private autoMode = false,
   ) {}
 
   onHookResponse(msg: Record<string, any>) {
@@ -26,7 +28,8 @@ export class GuardLiveness {
   onBashResult(toolUseId: string) {
     if (!this.installed || this.answered.has(toolUseId) || this.missed) return;
     this.missed = true;
-    this.emit("note", "Crane's command guard didn't answer for a command, so only the allowlist decided it. Check that the factory's packages are built (npm run build:packages) and that the hook can start.", {
+    const decided = this.autoMode ? "only the allowlist and Claude Code's auto mode decided it" : "only the allowlist decided it";
+    this.emit("note", `Crane's command guard didn't answer for a command, so ${decided}. Check that the factory's packages are built (npm run build:packages) and that the hook can start.`, {
       toolUseId,
     });
   }

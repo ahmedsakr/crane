@@ -64,8 +64,16 @@ export const SANDBOXED_AUTONOMY_BRIEF: Record<Task["autonomy"], string> = {
 export function blockedBrief(opts: { commandAccess?: CommandAccess; sandboxed?: boolean }): string {
   if (opts.sandboxed || opts.commandAccess === undefined) return BLOCKED_BRIEF;
   if (opts.commandAccess === "most") return MOST_COMMANDS_BRIEF;
+  if (opts.commandAccess === "auto") return AUTO_MODE_BRIEF;
   return BLOCKED_BRIEF + " Crane's command guard also refuses operator actions and shared-branch changes.";
 }
 
-const MOST_COMMANDS_BRIEF =
-  "Most commands are allowed in this worktree. Crane's command guard refuses dangerous ones: pushing, merging, moving shared branches, touching anything outside the worktree except permitted temporary files, operator actions such as approving tasks, publishing or deploying without an operator rule, privilege escalation, credentials, and changes to agent settings or hooks. A guard refusal is final for this run: don't retry it rewritten, through a script, another interpreter or shell, or an equivalent native-tool call. Say what you needed it for, continue independent work where possible, and mention the refusal and any remaining validation in your report. This applies across editing, validation, resumed, and fresh sessions. Do not guess which part of a refused compound command was denied or repackage it to get past the refusal. If a conflict-marker scan is refused, report it as unavailable with its purpose for operator review. Only the operator can allow outward-facing commands for a later run; hard guard refusals cannot be allowed.";
+const GUARD_REFUSES =
+  "Most commands are allowed in this worktree. Crane's command guard refuses dangerous ones: pushing, merging, moving shared branches, touching anything outside the worktree except permitted temporary files, operator actions such as approving tasks, publishing or deploying without an operator rule, privilege escalation, credentials, and changes to agent settings or hooks.";
+
+const REFUSAL_IS_FINAL =
+  "don't retry it rewritten, through a script, another interpreter or shell, or an equivalent native-tool call. Say what you needed it for, continue independent work where possible, and mention the refusal and any remaining validation in your report. This applies across editing, validation, resumed, and fresh sessions. Do not guess which part of a refused compound command was denied or repackage it to get past the refusal. If a conflict-marker scan is refused, report it as unavailable with its purpose for operator review.";
+
+const MOST_COMMANDS_BRIEF = `${GUARD_REFUSES} A guard refusal is final for this run: ${REFUSAL_IS_FINAL} Only the operator can allow outward-facing commands for a later run; hard guard refusals cannot be allowed.`;
+
+const AUTO_MODE_BRIEF = `${GUARD_REFUSES} Claude Code's auto mode also reviews the commands the guard and the allowed rules leave undecided, and blocks ones that don't fit the task. An auto-mode block is final just like a guard refusal: ${REFUSAL_IS_FINAL} Only the operator can allow a blocked command for a later run; hard guard refusals cannot be allowed.`;
