@@ -1,0 +1,40 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "@crane/agent-drivers",
+  "projectType": "library",
+  "tags": [
+    "kind:package"
+  ],
+  "implicitDependencies": [
+    "@crane/agent-policy",
+    "@crane/agent-protocol",
+    "@crane/contracts",
+    "@crane/diagnostics"
+  ],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node scripts/check-workspace-links.mjs && tsc -b packages/agent-drivers/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "default",
+        "^default"
+      ],
+      "outputs": [
+        "{projectRoot}/dist"
+      ],
+      "cache": true
+    },
+    "typecheck": {
+      "executor": "nx:noop",
+      "dependsOn": [
+        "build"
+      ]
+    }
+  }
+}

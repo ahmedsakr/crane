@@ -1,0 +1,23 @@
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "useDaemonProcess": false,
+  "neverConnectToCloud": true,
+  "namedInputs": {
+    "sharedGlobals": [
+      "{workspaceRoot}/nx.json",
+      "{workspaceRoot}/package.json",
+      "{workspaceRoot}/package-lock.json",
+      "{workspaceRoot}/tsconfig.json",
+      "{workspaceRoot}/tsconfig.packages.json",
+      "{workspaceRoot}/tsconfig.test.json",
+      "{workspaceRoot}/.gitignore",
+      "{workspaceRoot}/scripts/build.mjs",
+      "{workspaceRoot}/scripts/check-workspace-links.mjs",
+      "{workspaceRoot}/scripts/nx-toolchain.mjs",
+      { "runtime": "node scripts/nx-toolchain.mjs" },
+      { "env": "NODE_OPTIONS" },
+      { "env": "NODE_ENV" }
+    ],
+    "default": ["{projectRoot}/**/*", "sharedGlobals"]
+  }
+}
