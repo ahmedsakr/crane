@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { GuardContext } from "@crane/agent-policy";
 import type { RunContext } from "@crane/agent-protocol";
+import { autoModeSettings } from "./auto-mode-settings.js";
 import { encodeGuardContext } from "./command-guard-protocol.js";
 
 /** The tools whose calls the guard checks: shell commands and file writes. */
@@ -55,8 +56,8 @@ export function guardCommand(context: GuardContext): string {
 }
 
 /**
- * Inline settings for `claude --settings`: the guard as a PreToolUse hook.
- * Later settings for the same run (such as auto mode's) belong in this object.
+ * Inline settings for `claude --settings`: the guard as a PreToolUse hook,
+ * plus Crane's context for the auto-mode classifier in an `auto` repo.
  */
 export function claudeSettings(context: GuardContext): Record<string, unknown> {
   return {
@@ -65,5 +66,6 @@ export function claudeSettings(context: GuardContext): Record<string, unknown> {
         { matcher: GUARDED_TOOLS, hooks: [{ type: "command", command: guardCommand(context), timeout: GUARD_TIMEOUT_SECONDS }] },
       ],
     },
+    ...(context.access === "auto" ? { autoMode: autoModeSettings(context) } : {}),
   };
 }

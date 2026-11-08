@@ -102,7 +102,11 @@ In an environment that permits piped child stdio,
 `node --import tsx test/limits.test.ts` exercises Claude Code's stream recording
 with a stand-in CLI. `node --import tsx test/command-guard-driver.test.ts` adds
 guard-marker denials, summary duplicates, hard and overridable rules, and
-unchanged Claude Code refusals through a stand-in CLI. Both require piped
+unchanged Claude Code refusals through a stand-in CLI.
+`node --import tsx test/auto-mode.test.ts` covers auto-mode runs through the
+same stand-in: `--permission-mode auto` with the unchanged allowlist, the
+`autoMode` settings, the note when auto mode didn't start or paused,
+classifier blocks, guard denials in auto access, and unchanged Codex runs. All three require piped
 child stdio and are deferred locally in Codex's sandbox. The pure
 `node --import tsx test/guard-refusals.test.ts` suite checks stream replay,
 prompts and the store/Allow flow without starting a CLI.
@@ -120,8 +124,10 @@ the driver record that supplied the evidence. A live `tool_result` retains up to
 `permission_denials` record uses null because that record supplies no reason.
 Duplicate summary records do not replace live evidence. This source identifies
 the evidence channel, not an underlying policy engine that the CLI has not named.
-Guard-marker evidence explicitly identifies `crane.guard`; the contract also
-includes `claude.auto-mode` for the forthcoming classifier recording. Hard guard
+Guard-marker evidence explicitly identifies `crane.guard`. In auto access,
+classifier blocks identify `claude.auto-mode`, with the `permission_denied`
+event's `decision_reason` as the reason, and auto mode's pause after repeated
+blocks is recorded the same way, plus one note. Hard guard
 refusals include `guard.overridable: false` and no rules. Guard reasons are
 bounded to the same 4,000 characters as other live refusal text.
 The text may contain a policy reason when the CLI supplies one; otherwise the

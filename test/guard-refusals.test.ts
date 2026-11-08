@@ -22,7 +22,7 @@ function harness(guard: GuardContext = context) {
   const stream = new ClaudeStream({
     signal: new AbortController().signal,
     emit: (type, _message, data) => void events.push({ type, data }),
-  }, toolsFor("propose"), undefined, true, guard);
+  }, toolsFor("propose"), undefined, guard);
   const blocked = () => events.filter(e => e.type === "blocked").map(e => e.data as unknown as BlockedCall);
   return { stream, blocked };
 }
@@ -130,7 +130,7 @@ test("guard refusals: two tasks surface only overridable rules, and operator All
   } finally { store.close(); }
 });
 
-test("guard prompts: most, listed and pending auto guidance reaches work, conflicts, fixes and resumes", () => {
+test("guard prompts: most, listed and auto guidance reaches work, conflicts, fixes and resumes", () => {
   const store = new Store(":memory:");
   try {
     const task = store.createTask({ kind: "maintenance", title: "Guarded", brief: "", autonomy: "propose", repoId: null });
@@ -143,13 +143,15 @@ test("guard prompts: most, listed and pending auto guidance reaches work, confli
       const opts = { commandAccess };
       for (const job of jobs) {
         for (const prompt of [systemPrompt(task, null, job, opts), resumePrompt({ task, job }, opts)]) {
-          if (commandAccess === "most") {
+          if (commandAccess !== "listed") {
             assert.match(prompt, /Most commands are allowed in this worktree/);
-            assert.match(prompt, /A guard refusal is final/);
+            assert.match(prompt, commandAccess === "most" ? /A guard refusal is final/ : /An auto-mode block is final just like a guard refusal/);
             assert.match(prompt, /don't retry it rewritten, through a script, another interpreter/);
             assert.match(prompt, /pushing, merging, moving shared branches/);
             assert.match(prompt, /operator actions such as approving tasks, publishing or deploying/);
             assert.doesNotMatch(prompt, /Some commands are not allowed/);
+            if (commandAccess === "most") assert.doesNotMatch(prompt, /auto mode/i);
+            else assert.match(prompt, /Claude Code's auto mode also reviews the commands/);
           } else {
             assert.ok(prompt.includes(BLOCKED_BRIEF));
             assert.match(prompt, /guard also refuses operator actions and shared-branch changes/);

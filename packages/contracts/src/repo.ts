@@ -32,7 +32,7 @@ export const COMMAND_ACCESS_LABEL: Record<CommandAccess, string> = {
 export const COMMAND_ACCESS_DETAIL: Record<CommandAccess, string> = {
   listed: "Agents run Crane's default commands and the ones you allowed for this repo.",
   most: "Agents run most commands. Crane's command guard blocks dangerous ones.",
-  auto: "Agents run most commands. Crane's command guard checks each one first, then Claude Code's auto mode reviews the rest.",
+  auto: "Agents run most commands. Crane's command guard checks each one first, then Claude Code's auto mode reviews the rest, using extra tokens that Crane's costs don't include.",
 };
 
 export function isCommandAccess(value: unknown): value is CommandAccess {

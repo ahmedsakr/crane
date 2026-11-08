@@ -6,6 +6,7 @@ import { claudeToolResult, claudeValidationSummary } from "./claude-evidence.js"
 import { emitAgentText } from "./cli.js";
 import { commandMessage, CommandTracker, safeEvidenceText } from "./command-evidence.js";
 import { GuardLiveness } from "./guard-liveness.js";
+import { AutoModeWatch, CLASSIFIER_DENIAL, classifierReason } from "./auto-mode-stream.js";
 import { GUARD_DENY_PREFIX } from "./command-guard-protocol.js";
 
 /** What a stream hears the run through. */
@@ -119,22 +120,25 @@ export class ClaudeStream implements AgentStream {
   private commands = new CommandTracker((command) => this.onCommand(command));
   private reported = new Set<string>();
   private guard: GuardLiveness;
+  private autoMode: AutoModeWatch;
 
-  /** `guarded`: the run has Crane's command guard hook and asked for hook events. */
+  /** `guardContext`: the run has Crane's command guard hook and asked for hook events; access `auto` asked for auto mode. */
   constructor(
     private ctx: ClaudeStreamContext,
     private tools: ToolRules,
     private resume?: string,
-    guarded = false,
     private guardContext?: GuardContext,
   ) {
     this.sessionId = resume ?? null;
-    this.guard = new GuardLiveness(guarded, ctx.emit);
+    const auto = guardContext?.access === "auto";
+    this.guard = new GuardLiveness(!!guardContext, ctx.emit, auto);
+    this.autoMode = new AutoModeWatch(auto, ctx.emit);
   }
 
   handle(msg: Record<string, any>) {
     if (msg.type === "system" && msg.subtype === "init") this.onInit(msg);
     else if (msg.type === "system" && msg.subtype === "hook_response") this.guard.onHookResponse(msg);
+    else if (msg.type === "system" && msg.subtype === "permission_denied") this.onPermissionDenied(msg);
     else if (msg.type === "assistant") this.onAssistant(msg);
     else if (msg.type === "user") this.onUser(msg);
     else if (msg.type === "result") this.onResult(msg);
@@ -183,6 +187,16 @@ export class ClaudeStream implements AgentStream {
     const verb = this.resume ? "resumed" : "started";
     const effort = this.ctx.effort ? `, ${this.ctx.effort} effort` : "";
     this.ctx.emit("note", `Agent session ${verb}${msg.model ? ` on ${msg.model}` : ""}${effort}`, { sessionId: msg.session_id });
+    this.autoMode.onInit(msg);
+  }
+
+  /** Classifier blocks arrive here first, with a clean reason; the tool_result and permission_denials repeat them. */
+  private onPermissionDenied(msg: Record<string, any>) {
+    const block = this.autoMode.onPermissionDenied(msg);
+    if (!block) return;
+    const call = this.calls.get(block.toolUseId);
+    const tool = call?.name ?? block.tool;
+    if (tool) this.blocked(block.toolUseId, tool, call?.input ?? block.input ?? {}, { source: "claude.auto-mode", reason: block.reason });
   }
 
   private onAssistant(msg: Record<string, any>) {
@@ -231,6 +245,8 @@ export class ClaudeStream implements AgentStream {
     }
     if (block.is_error && call && result.content.text.includes(GUARD_DENY_PREFIX)) {
       this.guardBlocked(block.tool_use_id, call, result.content.text);
+    } else if (block.is_error && call && result.content.text.includes(CLASSIFIER_DENIAL)) {
+      this.blocked(block.tool_use_id, call.name, call.input, { source: "claude.auto-mode", reason: classifierReason(result.content.text) });
     } else if (block.is_error && call && DENIAL_TEXT.test(text)) {
       this.blocked(block.tool_use_id, call.name, call.input, { source: "claude-code.tool_result", reason: text });
     }

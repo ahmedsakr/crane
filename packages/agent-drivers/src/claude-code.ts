@@ -73,8 +73,10 @@ function operatorRules(repoAllowed: string[] = []): string[] {
  * denies hard-dangerous calls (shared Git state, operator actions, writes
  * outside the worktree, credentials) even when this list would allow them.
  * In "Most commands" its allow widens this list to almost any command; deny
- * rules still win over that allow. A guard that fails to answer leaves the
- * call to this list. See docs/command-guard.md.
+ * rules still win over that allow. In auto mode the list is unchanged and the
+ * guard never allows, so Claude Code's classifier reviews the rest. A guard
+ * that fails to answer leaves the call to this list (and, in auto mode, the
+ * classifier). See docs/command-guard.md.
  */
 export function toolsFor(autonomy: Autonomy, repoAllowed: string[] = []): { allowed: string[]; denied: string[] } {
   const base = autonomy === "observe" ? READ_ONLY_TOOLS : WRITE_TOOLS;
@@ -82,10 +84,22 @@ export function toolsFor(autonomy: Autonomy, repoAllowed: string[] = []): { allo
   return { allowed: [...new Set([...base, ...operatorRules(repoAllowed)])], denied };
 }
 
+/**
+ * Auto mode only for a guarded run in an `auto` repo, which investigate-only
+ * runs never are. Its classifier reviews what ALWAYS_DENIED, the guard and the
+ * narrow allow rules leave undecided; Claude Code suspends broad interpreter
+ * rules such as `Bash(node:*)` on its own. Never bypassPermissions.
+ */
+export function permissionMode(autonomy: Autonomy, guard?: GuardContext): "default" | "acceptEdits" | "auto" {
+  if (guard?.access === "auto") return "auto";
+  return autonomy === "observe" ? "default" : "acceptEdits";
+}
+
 function claudeArgs(
   ctx: RunContext, autonomy: Autonomy, tools: { allowed: string[]; denied: string[] }, resume?: string, guard?: GuardContext,
 ): string[] {
   const settings = guard ? claudeSettings(guard) : null;
+  const mode = permissionMode(autonomy, guard);
   const args = [
     "-p",
     "--output-format",
@@ -94,12 +108,14 @@ function claudeArgs(
     "--append-system-prompt",
     systemPrompt(ctx.task, ctx.repo, ctx.job, { checks: ctx.checks, commandAccess: guard?.access }),
     "--permission-mode",
-    autonomy === "observe" ? "default" : "acceptEdits",
+    mode,
     "--allowedTools",
     tools.allowed.join(","),
     "--disallowedTools",
     tools.denied.join(","),
   ];
+  // Nobody can answer a prompt, so "would prompt" is a recognizable denial, including auto mode's pause.
+  if (mode === "auto") args.push("--permission-prompts", "none");
   // Hook events let the stream check that the guard answered for each command.
   if (settings) args.push("--settings", JSON.stringify(settings), "--include-hook-events");
   if (ctx.maxTurns) args.push("--max-turns", String(ctx.maxTurns));
@@ -149,7 +165,7 @@ export class ClaudeCodeDriver implements AgentDriver {
       env: claudeEnv(),
       prompt: resume ? resumePrompt(ctx, { commandAccess: guard?.access }) : userPrompt(ctx.task, ctx.job, ctx),
       resume,
-      stream: new ClaudeStream(ctx, tools, resume, !!guard, guard),
+      stream: new ClaudeStream(ctx, tools, resume, guard),
       ctx,
     });
   }

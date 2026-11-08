@@ -91,8 +91,9 @@ test("guard: command access reaches Claude Code's appended system prompt", async
   for (const commandAccess of ["listed", "most", "auto"] as const) {
     const run = await runDriver("propose", { commandAccess });
     const prompt = after(run.args, "--append-system-prompt");
-    if (commandAccess === "most") assert.match(prompt, /Most commands are allowed in this worktree/);
-    else assert.match(prompt, /guard also refuses operator actions and shared-branch changes/);
+    if (commandAccess === "listed") assert.match(prompt, /guard also refuses operator actions and shared-branch changes/);
+    else assert.match(prompt, /Most commands are allowed in this worktree/);
+    assert.equal(/auto-mode block is final/.test(prompt), commandAccess === "auto", commandAccess);
   }
   const observe = await runDriver("observe", { commandAccess: "most" });
   assert.doesNotMatch(after(observe.args, "--append-system-prompt"), /Most commands are allowed/);
@@ -135,7 +136,7 @@ test("guard: the hook's context comes from the run", async () => {
   assert.deepEqual(contextOf(plain.args).allowed, [], "Crane's default allowlist isn't passed as operator rules");
 });
 
-test("guard: every mode keeps ALWAYS_DENIED, the allowlist and the permission mode; none widens Bash", async () => {
+test("guard: every mode keeps ALWAYS_DENIED and the allowlist; only auto changes the permission mode; none widens Bash", async () => {
   const baseline = await runDriver("propose", { allowedTools: ["Bash(docker compose:*)"] });
   for (const commandAccess of ["listed", "most", "auto"] as CommandAccess[]) {
     const { args } = await runDriver("propose", { commandAccess, allowedTools: ["Bash(docker compose:*)"] });
@@ -143,7 +144,7 @@ test("guard: every mode keeps ALWAYS_DENIED, the allowlist and the permission mo
     assert.equal(after(args, "--allowedTools"), after(baseline.args, "--allowedTools"), `${commandAccess}: design A keeps the allowlist`);
     const allowed = after(args, "--allowedTools").split(",");
     assert.ok(!allowed.includes("Bash") && !allowed.includes("Bash(*)"), `${commandAccess}: no broad Bash`);
-    assert.equal(after(args, "--permission-mode"), "acceptEdits");
+    assert.equal(after(args, "--permission-mode"), commandAccess === "auto" ? "auto" : "acceptEdits");
     assert.ok(!args.includes("--dangerously-skip-permissions") && !args.includes("bypassPermissions"));
     assert.equal(contextOf(args).access, commandAccess);
   }
