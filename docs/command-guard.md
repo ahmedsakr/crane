@@ -4,7 +4,7 @@ Crane's per-repo command access setting defaults to **Only allowed commands** (`
 
 ## What agents may run
 
-Use `crane commands most -r <repo>` to choose Most commands, or `crane commands listed -r <repo>` to restore the allowlist. A change applies to the next run, including a resumed run. Existing allowed and kept-blocked rules are preserved. Investigate-only runs keep their read-only allowlist, do not use the hook yet, and never use auto mode. **Codex is unaffected**: command access, the hook and Claude Code's auto-mode classifier do not change its sandbox or prompts.
+Use `crane commands most -r <repo>` to choose Most commands, or `crane commands listed -r <repo>` to restore the allowlist. A change applies to the next run, including a resumed run. Existing allowed and kept-blocked rules are preserved. Investigate-only runs keep their read-only allowlist and never use auto mode; most and auto repos add a strict [inspection profile](#investigate-only-runs). **Codex is unaffected**: command access, the hook and Claude Code's auto-mode classifier do not change its sandbox or prompts.
 
 The guard makes no model call. It blocks these hard categories even when a command is on Claude Code's allowlist:
 
@@ -248,13 +248,35 @@ Wiring notes:
 
 ## How Crane wires the guard
 
-Crane follows design A. Every Claude Code run except investigate-only gets inline `--settings` with one `PreToolUse` hook (matcher `Bash|Edit|Write|MultiEdit|NotebookEdit`, `timeout: 10`) plus `--include-hook-events`, in all three command access modes. The pieces are in `packages/agent-drivers/src/`:
+Crane follows design A. Every write-capable Claude Code run gets inline `--settings` with one `PreToolUse` hook (matcher `Bash|Edit|Write|MultiEdit|NotebookEdit`, `timeout: 10`) plus `--include-hook-events`, in all three command access modes. Investigate-only runs get the same hook in most and auto repos, with the inspection profile below. The pieces are in `packages/agent-drivers/src/`:
 
 - `claude-guard.ts` builds the settings and the run's `GuardContext`: command access (unset means `listed`), the worktree, the operator's checkout and default branch, `CRANE_HOME`, the home directory, the `job` profile for conflict and fix-checks runs, and the operator's own rules (`CRANE_ALLOWED_TOOLS` and the repo's). Crane's default allowlist isn't part of `allowed`, so "Most commands" still flags an outward command such as `npm install -g` that a default rule would match. The hook command is `'<node>' '<dist/command-guard-hook.js>' <base64url context>`. If the compiled hook is missing, the run fails before Claude Code starts.
-- `command-guard-hook.ts` reads the call from stdin and runs `classifyToolCall`. A deny answers with JSON whose reason starts `Crane's command guard blocked this:`. An allow is sent only in `most` mode, and a pass sends no decision. Unreadable context or input exits 2 with the same prefix. Each answer also writes `crane-guard <decision> <tool_use_id>` to stderr.
+- `command-guard-hook.ts` reads the call from stdin and runs `classifyToolCall`. A deny answers with JSON whose reason starts `Crane's command guard blocked this:`. An allow is sent in `most` mode or for positive inspection matches in most/auto repos, and a pass sends no decision. Unreadable context or input exits 2 with the same prefix. Each answer also writes `crane-guard <decision> <tool_use_id>` to stderr.
 - `guard-liveness.ts` matches those stderr lines in `hook_response` events. It records one note per run when a Bash result arrives with no guard answer, for example after a timeout or a hook that couldn't start. Then only the allowlist decided that call.
 
 `--allowedTools` and `--disallowedTools` (with `ALWAYS_DENIED`) are the same in every mode. `--permission-mode` is `acceptEdits` in listed and most access and `auto` in auto access; [Auto mode](#auto-mode) covers the rest of that wiring.
+
+## Investigate-only runs
+
+Investigate-only (`observe`) tasks run inside the **operator's checkout**, not an isolated task worktree. Most commands and auto mode therefore never apply to them as they do to write tasks. In `listed` repos their arguments and allowlist are unchanged: no hook, the existing `default` permission mode, `READ_ONLY_TOOLS` plus operator rules, and explicit Edit/Write/MultiEdit/NotebookEdit denies alongside `ALWAYS_DENIED`.
+
+In `most` and `auto` repos, Crane installs the same hook with `profile: "inspect"`. It keeps that read-only baseline and those denies, never adds broad `Bash`, and uses `--permission-mode manual` (the documented name; like `default`, it reports `default` in init). It passes no `autoMode` settings and never requests `--permission-mode auto`, so there is no classifier cost, classifier pause or auto-unavailable note. The hook can approve only a positive list of read-only command forms:
+
+| Commands | Restrictions |
+| --- | --- |
+| `find` | Read-only predicates and traversal; no `-exec`, `-execdir`, `-ok`, `-okdir`, `-delete`, `-fprint*`, `-fprintf` or `-fls` |
+| `sed -n` | Small inline grammar of addressed `p`, `d`, `q` and `=` commands; no in-place flags, script files, execution, reads, `w` or `W` |
+| `awk` | Inline program only; no `system`, redirection, pipes, `getline`, extension/include directives or concealed source escapes |
+| `jq`, `sort`, `uniq`, `cut`, `tr`, `wc`, `diff`, `cmp`, `file`, `stat`, `du`, `df`, `tree`, `which`, `type`, `basename`, `dirname`, `realpath`, `readlink`, `nl`, `column`, `comm`, `xxd`, `od` | Positive read-only flags only; no output-file options or operands, reverse `xxd`, compiled magic files, external helpers or unchecked scripts |
+| `git` | `log`, `show`, `diff`, `status`, `blame`, `rev-parse`, `ls-files`, `ls-tree`, `grep`, `branch --list`/`-a`/`-r`, `remote -v`, `describe`, `merge-base`, `cat-file`, `for-each-ref`, `shortlog`; no branch mutations, output-file options, external diff/textconv helpers or config overrides |
+| `npm` | `ls`, `view`, or exactly `npm run --silent crane -- tasks\|show\|blocked\|repos\|diff ... --json`, with query flags only |
+| `node --version` | No other Node flags or programs |
+
+Existing read-only shell tools (`head`, `tail`, `cat`, `grep`, `rg`, `ls`, `pwd`) also have positive read-only forms so they can participate in pipelines. Every stage must qualify, for example `git log --oneline | head -20` or `find src -name '*.ts' | sort`. Sequential read-only commands may use `&&`, `||`, `;` or newlines. The installed CLI's hook allow covers compounds and pipelines (question 1); Crane does not widen Bash to achieve this.
+
+Output redirection is approved only to the literal `/dev/null`; credential paths are never positively approved. The positive shell grammar rejects expansions, unquoted globs, subshells, wrappers, input redirects and background jobs rather than guessing what they execute. Quote find patterns, as in `find src -name '*.ts'`. Unknown commands, flags and script forms return **pass**, not allow, leaving the existing allowlist and operator rules to decide; they do not inherit Most commands permissions. This positive list is the sole exception to “auto access never answers allow”: these runs never start auto mode. File editing tools never receive an inspection allow.
+
+The base classifier's hard denials still win before any positive approval. Its limitations remain: POSIX text handling cannot inspect symlinks, shell aliases, arbitrary programs or repository scripts. In particular, the explicitly supported Crane CLI query uses the repository's `crane` npm script and the CLI can open/migrate its store, as described in `CLAUDE.md`; it is not an OS read-only sandbox. A missing hook answer leaves the baseline in force and produces the usual liveness note. Refusal prompts describe the read-only scope, and the agent must report a refusal without retrying an equivalent operation.
 
 ## Auto mode
 

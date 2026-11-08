@@ -61,8 +61,9 @@ export const SANDBOXED_AUTONOMY_BRIEF: Record<Task["autonomy"], string> = {
 };
 
 /** Only Claude Code supplies command access; sandboxed drivers keep their existing brief. */
-export function blockedBrief(opts: { commandAccess?: CommandAccess; sandboxed?: boolean }): string {
+export function blockedBrief(opts: { commandAccess?: CommandAccess; sandboxed?: boolean; inspect?: boolean }): string {
   if (opts.sandboxed || opts.commandAccess === undefined) return BLOCKED_BRIEF;
+  if (opts.inspect && opts.commandAccess !== "listed") return INSPECTION_BRIEF;
   if (opts.commandAccess === "most") return MOST_COMMANDS_BRIEF;
   if (opts.commandAccess === "auto") return AUTO_MODE_BRIEF;
   return BLOCKED_BRIEF + " Crane's command guard also refuses operator actions and shared-branch changes.";
@@ -77,3 +78,5 @@ const REFUSAL_IS_FINAL =
 const MOST_COMMANDS_BRIEF = `${GUARD_REFUSES} A guard refusal is final for this run: ${REFUSAL_IS_FINAL} Only the operator can allow outward-facing commands for a later run; hard guard refusals cannot be allowed.`;
 
 const AUTO_MODE_BRIEF = `${GUARD_REFUSES} Claude Code's auto mode also reviews the commands the guard and the allowed rules leave undecided, and blocks ones that don't fit the task. An auto-mode block is final just like a guard refusal: ${REFUSAL_IS_FINAL} Only the operator can allow a blocked command for a later run; hard guard refusals cannot be allowed.`;
+
+const INSPECTION_BRIEF = `You are inspecting the operator's checkout. Read-only inspection commands on Crane's positive list are allowed, including find, sed -n, read-only awk and Git queries, and pipelines of read-only commands. Everything else stays blocked unless the existing read-only allowlist or an operator rule permits it. Never modify files; Edit and Write remain denied. Claude Code's auto mode is not used for investigate-only runs. A guard refusal is final for this run: ${REFUSAL_IS_FINAL}`;

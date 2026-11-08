@@ -99,7 +99,7 @@ test("guard: command access reaches Claude Code's appended system prompt", async
   assert.doesNotMatch(after(observe.args, "--append-system-prompt"), /Most commands are allowed/);
 });
 
-test("guard: propose, act and conflict/fix-checks runs get the hook; investigate-only runs don't", async () => {
+test("guard: propose, act and conflict/fix-checks runs get the hook; listed investigate-only runs don't", async () => {
   const runs = {
     propose: await runDriver("propose"),
     act: await runDriver("act"),
@@ -120,9 +120,27 @@ test("guard: propose, act and conflict/fix-checks runs get the hook; investigate
   assert.equal(contextOf(runs.fix.args).profile, "job");
 
   const observe = await runDriver("observe");
-  assert.ok(!observe.args.includes("--settings"), "investigate-only runs get no guard in this task");
+  assert.ok(!observe.args.includes("--settings"), "listed investigate-only runs retain their original permissions");
   assert.ok(!observe.args.includes("--include-hook-events"));
   assert.equal(after(observe.args, "--permission-mode"), "default");
+});
+
+test("guard: investigate-only runs in most and auto repos install an inspection hook without widening tools", async () => {
+  const baseline = await runDriver("observe", { commandAccess: "listed" });
+  for (const commandAccess of ["most", "auto"] as const) {
+    const checkout = mkdtempSync(join(tmpdir(), "crane-inspect-checkout-"));
+    const run = await runDriver("observe", { commandAccess, cwd: checkout, repo: { ...repo, path: checkout } });
+    const context = contextOf(run.args);
+    assert.equal(context.profile, "inspect");
+    assert.equal(context.access, commandAccess);
+    assert.equal(context.worktree, checkout);
+    assert.equal(context.checkout, checkout);
+    assert.equal(after(run.args, "--permission-mode"), "manual");
+    assert.equal(JSON.parse(after(run.args, "--settings")).autoMode, undefined);
+    assert.equal(after(run.args, "--allowedTools"), after(baseline.args, "--allowedTools"));
+    assert.equal(after(run.args, "--disallowedTools"), after(baseline.args, "--disallowedTools"));
+    assert.ok(run.args.includes("--include-hook-events"));
+  }
 });
 
 test("guard: the hook's context comes from the run", async () => {

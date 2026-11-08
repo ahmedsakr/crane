@@ -35,17 +35,18 @@ function decision(permissionDecision: "allow" | "deny", reason: string): HookDec
 }
 
 /**
- * Only "Most commands" may answer allow: an allow skips Claude Code's
- * allowlist in every mode, and its auto-mode classifier too. The classifier
- * already never allows outside `most`; this keeps that true here as well.
+ * An allow skips Claude Code's allowlist and auto-mode classifier. Only most
+ * worktree runs and positive inspection matches may allow. Inspect runs in
+ * auto repos never start auto mode, so their read-only approvals are safe here.
  */
-export function hookDecision(verdict: GuardVerdict, access: GuardContext["access"]): HookDecision | null {
+export function hookDecision(verdict: GuardVerdict, access: GuardContext["access"], profile?: GuardContext["profile"]): HookDecision | null {
   if (verdict.decision === "deny") {
     const rules = verdict.overridable && verdict.rules.length ? ` The operator can allow it for this repo with: ${verdict.rules.join(", ")}.` : "";
     return decision("deny", `${GUARD_DENY_PREFIX} ${verdict.reason}${rules}`);
   }
-  if (verdict.decision === "allow" && access === "most") {
-    return decision("allow", "Crane's command guard allowed this: the repo lets agents run most commands.");
+  if (verdict.decision === "allow" && (access === "most" || (access === "auto" && profile === "inspect"))) {
+    const reason = profile === "inspect" ? "every command is on the read-only inspection list" : "the repo lets agents run most commands";
+    return decision("allow", `Crane's command guard allowed this: ${reason}.`);
   }
   return null;
 }
@@ -55,7 +56,7 @@ export function encodeGuardContext(ctx: GuardContext): string {
 }
 
 const ACCESS = new Set<unknown>(["listed", "most", "auto"]);
-const PROFILES = new Set<unknown>(["worktree", "job"]);
+const PROFILES = new Set<unknown>(["worktree", "job", "inspect"]);
 const absolute = (value: unknown): value is string => typeof value === "string" && value.startsWith("/");
 
 /** Decode and check the context from the hook's command line. Anything unexpected throws. */

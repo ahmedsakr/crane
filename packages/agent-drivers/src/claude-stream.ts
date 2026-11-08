@@ -122,7 +122,7 @@ export class ClaudeStream implements AgentStream {
   private guard: GuardLiveness;
   private autoMode: AutoModeWatch;
 
-  /** `guardContext`: the run has Crane's command guard hook and asked for hook events; access `auto` asked for auto mode. */
+  /** Inspect runs have a guard but never request auto mode, even in auto repos. */
   constructor(
     private ctx: ClaudeStreamContext,
     private tools: ToolRules,
@@ -130,7 +130,7 @@ export class ClaudeStream implements AgentStream {
     private guardContext?: GuardContext,
   ) {
     this.sessionId = resume ?? null;
-    const auto = guardContext?.access === "auto";
+    const auto = guardContext?.access === "auto" && guardContext.profile !== "inspect";
     this.guard = new GuardLiveness(!!guardContext, ctx.emit, auto);
     this.autoMode = new AutoModeWatch(auto, ctx.emit);
   }

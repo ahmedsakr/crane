@@ -90,9 +90,10 @@ test("auto mode: the inline settings describe Crane to the classifier and keep i
 
 test("auto mode: investigate-only runs, listed and most repos, and Codex never use it", async () => {
   const observe = await runDriver("observe", { commandAccess: "auto" });
-  assert.equal(after(observe.args, "--permission-mode"), "default");
-  assert.ok(!observe.args.includes("--settings") && !observe.args.includes("--permission-prompts"));
-  assert.doesNotMatch(after(observe.args, "--append-system-prompt"), /auto mode/i);
+  assert.equal(after(observe.args, "--permission-mode"), "manual");
+  assert.ok(observe.args.includes("--settings") && !observe.args.includes("--permission-prompts"));
+  assert.equal(JSON.parse(after(observe.args, "--settings")).autoMode, undefined);
+  assert.match(after(observe.args, "--append-system-prompt"), /auto mode is not used for investigate-only runs/i);
   assert.equal(notesOf(observe, AUTO_MODE_UNAVAILABLE).length, 0);
   for (const commandAccess of ["listed", "most"] as CommandAccess[]) {
     const { args } = await runDriver("propose", { commandAccess });
