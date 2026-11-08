@@ -5,7 +5,7 @@ import { ALWAYS_DENIED, type GuardContext } from "@crane/agent-policy";
 import type { Autonomy } from "@crane/contracts";
 import { runAgentProcess, runResumingSession } from "./agent-process.js";
 import { ClaudeStream } from "./claude-stream.js";
-import { claudeSettings, guardContext } from "./claude-guard.js";
+import { claudeSettings, guardForRun } from "./claude-guard.js";
 
 export { describeBlocked, usageFromResult } from "./claude-stream.js";
 
@@ -68,13 +68,15 @@ function operatorRules(repoAllowed: string[] = []): string[] {
  * repo (see OperatorActions.allowTool). Claude Code applies deny rules before
  * allow rules, so nothing allowed here can override ALWAYS_DENIED.
  *
- * Every run except investigate-only also has Crane's command guard
+ * Write runs and most/auto investigate-only runs also have Crane's command guard
  * (`classifyToolCall`) as a PreToolUse hook, in every command access mode. It
  * denies hard-dangerous calls (shared Git state, operator actions, writes
  * outside the worktree, credentials) even when this list would allow them.
  * In "Most commands" its allow widens this list to almost any command; deny
  * rules still win over that allow. In auto mode the list is unchanged and the
- * guard never allows, so Claude Code's classifier reviews the rest. A guard
+ * worktree guard never allows, so Claude Code's classifier reviews the rest.
+ * Investigate-only runs keep this read-only baseline; their guard approves
+ * only its positive list of inspection commands, without auto mode. A guard
  * that fails to answer leaves the call to this list (and, in auto mode, the
  * classifier). See docs/command-guard.md.
  */
@@ -85,17 +87,18 @@ export function toolsFor(autonomy: Autonomy, repoAllowed: string[] = []): { allo
 }
 
 /**
- * Auto mode only for a guarded run in an `auto` repo, which investigate-only
- * runs never are. Its classifier reviews what ALWAYS_DENIED, the guard and the
+ * Auto mode only for a write-capable guarded run in an `auto` repo.
+ * Its classifier reviews what ALWAYS_DENIED, the guard and the
  * narrow allow rules leave undecided; Claude Code suspends broad interpreter
  * rules such as `Bash(node:*)` on its own. Never bypassPermissions.
  */
-export function permissionMode(autonomy: Autonomy, guard?: GuardContext): "default" | "acceptEdits" | "auto" {
+export function permissionMode(autonomy: Autonomy, guard?: GuardContext): "default" | "manual" | "acceptEdits" | "auto" {
+  if (autonomy === "observe") return guard ? "manual" : "default";
   if (guard?.access === "auto") return "auto";
-  return autonomy === "observe" ? "default" : "acceptEdits";
+  return "acceptEdits";
 }
 
-function claudeArgs(
+export function claudeArgs(
   ctx: RunContext, autonomy: Autonomy, tools: { allowed: string[]; denied: string[] }, resume?: string, guard?: GuardContext,
 ): string[] {
   const settings = guard ? claudeSettings(guard) : null;
@@ -157,7 +160,7 @@ export class ClaudeCodeDriver implements AgentDriver {
     // still applies: Crane, not the agent, commits the merge and pushes it.
     const autonomy: Autonomy = ctx.job ? "propose" : ctx.task.autonomy;
     const tools = toolsFor(autonomy, ctx.allowedTools);
-    const guard = autonomy === "observe" ? undefined : guardContext(ctx, operatorRules(ctx.allowedTools));
+    const guard = guardForRun(ctx, operatorRules(ctx.allowedTools));
     return runAgentProcess({
       bin: this.bin,
       label: this.label,

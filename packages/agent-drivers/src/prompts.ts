@@ -34,7 +34,7 @@ export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob, opts
   const commits = opts.agentCommits ?? true;
   const sandbox = opts.sandboxed ? SANDBOX_BRIEF : "";
   const checks = checksBrief(opts.checks, !!opts.sandboxed);
-  const blocked = blockedBrief(opts);
+  const blocked = blockedBrief({ ...opts, inspect: task.autonomy === "observe" && !job });
   const briefs = { sandbox, checks, blocked };
   if (job?.kind === "resolve_conflicts") return conflictSystemPrompt(repo, job, commits, briefs);
   if (job?.kind === "fix_checks") return fixChecksSystemPrompt(repo, job, briefs);
@@ -352,7 +352,7 @@ export function resumePrompt(context: TaskContext = {}, opts: PromptOptions = {}
     dependencyBrief(context),
     commandEvidenceBrief(context),
     priorRefusalsBrief(context.priorRefusals),
-    blockedBrief(opts),
+    blockedBrief({ ...opts, inspect: context.task?.autonomy === "observe" && !context.job }),
     VALIDATION_BRIEF,
     FILE_EDIT_BRIEF,
     SCREENSHOT_BRIEF,

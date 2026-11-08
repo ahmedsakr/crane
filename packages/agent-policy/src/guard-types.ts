@@ -1,7 +1,7 @@
 /** The guard deliberately owns this union until command access reaches contracts. */
 export interface GuardContext {
   access: "listed" | "most" | "auto";
-  profile: "worktree" | "job";
+  profile: "worktree" | "job" | "inspect";
   worktree: string;
   checkout: string;
   defaultBranch: string;

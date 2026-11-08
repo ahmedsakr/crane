@@ -3,6 +3,7 @@ import { isAllowed, ruleForCommand, splitCommand } from "./permissions.js";
 import { candidates, executable, scanCommands } from "./guard-shell.js";
 import { credentialPath, redirectTargets, resolvePath, within, writeCategory, writeTargets } from "./guard-paths.js";
 import { sharedGit } from "./guard-git.js";
+import { readOnlyInspection } from "./guard-inspect.js";
 import { operatorCli, operatorHttp } from "./guard-operator.js";
 import { concealedCode, GUARD_REASONS, machineCategory, outwardCategory, sendsEnvironment } from "./guard-rules.js";
 import type { GuardCategory, GuardCommand, GuardContext, GuardVerdict } from "./guard-types.js";
@@ -32,6 +33,7 @@ function hardBash(raw: string, parts: GuardCommand[], ctx: GuardContext): GuardC
   if (raw.includes("crane.db")) return "operator-actions";
   for (const part of parts) {
     for (const target of redirectTargets(part.words)) {
+      if (ctx.profile === "inspect" && target === "/dev/null") continue;
       const category = writeCategory(target, part.cwd, ctx);
       if (category) return category;
     }
@@ -84,12 +86,16 @@ export function classifyToolCall(call: { tool: string; input: Record<string, unk
   const pass: GuardVerdict = { decision: "pass", category: null, reason: "Crane's command guard found no blocked operation.", rules: [], overridable: false };
   if (call.tool !== "Bash") return fileTool(call.tool, call.input, ctx) ?? pass;
   const raw = typeof call.input.command === "string" ? call.input.command : "";
-  const parts = scanCommands(raw, ctx);
+  const inspect = ctx.profile === "inspect" && ctx.access !== "listed" && readOnlyInspection(raw, ctx);
+  // The positive grammar has no cd or subshells. Every stage of an approved
+  // pipeline therefore starts in the checkout, including Git after a pipe.
+  const parts = scanCommands(raw, ctx).map((part) => inspect ? { ...part, cwd: ctx.worktree } : part);
   const hard = hardBash(raw, parts, ctx);
   if (hard) return denied(hard);
   if (ctx.access === "listed") return pass;
   const outward = outwardBash(raw, parts, ctx);
   if (outward) return outward;
+  if (ctx.profile === "inspect") return inspect ? { ...pass, decision: "allow" } : pass;
   if (ctx.access === "auto") return pass;
   return { ...pass, decision: "allow" };
 }

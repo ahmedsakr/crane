@@ -35,7 +35,7 @@ export function guardContext(ctx: RunContext, allowed: string[]): GuardContext {
   const worktree = resolve(ctx.cwd);
   return {
     access: ctx.commandAccess ?? "listed",
-    profile: ctx.job ? "job" : "worktree",
+    profile: ctx.job ? "job" : inspectionProfile(ctx),
     worktree,
     checkout: ctx.repo ? resolve(ctx.repo.path) : worktree,
     defaultBranch: ctx.repo?.defaultBranch || "main",
@@ -44,6 +44,16 @@ export function guardContext(ctx: RunContext, allowed: string[]): GuardContext {
     home: homedir() || null,
     allowed,
   };
+}
+
+function inspectionProfile(ctx: RunContext): "inspect" | "worktree" {
+  return ctx.task.autonomy === "observe" ? "inspect" : "worktree";
+}
+
+/** Listed investigate-only runs retain their existing, unhooked permissions. */
+export function guardForRun(ctx: RunContext, allowed: string[]): GuardContext | undefined {
+  if (!ctx.job && ctx.task.autonomy === "observe" && (ctx.commandAccess ?? "listed") === "listed") return undefined;
+  return guardContext(ctx, allowed);
 }
 
 function quote(arg: string): string {
@@ -66,6 +76,6 @@ export function claudeSettings(context: GuardContext): Record<string, unknown> {
         { matcher: GUARDED_TOOLS, hooks: [{ type: "command", command: guardCommand(context), timeout: GUARD_TIMEOUT_SECONDS }] },
       ],
     },
-    ...(context.access === "auto" ? { autoMode: autoModeSettings(context) } : {}),
+    ...(context.access === "auto" && context.profile !== "inspect" ? { autoMode: autoModeSettings(context) } : {}),
   };
 }

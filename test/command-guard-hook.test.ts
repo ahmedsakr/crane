@@ -87,6 +87,21 @@ test("hook: listed and auto never answer allow, leaving the rest to Claude Code"
   assert.equal(outward.decision?.permissionDecision, "deny", "auto mode still denies outward commands without a rule");
 });
 
+test("hook: inspect permits only positive read-only matches, including auto repos without auto mode", () => {
+  for (const access of ["most", "auto"] as const) {
+    for (const command of ["find src -name '*.ts'", "sed -n 1,40p x", "git log --oneline | head -20"]) {
+      const run = call(command, { profile: "inspect", access });
+      assert.equal(run.status, 0);
+      assert.equal(run.decision?.permissionDecision, "allow", `${access}: ${command}`);
+      assert.match(run.decision!.permissionDecisionReason, /read-only inspection list/);
+    }
+    for (const command of ["find . -delete", "sort -o f x", "node -e 'console.log(1)'"]) {
+      assert.notEqual(call(command, { profile: "inspect", access }).decision?.permissionDecision, "allow", command);
+    }
+  }
+  assert.equal(call("find src -name '*.ts'", { profile: "inspect", access: "listed" }).decision, null);
+});
+
 test("hook: file writes outside the worktree or to agent settings are denied, others left alone", () => {
   for (const access of modes) {
     const ctx = [encodeGuardContext({ ...context, access })];
