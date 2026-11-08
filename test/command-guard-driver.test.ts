@@ -5,10 +5,10 @@ import { mkdtempSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { ClaudeCodeDriver } from "@crane/agent-drivers";
-import { ALWAYS_DENIED, type GuardContext } from "@crane/agent-policy";
+import { ALWAYS_DENIED, classifyToolCall, type GuardContext } from "@crane/agent-policy";
 import type { AgentJob, RunContext } from "@crane/agent-protocol";
 import type { CommandAccess, EventType, Repo, Task } from "@crane/contracts";
-import { decodeGuardContext } from "../packages/agent-drivers/src/command-guard-protocol.js";
+import { decodeGuardContext, hookDecision, GUARD_DENY_PREFIX } from "../packages/agent-drivers/src/command-guard-protocol.js";
 import { guardHookPath } from "../packages/agent-drivers/src/claude-guard.js";
 import { CLAUDE_FRESH_RUN, fakeClaude } from "./support/fake-agents.js";
 
@@ -54,6 +54,49 @@ function hookOf(args: string[]): { matcher: string; command: string; timeout: nu
 }
 
 const contextOf = (args: string[]): GuardContext => decodeGuardContext(hookOf(args).command.split(" ").at(-1));
+
+test("guard: stand-in CLI records guard and Claude refusals once, with classifier suggestions", async () => {
+  const guard: GuardContext = {
+    access: "most", profile: "worktree", worktree: "/work/task", checkout: repo.path,
+    defaultBranch: repo.defaultBranch, craneHome: "/factory", home: homedir(), allowed: [],
+  };
+  const calls = ["npm install -g typescript", "crane approve t-example", "docker compose up"];
+  const reasons = calls.map((command, i) => {
+    if (i === 2) return "This command requires approval";
+    return hookDecision(classifyToolCall({ tool: "Bash", input: { command } }, guard), guard.access)!
+      .hookSpecificOutput.permissionDecisionReason;
+  });
+  const lines = calls.flatMap((command, i) => [
+    { type: "assistant", message: { content: [{ type: "tool_use", id: `guard-${i}`, name: "Bash", input: { command } }] } },
+    { type: "user", message: { content: [{ type: "tool_result", tool_use_id: `guard-${i}`, is_error: true,
+      content: i === 2 ? reasons[i] : `PreToolUse:Bash hook error: ${reasons[i]}` }] } },
+  ]);
+  const run = await runDriver("propose", { commandAccess: "most" }, [CLAUDE_FRESH_RUN[0]!, ...lines, {
+    ...CLAUDE_FRESH_RUN[1], permission_denials: calls.map((command, i) => ({
+      tool_name: "Bash", tool_use_id: `guard-${i}`, tool_input: { command },
+    })),
+  }]);
+  const blocked = run.events.filter(e => e.type === "blocked").map(e => e.data!);
+  assert.equal(blocked.length, 3);
+  assert.deepEqual(blocked[0]!.refusal, { source: "crane.guard", reason: reasons[0]!.slice(GUARD_DENY_PREFIX.length).trim() });
+  assert.deepEqual(blocked[0]!.guard, { category: "global-install", overridable: true });
+  assert.deepEqual(blocked[0]!.rules, ["Bash(npm install:*)"], "defaults allow npm install but the guard requires an operator rule");
+  assert.deepEqual(blocked[1]!.guard, { category: "operator-actions", overridable: false });
+  assert.deepEqual(blocked[1]!.rules, []);
+  assert.deepEqual(blocked[2]!.refusal, { source: "claude-code.tool_result", reason: reasons[2] });
+  assert.deepEqual(blocked[2]!.rules, ["Bash(docker compose:*)"]);
+});
+
+test("guard: command access reaches Claude Code's appended system prompt", async () => {
+  for (const commandAccess of ["listed", "most", "auto"] as const) {
+    const run = await runDriver("propose", { commandAccess });
+    const prompt = after(run.args, "--append-system-prompt");
+    if (commandAccess === "most") assert.match(prompt, /Most commands are allowed in this worktree/);
+    else assert.match(prompt, /guard also refuses operator actions and shared-branch changes/);
+  }
+  const observe = await runDriver("observe", { commandAccess: "most" });
+  assert.doesNotMatch(after(observe.args, "--append-system-prompt"), /Most commands are allowed/);
+});
 
 test("guard: propose, act and conflict/fix-checks runs get the hook; investigate-only runs don't", async () => {
   const runs = {

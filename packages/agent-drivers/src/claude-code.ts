@@ -1,7 +1,7 @@
 import type { AgentDriver, RunContext, RunResult } from "@crane/agent-protocol";
 import { cliAnswers } from "./cli.js";
 import { resumePrompt, systemPrompt, userPrompt } from "./prompts.js";
-import { ALWAYS_DENIED } from "@crane/agent-policy";
+import { ALWAYS_DENIED, type GuardContext } from "@crane/agent-policy";
 import type { Autonomy } from "@crane/contracts";
 import { runAgentProcess, runResumingSession } from "./agent-process.js";
 import { ClaudeStream } from "./claude-stream.js";
@@ -82,21 +82,17 @@ export function toolsFor(autonomy: Autonomy, repoAllowed: string[] = []): { allo
   return { allowed: [...new Set([...base, ...operatorRules(repoAllowed)])], denied };
 }
 
-/** Inline `--settings` for the run, or null for investigate-only runs, which get no guard. */
-function runSettings(ctx: RunContext, autonomy: Autonomy): Record<string, unknown> | null {
-  if (autonomy === "observe") return null;
-  return claudeSettings(guardContext(ctx, operatorRules(ctx.allowedTools)));
-}
-
-function claudeArgs(ctx: RunContext, autonomy: Autonomy, tools: { allowed: string[]; denied: string[] }, resume?: string): string[] {
-  const settings = runSettings(ctx, autonomy);
+function claudeArgs(
+  ctx: RunContext, autonomy: Autonomy, tools: { allowed: string[]; denied: string[] }, resume?: string, guard?: GuardContext,
+): string[] {
+  const settings = guard ? claudeSettings(guard) : null;
   const args = [
     "-p",
     "--output-format",
     "stream-json",
     "--verbose",
     "--append-system-prompt",
-    systemPrompt(ctx.task, ctx.repo, ctx.job, { checks: ctx.checks }),
+    systemPrompt(ctx.task, ctx.repo, ctx.job, { checks: ctx.checks, commandAccess: guard?.access }),
     "--permission-mode",
     autonomy === "observe" ? "default" : "acceptEdits",
     "--allowedTools",
@@ -145,14 +141,15 @@ export class ClaudeCodeDriver implements AgentDriver {
     // still applies: Crane, not the agent, commits the merge and pushes it.
     const autonomy: Autonomy = ctx.job ? "propose" : ctx.task.autonomy;
     const tools = toolsFor(autonomy, ctx.allowedTools);
+    const guard = autonomy === "observe" ? undefined : guardContext(ctx, operatorRules(ctx.allowedTools));
     return runAgentProcess({
       bin: this.bin,
       label: this.label,
-      args: claudeArgs(ctx, autonomy, tools, resume),
+      args: claudeArgs(ctx, autonomy, tools, resume, guard),
       env: claudeEnv(),
-      prompt: resume ? resumePrompt(ctx) : userPrompt(ctx.task, ctx.job, ctx),
+      prompt: resume ? resumePrompt(ctx, { commandAccess: guard?.access }) : userPrompt(ctx.task, ctx.job, ctx),
       resume,
-      stream: new ClaudeStream(ctx, tools, resume, autonomy !== "observe"),
+      stream: new ClaudeStream(ctx, tools, resume, !!guard, guard),
       ctx,
     });
   }
