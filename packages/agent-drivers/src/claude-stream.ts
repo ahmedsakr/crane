@@ -1,11 +1,12 @@
 import { AgentRunError, isTransientFailure, parseReport, type RunContext, type RunResult } from "@crane/agent-protocol";
-import { overlapsDenied, suggestRules } from "@crane/agent-policy";
+import { classifyToolCall, overlapsDenied, suggestRules, type GuardContext } from "@crane/agent-policy";
 import type { BlockedCall, CommandEvidence, RunUsage } from "@crane/contracts";
 import { cancelledRun, SessionNotResumed, stderrExcerpt, type AgentExit, type AgentStream } from "./agent-process.js";
 import { claudeToolResult, claudeValidationSummary } from "./claude-evidence.js";
 import { emitAgentText } from "./cli.js";
 import { commandMessage, CommandTracker, safeEvidenceText } from "./command-evidence.js";
 import { GuardLiveness } from "./guard-liveness.js";
+import { GUARD_DENY_PREFIX } from "./command-guard-protocol.js";
 
 /** What a stream hears the run through. */
 export type ClaudeStreamContext = Pick<RunContext, "emit" | "signal" | "effort" | "maxTurns" | "onSession" | "onUsage">;
@@ -21,10 +22,11 @@ export function describeBlocked(
   tool: string,
   input: Record<string, unknown>,
   tools: ToolRules,
-  evidence: Pick<BlockedCall, "toolUseId" | "refusal"> = {},
+  evidence: Pick<BlockedCall, "toolUseId" | "refusal" | "guard"> & Partial<Pick<BlockedCall, "rules">> = {},
 ): { message: string; data: BlockedCall } {
   const command = tool === "Bash" && typeof input.command === "string" ? input.command : undefined;
-  let rules = suggestRules(tool, input, tools.allowed);
+  let rules: string[] = [];
+  if (evidence.guard?.overridable !== false) rules = evidence.rules ?? suggestRules(tool, input, tools.allowed);
   // Refused on purpose: nothing to offer, and any rule we suggested would lose to the deny list anyway.
   if (rules.some((r) => overlapsDenied(r, tools.denied))) rules = [];
   const target = [input.file_path, input.path, input.url, input.pattern].find((v) => typeof v === "string") as string | undefined;
@@ -32,8 +34,8 @@ export function describeBlocked(
   return {
     message: `Blocked: ${what.split("\n")[0]!.slice(0, 160)}`,
     data: {
-      tool, ...(command ? { command: command.slice(0, 2000) } : {}), rules,
       ...evidence,
+      tool, ...(command ? { command: command.slice(0, 2000) } : {}), rules,
       ...(evidence.refusal ? { refusal: { ...evidence.refusal, reason: evidence.refusal.reason?.slice(0, 4000) ?? null } } : {}),
     },
   };
@@ -124,6 +126,7 @@ export class ClaudeStream implements AgentStream {
     private tools: ToolRules,
     private resume?: string,
     guarded = false,
+    private guardContext?: GuardContext,
   ) {
     this.sessionId = resume ?? null;
     this.guard = new GuardLiveness(guarded, ctx.emit);
@@ -226,9 +229,21 @@ export class ClaudeStream implements AgentStream {
       this.commands.record("completed", { id: block.tool_use_id, exit_code: result.exitCode, status: completedStatus(result) }, "", this.sessionId);
       this.guard.onBashResult(block.tool_use_id);
     }
-    if (block.is_error && call && DENIAL_TEXT.test(text)) {
+    if (block.is_error && call && result.content.text.includes(GUARD_DENY_PREFIX)) {
+      this.guardBlocked(block.tool_use_id, call, result.content.text);
+    } else if (block.is_error && call && DENIAL_TEXT.test(text)) {
       this.blocked(block.tool_use_id, call.name, call.input, { source: "claude-code.tool_result", reason: text });
     }
+  }
+
+  private guardBlocked(id: string, call: { name: string; input: Record<string, unknown> }, text: string) {
+    const reason = text.slice(text.indexOf(GUARD_DENY_PREFIX) + GUARD_DENY_PREFIX.length).trim();
+    const verdict = this.guardContext ? classifyToolCall({ tool: call.name, input: call.input }, this.guardContext) : null;
+    // Hook failures carry the marker too. Never offer a rule when the call couldn't be classified.
+    const failed = reason.startsWith("the guard couldn't check this call");
+    const denied = !failed && verdict?.decision === "deny" ? verdict : null;
+    const guard = { category: denied?.category ?? "guard-error", overridable: denied?.overridable ?? false };
+    this.blocked(id, call.name, call.input, { source: "crane.guard", reason }, { guard, rules: denied?.rules ?? [] });
   }
 
   private onResult(msg: Record<string, any>) {
@@ -252,10 +267,13 @@ export class ClaudeStream implements AgentStream {
     }
   }
 
-  private blocked(id: string, name: string, input: Record<string, unknown>, refusal: NonNullable<BlockedCall["refusal"]>) {
+  private blocked(
+    id: string, name: string, input: Record<string, unknown>, refusal: NonNullable<BlockedCall["refusal"]>,
+    evidence: Pick<BlockedCall, "guard"> & Partial<Pick<BlockedCall, "rules">> = {},
+  ) {
     if (this.reported.has(id)) return;
     this.reported.add(id);
-    const { message, data } = describeBlocked(name, input, this.tools, { toolUseId: id, refusal });
+    const { message, data } = describeBlocked(name, input, this.tools, { ...evidence, toolUseId: id, refusal });
     this.ctx.emit("blocked", message, { ...data });
   }
 }

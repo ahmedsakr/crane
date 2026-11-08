@@ -41,16 +41,20 @@ export interface BlockedCall {
    * Optional for older events and drivers without refusal evidence.
    */
   refusal?: {
-    source: "claude-code.tool_result" | "claude-code.permission_denials";
+    /** `crane.guard` identifies Crane's hook; `claude.auto-mode` identifies Claude Code's classifier. */
+    source: "claude-code.tool_result" | "claude-code.permission_denials" | "crane.guard" | "claude.auto-mode";
     /** Driver-reported refusal text (bounded); null when no reason was supplied. */
     reason: string | null;
   };
+  /** Guard classification; non-overridable refusals always have `rules: []`. */
+  guard?: { category: string; overridable: boolean };
   /** The Bash command, when the tool was Bash. */
   command?: string;
   /**
    * Suggested permission rules (e.g. `Bash(npm ci:*)`) for operator review.
    * Empty when it was refused on purpose (ALWAYS_DENIED, or a write in an
-   * investigate-only task) or Crane has nothing safe to suggest. These are
+   * investigate-only task), a guard refusal has `overridable: false`, or Crane
+   * has nothing safe to suggest. These are
    * heuristic suggestions, not the driver's decision reason or a guarantee
    * that granting them will resolve a refusal. An empty list explains nothing
    * about which policy refused the call.
