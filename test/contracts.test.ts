@@ -25,7 +25,7 @@ GOAL_TASK_PHASES KIND_LABEL LOOKOUT LOOKOUTS MAINTENANCE_ROLE MAINTENANCE_ROLES 
 MODEL_SUGGESTIONS RUN_KIND_LABEL SHIPPED_STATUSES STATUS_LABEL UNSHIPPED_STATUSES USERNAME_PATTERN acceptanceCheckRun
 acceptanceFor actorLabel choosableDrivers completionReviewReason crewScheduleLabel describeClient diffFiles driverLabel
 errorMessage eventActor followUpFor goalProgress goalTaskPhase goalWaves inviteLinkPath isCommandAccess isDriverName isEventActor isLookout
-isMaintenanceRole isScheduled isTunable lastMergeOutcome lookoutsLabel nextCrewFire normalizeUsername parseDiff
+isReasonedRefusal isMaintenanceRole isScheduled isTunable lastMergeOutcome lookoutsLabel nextCrewFire normalizeUsername parseDiff
 prerequisiteMet ruleLabel runCostLabel runTokens settingsLabel splitRows unmetAcceptance
 validateCrewSchedule validateGoalPlan visualReviewPending visualReviewWaivedByPreApproval`.split(/\s+/).sort();
   const file = join(root, "packages/contracts/src/index.ts");

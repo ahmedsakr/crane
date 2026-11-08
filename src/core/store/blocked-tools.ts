@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { ruleLabel, type BlockedTool, type RepoTools } from "@crane/contracts";
+import { isReasonedRefusal, ruleLabel, type BlockedTool, type RepoTools } from "@crane/contracts";
 import type { Row } from "./rows.js";
 
 export type BlockedToolsOptions = { repoId?: string; taskId?: string; minTasks?: number };
@@ -12,11 +12,13 @@ export class BlockedToolsReader {
     const latest = db.prepare("SELECT COUNT(*) AS n, MAX(id) AS id FROM events WHERE type = 'blocked'").get() as Row;
     const version = `${latest.n}:${latest.id}`;
     if (this.cache?.version === version) return this.cache.rows;
-    // SQLite takes bare columns from the row holding the only MAX(), so ts and task_id both describe the latest refusal.
+    // SQLite takes bare columns from the row holding the only MAX(), so ts, task_id and the refusal all describe the latest one.
     const rows = db.prepare(
       `SELECT t.repo_id AS repo_id, p.name AS repo_name, r.value AS rule,
                 COUNT(DISTINCT e.task_id) AS tasks, COUNT(*) AS times,
-                MAX(e.id) AS last_id, e.ts AS last_at, e.task_id AS last_task_id
+                MAX(e.id) AS last_id, e.ts AS last_at, e.task_id AS last_task_id,
+                json_extract(e.data, '$.refusal.source') AS refusal_source,
+                json_extract(e.data, '$.refusal.reason') AS refusal_reason
          FROM events e
          JOIN tasks t ON t.id = e.task_id
          JOIN repos p ON p.id = t.repo_id
@@ -61,5 +63,12 @@ function toBlockedTool(r: Row): BlockedTool {
     times: r.times as number,
     lastAt: r.last_at as string,
     lastTaskId: r.last_task_id as string,
+    ...latestRefusal(r),
   };
+}
+
+/** The latest refusal's reason, only when Crane's guard or auto mode gave one. */
+function latestRefusal(r: Row): Pick<BlockedTool, "refusal"> {
+  if (!isReasonedRefusal(r.refusal_source)) return {};
+  return { refusal: { source: r.refusal_source, reason: typeof r.refusal_reason === "string" ? r.refusal_reason : null } };
 }

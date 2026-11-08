@@ -47,6 +47,7 @@ export type {
   BlockedCall,
   BlockedTool,
 } from "./events.js";
+export { isReasonedRefusal } from "./events.js";
 export type {
   AgentState,
   Agent,

@@ -144,7 +144,7 @@ export function TaskPage() {
           <ScreenshotsSection task={task} />
           <ValidationRuns task={task} />
           {task.status === "merging" && <p className="muted">{mergingSummary(agent, view.main)}</p>}
-          <BlockedSection blocked={data.blocked} taskId={task.id} repoName={repo?.name} onDone={reload} />
+          <BlockedSection blocked={data.blocked} events={events} taskId={task.id} repoName={repo?.name} onDone={reload} />
           <FindingsSection task={task} followUps={view.followUps} drivers={drivers} open={finding} onOpenChange={setFinding} refresh={refresh} actions={actions} />
           <TaskChanges task={task} working={working} changes={changes} open={showDiff} onOpenChange={setShowDiff} />
           <TaskActivity task={task} events={events} />

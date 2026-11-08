@@ -1,13 +1,14 @@
 import { useState } from "react";
 import { useApp } from "../lib/app-context";
-import type { Repo } from "../lib/api";
 import { ChecksSheet } from "./repos/ChecksSheet";
+import { CommandsSheet } from "./repos/CommandsSheet";
 import { ConnectRepoForm } from "./repos/ConnectRepoForm";
-import { RepoRow } from "./repos/RepoRow";
+import { RepoRow, type RepoSheet } from "./repos/RepoRow";
 
 export function Repos() {
   const { overview, refresh } = useApp();
-  const [checksRepo, setChecksRepo] = useState<Repo | null>(null);
+  const [sheet, setSheet] = useState<RepoSheet | null>(null);
+  const close = () => setSheet(null);
 
   return (
     <>
@@ -24,11 +25,14 @@ export function Repos() {
       <ul className="rows card" style={{ padding: "0 18px", marginTop: 20 }}>
         {overview?.repos.map((r) => (
           <li key={r.id}>
-            <RepoRow repo={r} onChecks={setChecksRepo} />
+            <RepoRow repo={r} onOpen={setSheet} />
           </li>
         ))}
       </ul>
-      {checksRepo && <ChecksSheet repo={checksRepo} onClose={() => setChecksRepo(null)} />}
+      {sheet?.kind === "checks" && <ChecksSheet repo={sheet.repo} onClose={close} />}
+      {sheet?.kind === "commands" && (
+        <CommandsSheet repo={sheet.repo} current={sheet.repo.tools.commands} onSaved={refresh} onClose={close} />
+      )}
     </>
   );
 }
