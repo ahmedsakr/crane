@@ -68,7 +68,10 @@ In an authorized checkout with dependencies already installed:
 
 ```sh
 # Reset Nx task cache and workspace metadata, not dependencies or tsc outputs.
-node node_modules/nx/bin/nx.js reset
+# nx.json's relative cacheDirectory keeps a direct call on this checkout's .nx/.
+node node_modules/nx/dist/bin/nx.js reset
+# Also make package builds cold (removes their outputs and build info).
+node_modules/.bin/tsc -b tsconfig.packages.json --clean
 # Disable Nx task-cache reads/writes for a comparison; retain public preflights.
 NX_SKIP_NX_CACHE=true npm run typecheck
 NX_SKIP_NX_CACHE=true npm run affected:typecheck -- --base main --working-tree
@@ -86,20 +89,25 @@ make socket tests sandbox-compatible, or authorize retrying a refused command.
 
 ## Benchmark protocol
 
-Run measurements later in an authorized disposable checkout with supported
-installs, subprocesses and sockets. This protocol is not a claim of measured
-speedup; lifecycle verification and final acceptance own measured results.
+Run measurements in an authorized disposable checkout with supported
+installs, subprocesses and sockets. The protocol itself claims no speedup; the
+final acceptance run's results, verdict and deviations from this protocol are
+in [Measured results](nx.md#measured-results).
 Keep installation outside task timing and record its separate duration for
 fresh-worktree evaluation. Use the same candidate, dependencies, hardware,
 environment, suite list and compiler options for each paired comparison.
 
 Record commit/base/head, exact command, OS, CPU model/core count, RAM, load,
 Node (`node --version`), npm (`npm --version`), Nx
-(`node node_modules/nx/bin/nx.js --version`) and installed compiler/bundler/tsx
+(`node node_modules/nx/dist/bin/nx.js --version`) and installed compiler/bundler/tsx
 versions (`node scripts/nx-toolchain.mjs`). Save unfiltered stdout/stderr and
 the command tool's authoritative exit status separately for every run. On a
-host with `/usr/bin/time`, prefix each command with `/usr/bin/time -p` for
-wall/user/system seconds; never pipe timing output through a filter.
+host with `/usr/bin/time`, prefix each command with `/usr/bin/time -p -o <file>`
+for wall/user/system seconds; never pipe timing output through a filter.
+`/usr/bin/time` reads the wall clock, which a clock step can inflate (one
+acceptance run measured 504 s for a 64.6 s suite), so also record a monotonic
+duration, such as `performance.now()` around the command or the test runner's
+`duration_ms`, and investigate any run where the two disagree.
 
 Compare these workloads separately:
 

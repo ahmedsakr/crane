@@ -454,7 +454,9 @@ falls back to full work with a reason. Root config/lockfile changes are global;
 test helpers and docs select all test groups. `--list` previews selection only.
 A local affected pass is not full factory validation and must not replace
 operator-configured checks. See [affected execution, cache troubleshooting and
-benchmarks](docs/testing.md#full-and-affected-execution).
+benchmarks](docs/testing.md#full-and-affected-execution). Measured, Nx makes
+repeated and most changed-project typechecks faster but leaves test time
+unchanged except for test-only edits; see [Measured results](docs/nx.md#measured-results).
 
 `npm run build` transpiles `src/` to `dist/` with esbuild and doesn't check
 backend types, so run `npm run typecheck` to catch type errors. `prepack` runs it

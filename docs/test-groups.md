@@ -6,7 +6,7 @@ packages through Nx and runs every root suite with this runner, and
 [Commands](nx.md#commands). There is no test-result cache.
 
 `scripts/test-groups.ts` assigns every immediate `test/*.test.ts` suite exactly
-once. Group ids are stable interfaces for the wiring task:
+once. Group ids are stable interfaces for `scripts/tasks.ts`:
 
 | Group | Scope and dependencies |
 | --- | --- |
@@ -27,6 +27,11 @@ web integration groups intentionally overlap in *inputs*, never in execution.
 The contracts suite is owned by architecture because it scans every package,
 the web tree and root manifests. It is not just a contracts unit suite.
 
+These groups are coarse. `backend` holds 71 of the 118 suites and its closure
+covers every project, so any package, backend or web edit still selects 105 to
+118 suites; only an edit confined to root suites narrows much. The measured
+effect is in [Measured results](nx.md#measured-results).
+
 ## Enumeration and conservative selection
 
 `scripts/test-ownership.ts` exports:
@@ -40,7 +45,7 @@ the web tree and root manifests. It is not just a contracts unit suite.
   or a requested group union. A catalog addition/deletion replaces any subset
   with the full discovered set and returns `fallback` diagnostics. Unknown group
   names, an empty group request, or an empty repository suite set fail closed.
-- `affectedTestGroups(root, changedPathsOrNull, groups?)`: a plan for later wiring.
+- `affectedTestGroups(root, changedPathsOrNull, groups?)`: the plan `npm run affected:test` runs.
   The caller must supply the complete path change set, including both sides of
   renames, deletions, additions and any documented local changes. `null` means
   history/inputs are unavailable and selects everything. An empty array explicitly

@@ -1,11 +1,13 @@
 # Nx project graph
 
-Status: **commands wired**, 2026-11-08. Nx models Crane's projects and targets,
+Status: **measured**, 2026-11-08. Nx models Crane's projects and targets,
 and `npm run typecheck`, `npm test` and two affected commands run through it
 (see [Commands](#commands)). `npm run build`, `build:packages`, dev and the
-source CLI don't use Nx, and npm is still the only installer. Measuring whether
-Nx is faster is a separate follow-up. Change the names and contract below only
-together with this document and `test/nx-graph.test.ts`.
+source CLI don't use Nx, and npm is still the only installer. Nx makes repeated
+and most changed-project typechecks faster, but **not tests**, which are 96% of
+the time: see [Measured results](#measured-results) for the verdict and what is
+still open. Change the names and contract below only together with this
+document and `test/nx-graph.test.ts`.
 
 Root suite ownership and the uncached runner are described in
 [Root test ownership](test-groups.md).
@@ -22,7 +24,7 @@ fixes-only release on top of 24.0.0, which was released on 2026-10-21
 | Concern | Evidence |
 | --- | --- |
 | TypeScript 7 | `nx` has no `typescript` dependency (`npm view nx@24.0.5 dependencies`), and adding it left `node_modules/typescript` 7.0.2 as the lockfile's only `tsc` bin (`test/build.test.ts`). Nx's import scan uses its native binding (`findImports` in `packages/nx/src/plugins/js/project-graph/build-dependencies/explicit-project-dependencies.ts` at 24.0.5), not the compiler API, which TypeScript 7 doesn't have. No `@nx/js` or other plugin is installed, so nothing brings `@typescript/typescript6` or an old `tsc` |
-| Node >=20.19 | The 24.0.5 manifest declares no `engines`. Nx's compatibility-matrix pages returned HTTP 404 when checked, so **no official Node row for Nx 24 was found**. Treat Node 20.19 support as unverified until a run on Node 20 passes (follow-up: the lifecycle verification task) |
+| Node >=20.19 | The 24.0.5 manifest declares no `engines`. Nx's compatibility-matrix pages returned HTTP 404 when checked, so **no official Node row for Nx 24 was found**. Treat Node 20.19 support as unverified until a run on Node 20 passes. The acceptance host had no Node 20 runtime, so this is still open |
 | npm | npm workspaces stay the package source; Nx reads them through its built-in package.json plugin. There is no `packageManager` field and no other lockfile |
 | Native binaries | `nx` ships platform binaries as optional `@nx/nx-<platform>` dependencies; the lockfile lists all ten. Only Linux x64 was installed here |
 | Peer dependencies | `@swc/core` and `@swc-node/register` are optional peers, used only to load `.ts` config files. Crane's Nx config is JSON |
@@ -34,11 +36,10 @@ project.json here sets `name` to the package name and uses the object `dependsOn
 form, so none of them changes the graph.
 
 The wiring task ran `nx show projects --json` with `NX_DAEMON=false` (Node
-v24.14.0, Linux x64): Nx lists exactly the nine projects below. A cold full
-typecheck through Nx took 3.0 s wall time and a warm one 0.55 s, with 9 of 15
-tasks from the cache (the six package `typecheck` targets are no-ops and don't
-cache). `test/nx-graph.test.ts` checks the files Nx reads, not Nx's computed
-graph.
+v24.14.0, Linux x64): Nx lists exactly the nine projects below. A full
+typecheck has 15 tasks, 9 of them cacheable: the six package `typecheck`
+targets are no-ops and don't cache. `test/nx-graph.test.ts` checks the files
+Nx reads, not Nx's computed graph.
 
 ## Projects
 
@@ -211,7 +212,125 @@ public scripts reach Nx only through `scripts/tasks.ts` and no target recurses,
 which targets cache, the inputs above, the local-only settings, the exact pin,
 and the toolchain probe.
 
-Not verified yet, left to the lifecycle verification task: Nx on Node 20,
-restoring package outputs from the cache after `dist/` is deleted (Crane's
-command guard refused this task's attempt to delete `dist/`), concurrent runs
-in one worktree, and Nx under Codex's no-network sandbox.
+## Verified behavior
+
+The final acceptance task (t-knjtzz, candidate `6037298`) checked these in its
+own fresh Crane worktree, outside any sandbox:
+
+| Behavior | What was observed |
+| --- | --- |
+| Fresh worktree install | Crane's dependency preparation gave the worktree `nx` 24.0.5 with its `@nx/nx-linux-x64-gnu` binary and correct workspace links (`scripts/nx-toolchain.mjs` reports `workspaceLinks: ok`). The worktree had no `.nx/` and no package `dist/`, and its first `npm run typecheck` ran all 15 tasks with 0/15 cache hits |
+| No cross-worktree cache | `~/.nx/6c369d3128b6274a/` holds package outputs written by checkouts that predate the relative `cacheDirectory` (newest entry 17:53, before this task's first Nx run). None of them was read (that first run was 0/15) and none was written: after more than 140 Nx runs, nothing under `~/.nx` was newer than the task's start, while `.nx/cache` and `.nx/workspace-data` in the worktree held everything |
+| Invalidation | With a distinct patch per run, exactly the edited project and its consumers missed. Full typecheck hits: a contracts edit 2/15 (only diagnostics and worktree-deps builds hit), worktree-deps 6/15, backend or web 7/15, a root suite 8/15 (only `checks` reran). Reverting the patch hit again (9/15) |
+| Output restoration | `tsc -b tsconfig.packages.json --clean` deleted every package output file and build info. The next `npm run typecheck` restored all six packages from the cache (144 files, each with its `tsconfig.tsbuildinfo`) in 0.7 s, and `tsc -b --verbose` then reported every project up to date, rebuilding nothing |
+| Failure propagation | A type error in `src/factory/elapsed.ts` failed `npm run affected:typecheck -- --base HEAD --working-tree` and then the full `npm run typecheck` with exit 1 (`backend` and `checks` failed). A deliberately failing assertion in `test/report.test.ts` failed `npm run affected:test` with exit 1 after its 15 suites |
+| Fallbacks | `--list` with a missing base (`refs/heads/benchmark-missing-base`), `--base HEAD --head HEAD`, and an unchanged `--working-tree` each selected full work and printed why. Omitting `--head`/`--working-tree` exits 2 with usage |
+| Concurrency | Two `npm run typecheck` runs started together in one worktree, on a change neither had cached, both ran `backend` and `checks` and passed. One sample only |
+| Dashboard and build | `npm run build -w web` (contracts prebuild, then Vite) and `npm run build` passed. `test/build.test.ts` checks that neither starts Nx |
+
+### Selection matrix
+
+Each row is one temporary working-tree change, previewed with
+`--base HEAD --working-tree --list` and then restored. There are 9 projects
+and 118 root suites.
+
+| Change | Typecheck projects | Test groups / suites |
+| --- | --- | --- |
+| `packages/contracts/src/` | 7 (all but diagnostics, worktree-deps) | 10 / 118 |
+| `packages/diagnostics/src/` (edit, delete, rename or new file) | 5 | 8 / 114 |
+| `packages/agent-policy/src/` | 4 | 9 / 117 |
+| `packages/worktree-deps/src/` | 3 | 6 / 106 |
+| `src/` | 2 (backend, checks) | 5 / 105 |
+| `web/src/` | 2 (web, checks) | 5 / 105 |
+| One root suite (`test/report.test.ts`) | 1 (checks) | 3 / 15 |
+| `test/support/`, `scripts/` | 1 (checks) | full: global input |
+| A new root suite | 1 (checks) | full: unassigned suite |
+| `docs/nx.md` | full: no typecheck input | full |
+| `nx.json`, `package-lock.json`, a package `tsconfig.json`, `bin/` | full | full |
+
+Typecheck narrows well. Tests barely narrow: the `backend` group (71 suites)
+depends on backend and web, whose closure is every package, so any package,
+backend or web edit selects it, together with `web` and both repository-wide
+groups.
+
+## Measured results
+
+Host: AMD Ryzen 7 8700F with 4 CPUs available, 23 GiB RAM, Linux 7.0.0 x64,
+shared with other Crane agents (load average 0.9 to 6). Node v24.14.0, npm
+11.9.0, Nx 24.0.5, TypeScript 7.0.2, esbuild 0.28.2, tsx 4.23.15, Vite 8.3.5.
+All arms ran in the same worktree with the same installed dependencies,
+alternating order. The baseline is d458eef's pre-migration scripts verbatim:
+`npm run build:packages && tsc -p tsconfig.json --noEmit && tsc -p
+tsconfig.test.json && npm run typecheck -w web`, and `npm run build:packages &&
+node --import tsx --test test/*.test.ts` (the same 118 suites and 1,099 tests
+as `npm test`). Times are wall seconds, median (range).
+
+### Typecheck (5 runs per arm)
+
+| Workload | Baseline | Nx `typecheck` | Nx `affected:typecheck` | Nx cache hits |
+| --- | --- | --- | --- | --- |
+| Cold: package outputs cleaned, `nx reset` | 3.09 (3.03–3.11) | 3.25 (3.13–3.28), +5% | | 0/15 |
+| Warm: unchanged repeat | 2.38 (2.34–2.43) | **0.69** (0.68–0.70), −71% | | 9/15 |
+| Uncached: `NX_SKIP_NX_CACHE=true` | 2.36 (2.34–2.40) | 2.38 (2.27–2.39), +1% | | none |
+| Changed: contracts | 2.55 (2.53–2.63) | 2.69 (2.67–2.82), +5% | 2.76 (2.73–2.81), 7 projects | 2/15, 2/13 |
+| Changed: worktree-deps | 2.47 (2.43–2.51) | 2.15 (2.13–2.18), −13% | 2.15 (2.12–2.18), 3 projects | 6/15, 5/9 |
+| Changed: backend `src/` | 2.40 (2.37–2.44) | 1.98 (1.96–2.06), −18% | 2.02 (1.97–2.05), 2 projects | 7/15, 6/8 |
+| Changed: `web/src/` | 2.39 (2.37–2.43) | 2.00 (1.95–2.08), −16% | 2.08 (2.00–2.11), 2 projects | 7/15, 6/8 |
+| Changed: one root suite | 2.41 (2.35–2.43) | 1.77 (1.69–1.77), −27% | 1.80 (1.76–1.83), 1 project | 8/15, 6/7 |
+
+The first warm Nx run (2.39 s, 0/15) followed a cold baseline run's reset and is
+excluded from the warm range. Each changed run appended a distinct valid export,
+so no run could replay another's entry, and the tree was restored and re-warmed
+between runs.
+
+### Tests
+
+| Workload | Baseline | Nx | Package builds from cache |
+| --- | --- | --- | --- |
+| Full: `npm test` (5 runs) | 60.30 (59.76–60.66), 4 runs | 60.71 (60.42–61.76), +0.7% | 6/6 |
+| Affected, worktree-deps edit: 106 suites, 984 tests (3 runs) | same groups without Nx: 57.23 (57.13–57.31) | 58.17 (57.78–58.24), −3.5% against full | 5/6 |
+| Affected, backend edit: 105 suites, 969 tests (3 runs) | 57.19 (56.78–57.65) | 58.15 (57.95–58.21), −3.6% | 6/6 |
+| Affected, one root suite: 15 suites, 159 tests (3 runs) | 11.74 (11.72–11.78) | 12.58 (12.57–12.59), −79% | 6/6 |
+
+The first baseline full run measured 504 s by `/usr/bin/time`, but its runner's
+own monotonic `duration_ms` was 64.6 s: the host's wall clock stepped about
+seven minutes during it (11 wall minutes passed while uptime advanced 5), so it
+is excluded. Later test runs also recorded a monotonic duration, which matched
+`/usr/bin/time` within 0.01 s.
+
+Fixed costs per command: affected selection (`--list`, including npm startup)
+0.55 s for tests and 0.23 s for typecheck; the link check 0.02 s; an up-to-date
+`tsc -b` 0.04 s, against about 0.35 s for Nx to confirm six cached package
+builds. So `affected:test` costs about 0.9 s more than running the same groups
+directly.
+
+### Verdict
+
+- **Typecheck: useful improvement.** An unchanged repeat is 3.4× faster, and
+  backend, web, leaf-package and suite edits are 13–27% faster than the
+  baseline, with correct invalidation. A contracts edit is 5–8% slower, because
+  Nx runs six `tsc -b` processes where the baseline runs one solution build.
+  `affected:typecheck` saves nothing over `npm run typecheck`: the cache
+  already skips unchanged projects, and `checks` (`tsc -p tsconfig.test.json`,
+  about 1.7 s) depends on everything and always reruns.
+- **Tests: no useful improvement, so performance acceptance for tests is
+  unresolved.** Tests are about 96% of a typecheck-plus-test loop (60 s against
+  2.4 s). Nx neither caches them (by design) nor narrows them much: a backend
+  edit's loop goes from 62.7 s to 60.2 s (−4%). Only edits confined to root
+  suites gain (−79%). Speeding up tests needs finer ownership, such as splitting
+  the 71-suite `backend` group by what its suites import, or faster suites, not
+  more orchestration.
+
+## Still open
+
+- Nx on Node 20.19, Crane's minimum: no Node 20 runtime was available.
+- A second independent install: cloning the worktree into a disposable
+  directory for `npm ci` and separate benchmark copies was refused by Crane's
+  command guard, so every arm shared one worktree (and its OS file cache), and
+  fresh-install evidence is this one Crane-prepared worktree.
+- The packaged CLI: beyond the passing build and `test/build.test.ts`'s static
+  checks, listing the `npm pack --dry-run` contents and running the built CLI's
+  `--help` were refused in the same run.
+- Nx under Codex's no-network sandbox, and more than one concurrency sample.
+- Stale shared entries in `~/.nx/6c369d3128b6274a/` from pre-fix checkouts.
+  Current Crane ignores them; an operator may delete the directory.
