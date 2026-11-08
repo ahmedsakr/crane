@@ -1,16 +1,19 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { COMMAND_ACCESS, COMMAND_ACCESS_LABEL, isCommandAccess } from "@crane/contracts";
 import type { AgentDriver, RunContext, RunResult } from "@crane/agent-protocol";
 import { Store } from "../src/core/store.js";
+import { worktreesDir } from "../src/core/paths.js";
 import { OperatorActions } from "../src/factory/actions.js";
 import { runAgent } from "../src/factory/agent-runner.js";
 import { createApp } from "../src/server/app.js";
-import { testHome } from "./support/fixtures.ts";
+import { temporaryRoot, testHome } from "./support/fixtures.ts";
 
-function setup() {
+function setup(path = "/code/app") {
   const store = new Store(":memory:");
-  const repo = store.addRepo({ path: "/code/app", name: "app" });
+  const repo = store.addRepo({ path, name: "app" });
   return { store, repo, actions: new OperatorActions(store) };
 }
 
@@ -138,13 +141,15 @@ class RecordingDriver implements AgentDriver {
 
 test("command access: runAgent reads it and CRANE_HOME at the start of every run", async (t) => {
   testHome(t);
-  const { store, repo, actions } = setup();
+  const { store, repo, actions } = setup(temporaryRoot(t, "crane-command-checkout-"));
   try {
     store.upsertAgent({ id: "a-jib", name: "Jib", driver: "recording" });
     const task = store.createTask({ kind: "maintenance", title: "x", brief: "", repoId: repo.id, autonomy: "propose" });
     const driver = new RecordingDriver();
+    const cwd = join(worktreesDir(), task.id);
+    mkdirSync(cwd);
     const run = () => runAgent({ store, maxTurns: 0, retryDelayMs: 1 }, "a-jib", driver, {
-      task: store.getTask(task.id)!, repo, cwd: repo.path, signal: new AbortController().signal, emit: () => {},
+      task: store.getTask(task.id)!, repo, cwd, signal: new AbortController().signal, emit: () => {},
     });
     await run();
     actions.setCommandAccess(repo.id, "auto");
