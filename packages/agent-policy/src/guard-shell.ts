@@ -1,4 +1,5 @@
 import { resolvePath } from "./guard-paths.js";
+import { maskCommitMessages, type ShellToken } from "./guard-messages.js";
 import type { GuardCommand, GuardContext } from "./guard-types.js";
 
 const SEPARATORS = new Set([";", "\n", "|", "||", "&", "&&", "(", ")", "`"]);
@@ -19,14 +20,15 @@ export function executable(word: string): string {
 }
 
 interface Lexer {
-  tokens: string[];
+  tokens: ShellToken[];
   word: string;
   started: boolean;
   quote: string | null;
+  start: number;
 }
 
-function flush(state: Lexer): void {
-  if (state.started) state.tokens.push(state.word);
+function flush(state: Lexer, end: number): void {
+  if (state.started) state.tokens.push({ value: state.word, start: state.start, end, operator: false });
   state.word = "";
   state.started = false;
 }
@@ -38,25 +40,26 @@ function punctuation(raw: string, index: number, state: Lexer): number {
     state.word = "";
     state.started = false;
   }
-  flush(state);
+  flush(state, index);
   if (raw.slice(index, index + 3) === "<<<") {
-    state.tokens.push(descriptor + "<<<");
+    state.tokens.push({ value: descriptor + "<<<", start: index, end: index + 3, operator: true });
     return index + 2;
   }
   const pair = raw.slice(index, index + 2);
   if (OPERATORS.has(pair)) {
-    state.tokens.push(descriptor + pair);
+    state.tokens.push({ value: descriptor + pair, start: index, end: index + 2, operator: true });
     return index + 1;
   }
-  state.tokens.push(descriptor + raw[index]!);
+  state.tokens.push({ value: descriptor + raw[index]!, start: index, end: index + 1, operator: true });
   return index;
 }
 
 /** Two views retain real path arguments and also inspect quoted text as commands. */
-function tokens(raw: string, quoted: boolean): string[] {
-  const state: Lexer = { tokens: [], word: "", started: false, quote: null };
+function tokens(raw: string, quoted: boolean): ShellToken[] {
+  const state: Lexer = { tokens: [], word: "", started: false, quote: null, start: 0 };
   for (let i = 0; i < raw.length; i++) {
     const char = raw[i]!;
+    if (!state.started) state.start = i;
     if (char === "\\" && state.quote !== "'" && i + 1 < raw.length) {
       const next = raw[++i]!;
       if (next !== "\n") state.word += next;
@@ -70,14 +73,19 @@ function tokens(raw: string, quoted: boolean): string[] {
     } else if (/[;|&()<>\n`]/.test(char)) {
       i = punctuation(raw, i, state);
     } else if (/\s/.test(char)) {
-      flush(state);
+      flush(state, i);
     } else {
       state.word += char;
       state.started = true;
     }
   }
-  flush(state);
+  flush(state, raw.length);
   return state.tokens;
+}
+
+/** Only proven literal arguments to a direct git commit are data in both views. */
+export function shellInspectionText(raw: string): string {
+  return maskCommitMessages(raw, tokens(raw, true));
 }
 
 function nextDirectory(words: string[], cwd: string | null, ctx: GuardContext): string | null {
@@ -115,8 +123,8 @@ function scanTokens(input: string[], ctx: GuardContext): GuardCommand[] {
 }
 
 export function scanCommands(raw: string, ctx: GuardContext): GuardCommand[] {
-  const literal = tokens(raw, true);
-  const loose = tokens(raw, false);
+  const literal = tokens(raw, true).map((token) => token.value);
+  const loose = tokens(raw, false).map((token) => token.value);
   const parts = scanTokens(literal, ctx);
   if (literal.length === loose.length && literal.every((word, index) => word === loose[index])) return parts;
   return [...parts, ...scanTokens(loose, ctx)];

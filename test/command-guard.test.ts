@@ -239,6 +239,42 @@ test("guard: dangerous tokens remain visible in quotes, heredocs, substitutions 
   }
 });
 
+test("guard: literal Git commit messages retain their data provenance", () => {
+  // Event 37956's compound-command shape and co-author trailer; classify only,
+  // never execute the Git mutations in this regression fixture.
+  const message = "Fix command guard\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>";
+  const recorded = `git add packages/agent-policy/src/guard-shell.ts && git commit -q -m "${message}" && git log --oneline -1`;
+  const commands = [recorded];
+  for (const option of ["-m ", "-am ", "--message ", "--message=", "-m", "-am"]) {
+    for (const quote of ["'", '"']) commands.push(`git commit ${option}${quote}${message}${quote}`);
+  }
+  commands.push("git commit -m 'Describe sh -c, sudo true, git push, and > /etc/file' -m 'Second paragraph <a@b>'");
+  commands.push("git commit -m 'Literal $(touch /etc/file) and `sudo true`'");
+  for (const command of commands) {
+    for (const access of modes) {
+      assert.equal(classify(command, { access }).decision, access === "most" ? "allow" : "pass", command);
+      assert.equal(classify(command, { access, profile: "job" }).category, "shared-git", command);
+    }
+  }
+});
+
+test("guard: commit messages cannot hide executable shell content or real redirects", () => {
+  const commands = [
+    'git commit -m "$(touch /etc/file)"', 'git commit -m "`touch /etc/file`"',
+    'git commit --message="$(touch /etc/file)"', 'git commit -m "safe"$(touch /etc/file)',
+    "git commit -m 'safe' > /etc/file", "git commit -m 'safe' 2>/etc/file",
+    "git commit -m 'safe' && touch /etc/file", "git commit -m 'safe'; sudo true",
+    "sh -c 'git commit -m \"$(touch /etc/file)\"'", "node -e 'exec(\"touch /etc/file\")'",
+    "git commit -m \"safe\"'$(touch /etc/file)'", // Ambiguous concatenation stays conservative.
+    "git commit -F -m 'touch /etc/file'", // -m is the file argument, not a message option.
+    "echo 'git commit -m \"touch /etc/file\"'", // No general quoted-text exemption.
+    "eval >git commit -m '$(touch /etc/file)'", // A redirect target cannot establish a command.
+  ];
+  for (const command of commands) {
+    for (const access of modes) assert.equal(classify(command, { access }).decision, "deny", command);
+  }
+});
+
 test("guard: Crane reserves task-branch Git mutations in job runs", () => {
   for (const subcommand of ["commit -am x", "reset HEAD", "checkout feature", "switch feature", "rebase -i", "stash", "cherry-pick HEAD", "revert HEAD"]) {
     const command = `git ${subcommand}`;

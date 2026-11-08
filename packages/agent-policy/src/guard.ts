@@ -1,6 +1,6 @@
 import { ALWAYS_DENIED } from "./denied.js";
 import { isAllowed, ruleForCommand, splitCommand } from "./permissions.js";
-import { candidates, executable, scanCommands } from "./guard-shell.js";
+import { candidates, executable, scanCommands, shellInspectionText } from "./guard-shell.js";
 import { credentialPath, redirectTargets, resolvePath, within, writeCategory, writeTargets } from "./guard-paths.js";
 import { sharedGit } from "./guard-git.js";
 import { operatorCli, operatorHttp } from "./guard-operator.js";
@@ -78,12 +78,13 @@ function fileTool(tool: string, input: Record<string, unknown>, ctx: GuardContex
 /**
  * Best-effort protection against mistakes and prompt injection, not a shell
  * interpreter or an adversarial sandbox: it cannot resolve symlinks or inspect
- * arbitrary programs. Raw text is intentionally scanned even when it is data.
+ * arbitrary programs. Raw text is scanned even when it is data, except for
+ * proven literal message arguments to a direct git commit.
  */
 export function classifyToolCall(call: { tool: string; input: Record<string, unknown> }, ctx: GuardContext): GuardVerdict {
   const pass: GuardVerdict = { decision: "pass", category: null, reason: "Crane's command guard found no blocked operation.", rules: [], overridable: false };
   if (call.tool !== "Bash") return fileTool(call.tool, call.input, ctx) ?? pass;
-  const raw = typeof call.input.command === "string" ? call.input.command : "";
+  const raw = shellInspectionText(typeof call.input.command === "string" ? call.input.command : "");
   const parts = scanCommands(raw, ctx);
   const hard = hardBash(raw, parts, ctx);
   if (hard) return denied(hard);
