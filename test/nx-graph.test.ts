@@ -130,12 +130,44 @@ test("nx: targets run the same commands as the public npm scripts", () => {
   assert.equal(command("backend", "build"), scripts["build:backend"]);
   assert.equal(command("@crane/web", "build"), web.build);
   assert.equal(command("@crane/web", "typecheck"), web.typecheck);
-  assert.equal(command("checks", "test"), scripts.test);
-  const stages = scripts.typecheck.split(" && ");
-  assert.ok(stages.includes(command("backend", "typecheck")), "backend stage of npm run typecheck");
-  assert.ok(stages.includes(command("checks", "typecheck")), "tests and scripts stage of npm run typecheck");
-  // Public commands keep their behavior: Nx is an extra entry point, not yet wired into them.
-  for (const [name, body] of Object.entries({ ...scripts, ...web })) assert.doesNotMatch(String(body), /\bnx\b/, name);
+  assert.equal(command("backend", "typecheck"), "tsc -p tsconfig.json --noEmit");
+  assert.equal(command("checks", "typecheck"), "tsc -p tsconfig.test.json");
+  // The full runner over every root suite, never `npm test`, which would start Nx again.
+  assert.equal(command("checks", "test"), "node --import tsx scripts/run-test-groups.ts --full");
+});
+
+test("nx: public scripts reach Nx only through scripts/tasks.ts, and no target starts npm or Nx", () => {
+  const { scripts } = readJson("package.json");
+  assert.equal(scripts.typecheck, "node --import tsx scripts/tasks.ts typecheck");
+  assert.equal(scripts.test, "node --import tsx scripts/tasks.ts test");
+  assert.equal(scripts["affected:typecheck"], "node --import tsx scripts/tasks.ts affected typecheck");
+  assert.equal(scripts["affected:test"], "node --import tsx scripts/tasks.ts affected test");
+  for (const lifecycle of ["pretypecheck", "posttypecheck", "pretest", "posttest"]) {
+    assert.equal(scripts[lifecycle], undefined, `${lifecycle} would repeat the work scripts/tasks.ts schedules`);
+  }
+  const web = readJson("web/package.json").scripts;
+  for (const [name, body] of Object.entries({ ...scripts, ...web })) {
+    if (!name.startsWith("affected:") && !["typecheck", "test"].includes(name)) assert.doesNotMatch(String(body), /\bnx\b|scripts\/tasks\.ts/, name);
+  }
+  for (const [name, project] of Object.entries(projects)) {
+    for (const [targetName, target] of Object.entries(project.targets)) {
+      assert.doesNotMatch(target.options?.command ?? "", /\bnpm\b|\bnx\b|scripts\/tasks\.ts/, `${name}:${targetName} is not recursive`);
+    }
+  }
+});
+
+test("nx: only deterministic package builds and typechecks cache; bundles and suites always run", () => {
+  for (const name of PACKAGES) assert.equal(projects[name]!.targets.build!.cache, true, `${name}:build restores dist with its build info`);
+  for (const name of ["backend", "@crane/web", "checks"]) assert.equal(projects[name]!.targets.typecheck!.cache, true, name);
+  // Staleness checks (src/core/webbuild.ts) read these outputs' mtimes, which a cache restore can leave behind.
+  assert.equal(projects.backend!.targets.build!.cache, false);
+  assert.equal(projects["@crane/web"]!.targets.build!.cache, false);
+  assert.equal(projects.checks!.targets.test!.cache, false);
+  for (const dir of packageDirs) {
+    const { compilerOptions } = readJson(`packages/${dir}/tsconfig.json`);
+    assert.equal(compilerOptions.tsBuildInfoFile, "dist/tsconfig.tsbuildinfo", `${dir}: composite build state is inside the cached output`);
+    assert.equal(compilerOptions.outDir, "dist", dir);
+  }
 });
 
 test("nx: shared inputs cover lockfile, manifests, configs, task scripts and environment", () => {

@@ -80,7 +80,10 @@ test("build: type errors are caught before packing, since build doesn't check ty
   const { scripts, devDependencies } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
   assert.ok(!/\btsc\b/.test(scripts["build:backend"]));
   assert.ok(scripts.prepack.startsWith("npm run typecheck && "));
-  assert.ok(scripts.typecheck.includes("tsc -p tsconfig.json --noEmit"));
+  // npm run typecheck runs every project's typecheck target, the backend's included (test/nx-graph.test.ts).
+  const backend = JSON.parse(readFileSync(join(root, "src", "project.json"), "utf8"));
+  assert.ok(scripts.typecheck.includes("scripts/tasks.ts typecheck"));
+  assert.ok(backend.targets.typecheck.options.command.endsWith("tsc -p tsconfig.json --noEmit"));
   assert.ok(devDependencies.esbuild, "esbuild is a direct dependency, not borrowed from tsx");
 });
 
