@@ -305,6 +305,23 @@ agent's implementation completion, and does not replace or invalidate independen
 review and merge checks. These additions extend the existing command-details and
 diagnostic-outcomes tracking rather than introducing a second evidence store.
 
+Because the Bash tool can't supply an exit code, Claude runs that may write are
+briefed to run checks through Crane's check handle, the compiled
+`packages/agent-drivers/dist/check-handle.js` (`node <path> run <name> --
+<command>`, then `node <path> wait <name>` for one started in the background).
+`run` writes the check's output to `.crane/checks/<name>.log` and a record with
+the process's own exit code to `<name>.json` (the directory ignores itself),
+and exits with that code. `wait` blocks for at most 300 seconds by default and
+540 with `--timeout`, prints progress, and exits with the check's code, 75 if
+it is still running, or 70 when its runner stopped without a result, which
+stays unknown. This replaces redirecting to a log, echoing `EXIT=$?`, and
+polling TAP files. At the end of the invocation the driver reads the records
+of checks started during it and appends their outcomes to the report summary,
+next to the missing-exit qualification. The records live in the worktree, so
+they are local agent evidence like the rest of this section, not a
+replacement for Crane's review and merge checks. Investigate-only runs and
+Codex, whose command events carry exit codes, aren't briefed on it.
+
 For example, report: “Typecheck and the direct permission tests passed. `npm
 test`, including limits, drivers, and restart, was not run locally because of
 the known piped-subprocess limitation; left to Crane's external review and

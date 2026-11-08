@@ -5,7 +5,7 @@ import { ALWAYS_DENIED, type GuardContext } from "@crane/agent-policy";
 import type { Autonomy } from "@crane/contracts";
 import { runAgentProcess, runResumingSession } from "./agent-process.js";
 import { ClaudeStream } from "./claude-stream.js";
-import { claudeSettings, guardContext } from "./claude-guard.js";
+import { checkHandleCommand, claudeSettings, guardContext } from "./claude-guard.js";
 
 export { describeBlocked, usageFromResult } from "./claude-stream.js";
 
@@ -95,6 +95,11 @@ export function permissionMode(autonomy: Autonomy, guard?: GuardContext): "defau
   return autonomy === "observe" ? "default" : "acceptEdits";
 }
 
+/** Investigate-only runs may not write, so they don't get the check handle, which records into the worktree. */
+function checkHandleFor(autonomy: Autonomy): string | undefined {
+  return autonomy === "observe" ? undefined : checkHandleCommand() ?? undefined;
+}
+
 function claudeArgs(
   ctx: RunContext, autonomy: Autonomy, tools: { allowed: string[]; denied: string[] }, resume?: string, guard?: GuardContext,
 ): string[] {
@@ -106,7 +111,7 @@ function claudeArgs(
     "stream-json",
     "--verbose",
     "--append-system-prompt",
-    systemPrompt(ctx.task, ctx.repo, ctx.job, { checks: ctx.checks, commandAccess: guard?.access }),
+    systemPrompt(ctx.task, ctx.repo, ctx.job, { checks: ctx.checks, commandAccess: guard?.access, checkHandle: checkHandleFor(autonomy) }),
     "--permission-mode",
     mode,
     "--allowedTools",
@@ -163,7 +168,7 @@ export class ClaudeCodeDriver implements AgentDriver {
       label: this.label,
       args: claudeArgs(ctx, autonomy, tools, resume, guard),
       env: claudeEnv(),
-      prompt: resume ? resumePrompt(ctx, { commandAccess: guard?.access }) : userPrompt(ctx.task, ctx.job, ctx),
+      prompt: resume ? resumePrompt(ctx, { commandAccess: guard?.access, checkHandle: checkHandleFor(autonomy) }) : userPrompt(ctx.task, ctx.job, ctx),
       resume,
       stream: new ClaudeStream(ctx, tools, resume, guard),
       ctx,

@@ -23,11 +23,23 @@ export const GUARD_TIMEOUT_SECONDS = 10;
  * guard: a missing hook stops the run rather than falling back silently.
  */
 export function guardHookPath(): string {
+  const path = compiledScript("command-guard-hook.js");
+  if (path) return path;
+  throw new Error(`Crane's command guard isn't built next to ${fileURLToPath(new URL(".", import.meta.url))}, so the agent wasn't started. Run npm run build:packages, then retry the task.`);
+}
+
+function compiledScript(file: string): string | null {
   const here = fileURLToPath(new URL(".", import.meta.url));
-  for (const path of [join(here, "command-guard-hook.js"), join(here, "..", "dist", "command-guard-hook.js")]) {
-    if (existsSync(path)) return path;
-  }
-  throw new Error(`Crane's command guard isn't built next to ${here}, so the agent wasn't started. Run npm run build:packages, then retry the task.`);
+  return [join(here, file), join(here, "..", "dist", file)].find((path) => existsSync(path)) ?? null;
+}
+
+/**
+ * The shell words that start Crane's check handle (`check-handle.ts`), or
+ * null when it isn't built: agents then validate as before, without it.
+ */
+export function checkHandleCommand(): string | null {
+  const path = compiledScript("check-handle.js");
+  return path ? `node ${quote(path)}` : null;
 }
 
 /** What the guard needs to know about this run. `allowed` is the operator's rules, not Crane's defaults. */

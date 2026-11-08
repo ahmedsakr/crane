@@ -2,7 +2,8 @@ import { AgentRunError, isTransientFailure, parseReport, type RunContext, type R
 import { classifyToolCall, overlapsDenied, suggestRules, type GuardContext } from "@crane/agent-policy";
 import type { BlockedCall, CommandEvidence, RunUsage } from "@crane/contracts";
 import { cancelledRun, SessionNotResumed, stderrExcerpt, type AgentExit, type AgentStream } from "./agent-process.js";
-import { claudeToolResult, claudeValidationSummary } from "./claude-evidence.js";
+import { checkResultsSummary, claudeToolResult, claudeValidationSummary } from "./claude-evidence.js";
+import { checkRecordsSince } from "./check-results.js";
 import { emitAgentText } from "./cli.js";
 import { commandMessage, CommandTracker, safeEvidenceText } from "./command-evidence.js";
 import { GuardLiveness } from "./guard-liveness.js";
@@ -10,7 +11,7 @@ import { AutoModeWatch, CLASSIFIER_DENIAL, classifierReason } from "./auto-mode-
 import { GUARD_DENY_PREFIX } from "./command-guard-protocol.js";
 
 /** What a stream hears the run through. */
-export type ClaudeStreamContext = Pick<RunContext, "emit" | "signal" | "effort" | "maxTurns" | "onSession" | "onUsage">;
+export type ClaudeStreamContext = Pick<RunContext, "emit" | "signal" | "effort" | "maxTurns" | "onSession" | "onUsage"> & Partial<Pick<RunContext, "cwd">>;
 
 /** The rules the run was given, so a refusal can say what would have allowed it. */
 export interface ToolRules {
@@ -121,6 +122,8 @@ export class ClaudeStream implements AgentStream {
   private reported = new Set<string>();
   private guard: GuardLiveness;
   private autoMode: AutoModeWatch;
+  /** Check-handle records from before this invocation describe an earlier one. */
+  private startedAt = new Date();
 
   /** `guardContext`: the run has Crane's command guard hook and asked for hook events; access `auto` asked for auto mode. */
   constructor(
@@ -158,6 +161,8 @@ export class ClaudeStream implements AgentStream {
     const report = parseReport(this.finalText || this.lastText);
     const qualification = claudeValidationSummary([...this.commandOutcomes.values()]);
     if (qualification) report.summary += `\n\n${qualification}`;
+    const checks = this.ctx.cwd ? checkResultsSummary(checkRecordsSince(this.ctx.cwd, this.startedAt)) : "";
+    if (checks) report.summary += `\n\n${checks}`;
     return { report };
   }
 
