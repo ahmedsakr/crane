@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { installDependencies, type InstallDependenciesOptions } from "@crane/worktree-deps";
+import { installDependencies, preparedDependencyIdentity, type InstallDependenciesOptions } from "@crane/worktree-deps";
 import { copyDependencies, dependencyFingerprint, npmInstallMatches } from "../packages/worktree-deps/src/deps.js";
 import { elapsed } from "../src/factory/elapsed.js";
 
@@ -322,6 +322,27 @@ test("dependencies: copied preparations are reusable and require matching manife
     { skipped: "its install predates its current package.json files" },
     "a source preparation with stale inputs cannot be reused",
   );
+});
+
+test("dependencies: a copy brings no Nx cache or workspace data, and Nx state leaves the identity alone", async t => {
+  const from = fixture(t);
+  const to = fixture(t);
+  from.addWorkspace();
+  to.addWorkspace();
+  await installDependencies(from.root);
+  for (const file of [".nx/cache/123/terminalOutput", ".nx/workspace-data/project-graph.json"]) {
+    mkdirSync(join(from.root, file, ".."), { recursive: true });
+    writeFileSync(join(from.root, file), "from the operator's checkout");
+  }
+  writeFileSync(join(from.root, "nx.json"), '{"cacheDirectory":".nx/cache"}');
+  assert.deepEqual(await copyDependencies(from.root, to.root), { copied: ["node_modules"] }, "Nx config is no install input");
+  assert.equal(existsSync(join(to.root, ".nx")), false, "each worktree starts without another checkout's results");
+
+  const identity = await preparedDependencyIdentity(to.root);
+  assert.ok(identity);
+  mkdirSync(join(to.root, ".nx", "cache"), { recursive: true });
+  writeFileSync(join(to.root, ".nx", "cache", "result"), "x");
+  assert.equal(await preparedDependencyIdentity(to.root), identity, "running Nx doesn't invalidate review results");
 });
 
 test("dependencies: a skipped copy is explained before the install starts and on the final note", async t => {
