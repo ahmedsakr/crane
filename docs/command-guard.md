@@ -221,6 +221,16 @@ Wiring notes:
 - **Classifier cost:** not in `total_cost_usd` or `modelUsage`. Crane's usage figures will understate auto-mode runs, so the docs and UI should say so. Each checked call adds about 2.3–4.7 s.
 - **`--permission-mode default`:** switch to `manual`, the name the CLI lists now. Both report `default` in `init`, so detection code should expect `default`.
 
+## How Crane wires the guard
+
+Crane follows design A. Every Claude Code run except investigate-only gets inline `--settings` with one `PreToolUse` hook (matcher `Bash|Edit|Write|MultiEdit|NotebookEdit`, `timeout: 10`) plus `--include-hook-events`, in all three command access modes. The pieces are in `packages/agent-drivers/src/`:
+
+- `claude-guard.ts` builds the settings and the run's `GuardContext`: command access (unset means `listed`), the worktree, the operator's checkout and default branch, `CRANE_HOME`, the home directory, the `job` profile for conflict and fix-checks runs, and the operator's own rules (`CRANE_ALLOWED_TOOLS` and the repo's). Crane's default allowlist isn't part of `allowed`, so "Most commands" still flags an outward command such as `npm install -g` that a default rule would match. The hook command is `'<node>' '<dist/command-guard-hook.js>' <base64url context>`. If the compiled hook is missing, the run fails before Claude Code starts.
+- `command-guard-hook.ts` reads the call from stdin and runs `classifyToolCall`. A deny answers with JSON whose reason starts `Crane's command guard blocked this:`. An allow is sent only in `most` mode, and a pass sends no decision. Unreadable context or input exits 2 with the same prefix. Each answer also writes `crane-guard <decision> <tool_use_id>` to stderr.
+- `guard-liveness.ts` matches those stderr lines in `hook_response` events. It records one note per run when a Bash result arrives with no guard answer, for example after a timeout or a hook that couldn't start. Then only the allowlist decided that call.
+
+`--allowedTools`, `--disallowedTools` (with `ALWAYS_DENIED`) and `--permission-mode` are the same in every mode. Auto mode doesn't start yet: an `auto` repo runs like `listed`, except that the guard also denies outward commands.
+
 ## Unverified questions and operator follow-up
 
 | Question | What's unverified | Why |

@@ -13,7 +13,12 @@
  * driver allows and its CLI arguments stay in that driver. Codex has no deny
  * list: its guard is its sandbox (`codexArgs` in `packages/agent-drivers/src/codex.ts`).
  *
- * The deterministic command guard also scans raw text for dangerous operations.
+ * The deterministic command guard (`classifyToolCall`) also scans raw text for
+ * dangerous operations. Claude Code runs it before every Bash and file-write
+ * call of a non-investigate run, as a PreToolUse hook that agent-drivers points
+ * at its compiled `command-guard-hook.js`. It answers allow only for "Most
+ * commands", so a hook allow never skips the allowlist or auto mode's
+ * classifier elsewhere, and deny rules such as ALWAYS_DENIED beat its allow.
  * It is best-effort protection against mistakes and prompt injection, not a
  * boundary against a determined adversary: it cannot resolve symlinks or inspect
  * arbitrary programs. The worktree, driver sandbox and Crane-only merging remain

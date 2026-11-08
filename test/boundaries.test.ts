@@ -144,7 +144,8 @@ test("boundaries: concrete drivers have one ESM entry and keep helpers private",
   assert.deepEqual(config.compilerOptions.lib, ["ES2022"]);
   const api = await import("@crane/agent-drivers");
   assert.deepEqual(Object.keys(api).sort(), ["ClaudeCodeDriver", "CodexDriver", "SimulatedDriver"]);
-  for (const path of ["@crane/agent-drivers/src/codex.js", "@crane/agent-drivers/dist/codex.js", "@crane/agent-drivers/codex-pricing", "@crane/agent-drivers/prompts", "@crane/agent-drivers/command-evidence"]) {
+  for (const path of ["@crane/agent-drivers/src/codex.js", "@crane/agent-drivers/dist/codex.js", "@crane/agent-drivers/codex-pricing", "@crane/agent-drivers/prompts", "@crane/agent-drivers/command-evidence",
+    "@crane/agent-drivers/dist/command-guard-hook.js", "@crane/agent-drivers/command-guard-hook"]) {
     await assert.rejects(import(path), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
   }
 });
