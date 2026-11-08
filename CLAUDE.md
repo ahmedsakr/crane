@@ -33,6 +33,20 @@ Captures serve `web/dist`: wait for the UI build to finish successfully before s
 
 - `npm run screenshot:matrix -- <matrix.json> --out-dir <dir> [--baseline <dir>]`: compare captures pixel for pixel. Plain `npm run screenshot` boots a live demo whose data, ids and factory state change on every run, so don't diff its images. A matrix (`scripts/matrices/`) fixes one target, readiness condition and scroll position; each cell is captured twice from a fresh `--fixture` and only compared with the baseline if the two match. See [Screenshot comparisons](docs/testing.md#screenshot-comparisons).
 
+For affected feedback, choose a known-good local base explicitly: use
+`npm run affected:typecheck -- --base main --head HEAD --list` to preview a
+clean committed candidate, or `--base main --working-tree` to include staged,
+unstaged, deleted and non-ignored untracked files. Comparisons use trees, not
+merge bases, and never fetch. `--head` with dirty files runs full work instead.
+Test helpers, docs and unknown inputs conservatively select all test groups;
+typecheck selection has different rules (outside-project Markdown is ignored
+when other typecheck inputs exist). A local affected pass is not full factory
+validation: leave operator-configured review and merge checks unchanged.
+Nx orchestrates tasks; npm still installs dependencies and maintains links.
+Use the [cache controls and benchmark protocol](docs/testing.md#cache-controls)
+for resets and uncached comparisons, without bypassing dependency preparation
+or sandbox deferrals. Do not claim speedups without equivalent timed workloads.
+
 ## Shape
 
 - `src/core/store.ts` is the single source of truth (SQLite, WAL). Every process (server, CLI) opens it directly; there is no in-memory state worth trusting across processes. Live views tail the `events` table. `Store` is a thin facade: each domain's queries live in `src/core/store/` (tasks, queue, claims, review, goals, runs, events, repos, crew, settings, analytics, overview), with the schema in `schema.ts`, migrations in `migrations.ts` and row mappers in `rows.ts`. Add a method to the domain module and a one-line delegate to `Store`. The one exception is access: operators, sessions and invites (`store/access.ts`) are reached through the single `store.access` property (an `AccessStore`) rather than delegates, and only digests of tokens and scrypt password hashes reach those tables. Only `src/core/store.ts` and `src/core/store/` use `store.db` or import better-sqlite3; `crane setup`'s runtime probe in `src/cli/setup.ts` is the one listed exception (`test/boundaries.test.ts`).

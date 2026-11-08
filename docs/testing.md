@@ -10,6 +10,164 @@ both commands outside the agent sandbox for review and again for the merge
 candidate. The local selection below does not change those configured checks,
 skip tests in the full suite, or replace either gate.
 
+## Full and affected execution
+
+npm installs and links workspaces using `package-lock.json`; Nx orchestrates
+tasks installed by npm. `npm run typecheck` selects every project's typecheck
+and prerequisite builds. `npm test` builds all six packages then executes all
+root suites once. Both retain full coverage and remain the factory defaults;
+operator-configured checks, candidate evidence and sandbox deferrals are
+unchanged. A local affected pass is development feedback, not full factory
+validation or evidence that a different candidate passed.
+
+```sh
+# Compare two committed trees; HEAD must be checked out and clean.
+npm run affected:typecheck -- --base main --head HEAD --list
+npm run affected:typecheck -- --base main --head HEAD
+npm run affected:test -- --base main --head HEAD
+# Compare the base to disk, including staged/unstaged/deleted/untracked inputs.
+npm run affected:typecheck -- --base main --working-tree --list
+npm run affected:typecheck -- --base main --working-tree
+npm run affected:test -- --base main --working-tree
+```
+
+Replace `main` with the known-good local commit that defines your intended
+boundary. There is no default base, `HEAD~1`, fetch or merge-base calculation:
+tree comparison includes changes present only on the base. Ignored untracked
+files are excluded; renames count as both deletion and addition. Give exactly
+one of `--head` or `--working-tree`; missing arguments are usage errors, not
+fallbacks. `--list` prints selection/diagnostics without checking links,
+building, testing or warming the task cache.
+
+Unavailable local history (including a shallow checkout missing the base), a
+self-comparison, no changes, a head not checked out or a dirty `--head` run
+selects full work and reports why. Nothing silently fetches. Global config,
+graph changes and unknown ownership also select full work. Typecheck expands
+changed projects to dependent consumers; tests use audited ownership groups,
+always adding architecture/build scans. Helpers, scripts, docs, new/deleted
+suites and uncertain imports select every test group. Outside-project Markdown
+is ignored by typecheck selection, but a change set with no typecheck input
+still falls back fully. See [exact selection rules](nx.md#commands) and
+[test ownership](test-groups.md#enumeration-and-conservative-selection).
+
+## Cache controls
+
+Nx uses only the ignored `.nx/` cache in each checkout, with no required daemon
+or remote service. Cacheable tasks hash project files, transitive dependency
+inputs, installed dependencies and shared globals: root manifests/lockfile,
+root TypeScript config, Nx config, `.gitignore`, build/link/toolchain scripts,
+Node/tool versions, platform/architecture, `NODE_OPTIONS` and `NODE_ENV`.
+Checks' typecheck also includes `scripts/`. See [input definitions](nx.md#inputs-and-invalidation).
+Package builds restore the complete `packages/<name>/dist/`, including
+declarations and composite build info. Backend/web/checks typechecks cache
+success with no emitted outputs. Package typecheck targets are no-ops after
+builds. Tests and backend/web bundles never cache; affected tests still prepare
+every package before running the selected suites.
+
+In an authorized checkout with dependencies already installed:
+
+```sh
+# Reset Nx task cache and workspace metadata, not dependencies or tsc outputs.
+node node_modules/nx/bin/nx.js reset
+# Disable Nx task-cache reads/writes for a comparison; retain public preflights.
+NX_SKIP_NX_CACHE=true npm run typecheck
+NX_SKIP_NX_CACHE=true npm run affected:typecheck -- --base main --working-tree
+NX_SKIP_NX_CACHE=true npm test
+```
+
+Resetting Nx does not make TypeScript cold: composite state remains in package
+`dist/`. Conversely, removing `dist/` alone permits Nx to restore it. Do not
+delete dependencies or outputs to diagnose a cache hit in a restricted sandbox.
+If links or Nx are missing, retain the error and use normal `npm install` only
+where authorized; never bypass the link check or substitute `npm ci --dry-run`.
+Run `npm run build:packages` successfully before direct tests, even after a cache
+reset. `NX_SKIP_NX_CACHE` does not force tsc to rebuild unchanged composites,
+make socket tests sandbox-compatible, or authorize retrying a refused command.
+
+## Benchmark protocol
+
+Run measurements later in an authorized disposable checkout with supported
+installs, subprocesses and sockets. This protocol is not a claim of measured
+speedup; lifecycle verification and final acceptance own measured results.
+Keep installation outside task timing and record its separate duration for
+fresh-worktree evaluation. Use the same candidate, dependencies, hardware,
+environment, suite list and compiler options for each paired comparison.
+
+Record commit/base/head, exact command, OS, CPU model/core count, RAM, load,
+Node (`node --version`), npm (`npm --version`), Nx
+(`node node_modules/nx/bin/nx.js --version`) and installed compiler/bundler/tsx
+versions (`node scripts/nx-toolchain.mjs`). Save unfiltered stdout/stderr and
+the command tool's authoritative exit status separately for every run. On a
+host with `/usr/bin/time`, prefix each command with `/usr/bin/time -p` for
+wall/user/system seconds; never pipe timing output through a filter.
+
+Compare these workloads separately:
+
+| Workload | Baseline without Nx | Nx |
+| --- | --- | --- |
+| Full typecheck | `npm run build:packages`, then local `tsc -p tsconfig.json --noEmit`, `tsc -p tsconfig.test.json`, and web's local `tsc -p tsconfig.json --noEmit` from `web/` | `npm run typecheck` |
+| Full tests | `npm run build:packages`, then `node --import tsx scripts/run-test-groups.ts --full` | `npm test` |
+| Selected typechecks | Link preflight and package prerequisites, then the exact compiler commands for the projects in `--list`, in dependency order | affected typecheck with the same boundary |
+| Selected tests | `npm run build:packages`, then runner with repeated `--group` for the exact selected group union | affected test with the same boundary |
+
+Use `node_modules/.bin/tsc` at root and `../node_modules/.bin/tsc` from web
+for baseline compiler calls; do not use downloading `npx`. Package typecheck
+is its composite build, not an additional compiler invocation. Preserve the
+link preflight and all prerequisite builds. For multi-command baselines, time
+the complete sequence with prerequisites joined by `&&`, retain failures,
+and also record component times. Derive selected compiler commands and package
+prerequisites from the candidate's `project.json` files; do not omit checks'
+test/script compilation or run a suite twice. Compare full baseline to full Nx
+to isolate orchestration effects, and identical selected work to selected Nx;
+report full-versus-affected savings separately as reduced work, not cache speed.
+
+Use independently prepared copies at the same candidate for each arm so one
+arm cannot warm the other's outputs. Run at least five repetitions per phase,
+alternate arm order, and report every result plus median and range:
+
+1. **Cold:** in disposable, authorized copies only, remove generated package
+   `dist/` outputs and reset Nx before each run. Record precisely which state
+   was cleared. Keep installed dependencies identical; OS filesystem cache
+   need not be cold, but disclose it. If cleanup is refused, do not retry;
+   label the cold measurement unavailable.
+2. **Warm:** repeat unchanged immediately without reset or edits. Capture
+   selected targets, executed targets, Nx hits/total cacheable tasks and suite
+   count from complete logs. Tests must execute again; no test-result hits.
+3. **Changed project:** from warmed copies, apply the same recorded valid
+   source patch to each arm, then select `--working-tree` against the same
+   known-good base. Save the patch and `--list` output before timing execution.
+   Restore independently prepared state between cases; do not accumulate edits.
+4. **Uncached:** repeat with `NX_SKIP_NX_CACHE=true` and equivalent tsc state
+   on both arms. Separately time `--list`, the link preflight and an up-to-date
+   baseline build to expose selection, hashing and startup overhead. List-only
+   timing omits Nx startup and is not a substitute for a warm execution timing.
+
+Exercise each boundary below for both affected commands, retaining selections
+and fallback reasons rather than assuming a leaf implies a single test:
+
+| Case | Reproducible change/boundary | Expected scope to verify |
+| --- | --- | --- |
+| Contracts | Valid source patch under `packages/contracts/src/` | Contracts and transitive consumers; test dependency closure plus scans |
+| Leaf package | Valid patch under `packages/worktree-deps/src/` | Package, backend and checks typechecks; relevant test groups plus scans |
+| Backend | Valid patch under `src/` | Backend and checks typechecks; backend consumers and scans |
+| Web | Valid patch under `web/src/` | Web and checks typechecks; web consumers and scans |
+| Tests/helpers | Patch a suite, then separately `test/support/` | Suite owner plus scans; helpers select all tests, checks typecheck |
+| Lockfile/config | Valid lockfile change, then separately root `nx.json` or tsconfig | Full fallback; prepare dependencies again if lockfile changes |
+| Missing base | `--base refs/heads/benchmark-missing-base --head HEAD` with that ref confirmed absent | Explicit unavailable-history diagnostic and full fallback |
+
+Also preview staged, unstaged, deleted, renamed and non-ignored untracked cases,
+dirty `--head`, identical base/head and no-change working trees. Record whether
+each selects fully and why. Missing-base execution must use the same full
+workload as the baseline; do not count it as an affected saving.
+
+Publish rows with: case/patch, phase/repetition, arm, boundary, selected
+projects/groups/suites, actual executed tasks, cache hits/eligible tasks,
+wall/user/system time, exit status and log path. Include hardware/tool metadata
+with the table. Report regressions and overhead as well as savings; mark blocked
+or unmeasured cases explicitly. Fresh-worktree installs, Node compatibility,
+cache restoration and sandbox-incompatible suites remain separate verification
+obligations, not conclusions from warm timings.
+
 ## Validation order
 
 Before each editing agent attempt (including resumed sessions, merge resolution,
