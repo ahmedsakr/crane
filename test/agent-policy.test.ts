@@ -49,8 +49,8 @@ test("permissions: rules that touch Crane's deny list are recognised", () => {
   assert.ok(!overlapsDenied("Bash(npm ci:*)", ALWAYS_DENIED));
 });
 
-test("permissions: the public API is the deny list, matching, overlap and suggestions", async () => {
+test("permissions: the public API is the deny list, command guard, matching, overlap and suggestions", async () => {
   // Command splitting and rule prefixes stay internal unless a production caller needs them.
   const api = await import("@crane/agent-policy");
-  assert.deepEqual(Object.keys(api).sort(), ["ALWAYS_DENIED", "isAllowed", "overlapsDenied", "suggestRules"]);
+  assert.deepEqual(Object.keys(api).sort(), ["ALWAYS_DENIED", "classifyToolCall", "isAllowed", "overlapsDenied", "suggestRules"]);
 });
