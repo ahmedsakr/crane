@@ -20,7 +20,7 @@ const HOST: EventActor = { kind: "host", name: "ahmed" };
 const PASSWORD = "correct horse battery";
 const PUBLIC = "https://crane.example.com";
 
-type Send = { method?: string; headers?: Record<string, string>; body?: unknown; peer?: string; cookie?: string };
+type Send = { method?: string; headers?: Record<string, string>; body?: unknown; peer?: string; cookie?: string; encrypted?: boolean };
 
 /** A factory with the admin Sam and a task waiting for review, served with `opts`. */
 async function setup(opts: AppOptions = {}) {
@@ -37,7 +37,7 @@ async function setup(opts: AppOptions = {}) {
     if (s.cookie) headers.cookie = s.cookie;
     const method = s.method ?? (s.body === undefined ? "GET" : "POST");
     const body = method === "GET" ? undefined : JSON.stringify(s.body ?? {});
-    const env = s.peer ? { incoming: { socket: { remoteAddress: s.peer } } } : undefined;
+    const env = { incoming: { socket: { remoteAddress: s.peer, encrypted: s.encrypted } } };
     return Promise.resolve(app.request(url, { method, headers, body }, env));
   };
   const signIn = (url: string, s: Send = {}) => send(url, { ...s, body: { username: "sam", password: s.body ?? PASSWORD } });
@@ -46,6 +46,21 @@ async function setup(opts: AppOptions = {}) {
 
 const setCookie = (res: Response) => res.headers.get("set-cookie") ?? assert.fail("no cookie set");
 const pair = (res: Response) => setCookie(res).split(";")[0]!;
+
+test("exposure: Crane's TLS socket makes cookies Secure and adds HSTS without proxy trust", async () => {
+  const { store, signIn } = await setup();
+  try {
+    const res = await signIn("http://localhost:4471/api/auth/sign-in", {
+      encrypted: true, peer: "127.0.0.1", headers: { "x-forwarded-proto": "http" },
+    });
+    assert.equal(res.status, 200);
+    assert.match(setCookie(res), /; Secure/);
+    assert.equal(res.headers.get("strict-transport-security"), "max-age=31536000");
+    const plain = await signIn("http://localhost:4471/api/auth/sign-in", { encrypted: false });
+    assert.doesNotMatch(setCookie(plain), /; Secure/);
+    assert.equal(plain.headers.get("strict-transport-security"), null);
+  } finally { store.close(); }
+});
 
 test("exposure: with a public URL, only its Host and loopback are answered", async () => {
   const { store, send } = await setup({ publicUrl: PUBLIC });

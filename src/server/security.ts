@@ -74,7 +74,7 @@ export interface ServeAddress {
 
 /**
  * Exposed means listening beyond loopback or reached through a public URL. An exposed factory needs an operator to
- * sign in as, and HTTPS in front of it, or passwords and session cookies cross the network in plain text.
+ * sign in as, and an HTTPS public URL (using Crane's TLS socket or a proxy).
  */
 export function checkExposure(address: ServeAddress): ExposureCheck {
   let publicUrl: URL | null;
@@ -94,7 +94,7 @@ export function checkExposure(address: ServeAddress): ExposureCheck {
   if (publicUrl?.protocol === "https:") return { exposed, publicUrl };
   const plain = `Exposed without an https --public-url, passwords and session cookies would cross the network unencrypted.`;
   if (!address.allowInsecureHttp) {
-    return { exposed, publicUrl, error: `${plain} Put Crane behind HTTPS and pass --public-url https://<domain>, or pass --allow-insecure-http on a network you trust.` };
+    return { exposed, publicUrl, error: `${plain} Use --tls-cert and --tls-key or put Crane behind HTTPS, and pass --public-url https://<domain>, or pass --allow-insecure-http on a network you trust.` };
   }
   return { exposed, publicUrl, warning: `${plain} Serving anyway, because of --allow-insecure-http.` };
 }
@@ -182,10 +182,12 @@ export function forwardedValue(c: Context, trustProxy: boolean, name: string): s
 }
 
 /**
- * Whether the browser reached this request over HTTPS: what a trusted proxy says, else the public URL's scheme for
- * requests to its host, else the request's own.
+ * Whether the browser reached this request over HTTPS: Crane's own TLS socket, then what a trusted proxy says,
+ * else the public URL's scheme for requests to its host, else the request's own.
  */
 export function requestIsHttps(c: Context, exposure: Pick<Exposure, "publicUrl" | "trustProxy">): boolean {
+  // Node's adapter bindings are server-owned; request headers cannot forge an encrypted socket.
+  if (c.env?.incoming?.socket?.encrypted === true) return true;
   const proto = forwardedValue(c, exposure.trustProxy, "x-forwarded-proto");
   if (proto) return proto.toLowerCase() === "https";
   const url = new URL(c.req.url);

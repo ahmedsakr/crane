@@ -293,7 +293,7 @@ The dashboard can do everything here except three things, which only the host ca
 
 ### Reaching the dashboard from another machine
 
-Crane listens on loopback unless you tell it otherwise. There are two safe ways to use it from somewhere else.
+Crane listens on loopback unless you tell it otherwise. There are three safe ways to use it from somewhere else.
 
 **Option 1: an SSH tunnel.** Nothing on the host changes. From your own machine:
 
@@ -343,7 +343,23 @@ Then open `http://localhost:4471`. If the host has operators, sign in as one; if
 4. In the instance's security group, open only 443, and 80 if your proxy uses it to get certificates. Never open 4471.
 5. Invite teammates from the Operators page or with `crane operators invite`, and send them the link it prints.
 
-`crane serve` and `crane start` refuse to start exposed (a `--host` other than loopback, or any `--public-url`) when no operator exists yet, and when there's no https `--public-url`, since passwords and session cookies would otherwise cross the network unencrypted. `--allow-insecure-http` waives only the HTTPS requirement, with a warning, for a network you trust; an exposed factory still needs an operator. Every response tells browsers not to frame the dashboard or send its address to other sites, and over HTTPS to keep using HTTPS for a year (`Strict-Transport-Security`).
+**Option 3: serve HTTPS directly.** Crane can terminate TLS itself, without a reverse proxy.
+
+1. Point your domain at the host's public address, and add the first admin: `crane operators add <username> --admin`.
+2. Get a certificate using Certbot's DNS challenge, for example `sudo certbot certonly --manual --preferred-challenges dns -d crane.example.com`. Follow Certbot's instructions to publish the DNS TXT record. For automatic renewal, use your DNS provider's Certbot plugin instead of the manual challenge.
+3. Give the account running Crane read access to the certificate chain and private key, keeping the key private. Start Crane with both files:
+
+   ```sh
+   crane start --host 0.0.0.0 --port 4471 --public-url https://crane.example.com \
+     --tls-cert /etc/letsencrypt/live/crane.example.com/fullchain.pem \
+     --tls-key /etc/letsencrypt/live/crane.example.com/privkey.pem
+   ```
+
+   `crane serve` takes the same flags. Both files must be readable PEM files with a matching key. Crane validates them before starting work. Direct HTTPS sets Secure session cookies and HSTS without `--trust-proxy`.
+4. Forward router TCP port 443 to port 4471 on the Crane host, and allow that traffic through its firewall. On a cloud host, use equivalent port forwarding and security-group rules so operators reach `https://crane.example.com` on 443.
+5. Restart Crane after **each certificate renewal**: certificates are read only at startup, with no live reloading. Arrange a restart after successful automated renewals too. Manual DNS challenges need manual renewal unless you switch to an automated DNS plugin.
+
+`crane serve` and `crane start` refuse to start exposed (a `--host` other than loopback, or any `--public-url`) when no operator exists yet, and when there's no https `--public-url`, since passwords and session cookies would otherwise cross the network unencrypted. Use direct TLS or the HTTPS proxy above with that URL. `--allow-insecure-http` waives only the HTTPS requirement, with a warning, for a network you trust; an exposed factory still needs an operator. Every response tells browsers not to frame the dashboard or send its address to other sites, and over HTTPS to keep using HTTPS for a year (`Strict-Transport-Security`).
 
 ## Configuration
 

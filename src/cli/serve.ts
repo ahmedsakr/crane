@@ -11,6 +11,8 @@ import { isAvailable, resolveDefaultDriver, sharedDrivers } from "../factory/dri
 import { factoryBuildOutdated, servedDashboard } from "../core/webbuild.js";
 import { DEFAULT_HOST } from "../core/paths.js";
 import * as ui from "./ui.js";
+import { errorMessage } from "@crane/contracts";
+import { loadTls, type TlsOptions } from "./tls.js";
 
 /** Take the dashboard's port. A port in use rejects here, rather than as an uncaught `error` event later. */
 function listen(options: Parameters<typeof honoServe>[0]): Promise<ServerType> {
@@ -23,7 +25,7 @@ function listen(options: Parameters<typeof honoServe>[0]): Promise<ServerType> {
   });
 }
 
-export interface ServeOptions {
+export interface ServeOptions extends TlsOptions {
   port: number;
   host?: string;
   agents: number;
@@ -53,6 +55,8 @@ function exposureOrFail(store: Store, opts: ServeOptions): ExposureCheck {
 }
 
 export async function serve(store: Store, opts: ServeOptions) {
+  let tls: ReturnType<typeof loadTls>;
+  try { tls = loadTls(opts); } catch (error) { ui.fail(errorMessage(error)); }
   if (factoryIsRunning(store)) {
     ui.fail("A factory is already running against this Crane home. Stop it first, or set CRANE_HOME to run another.");
   }
@@ -73,7 +77,7 @@ export async function serve(store: Store, opts: ServeOptions) {
   const hostname = opts.host ?? DEFAULT_HOST;
   const { exposed, publicUrl } = exposure;
   const app = { exposed, publicUrl: publicUrl?.origin, trustProxy: opts.trustProxy };
-  const server = await listenOrFail(store, { port: opts.port, hostname, log, app });
+  const server = await listenOrFail(store, { port: opts.port, hostname, log, app }, tls);
   saveServeAddress(store, exposure);
 
   const factory = new Factory(store, [driver, ...others], {
@@ -85,7 +89,7 @@ export async function serve(store: Store, opts: ServeOptions) {
   });
   factory.start();
 
-  await printBanner({ store, factory, driver, others, port: opts.port, hostname, exposure, buildDashboard });
+  await printBanner({ store, factory, driver, others, port: opts.port, hostname, exposure, buildDashboard, tls: !!tls });
   handleShutdown(store, factory, server);
 }
 
@@ -96,10 +100,10 @@ export function saveServeAddress(store: Store, exposure: ExposureCheck): void {
 
 type Address = { port: number; hostname: string; log: (line: string) => void; app: AppOptions };
 
-async function listenOrFail(store: Store, address: Address): Promise<ServerType> {
+async function listenOrFail(store: Store, address: Address, tls: ReturnType<typeof loadTls>): Promise<ServerType> {
   const { port, hostname, log } = address;
   const app = createApp(store, { ...address.app, log });
-  return listen({ fetch: app.fetch, port, hostname }).catch((err: NodeJS.ErrnoException) =>
+  return listen({ fetch: app.fetch, port, hostname, ...tls }).catch((err: NodeJS.ErrnoException) =>
     ui.fail(
       err.code === "EADDRINUSE"
         ? `Port ${port} is already in use. Stop what's using it, or choose another with --port.`
@@ -117,11 +121,13 @@ interface Banner {
   hostname: string;
   exposure: ExposureCheck;
   buildDashboard: boolean;
+  tls: boolean;
 }
 
 /** Where operators browse to, where Crane listens when that differs, and whether they must sign in. */
-function printAccess(store: Store, port: number, hostname: string, { exposed, publicUrl }: ExposureCheck) {
-  console.log(`  ${ui.dim("Dashboard")}  ${pc.bold(publicUrl?.origin ?? `http://localhost:${port}`)}`);
+function printAccess(store: Store, port: number, hostname: string, { exposed, publicUrl }: ExposureCheck, tls: boolean) {
+  const scheme = tls ? "https" : "http";
+  console.log(`  ${ui.dim("Dashboard")}  ${pc.bold(publicUrl?.origin ?? `${scheme}://localhost:${port}`)}`);
   if (exposed) console.log(`  ${ui.dim("Listening")}  ${hostname}:${port}`);
   const operators = store.access.countOperators();
   if (operators > 0) {
@@ -131,9 +137,9 @@ function printAccess(store: Store, port: number, hostname: string, { exposed, pu
   console.log(`  ${ui.dim("Sign-in  ")}  off on this machine until an operator exists  ${ui.dim("crane operators add <username> --admin")}`);
 }
 
-async function printBanner({ store, factory, driver, others, port, hostname, exposure, buildDashboard }: Banner) {
+async function printBanner({ store, factory, driver, others, port, hostname, exposure, buildDashboard, tls }: Banner) {
   console.log(`\n${ui.brand()}  ${pc.green("◉")} Factory is running\n`);
-  printAccess(store, port, hostname, exposure);
+  printAccess(store, port, hostname, exposure, tls);
   console.log(`  ${ui.dim("Agents   ")}  ${store.listAgents().filter((a) => a.active).length} active · factory default ${driver.label}`);
   const installed = (
     await Promise.all(others.filter((d) => d.name !== "simulated").map(async (d) => ((await isAvailable(d)) ? d.label : null)))

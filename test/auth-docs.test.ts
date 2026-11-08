@@ -30,7 +30,7 @@ test("auth runbook: serve, start, operators and auth help cover every documented
     const sections = readme.split("### Operators and sign-in\n")[1]!.split("## Configuration\n")[0]!;
     const serve = await help("serve");
     const start = await help("start");
-    for (const flag of ["--host", "--public-url", "--trust-proxy", "--allow-insecure-http"]) {
+    for (const flag of ["--host", "--public-url", "--trust-proxy", "--allow-insecure-http", "--tls-cert", "--tls-key"]) {
       assert.ok(sections.includes(flag), flag);
       for (const output of [serve, start]) assert.ok(output.includes(flag), flag);
     }

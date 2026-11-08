@@ -150,6 +150,8 @@ export function serveArguments(opts: ServeOptions): string[] {
     ...(opts.maxTurns === undefined ? [] : ["--max-turns", String(opts.maxTurns)]),
     ...(opts.timeLimit === undefined ? [] : ["--time-limit", String(opts.timeLimit)]),
     ...(opts.publicUrl === undefined ? [] : ["--public-url", opts.publicUrl]),
+    ...(opts.tlsCert === undefined ? [] : ["--tls-cert", opts.tlsCert]),
+    ...(opts.tlsKey === undefined ? [] : ["--tls-key", opts.tlsKey]),
     ...(opts.trustProxy ? ["--trust-proxy"] : []),
     ...(opts.allowInsecureHttp ? ["--allow-insecure-http"] : []),
   ];

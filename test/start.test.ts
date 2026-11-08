@@ -63,6 +63,12 @@ test("start forwards the public URL, proxy trust and the insecure-HTTP override 
   assert.deepEqual(serveArguments({ ...base, trustProxy: false, allowInsecureHttp: false }), ["serve", "--port", "4471", "--agents", "2", "--driver", "auto"]);
 });
 
+test("start forwards TLS file paths unchanged to supervised serve", () => {
+  assert.deepEqual(serveArguments({ port: 4471, agents: 2, driver: "auto", tlsCert: "/cert path/fullchain.pem", tlsKey: "/key path/privkey.pem" }).slice(-4), [
+    "--tls-cert", "/cert path/fullchain.pem", "--tls-key", "/key path/privkey.pem",
+  ]);
+});
+
 test("start builds initially, ignores unchanged HEAD, and stops before rebuilding a new commit", async () => {
   const f = fixture();
   f.state.onWait = () => {
