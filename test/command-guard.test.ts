@@ -12,6 +12,29 @@ function classify(command: string, overrides: Partial<GuardContext> = {}): Guard
   return classifyToolCall({ tool: "Bash", input: { command } }, { ...context, ...overrides });
 }
 
+test("guard: literal /dev/null redirects are permitted in every profile and access mode", () => {
+  for (const profile of ["worktree", "job", "inspect"] as const) {
+    for (const access of modes) {
+      for (const command of ["npm run build >/dev/null", "npm run build &>/dev/null", "npm run typecheck >/dev/null 2>&1"]) {
+        const verdict = classify(command, { profile, access });
+        assert.notEqual(verdict.decision, "deny", `${profile}/${access}: ${command}`);
+        assert.equal(verdict.category, null, command);
+      }
+      for (const target of ["/dev/sda", "/dev/null/../x", "/dev/./null", "/dev/null/", "/dev/nullish"]) {
+        for (const redirect of [">", "&>"]) {
+          const command = `npm run build ${redirect}${target}`;
+          const verdict = classify(command, { profile, access, allowed: ["Bash(*)"] });
+          assert.equal(verdict.decision, "deny", `${profile}/${access}: ${command}`);
+          assert.equal(verdict.category, "outside-worktree", command);
+        }
+      }
+      for (const command of ["touch /etc/file >/dev/null", "echo x >/dev/null >/etc/file"]) {
+        assert.equal(classify(command, { profile, access }).category, "outside-worktree", command);
+      }
+    }
+  }
+});
+
 const hard: Partial<Record<GuardCategory, string[]>> = {
   "deny-list": ["git push origin task", "git merge feature", "git checkout main", "rm -rf dist", "npm ci && git push", "echo 'rm -rf /tmp/x'"],
   "shared-git": [
