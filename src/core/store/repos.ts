@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import type { Repo, RepoTools } from "@crane/contracts";
+import { isCommandAccess, type Repo, type RepoTools } from "@crane/contracts";
 import type { Store } from "../store.js";
 import { shortId } from "../ids.js";
 import { toRepo, type Row } from "./rows.js";
@@ -41,15 +41,29 @@ export function removeRepo(store: Store, id: string) {
   store.db.prepare("DELETE FROM repos WHERE id = ? AND is_factory = 0").run(id);
 }
 
-/** The tool rules the operator has allowed, or chosen to keep blocked, for one repo. */
+/**
+ * The tool rules the operator has allowed, or chosen to keep blocked, for one
+ * repo, and which commands its agents may run. Settings saved before command
+ * access existed, or holding a value Crane doesn't know, read as `listed`.
+ */
 export function repoTools(store: Store, repoId: string): RepoTools {
   const raw = getSetting(store, `tools:${repoId}`);
-  const parsed = raw ? (JSON.parse(raw) as Partial<RepoTools>) : {};
-  return { allowed: parsed.allowed ?? [], keptBlocked: parsed.keptBlocked ?? [] };
+  const parsed = raw ? (JSON.parse(raw) as Partial<Record<keyof RepoTools, unknown>>) : {};
+  return {
+    allowed: Array.isArray(parsed.allowed) ? parsed.allowed : [],
+    keptBlocked: Array.isArray(parsed.keptBlocked) ? parsed.keptBlocked : [],
+    commands: isCommandAccess(parsed.commands) ? parsed.commands : "listed",
+  };
 }
 
-export function setRepoTools(store: Store, repoId: string, tools: RepoTools) {
-  setSetting(store, `tools:${repoId}`, JSON.stringify({ allowed: [...new Set(tools.allowed)], keptBlocked: [...new Set(tools.keptBlocked)] }));
+/** Save the parts given; anything left out keeps its saved value. */
+export function setRepoTools(store: Store, repoId: string, change: Partial<RepoTools>) {
+  const tools = { ...repoTools(store, repoId), ...change };
+  setSetting(store, `tools:${repoId}`, JSON.stringify({
+    allowed: [...new Set(tools.allowed)],
+    keptBlocked: [...new Set(tools.keptBlocked)],
+    commands: tools.commands,
+  }));
 }
 
 export function repoChecks(store: Store, repoId: string): string[] {

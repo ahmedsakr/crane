@@ -1,12 +1,15 @@
 import {
+  COMMAND_ACCESS,
   DRIVER_NAMES,
   EFFORT_LEVELS,
   LOOKOUTS,
   MAINTENANCE_ROLES,
   driverLabel,
+  isCommandAccess,
   isDriverName,
   isMaintenanceRole,
   isTunable,
+  type CommandAccess,
   type DriverName,
   type DriverSettings,
   type Lookout,
@@ -22,6 +25,15 @@ export function toRule(input: string): string {
   const s = input.trim().replace(/^`|`$/g, "");
   if (/^(mcp__[\w-]+|[A-Z][\w-]*)(\(.+\))?$/.test(s)) return s;
   return `Bash(${s.replace(/:\*$/, "")}:*)`;
+}
+
+/** A command access setting the operator typed or sent, checked. Takes any case and surrounding space. */
+export function checkCommandAccess(input: unknown): CommandAccess {
+  const choices = COMMAND_ACCESS.join(", ");
+  if (typeof input !== "string") throw new Error(`Choose which commands agents may run: ${choices}`);
+  const value = input.trim().toLowerCase();
+  if (!isCommandAccess(value)) throw new Error(`Unknown command access “${input}”. Use one of: ${choices}`);
+  return value;
 }
 
 /** What model names look like: `opus`, `claude-opus-5-5[1m]`, `gpt-5-codex`, `us.anthropic.claude-…:0`. */

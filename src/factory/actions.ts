@@ -247,6 +247,10 @@ export class OperatorActions {
     return permissions.disallowTool(this.store, repoId, input);
   }
 
+  setCommandAccess(repoId: string, input: unknown, taskId?: string): RepoTools {
+    return permissions.setCommandAccess(this.store, repoId, input, taskId);
+  }
+
   // Sign-in and own account. `token` is the device's session token.
 
   authStatus(token: unknown, opts: { exposed: boolean }): AuthStatus {

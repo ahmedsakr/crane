@@ -1,4 +1,4 @@
-import type { CommandEvidence, EventType, PrerequisiteState, Task, TaskEvent, Report, Repo, RunUsage } from "@crane/contracts";
+import type { CommandAccess, CommandEvidence, EventType, PrerequisiteState, Task, TaskEvent, Report, Repo, RunUsage } from "@crane/contracts";
 
 /** A sibling task's state when the agent starts; never includes another worktree's path. */
 export interface SiblingTask extends Pick<Task, "id" | "title" | "status" | "branch"> {
@@ -56,6 +56,13 @@ export interface RunContext {
   postmortemPrompt?: string;
   /** Extra permission rules the operator allowed for this repo. Crane's deny list still wins. */
   allowedTools?: string[];
+  /**
+   * Which commands the operator lets Claude Code agents run in this repo,
+   * read at the start of the run. Unset means `listed`. Codex ignores it.
+   */
+  commandAccess?: CommandAccess;
+  /** The factory's CRANE_HOME, where its database and worktrees live. */
+  craneHome?: string;
   /** Stop the agent after this many turns. */
   maxTurns?: number;
   /** The model the operator chose for this agent. Unset leaves it to the driver's own default. */

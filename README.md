@@ -235,7 +235,8 @@ Start a run with the button on their row (**Review security**, **Reduce duplicat
 | `crane change-agent <id>` | Change a queued task's agent, model or effort (`--agent`, `--model`, `--effort`) |
 | `crane blocked` | Commands agents were blocked from, added up across tasks |
 | `crane allow "<command>" -r <repo>` / `crane keep-blocked …` | Let agents in that repo run it from now on, or keep it blocked and stop asking. `crane disallow` takes an allowed command back. |
-| `crane repos` / `crane repos add <path>` | The codebases the factory works on, and the commands allowed in each |
+| `crane commands [listed\|most\|auto] -r <repo>` | Show or choose which commands Claude Code agents may run in a repo (see [Configuration](#configuration)) |
+| `crane repos` / `crane repos add <path>` | The codebases the factory works on, which commands agents may run in each, and the ones allowed there |
 | `crane repos checks <repo> [--set "<command>"] [--clear]` | Show or replace the commands a repo's work must pass before review and merge (repeat `--set` for each command; `--json` for machine-readable output) |
 | `crane agents` / `crane agents use <agent>` | Who's on the crew, which agents are installed, and which one new tasks run on |
 | `crane agents set <agent> --model <model> --effort <level>` | Choose the model and effort an agent runs with (`default` for its own) |
@@ -360,6 +361,8 @@ Then open `http://localhost:4471`. If the host has operators, sign in as one; if
 | `CRANE_CODEX_MODEL` | Codex's default | Model passed to `codex exec --model` when none is set with `crane agents set` |
 
 When an agent is blocked from a command, the task shows it, and once the same command is blocked in a second task, Home asks whether to allow it for that repo. Crane's deny list (pushing, merging, checking out the default branch, `rm -rf`) always wins and can't be allowed.
+
+`crane commands <listed|most|auto> -r <repo>` (or `PUT /api/repos/:id/tools/commands` with `{ "commands": "most" }`) chooses which commands Claude Code agents in a repo may run, from their next run; `crane commands -r <repo>` shows the current choice, and `crane repos` lists it for every repo. **Only allowed commands** (`listed`) is the default and today's behavior: Crane's defaults plus the commands you allowed. **Most commands** (`most`) and **Most commands, with auto mode** (`auto`) are for repos where approving commands one at a time is toil: agents may run almost anything, with Crane's command guard blocking dangerous calls, and in auto mode Claude Code's own classifier reviewing the rest. Both arrive with the command guard; until then, every setting runs as `listed`. Switching keeps the commands you allowed or kept blocked. Codex ignores this setting and always runs in its sandbox.
 
 ## How it's built
 

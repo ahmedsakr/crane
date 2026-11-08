@@ -170,6 +170,35 @@ test("cli: repos checks shows, replaces and clears a repo's checks", async () =>
   } finally { store.close(); }
 });
 
+test("cli: commands shows and changes which commands agents may run, and repos lists it", async () => {
+  const { store, repo } = setup();
+  try {
+    store.setRepoTools(repo.id, { allowed: ["Bash(npm ci:*)"], keptBlocked: ["Bash(curl:*)"] });
+    const shown = await crane(store, "commands", "-r", "app");
+    assert.equal(shown.code, 0, shown.err);
+    assert.match(shown.out, /app {2}Only allowed commands/);
+    assert.match(shown.out, /Agents run Crane's default commands and the ones you allowed/);
+    assert.match(shown.out, /crane commands most -r app/);
+    assert.match((await crane(store, "repos")).out, /app[^\n]*\n\s+commands: Only allowed commands\n\s+also allowed: npm ci/);
+
+    const t = store.createTask({ kind: "maintenance", title: "x", brief: "", repoId: repo.id, autonomy: "propose" });
+    const changed = await crane(store, "commands", "auto", "-r", "app", "--task", t.id);
+    assert.equal(changed.code, 0, changed.err);
+    assert.match(changed.out, /Set commands for app to Most commands, with auto mode/);
+    assert.deepEqual(store.repoTools(repo.id), { allowed: ["Bash(npm ci:*)"], keptBlocked: ["Bash(curl:*)"], commands: "auto" });
+    assert.ok(store.listEvents(t.id).some((e) => e.message === "Set commands for app to “Most commands, with auto mode”"));
+    assert.match((await crane(store, "commands", "-r", "app")).out, /app {2}Most commands, with auto mode/);
+    assert.match((await crane(store, "repos")).out, /commands: Most commands, with auto mode/);
+
+    const refused = await crane(store, "commands", "everything", "-r", "app");
+    assert.equal(refused.code, 1);
+    assert.match(refused.err, /Unknown command access “everything”\. Use one of: listed, most, auto/);
+    assert.equal(store.repoTools(repo.id).commands, "auto", "a refused value changes nothing");
+    assert.equal((await crane(store, "commands", "most", "-r", "nope")).code, 1);
+    assert.equal(store.repoTools(repo.id).commands, "auto");
+  } finally { store.close(); }
+});
+
 test("cli: repos remove disconnects a repo by name and refuses the factory's own or an unknown one", async () => {
   const { store, repo } = setup();
   try {

@@ -82,6 +82,7 @@ const ROUTES = [
   "POST /api/tasks/:id/waive-prerequisites",
   "PUT /api/goals/:id/plan",
   "PUT /api/repos/:id/checks",
+  "PUT /api/repos/:id/tools/commands",
 ];
 
 function routeTable(app: ReturnType<typeof createApp>) {

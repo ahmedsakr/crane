@@ -11,6 +11,7 @@ import type {
   Analytics,
   Autonomy,
   BlockedTool,
+  CommandAccess,
   DriverInfo,
   Lookout,
   PostmortemSettings,
@@ -52,6 +53,7 @@ export type {
   Analytics,
   Autonomy,
   BlockedTool,
+  CommandAccess,
   DriverInfo,
   PostmortemSettings,
   MaintenanceRole,
@@ -202,6 +204,9 @@ export const api = {
   keepBlocked: (repoId: string, rule: string, taskId?: string) =>
     post<RepoTools>(`/repos/${repoId}/tools/keep-blocked`, { rule, taskId }),
   disallowTool: (repoId: string, rule: string) => post<RepoTools>(`/repos/${repoId}/tools/disallow`, { rule }),
+  /** Choose which commands Claude Code agents in this repo may run, from their next run. */
+  setCommandAccess: (repoId: string, commands: CommandAccess, taskId?: string) =>
+    req<RepoTools>(`/repos/${repoId}/tools/commands`, { method: "PUT", json: { commands, taskId } }),
   configureCrew: (id: string, input: { active?: boolean; defaultDriver?: string | null; role?: MaintenanceRole | null }) =>
     post<Agent>(`/agents/${id}`, input),
   /** Start a crew member's maintenance run. Only that member picks it up. */

@@ -1,4 +1,4 @@
-import { errorMessage, ruleLabel } from "@crane/contracts";
+import { COMMAND_ACCESS_LABEL, errorMessage, ruleLabel } from "@crane/contracts";
 import type { Command } from "commander";
 import pc from "picocolors";
 import type { CliContext } from "../context.js";
@@ -63,11 +63,13 @@ function listRepos({ store }: CliContext): void {
         open ? `  ${open} open` : ""
       }`,
     );
-    const allowed = store.repoTools(r.id).allowed;
+    const { allowed, commands } = store.repoTools(r.id);
+    console.log(`    ${ui.dim("commands:")} ${COMMAND_ACCESS_LABEL[commands]}`);
     if (allowed.length) console.log(`    ${ui.dim("also allowed:")} ${allowed.map(ruleLabel).join(", ")}`);
   }
   const withAllowed = list.find((r) => store.repoTools(r.id).allowed.length);
   const next: [string, string][] = [["crane repos add <path>", "connect another codebase"]];
+  if (list[0]) next.push([`crane commands -r ${list[0].name}`, "choose which commands its agents may run"]);
   if (withAllowed) {
     const first = ruleLabel(store.repoTools(withAllowed.id).allowed[0]!);
     next.push([`crane disallow ${JSON.stringify(first)} -r ${withAllowed.name}`, "stop allowing a command"]);
