@@ -328,6 +328,23 @@ test("guard: path resolution tracks directories, home, boundaries and unknown va
   assert.equal(classify("cat ~/.config/gh/hosts.yml", { home: null }).decision, "deny");
 });
 
+test("guard: pipeline stages start in the pipeline's directory, and a cd inside one stays ambiguous", () => {
+  // Read-only analysis after a pipe must not count relative paths as outside the worktree.
+  for (const command of [
+    "ls test | while read f; do grep -q 'core/git' test/$f && echo $f; done",
+    "cat x.json | node -e 'let d=\"\";process.stdin.on(\"data\",c=>d+=c)'",
+    "cd /work/task && cat x | touch y",
+    "cd /tmp | touch x",
+  ]) assert.equal(classify(command).decision, "allow", command);
+  assert.equal(classify("cd /tmp && cat x | touch y").decision, "allow");
+  assert.equal(classify("cd /tmp && cat x | touch ../y").category, "outside-worktree");
+  assert.equal(classify("cat x | touch ../y").category, "outside-worktree");
+  assert.equal(classify("cd /repos/crane && ls | git commit -am x").category, "shared-git");
+  for (const command of ["ls | cd /; touch a", "cd / | ls; touch a", "ls | (cd /); touch ../a", "ls || cd /; touch a", "cd / & touch a"]) {
+    assert.equal(classify(command).decision, "deny", command);
+  }
+});
+
 test("guard: executable paths and options do not conceal dangerous subcommands", () => {
   for (const command of ["/usr/bin/git push origin task", "/usr/bin/git merge feature", "/bin/rm -rf dist"]) {
     assert.equal(classify(command).category, "deny-list", command);
