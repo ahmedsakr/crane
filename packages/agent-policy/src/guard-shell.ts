@@ -99,10 +99,34 @@ function nextDirectory(words: string[], cwd: string | null, ctx: GuardContext): 
   return resolvePath(target, cwd, ctx);
 }
 
+/**
+ * Every stage of a pipeline starts in the directory the pipeline started in.
+ * Only the command after a pipeline that changed directory is ambiguous, since
+ * zsh runs the last stage in the current shell.
+ */
+interface Pipeline {
+  start: string | null;
+  moved: boolean;
+  piped: boolean;
+}
+
+function afterSeparator(token: string, cwd: string | null, pipe: Pipeline): string | null {
+  if (token === "|") {
+    pipe.piped = true;
+    return pipe.start;
+  }
+  const next = pipe.moved && pipe.piped ? null : cwd;
+  pipe.moved = false;
+  pipe.piped = false;
+  // A cd on either side of these operators may not affect the next command.
+  return token === "||" || token === "&" ? null : next;
+}
+
 function scanTokens(input: string[], ctx: GuardContext): GuardCommand[] {
   const out: GuardCommand[] = [];
   const stack: (string | null)[] = [];
   let cwd: string | null = ctx.worktree;
+  const pipe: Pipeline = { start: cwd, moved: false, piped: false };
   let words: string[] = [];
   for (const token of [...input, ";"]) {
     if (!SEPARATORS.has(token)) {
@@ -111,13 +135,15 @@ function scanTokens(input: string[], ctx: GuardContext): GuardCommand[] {
     }
     if (words.length) {
       out.push({ words, text: words.join(" "), cwd });
-      cwd = nextDirectory(words, cwd, ctx);
+      const next = nextDirectory(words, cwd, ctx);
+      if (next !== cwd) pipe.moved = true;
+      cwd = next;
       words = [];
     }
     if (token === "(") stack.push(cwd);
     if (token === ")") cwd = stack.length ? stack.pop()! : null;
-    // A cd on either side of these operators may not affect the next command.
-    if (token === "||" || token === "|" || token === "&") cwd = null;
+    cwd = afterSeparator(token, cwd, pipe);
+    if (token !== "|") pipe.start = cwd;
   }
   return out;
 }
