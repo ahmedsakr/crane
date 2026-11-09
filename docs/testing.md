@@ -109,6 +109,12 @@ acceptance run measured 504 s for a 64.6 s suite), so also record a monotonic
 duration, such as `performance.now()` around the command or the test runner's
 `duration_ms`, and investigate any run where the two disagree.
 
+For the backend extraction, `scripts/benchmark-tasks.ts` runs this protocol's
+full, warm, cold, uncached and changed-project phases over fixed CLI, HTTP,
+factory, storage, runtime, web and shared-contract edits; see
+[Backend extraction](backend-extraction.md#benchmark-protocol) for its cases,
+records, baseline and success targets.
+
 Compare these workloads separately:
 
 | Workload | Baseline without Nx | Nx |

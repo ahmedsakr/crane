@@ -10,7 +10,10 @@ still open. Change the names and contract below only together with this
 document and `test/nx-graph.test.ts`.
 
 Root suite ownership and the uncached runner are described in
-[Root test ownership](test-groups.md).
+[Root test ownership](test-groups.md). The planned split of `backend` into
+runtime, storage, factory and HTTP packages, and its timing baseline, are in
+[Backend extraction](backend-extraction.md). Suite counts below are from the
+commits measured then.
 
 ## Version and compatibility
 

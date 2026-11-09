@@ -27,10 +27,12 @@ web integration groups intentionally overlap in *inputs*, never in execution.
 The contracts suite is owned by architecture because it scans every package,
 the web tree and root manifests. It is not just a contracts unit suite.
 
-These groups are coarse. `backend` holds 71 of the 118 suites and its closure
-covers every project, so any package, backend or web edit still selects 105 to
-118 suites; only an edit confined to root suites narrows much. The measured
-effect is in [Measured results](nx.md#measured-results).
+These groups are coarse. `backend` holds 71 suites and its closure covers
+every project, so any package, backend or web edit still selects nearly every
+suite (106 of 119 at the [extraction baseline](backend-extraction.md#selection-matrix));
+only an edit confined to root suites narrows much. Count suites from
+`rootSuites`, not from these figures. The measured effect is in
+[Measured results](nx.md#measured-results).
 
 ## Enumeration and conservative selection
 
