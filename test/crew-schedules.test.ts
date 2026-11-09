@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -5,9 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { nextCrewFire, type CrewScheduleInput } from "@crane/contracts";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 import { createApp } from "../src/server/app.js";
-import { Factory } from "../src/factory/orchestrator.js";
+import { Factory } from "@crane/factory/runtime";
 import { SimulatedDriver } from "@crane/agent-drivers";
 
 const policy: CrewScheduleInput = {

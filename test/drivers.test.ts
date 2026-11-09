@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { fakeClaude, fakeCodex } from "./support/fake-agents.js";
@@ -6,9 +7,9 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
-import { Factory } from "../src/factory/orchestrator.js";
-import { resolveDefaultDriver } from "../src/factory/drivers.js";
+import { OperatorActions } from "@crane/factory/actions";
+import { Factory } from "@crane/factory/runtime";
+import { resolveDefaultDriver } from "@crane/factory/runtime";
 import { ClaudeCodeDriver, CodexDriver, SimulatedDriver } from "@crane/agent-drivers";
 import { codexArgs, unwrapShell, usageFromTurn } from "../packages/agent-drivers/src/codex.js";
 import { cliAnswers } from "../packages/agent-drivers/src/cli.js";

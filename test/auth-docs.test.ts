@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { CommanderError, type Command } from "commander";
@@ -6,7 +7,7 @@ import { buildProgram } from "../src/cli/program.js";
 import { createCliContext, hostActor } from "../src/cli/context.js";
 import { Store } from "@crane/storage";
 import { dbPath } from "@crane/backend-runtime";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 import { checkExposure } from "../src/server/security.js";
 import { onFixtureCleanup, testHome } from "./support/fixtures.js";
 import { PASSWORD, PUBLIC_URL, assertSecretFree, hostCommand } from "./support/auth-e2e.js";

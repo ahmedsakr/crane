@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -9,8 +10,8 @@ import { ClaudeCodeDriver } from "@crane/agent-drivers";
 import { describeBlocked, toolsFor } from "../packages/agent-drivers/src/claude-code.js";
 import { ALWAYS_DENIED } from "@crane/agent-policy";
 import { AgentRunError, isTransientFailure, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
-import { OperatorActions, toRule } from "../src/factory/actions.js";
-import { Factory } from "../src/factory/orchestrator.js";
+import { OperatorActions, toRule } from "@crane/factory/actions";
+import { Factory } from "@crane/factory/runtime";
 import type { BlockedCall, EventType, Repo, Task } from "@crane/contracts";
 
 const scratch = (p: string) => mkdtempSync(join(tmpdir(), p));

@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { sh } from "./support/git.js";
@@ -6,8 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { diffFiles, parseDiff, splitRows } from "@crane/contracts";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
-import { createWorktree, diffForTask, MAX_NEW_FILES } from "../src/factory/git.js";
+import { OperatorActions } from "@crane/factory/actions";
+import { createWorktree, diffForTask, MAX_NEW_FILES } from "../packages/factory/src/git.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));
 

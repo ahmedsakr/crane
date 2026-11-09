@@ -2,7 +2,7 @@ import { errorMessage, ruleLabel } from "@crane/contracts";
 import type { Command } from "commander";
 import pc from "picocolors";
 import type { Store } from "@crane/storage";
-import { toRule } from "../../factory/actions.js";
+import { toRule } from "@crane/factory/actions";
 import type { CliContext } from "../context.js";
 import * as ui from "../ui.js";
 import { allowCommand } from "./shared.js";

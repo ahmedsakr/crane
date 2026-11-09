@@ -1,7 +1,8 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 import { createApp } from "../src/server/app.js";
 import { MAINTENANCE_ROLE } from "@crane/contracts";
 

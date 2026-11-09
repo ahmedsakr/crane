@@ -1,7 +1,7 @@
 # Backend extraction contract and baseline
 
 Status: **contract and baseline recorded**, 2026-11-09, at commit `c41f6db`
-(`main` at `2b34e48` plus the benchmark script). Runtime and storage extraction are implemented in `packages/backend-runtime` and `packages/storage`; factory and HTTP extraction are pending.
+(`main` at `2b34e48` plus the benchmark script). Runtime, storage and factory extraction are implemented in `packages/backend-runtime`, `packages/storage` and `packages/factory`; HTTP extraction is pending.
 This document is the contract the extraction tasks follow and the baseline
 they are measured against. Change it together with the extraction that
 changes the facts.
@@ -254,7 +254,7 @@ exact bytes afterwards (also on SIGINT/SIGTERM):
 | --- | --- | --- | --- |
 | `cli` | CLI-only | `src/cli/ui.ts` | 5, plus 3 uncached |
 | `http` | HTTP-only | `src/server/body.ts` | 5, plus 3 uncached |
-| `factory` | factory-only | `src/factory/elapsed.ts` | 3 |
+| `factory` | factory-only | `packages/factory/src/elapsed.ts` | 3 |
 | `storage` | storage-only | `packages/storage/src/store/shared.ts` | 3 |
 | `runtime` | runtime-only | `packages/backend-runtime/src/ids.ts` | 3 |
 | `web` | web-only | `web/src/lib/format.ts` | 3 |
@@ -445,3 +445,38 @@ The five runtime modules now live in `packages/backend-runtime/src/`, with expli
 ## Storage extraction implementation
 
 Store and its domain modules, post-mortem helpers, screenshot retention and maintenance now live in `packages/storage/src/`. Production consumers use `@crane/storage`'s single public entry; repository tests can still exercise private algorithms through source paths. Schema, migrations, transactions and domain implementations moved unchanged. Storage depends only on contracts, backend-runtime, Node and better-sqlite3. The root retains its SQLite dependency for the documented CLI setup native-module probe; all database operations remain storage-owned. Nx and composite references include storage; existing broad suite groups cover it through backend's dependency closure until the separate ownership partition task. The benchmark's storage probe follows its new package path. No timing improvement is claimed here.
+
+## Factory extraction implementation
+
+All former `src/factory/` modules now live together under
+`packages/factory/src/`, including OperatorActions and its domain modules,
+validation, drivers/settings, the orchestrator, checks, work/merge execution,
+dashboard builds and checkpoint services. Their internal organization and
+safety gates are preserved. The package compiles with its own `rootDir: src`
+and composite declarations, and references its actual downward dependencies:
+storage, backend-runtime, contracts, agent-drivers, agent-policy,
+agent-protocol, diagnostics and worktree-deps. CLI and HTTP implementation
+remain application-owned and cannot be imported by factory.
+
+Production uses focused entries: `/actions` for operator mutations, `/state`
+and the default entry for read-only status, `/runtime` for Factory and serving
+driver selection, and `/settings`, `/diff` and `/instruct` for externally
+consumed utilities. Run services, merge helpers and checkpoints stay private.
+The driver registry remains the only production importer of concrete drivers;
+all protocol consumers still share the same package and error class.
+
+Application identity is explicitly bound by `src/application.ts` into the
+backend-runtime singleton before CLI or HTTP composition. Factory services
+consume that binding rather than importing application source or guessing its
+location from a compiled workspace. Source, compiled and installed application
+locations continue to be determined by the application marker itself. Private
+source tests also consume this one identity through backend-runtime.
+
+Workspace manifests, lock metadata, bundling, composite references, Nx edges,
+test dependency assertions and the benchmark factory probe follow the new
+package. Broad backend/web test ownership remains conservative through the
+backend dependency closure; narrowing it and partitioning checks compilation
+remain serialized follow-up tasks. Tests and application bundles stay uncached,
+with checkout-local cache configuration unchanged. No timing improvement is
+claimed by this extraction; full/affected workload comparison remains the
+series' verification task in an environment supporting the complete suites.

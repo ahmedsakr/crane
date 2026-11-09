@@ -69,7 +69,21 @@ const packages = readdirSync(join(root, "packages"))
   });
 
 /** Entry points a package exposes beyond `.`, which every package has. */
-const EXTRA_ENTRY_POINTS: Record<string, string[]> = { "@crane/contracts": ["rules"] };
+const EXTRA_ENTRY_POINTS: Record<string, string[]> = { "@crane/contracts": ["rules"], "@crane/factory": ["actions", "state", "runtime", "settings", "instruct", "diff"] };
+
+test("factory exposes focused entry points while hiding lifecycle implementation", async () => {
+  const state = await import("@crane/factory");
+  assert.deepEqual(Object.keys(state).sort(), ["factoryDriverName", "factoryIsRunning", "factoryState"]);
+  const actions = await import("@crane/factory/actions");
+  const runtime = await import("@crane/factory/runtime");
+  assert.equal(typeof actions.OperatorActions, "function");
+  assert.deepEqual(Object.keys(runtime).sort(), ["Factory", "isAvailable", "resolveDefaultDriver", "sharedDrivers"]);
+  const { SimulatedDriver } = await import("@crane/agent-drivers");
+  assert.ok(runtime.sharedDrivers().find((driver) => driver.name === "simulated") instanceof SimulatedDriver);
+  for (const path of ["@crane/factory/src/actions.js", "@crane/factory/dist/actions.js", "@crane/factory/merge", "@crane/factory/checks"]) {
+    await assert.rejects(import(path), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
+  }
+});
 
 test("storage exposes only its production API and rejects private subpaths", async () => {
   const api = await import("@crane/storage");

@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import type { Overview } from "@crane/contracts";
 import type { Store } from "@crane/storage";
-import type { OperatorActions } from "../../factory/actions.js";
+import type { OperatorActions } from "@crane/factory/actions";
 import type { ApiAccess } from "../auth.js";
 
 /** What every route module needs. Built once per app by `createApp`. */

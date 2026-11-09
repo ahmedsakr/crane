@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
@@ -7,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EventActor } from "@crane/contracts";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 import { serve, type ServeOptions } from "../src/cli/serve.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-home-"));

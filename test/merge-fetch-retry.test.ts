@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -7,9 +8,9 @@ import { join } from "node:path";
 import { SimulatedDriver } from "@crane/agent-drivers";
 import type { Repo, Task } from "@crane/contracts";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
-import { isTransientFetchFailure, landTask, MergeError, type MergeRequest } from "../src/factory/merge.js";
-import { Factory } from "../src/factory/orchestrator.js";
+import { OperatorActions } from "@crane/factory/actions";
+import { isTransientFetchFailure, landTask, MergeError, type MergeRequest } from "../packages/factory/src/merge.js";
+import { Factory } from "@crane/factory/runtime";
 import { sh } from "./support/git.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-fetch-retry-home-"));

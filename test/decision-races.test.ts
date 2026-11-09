@@ -1,10 +1,11 @@
+import "../src/application.js";
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { STATUS_LABEL, type Task } from "@crane/contracts";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 import { onFixtureCleanup, temporaryRoot } from "./support/fixtures.js";
 import { sh } from "./support/git.js";
 

@@ -24,6 +24,9 @@
     },
     {
       "path": "./packages/storage"
+    },
+    {
+      "path": "./packages/factory"
     }
   ]
 }

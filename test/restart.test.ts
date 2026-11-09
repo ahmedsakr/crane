@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fakeResumingClaude } from "./support/fake-agents.js";
@@ -7,8 +8,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
-import { Factory } from "../src/factory/orchestrator.js";
+import { OperatorActions } from "@crane/factory/actions";
+import { Factory } from "@crane/factory/runtime";
 import { ClaudeCodeDriver, SimulatedDriver } from "@crane/agent-drivers";
 import type { RunContext, RunResult } from "@crane/agent-protocol";
 import type { CommandEvidence, Task } from "@crane/contracts";

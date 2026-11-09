@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -5,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { ValidationRun } from "@crane/contracts";
-import { runChecks } from "../src/factory/checks.js";
+import { runChecks } from "../packages/factory/src/checks.js";
 import { runInstall } from "../packages/worktree-deps/src/install-process.js";
 import { sh } from "./support/git.js";
 

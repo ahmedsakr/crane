@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test, type TestContext } from "node:test";
 import { temporaryRoot, onFixtureCleanup, testHome } from "./support/fixtures.js";
 import assert from "node:assert/strict";
@@ -5,9 +6,9 @@ import { sh } from "./support/git.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
-import { Factory } from "../src/factory/orchestrator.js";
-import { createWorktree } from "../src/factory/git.js";
+import { OperatorActions } from "@crane/factory/actions";
+import { Factory } from "@crane/factory/runtime";
+import { createWorktree } from "../packages/factory/src/git.js";
 import { SimulatedDriver } from "@crane/agent-drivers";
 import type { AgentDriver } from "@crane/agent-protocol";
 import type { Report } from "@crane/contracts";

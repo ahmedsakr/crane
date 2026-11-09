@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { sh } from "./support/git.js";
@@ -7,10 +8,10 @@ import { join } from "node:path";
 import { SimulatedDriver } from "@crane/agent-drivers";
 import type { Autonomy, NewTask } from "@crane/contracts";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
-import { Factory } from "../src/factory/orchestrator.js";
-import { createWorktree, diffForTask, finalizeWorktree, PreparationHold } from "../src/factory/git.js";
-import { siblingTasksFor } from "../src/factory/task-context.js";
+import { OperatorActions } from "@crane/factory/actions";
+import { Factory } from "@crane/factory/runtime";
+import { createWorktree, diffForTask, finalizeWorktree, PreparationHold } from "../packages/factory/src/git.js";
+import { siblingTasksFor } from "../packages/factory/src/task-context.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-base-home-"));
 

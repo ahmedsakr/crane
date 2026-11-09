@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -6,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installDependencies, preparedDependencyIdentity, type InstallDependenciesOptions } from "@crane/worktree-deps";
 import { copyDependencies, dependencyFingerprint, npmInstallMatches } from "../packages/worktree-deps/src/deps.js";
-import { elapsed } from "../src/factory/elapsed.js";
+import { elapsed } from "../packages/factory/src/elapsed.js";
 
 function fixture(t: { after(fn: () => void): void }) {
   const root = mkdtempSync(join(tmpdir(), "crane-deps-"));

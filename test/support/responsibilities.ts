@@ -183,12 +183,6 @@ export const STORE_EXCEPTIONS: Record<string, string> = {
 
 /** Modules commands and routes may import, by path under src/, and which names (`*` for any). */
 const ALLOWED_MODULES: Record<string, string[]> = {
-  // AccessError only so the invite routes can tell a bad link (401) from bad input when counting guesses.
-  "factory/actions": ["AccessError", "OperatorActions", "WRONG_CURRENT_PASSWORD", "checkLookouts", "checkScheduledAt", "toRule"],
-  "factory/git": ["diffForTask"],
-  "factory/instruct": ["draftTask"],
-  "factory/settings": ["*"],
-  "factory/state": ["factoryState", "factoryIsRunning", "factoryDriverName"],
   "cli/ui": ["*"],
   "cli/context": ["*"],
   // Startup certificate validation only reads files and creates a TLS context; it never changes factory state.
@@ -203,6 +197,12 @@ const ALLOWED_MODULES: Record<string, string[]> = {
 };
 
 const ALLOWED_PACKAGES: Record<string, string[]> = {
+  "@crane/factory/state": ["factoryState", "factoryIsRunning", "factoryDriverName"],
+  "@crane/factory/settings": ["*"],
+  "@crane/factory/instruct": ["draftTask"],
+  "@crane/factory/diff": ["diffForTask"],
+  // AccessError lets invite routes distinguish a bad link (401) from bad input when counting guesses.
+  "@crane/factory/actions": ["AccessError", "OperatorActions", "WRONG_CURRENT_PASSWORD", "checkLookouts", "checkScheduledAt", "toRule"],
   "@crane/storage": ["Store", "readScreenshot", "screenshotPath"],
   "@crane/backend-runtime": ["DEFAULT_HOST", "DEFAULT_PORT"],
   "@crane/contracts": ["*"],

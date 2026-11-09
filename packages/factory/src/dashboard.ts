@@ -6,7 +6,7 @@ import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Repo } from "@crane/contracts";
 import { buildsDir } from "@crane/backend-runtime";
-import { factoryRoot } from "../application.js";
+import { factoryRoot } from "@crane/backend-runtime";
 import { BUILD_MANIFEST, dashboardBuilds, webBuildOutdated } from "@crane/backend-runtime";
 import { installDependencies } from "@crane/worktree-deps";
 import { git } from "@crane/backend-runtime";

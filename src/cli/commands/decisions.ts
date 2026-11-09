@@ -2,7 +2,7 @@ import { errorMessage } from "@crane/contracts";
 import type { Command } from "commander";
 import pc from "picocolors";
 import type { Store } from "@crane/storage";
-import { factoryIsRunning } from "../../factory/state.js";
+import { factoryIsRunning } from "@crane/factory/state";
 import type { CliContext } from "../context.js";
 import * as ui from "../ui.js";
 import { act } from "./shared.js";

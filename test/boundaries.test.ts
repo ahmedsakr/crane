@@ -1,8 +1,10 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { moduleRefs, packageImportViolations, specifiers } from "./support/imports.ts";
+import { eagerProductionLoads } from "./support/production-loads.ts";
 import {
   LAZY_RUNTIME_EXCEPTIONS,
   PAGE_PARTS,
@@ -23,6 +25,7 @@ const protocolRoot = join(root, "packages", "agent-protocol");
 const policyRoot = join(root, "packages", "agent-policy");
 const driversRoot = join(root, "packages", "agent-drivers");
 const diagnosticsRoot = join(root, "packages", "diagnostics");
+const factorySrc = join(root, "packages", "factory", "src");
 
 /** Every relative import in a source file, resolved to a path under `root` like `factory/git`. */
 function importsOf(file: string, root = src): string[] {
@@ -32,6 +35,32 @@ function importsOf(file: string, root = src): string[] {
 const sources = (readdirSync(src, { recursive: true }) as string[])
   .map((f) => f.split("\\").join("/"))
   .filter((f) => f.endsWith(".ts"));
+
+test("boundaries: factory compiles independently with only downward workspace dependencies", () => {
+  const allowed = new Set([
+    "@crane/storage", "@crane/backend-runtime", "@crane/contracts", "@crane/contracts/rules",
+    "@crane/agent-drivers", "@crane/agent-policy", "@crane/agent-protocol", "@crane/diagnostics", "@crane/worktree-deps",
+  ]);
+  assert.deepEqual(packageImportViolations(factorySrc, (ref) =>
+    ref.spec !== null && (allowed.has(ref.spec) || ref.spec.startsWith("node:"))), []);
+  const config = JSON.parse(readFileSync(join(factorySrc, "../tsconfig.json"), "utf8"));
+  assert.equal(config.compilerOptions.rootDir, "src");
+  assert.equal(config.compilerOptions.composite, true);
+  assert.deepEqual(config.include, ["src"]);
+});
+
+test("boundaries: ordinary CLI and HTTP loading cannot eagerly reach the serving lifecycle", () => {
+  const forbidden = ["src/cli/serve.ts", "src/cli/start.ts", ...[
+    "orchestrator", "dashboard", "checks", "work-run", "merge-run",
+  ].map((name) => `packages/factory/src/${name}.ts`)];
+  for (const entry of ["src/cli/program.ts", "src/server/app.ts"]) {
+    const loaded = eagerProductionLoads(root, entry);
+    assert.ok(loaded.includes("packages/factory/src/actions.ts"), `${entry} uses the shared OperatorActions`);
+    assert.deepEqual(loaded.filter((path) => forbidden.includes(path)), [], entry);
+  }
+  const state = eagerProductionLoads(root, "packages/factory/src/state.ts");
+  assert.ok(!state.includes("packages/factory/src/drivers.ts"));
+});
 
 test("boundaries: agent drivers depend only on contracts, protocol, policy, diagnostics and Node", () => {
   const allowed = new Set(["@crane/contracts", "@crane/agent-protocol", "@crane/agent-policy", "@crane/diagnostics"]);
@@ -46,9 +75,9 @@ test("boundaries: storage depends only on Node, SQLite, contracts and backend ru
 });
 
 test("boundaries: only the driver registry imports concrete agents", () => {
-  const callers = sources.filter((file) => specifiers(join(src, file)).some((spec) =>
+  const callers = productionSources().filter((file) => specifiers(join(root, file)).some((spec) =>
     spec === "@crane/agent-drivers" || spec.startsWith("@crane/agent-drivers/")));
-  assert.deepEqual(callers, ["factory/drivers.ts"]);
+  assert.deepEqual(callers, ["packages/factory/src/drivers.ts"]);
   for (const file of sources) {
     const bad = importsOf(file).filter((i) => i.startsWith("agents/") || i.includes("packages/agent-drivers/"));
     assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
@@ -56,14 +85,14 @@ test("boundaries: only the driver registry imports concrete agents", () => {
 });
 
 test("boundaries: factory status queries don't load the scheduler or drivers", () => {
-  // Settings keys are a leaf; status reads only them and the served build. See src/factory/state.ts.
-  assert.deepEqual(importsOf("factory/settings.ts"), []);
-  assert.deepEqual(importsOf("factory/state.ts").sort(), ["application", "factory/settings"]);
+  // Settings keys are a leaf; status reads only them and the served build. See packages/factory/src/state.ts.
+  assert.deepEqual(importsOf("settings.ts", factorySrc), []);
+  assert.deepEqual(specifiers(join(factorySrc, "state.ts")).sort(), ["./settings.js", "@crane/backend-runtime", "@crane/contracts"]);
   // Only `crane serve` composes a Factory; the API and the other CLI commands only ask about it.
   const server = sources.filter((f) => f.startsWith("server/"));
   assert.ok(server.includes("server/app.ts") && server.includes("server/routes/tasks.ts"), "expected to find server sources");
   for (const file of [...server, "cli/index.ts"]) {
-    const bad = importsOf(file).filter((i) => i === "factory/orchestrator");
+    const bad = specifiers(join(src, file)).filter((i) => i === "@crane/factory/runtime");
     assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
   }
 });
@@ -72,9 +101,9 @@ test("boundaries: CLI commands load serve and start only when they run", () => {
   const runtime = new Set(["cli/serve", "cli/start"]);
   for (const file of sources.filter((f) => f.startsWith("cli/") && !runtime.has(f.replace(/\.ts$/, "")))) {
     const eager = moduleRefs(join(src, file))
-      .filter((ref) => ref.declaration && !ref.typeOnly && ref.spec?.startsWith("."))
-      .map((ref) => resolveSpec(file, ref.spec!))
-      .filter((path) => runtime.has(path) || path === "factory/orchestrator");
+      .filter((ref) => ref.declaration && !ref.typeOnly && ref.spec !== null)
+      .map((ref) => ref.spec!.startsWith(".") ? resolveSpec(file, ref.spec!) : ref.spec!)
+      .filter((path) => runtime.has(path) || path === "@crane/factory/runtime");
     assert.deepEqual(eager, [], `${file} eagerly imports ${eager.join(", ")}`);
   }
   const lazy = importsOf("cli/commands/serve.ts").filter((path) => runtime.has(path)).sort();
@@ -222,7 +251,7 @@ const DATABASE_EXCEPTIONS = new Map([
 test("responsibilities: only the store opens and queries the database", () => {
   const owned = (path: string) => path.startsWith("packages/storage/src/");
   const files = productionSources().filter((path) => !owned(path));
-  assert.ok(files.includes("src/factory/orchestrator.ts") && files.includes("web/src/App.tsx"), "expected production sources");
+  assert.ok(files.includes("packages/factory/src/orchestrator.ts") && files.includes("web/src/App.tsx"), "expected production sources");
   const violations = files.flatMap((path) => databaseViolations(path, read(root, path))
     .filter((v) => !DATABASE_EXCEPTIONS.get(path)?.some((allowed) => v.endsWith(allowed))));
   assert.deepEqual(violations, []);
@@ -292,8 +321,8 @@ test("responsibilities: the state check catches writes, raw database use and wri
     "cli/commands/sample.ts:3 calls store.db; change state through OperatorActions",
   ]);
   assert.deepEqual(check('import { landTask } from "../../factory/merge.js";'), ["cli/commands/sample.ts:1 imports factory/merge"]);
-  assert.deepEqual(check('import { diffForTask, removeWorktree } from "../../factory/git.js";'), [
-    "cli/commands/sample.ts:1 imports removeWorktree from factory/git",
+  assert.deepEqual(check('import { diffForTask, removeWorktree } from "@crane/factory/diff";'), [
+    "cli/commands/sample.ts:1 imports removeWorktree from @crane/factory/diff",
   ]);
   assert.deepEqual(check('import { writeFileSync } from "node:fs";'), ["cli/commands/sample.ts:1 imports writeFileSync from node:fs"]);
   assert.deepEqual(check('import { execFileSync } from "node:child_process";'), ["cli/commands/sample.ts:1 imports node:child_process"]);

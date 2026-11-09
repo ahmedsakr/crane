@@ -1,9 +1,10 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { GOAL_TASK_PHASES, goalProgress, goalTaskPhase, type GoalListItem, type GoalPlan, type TaskStatus } from "@crane/contracts";
 import { Store } from "@crane/storage";
 import { goalListItems } from "../packages/storage/src/store/goal-progress.js";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 import { createApp } from "../src/server/app.js";
 
 const plan = (): GoalPlan => ({ summary: "Save carts", approach: "Storage first, then the UI", improvements: [], tasks: [

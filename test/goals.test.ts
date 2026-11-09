@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -6,8 +7,8 @@ import { join } from "node:path";
 import { goalWaves, validateGoalPlan, type Goal, type GoalPlan, type Report } from "@crane/contracts";
 import { parseReport, type AgentDriver } from "@crane/agent-protocol";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
-import { Factory } from "../src/factory/orchestrator.js";
+import { OperatorActions } from "@crane/factory/actions";
+import { Factory } from "@crane/factory/runtime";
 import { createApp } from "../src/server/app.js";
 import { SimulatedDriver } from "@crane/agent-drivers";
 

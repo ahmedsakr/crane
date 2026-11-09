@@ -1,3 +1,4 @@
+import "../src/application.js";
 /**
  * Fill a Crane home with three weeks of sample history so the dashboard has something
  * to show. Creates two throwaway git repos inside CRANE_HOME. Never run this
@@ -11,7 +12,7 @@ import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Store } from "@crane/storage";
 import { craneHome } from "@crane/backend-runtime";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 import { withActor } from "@crane/backend-runtime";
 import type { TaskKind, Autonomy, TaskStatus, EventActor } from "@crane/contracts";
 

@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { sh } from "./support/git.js";
@@ -11,7 +12,7 @@ import {
   DashboardBuilder,
   pruneDashboardBuilds,
   type BuildWeb,
-} from "../src/factory/dashboard.ts";
+} from "../packages/factory/src/dashboard.ts";
 import { Store } from "@crane/storage";
 import { createApp } from "../src/server/app.ts";
 import type { Repo } from "@crane/contracts";

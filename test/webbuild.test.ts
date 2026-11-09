@@ -5,10 +5,15 @@ import { mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createFactoryBuildCheck, webBuildOutdated } from "@crane/backend-runtime";
 import { factoryRoot, factoryBuildOutdated } from "../src/application.js";
+import { bindApplication, factoryRoot as runtimeRoot, factoryBuildOutdated as runtimeOutdated } from "@crane/backend-runtime";
 
 test("source application keeps its checkout identity with compiled workspace dependencies", () => {
   assert.equal(factoryRoot(), join(import.meta.dirname, ".."));
   assert.equal(factoryBuildOutdated(), false);
+  assert.equal(runtimeRoot, factoryRoot, "factory consumers share the application's bound identity");
+  assert.equal(runtimeOutdated, factoryBuildOutdated);
+  assert.throws(() => bindApplication("/another-application", true), /already bound/);
+  assert.equal(runtimeRoot(), join(import.meta.dirname, ".."));
 });
 
 function checkout(ctx: TestContext) {
@@ -82,12 +87,12 @@ test("no build, or no source to compare against, is never outdated", (ctx) => {
 
 test("a running compiled factory notices source changes and stays outdated after rebuilding until restart", (ctx) => {
   const c = checkout(ctx);
-  c.rootAt("src/factory/drivers.ts", 100);
+  c.rootAt("packages/factory/src/drivers.ts", 100);
   c.rootAt("dist/cli/index.js", 50);
   const outdated = createFactoryBuildCheck(c.root, true);
   assert.equal(outdated(0), false);
 
-  c.rootAt("src/factory/drivers.ts", 20);
+  c.rootAt("packages/factory/src/drivers.ts", 20);
   assert.equal(outdated(1_000), false, "cache avoids walking the source tree on every poll");
   assert.equal(outdated(5_000), true, "merged backend changes are noticed without restarting");
 
@@ -99,9 +104,9 @@ test("a running compiled factory notices source changes and stays outdated after
 test("source-mode factories and builds with no source to compare don't report backend staleness", (ctx) => {
   const c = checkout(ctx);
   c.rootAt("dist/cli/index.js", 100);
-  c.rootAt("src/factory/drivers.ts", 10);
+  c.rootAt("packages/factory/src/drivers.ts", 10);
   assert.equal(createFactoryBuildCheck(c.root, false)(), false, "tsx runs source directly");
-  rmSync(join(c.root, "src"), { recursive: true });
+  rmSync(join(c.root, "packages"), { recursive: true });
   assert.equal(createFactoryBuildCheck(c.root, true)(), false, "installed package with no src or packages directory");
   rmSync(join(c.root, "dist"), { recursive: true });
   assert.equal(createFactoryBuildCheck(c.root, true)(), false, "no compiled build to compare");
@@ -153,7 +158,7 @@ test("Nx's config and local cache don't stale the factory or dashboard, since no
   const c = checkout(ctx);
   c.at("src/components/Sheet.tsx", 100);
   c.at("dist/index.html", 50);
-  c.rootAt("src/factory/drivers.ts", 100);
+  c.rootAt("packages/factory/src/drivers.ts", 100);
   c.rootAt("packages/contracts/src/index.ts", 100);
   c.rootAt("dist/cli/index.js", 50);
   const outdated = createFactoryBuildCheck(c.root, true);
@@ -168,7 +173,7 @@ test("Nx's config and local cache don't stale the factory or dashboard, since no
 
 test("a package added while the factory runs stales it; a package's own build output doesn't", (ctx) => {
   const c = checkout(ctx);
-  c.rootAt("src/factory/drivers.ts", 100);
+  c.rootAt("packages/factory/src/drivers.ts", 100);
   c.rootAt("dist/cli/index.js", 50);
   const outdated = createFactoryBuildCheck(c.root, true);
   assert.equal(outdated(0), false);

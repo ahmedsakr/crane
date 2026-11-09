@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
@@ -11,7 +12,7 @@ import { decodeGuardContext, GUARD_DENY_PREFIX, hookDecision } from "../packages
 import { AUTO_MODE_PAUSED, AUTO_MODE_UNAVAILABLE, CLASSIFIER_DENIAL, classifierReason } from "../packages/agent-drivers/src/auto-mode-stream.js";
 import { toolsFor } from "../packages/agent-drivers/src/claude-code.js";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 import { CLAUDE_FRESH_RUN, fakeClaude, fakeCodex } from "./support/fake-agents.js";
 
 const repo: Repo = { id: "r-a", name: "app", path: "/code/app", defaultBranch: "trunk", isFactory: false, addedAt: "" };

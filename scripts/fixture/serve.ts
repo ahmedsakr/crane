@@ -8,7 +8,7 @@
 import { serve } from "@hono/node-server";
 import { craneHome } from "@crane/backend-runtime";
 import { Store } from "@crane/storage";
-import { DEFAULT_DRIVER_KEY, HEARTBEAT_KEY } from "../../src/factory/settings.js";
+import { DEFAULT_DRIVER_KEY, HEARTBEAT_KEY } from "@crane/factory/settings";
 import { createApp } from "../../src/server/app.js";
 
 /** Kept here rather than read from the factory, so a change to its crew doesn't move fixture pixels. */

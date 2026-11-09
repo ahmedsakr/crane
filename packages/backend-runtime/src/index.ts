@@ -4,3 +4,4 @@ export { shortId, slugify } from "./ids.js";
 export { git } from "./git.js";
 export { createFactoryBuildCheck, servedDashboard, webBuildOutdated, dashboardBuilds, BUILD_MANIFEST } from "./webbuild.js";
 export type { DashboardBuild, ServedDashboard } from "./webbuild.js";
+export { bindApplication, factoryRoot, factoryBuildOutdated, servedApplicationDashboard } from "./application.js";

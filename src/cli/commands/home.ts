@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import pc from "picocolors";
-import { factoryState } from "../../factory/state.js";
+import { factoryState } from "@crane/factory/state";
 import type { CliContext } from "../context.js";
 import * as ui from "../ui.js";
 import { allowCommand, factoryLine, repoName } from "./shared.js";

@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -8,7 +9,7 @@ import { parseReport } from "@crane/agent-protocol";
 import { resumePrompt, systemPrompt } from "../packages/agent-drivers/src/prompts.js";
 import { readScreenshot, retainScreenshots, screenshotPath } from "@crane/storage";
 import { Store } from "@crane/storage";
-import { Factory } from "../src/factory/orchestrator.js";
+import { Factory } from "@crane/factory/runtime";
 import { createApp } from "../src/server/app.js";
 import type { AgentDriver } from "@crane/agent-protocol";
 

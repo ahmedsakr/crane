@@ -1,6 +1,6 @@
 import type { Context } from "hono";
 import { isIPv4, isIPv6 } from "node:net";
-import { AccessError } from "../factory/actions.js";
+import { AccessError } from "@crane/factory/actions";
 import { forwardedValue, peerAddress } from "./security.js";
 
 const SECOND = 1000;

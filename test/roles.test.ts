@@ -1,8 +1,9 @@
+import "../src/application.js";
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
-import { Factory } from "../src/factory/orchestrator.js";
+import { OperatorActions } from "@crane/factory/actions";
+import { Factory } from "@crane/factory/runtime";
 import { SimulatedDriver } from "@crane/agent-drivers";
 import { MAINTENANCE_ROLE, MAINTENANCE_ROLES } from "@crane/contracts";
 

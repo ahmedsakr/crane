@@ -1,10 +1,11 @@
+import "../src/application.js";
 import { test, type TestContext } from "node:test";
 import { temporaryRoot, onFixtureCleanup, testHome } from "./support/fixtures.js";
 import assert from "node:assert/strict";
 import { sh } from "./support/git.js";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { dependencyInputs, landTask as land, MergeError, type MergeRequest } from "../src/factory/merge.js";
+import { dependencyInputs, landTask as land, MergeError, type MergeRequest } from "../packages/factory/src/merge.js";
 const landTask = (req: MergeRequest) => land({ checks: ["true"], ...req });
 import { keepBothSides } from "../packages/agent-drivers/src/simulated.js";
 import { installDependencies } from "@crane/worktree-deps";
@@ -662,8 +663,8 @@ test("merge: a decision on the branch tip still lands as a merge commit", async 
 async function taskAwaitingVisualDecision(ctx: TestContext) {
   testHome(ctx);
   const { Store } = await import("@crane/storage");
-  const { OperatorActions } = await import("../src/factory/actions.js");
-  const { Factory } = await import("../src/factory/orchestrator.js");
+  const { OperatorActions } = await import("@crane/factory/actions");
+  const { Factory } = await import("@crane/factory/runtime");
   const { SimulatedDriver } = await import("@crane/agent-drivers");
 
   const root = temporaryRoot(ctx, "crane-e2e-");
@@ -762,8 +763,8 @@ test("factory: a UI conflict resolution asks once more, then lands exactly the m
 test("factory: a task goes from work to review to merged and pushed, through a conflict", async (ctx) => {
   testHome(ctx);
   const { Store } = await import("@crane/storage");
-  const { OperatorActions } = await import("../src/factory/actions.js");
-  const { Factory } = await import("../src/factory/orchestrator.js");
+  const { OperatorActions } = await import("@crane/factory/actions");
+  const { Factory } = await import("@crane/factory/runtime");
   const { SimulatedDriver } = await import("@crane/agent-drivers");
 
   const root = temporaryRoot(ctx, "crane-e2e-");
@@ -833,8 +834,8 @@ test("factory: a task goes from work to review to merged and pushed, through a c
 test("factory: a pre-approved UI task waives visual review and lands once its checks pass", async (ctx) => {
   testHome(ctx);
   const { Store } = await import("@crane/storage");
-  const { OperatorActions } = await import("../src/factory/actions.js");
-  const { Factory } = await import("../src/factory/orchestrator.js");
+  const { OperatorActions } = await import("@crane/factory/actions");
+  const { Factory } = await import("@crane/factory/runtime");
   const { SimulatedDriver } = await import("@crane/agent-drivers");
 
   const root = temporaryRoot(ctx, "crane-e2e-");
@@ -898,7 +899,7 @@ test("factory: a pre-approved UI task waives visual review and lands once its ch
 
 test("actions: approve merges by default, approve only keeps the branch, merge picks it up later", async (ctx) => {
   const { Store } = await import("@crane/storage");
-  const { OperatorActions } = await import("../src/factory/actions.js");
+  const { OperatorActions } = await import("@crane/factory/actions");
   const { lastMergeOutcome } = await import("@crane/contracts");
   const store = new Store(join(temporaryRoot(ctx, "crane-"), "t.db"));
   onFixtureCleanup(ctx, () => store.close());

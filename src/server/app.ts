@@ -1,7 +1,8 @@
+import "../application.js";
 import { Hono } from "hono";
 import type { Store } from "@crane/storage";
-import { OperatorActions } from "../factory/actions.js";
-import { factoryState } from "../factory/state.js";
+import { OperatorActions } from "@crane/factory/actions";
+import { factoryState } from "@crane/factory/state";
 import { apiAccess, errorResponse, requireSignIn, type AccessOptions } from "./auth.js";
 import { refuseUntrusted, secureResponses } from "./security.js";
 import { registerDashboard } from "./static.js";

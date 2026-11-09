@@ -1,8 +1,9 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AuthStatus, EventActor, InviteCheck, InviteSummary, OperatorRole, OperatorSummary } from "@crane/contracts";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 import { createApp } from "../src/server/app.js";
 
 type Issued = { invite: InviteSummary; path: string; token: string };

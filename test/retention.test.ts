@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import Database from "better-sqlite3";
@@ -10,7 +11,7 @@ import { StorageMaintenance } from "@crane/storage";
 import { retainScreenshots, screenshotPath } from "@crane/storage";
 // Keep private tests on the compiled Store identity used by actions and routes.
 import { pruneOrphanScreenshots } from "../packages/storage/dist/screenshots.js";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 import { createApp } from "../src/server/app.js";
 
 const clock = Date.parse("2026-10-20T12:00:00.000Z");
