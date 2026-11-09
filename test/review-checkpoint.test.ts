@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { preparedDependencyIdentity } from "@crane/worktree-deps";
 import { SimulatedDriver } from "@crane/agent-drivers";
 import type { RunContext, RunResult } from "@crane/agent-protocol";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { OperatorActions } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import { changedInputs, type ReviewInputs } from "../src/factory/review-checkpoint.js";

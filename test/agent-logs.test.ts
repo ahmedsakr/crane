@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { AgentRunError, type AgentDriver, type AgentJob } from "@crane/agent-protocol";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { git } from "@crane/backend-runtime";
 import { worktreesDir } from "@crane/backend-runtime";
 import { prepareAgentLogs } from "../src/factory/agent-logs.js";

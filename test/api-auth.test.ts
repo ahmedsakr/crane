@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hono } from "hono";
 import type { AuthStatus, EventActor, OperatorProfile, OperatorSession } from "@crane/contracts";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { actorSnapshot } from "@crane/backend-runtime";
 import { AccessError, OperatorActions } from "../src/factory/actions.js";
 import { createApp } from "../src/server/app.js";

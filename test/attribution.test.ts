@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { actorLabel, eventActor, isEventActor, type EventActor, type GoalPlan, type TaskEvent } from "@crane/contracts";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { hostActor, withActor } from "@crane/backend-runtime";
 import { OperatorActions } from "../src/factory/actions.js";
 import { runCli } from "../src/cli/program.js";

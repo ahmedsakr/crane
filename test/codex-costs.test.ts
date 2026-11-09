@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { usageFromTurn } from "../packages/agent-drivers/src/codex.js";
 import { combinedCost } from "@crane/agent-protocol";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 
 const tokens = { input_tokens: 1_000_000, cached_input_tokens: 400_000, output_tokens: 100_000 };
 

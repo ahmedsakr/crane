@@ -7,8 +7,8 @@ import {
   type OperatorProfile,
   type OperatorRole,
 } from "@crane/contracts";
-import type { Store } from "../../core/store.js";
-import type { LiveWindow, OperatorRecord } from "../../core/store/access.js";
+import type { Store } from "@crane/storage";
+import type { LiveWindow, OperatorRecord } from "@crane/storage";
 import { AccessError } from "./access-errors.js";
 
 /** What access actions need: the store and a clock, which tests replace to move through expiry. */

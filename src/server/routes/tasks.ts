@@ -1,8 +1,8 @@
 import type { Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { lastMergeOutcome, type NewTask, type Task, type TaskDetail, type TaskDiff, type TaskDraft, type TaskRunOptions, type TaskStatus } from "@crane/contracts";
-import type { Store } from "../../core/store.js";
-import { readScreenshot } from "../../core/screenshots.js";
+import type { Store } from "@crane/storage";
+import { readScreenshot } from "@crane/storage";
 import { draftTask } from "../../factory/instruct.js";
 import { diffForTask } from "../../factory/git.js";
 import { admit } from "../auth.js";

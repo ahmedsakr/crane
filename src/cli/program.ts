@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { withActor } from "@crane/backend-runtime";
-import type { Store } from "../core/store.js";
+import type { Store } from "@crane/storage";
 import { registerAgents } from "./commands/agents.js";
 import { registerAnalytics } from "./commands/analytics.js";
 import { registerAuth } from "./commands/auth.js";

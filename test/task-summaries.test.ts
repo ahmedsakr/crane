@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 
 test("task summaries preserve list filters, ordering, limits, and row metadata", () => {
   const store = new Store(":memory:");

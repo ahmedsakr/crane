@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { Factory } from "../src/factory/orchestrator.js";
 import { factoryIsRunning } from "../src/factory/state.js";
 import { HEARTBEAT_KEY } from "../src/factory/settings.js";

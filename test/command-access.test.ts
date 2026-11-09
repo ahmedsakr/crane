@@ -4,7 +4,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { COMMAND_ACCESS, COMMAND_ACCESS_LABEL, isCommandAccess } from "@crane/contracts";
 import type { AgentDriver, RunContext, RunResult } from "@crane/agent-protocol";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { worktreesDir } from "@crane/backend-runtime";
 import { OperatorActions } from "../src/factory/actions.js";
 import { runAgent } from "../src/factory/agent-runner.js";

@@ -1,5 +1,5 @@
 import type { EventActor, OperatorProfile, OperatorRole, OperatorSummary } from "@crane/contracts";
-import type { SessionListing } from "../../core/store/access.js";
+import type { SessionListing } from "@crane/storage";
 import { hashPassword } from "../auth-crypto.js";
 import {
   LAST_ADMIN,

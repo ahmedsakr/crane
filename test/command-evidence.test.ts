@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { CommandEvidence } from "@crane/contracts";
 import { CommandTracker, safeCommand } from "../packages/agent-drivers/src/command-evidence.js";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { resumePrompt, systemPrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
 
 test("conflict prompts separate checkpointed edits from resolver validation", () => {

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isScheduled, type NewTask } from "@crane/contracts";
 import type { AgentDriver } from "@crane/agent-protocol";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { OperatorActions, checkScheduledAt } from "../src/factory/actions.js";
 import { createApp } from "../src/server/app.js";
 import { Factory } from "../src/factory/orchestrator.js";

@@ -7,7 +7,7 @@
  */
 import { serve } from "@hono/node-server";
 import { craneHome } from "@crane/backend-runtime";
-import { Store } from "../../src/core/store.js";
+import { Store } from "@crane/storage";
 import { DEFAULT_DRIVER_KEY, HEARTBEAT_KEY } from "../../src/factory/settings.js";
 import { createApp } from "../../src/server/app.js";
 

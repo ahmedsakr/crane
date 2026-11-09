@@ -1,6 +1,6 @@
 import { driverLabel, type Task } from "@crane/contracts";
 import type { AgentDriver } from "@crane/agent-protocol";
-import type { Store } from "../core/store.js";
+import type { Store } from "@crane/storage";
 import { DEFAULT_DRIVER_KEY } from "./settings.js";
 
 /** Every agent a factory can run, by name. The first is the default until the operator picks one. */

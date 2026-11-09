@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Store } from "../src/core/store.js";
-import { postmortemBrief, postmortemPrompt } from "../src/core/postmortem.js";
+import { Store } from "@crane/storage";
+import { postmortemBrief, postmortemPrompt } from "../packages/storage/src/postmortem.js";
 import { resumePrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";

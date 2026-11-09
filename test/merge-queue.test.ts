@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 
 test("merge queue: skips busy repos and claimed tasks, then takes the oldest available review", () => {
   const store = new Store(":memory:");

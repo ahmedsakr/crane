@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { goalWaves, validateGoalPlan, type Goal, type GoalPlan, type Report } from "@crane/contracts";
 import { parseReport, type AgentDriver } from "@crane/agent-protocol";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { OperatorActions } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import { createApp } from "../src/server/app.js";

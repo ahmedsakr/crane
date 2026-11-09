@@ -4,7 +4,7 @@ import { CommanderError, type Command } from "commander";
 import { readFileSync } from "node:fs";
 import { buildProgram } from "../src/cli/program.js";
 import { createCliContext, hostActor } from "../src/cli/context.js";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { dbPath } from "@crane/backend-runtime";
 import { OperatorActions } from "../src/factory/actions.js";
 import { checkExposure } from "../src/server/security.js";

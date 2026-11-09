@@ -2,7 +2,7 @@ import { errorMessage, driverLabel, goalWaves, type Goal } from "@crane/contract
 import type { Command } from "commander";
 import { readFileSync } from "node:fs";
 import pc from "picocolors";
-import type { Store } from "../../core/store.js";
+import type { Store } from "@crane/storage";
 import type { CliContext } from "../context.js";
 import * as ui from "../ui.js";
 import { repoName } from "./shared.js";

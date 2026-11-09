@@ -8,7 +8,7 @@ import {
   type RoleRunOptions,
   type Task,
 } from "@crane/contracts";
-import { crewSettingKey, type Store } from "../../core/store.js";
+import { crewSettingKey, type Store } from "@crane/storage";
 import { checkDriver, checkRole } from "../action-inputs.js";
 import { isAvailable, sharedDrivers } from "../drivers.js";
 import { ensureFactoryRepo, needRepo } from "./repos.js";

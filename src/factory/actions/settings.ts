@@ -1,5 +1,5 @@
 import { isTunable, type PostmortemSettings, type RetentionSettings } from "@crane/contracts";
-import type { Store } from "../../core/store.js";
+import type { Store } from "@crane/storage";
 import { checkDriver, checkDriverSettings, normalizeDriverSetting } from "../action-inputs.js";
 
 export function configureRetention(store: Store, input: RetentionSettings): RetentionSettings {

@@ -9,7 +9,7 @@ import { toolsFor } from "../packages/agent-drivers/src/claude-code.js";
 import { GUARD_DENY_PREFIX, hookDecision } from "../packages/agent-drivers/src/command-guard-protocol.js";
 import { BLOCKED_BRIEF } from "../packages/agent-drivers/src/prompt-briefs.js";
 import { resumePrompt, systemPrompt } from "../packages/agent-drivers/src/prompts.js";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { OperatorActions } from "../src/factory/actions.js";
 
 const context: GuardContext = {

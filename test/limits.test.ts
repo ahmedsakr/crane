@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { fakeClaude } from "./support/fake-agents.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { ClaudeCodeDriver } from "@crane/agent-drivers";
 import { describeBlocked, toolsFor } from "../packages/agent-drivers/src/claude-code.js";
 import { ALWAYS_DENIED } from "@crane/agent-policy";

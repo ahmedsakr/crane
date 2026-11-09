@@ -71,6 +71,28 @@ const packages = readdirSync(join(root, "packages"))
 /** Entry points a package exposes beyond `.`, which every package has. */
 const EXTRA_ENTRY_POINTS: Record<string, string[]> = { "@crane/contracts": ["rules"] };
 
+test("storage exposes only its production API and rejects private subpaths", async () => {
+  const api = await import("@crane/storage");
+  assert.deepEqual(Object.keys(api).sort(), [
+    "StorageMaintenance", "Store", "crewSettingKey", "readScreenshot", "retainScreenshots", "screenshotPath",
+  ]);
+  for (const path of ["@crane/storage/src/store.js", "@crane/storage/dist/store.js", "@crane/storage/store/access"]) {
+    await assert.rejects(import(path), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
+  }
+});
+
+test("storage owns SQLite dependencies, with only the CLI setup probe outside it", () => {
+  const storage = packages.find((p) => p.manifest.name === "@crane/storage")!;
+  assert.deepEqual(Object.keys(storage.manifest.dependencies).sort(), [
+    "@crane/backend-runtime", "@crane/contracts", "better-sqlite3",
+  ]);
+  for (const p of packages.filter((p) => p !== storage)) {
+    assert.equal(p.manifest.dependencies?.["better-sqlite3"], undefined, p.dir);
+  }
+  // setup.ts must probe the native module before Store can open; boundaries.test.ts audits its only import.
+  assert.equal(readJson(join(root, "package.json")).dependencies["better-sqlite3"], storage.manifest.dependencies["better-sqlite3"]);
+});
+
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     if (["node_modules", "dist", ".git"].includes(name)) return [];

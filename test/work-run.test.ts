@@ -2,7 +2,7 @@ import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { AgentRunError } from "@crane/agent-protocol";
 import type { ReviewCheckpoint, TaskStatus } from "@crane/contracts";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { PreparationHold } from "../src/factory/git.js";
 import { classifyWorkFailure, handleWorkFailure, settleWorkRun, type WorkRun, type WorkRunDeps, type WorkRunSignals } from "../src/factory/work-run.js";
 import { onFixtureCleanup } from "./support/fixtures.ts";

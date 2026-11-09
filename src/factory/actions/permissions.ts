@@ -1,7 +1,7 @@
 import { ALWAYS_DENIED, overlapsDenied } from "@crane/agent-policy";
 import { COMMAND_ACCESS_LABEL, ruleLabel, type RepoTools } from "@crane/contracts";
 import { parseRule } from "@crane/contracts/rules";
-import type { Store } from "../../core/store.js";
+import type { Store } from "@crane/storage";
 import { checkCommandAccess, toRule } from "../action-inputs.js";
 import { needRepo } from "./repos.js";
 

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import type { Store } from "../core/store.js";
+import type { Store } from "@crane/storage";
 import { OperatorActions } from "../factory/actions.js";
 import { factoryState } from "../factory/state.js";
 import { apiAccess, errorResponse, requireSignIn, type AccessOptions } from "./auth.js";

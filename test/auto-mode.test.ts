@@ -10,7 +10,7 @@ import type { BlockedCall, CommandAccess, EventType, Repo, Task } from "@crane/c
 import { decodeGuardContext, GUARD_DENY_PREFIX, hookDecision } from "../packages/agent-drivers/src/command-guard-protocol.js";
 import { AUTO_MODE_PAUSED, AUTO_MODE_UNAVAILABLE, CLASSIFIER_DENIAL, classifierReason } from "../packages/agent-drivers/src/auto-mode-stream.js";
 import { toolsFor } from "../packages/agent-drivers/src/claude-code.js";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { OperatorActions } from "../src/factory/actions.js";
 import { CLAUDE_FRESH_RUN, fakeClaude, fakeCodex } from "./support/fake-agents.js";
 

@@ -1,5 +1,5 @@
 import { normalizeUsername, type AuthStatus, type OperatorProfile, type OperatorSession } from "@crane/contracts";
-import type { SessionRecord } from "../../core/store/access.js";
+import type { SessionRecord } from "@crane/storage";
 import { dummyVerify, hashPassword, newToken, tokenDigest, verifyPassword } from "../auth-crypto.js";
 import { AccessError } from "./access-errors.js";
 import {

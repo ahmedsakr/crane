@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Store } from "../src/core/store.js";
-import { claimEligibility } from "../src/core/store/claims.js";
+import { Store } from "@crane/storage";
+import { claimEligibility } from "../packages/storage/src/store/claims.js";
 
 const ANYONE = "(assignee IS NULL OR assignee = ?)";
 

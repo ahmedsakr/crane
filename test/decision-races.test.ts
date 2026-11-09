@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { STATUS_LABEL, type Task } from "@crane/contracts";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { OperatorActions } from "../src/factory/actions.js";
 import { onFixtureCleanup, temporaryRoot } from "./support/fixtures.js";
 import { sh } from "./support/git.js";

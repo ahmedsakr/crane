@@ -8,7 +8,7 @@ import { createAdaptorServer } from "@hono/node-server";
 import { loadTls } from "../src/cli/tls.js";
 import { createApp } from "../src/server/app.js";
 import { checkExposure } from "../src/server/security.js";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { OperatorActions } from "../src/factory/actions.js";
 import { onFixtureCleanup, temporaryRoot, testHome } from "./support/fixtures.js";
 import { TLS_CERT, TLS_KEY } from "./support/tls.js";

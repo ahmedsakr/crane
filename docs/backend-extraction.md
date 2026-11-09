@@ -1,7 +1,7 @@
 # Backend extraction contract and baseline
 
 Status: **contract and baseline recorded**, 2026-11-09, at commit `c41f6db`
-(`main` at `2b34e48` plus the benchmark script). Runtime extraction is implemented in `packages/backend-runtime`; the remaining packages are pending.
+(`main` at `2b34e48` plus the benchmark script). Runtime and storage extraction are implemented in `packages/backend-runtime` and `packages/storage`; factory and HTTP extraction are pending.
 This document is the contract the extraction tasks follow and the baseline
 they are measured against. Change it together with the extraction that
 changes the facts.
@@ -255,7 +255,7 @@ exact bytes afterwards (also on SIGINT/SIGTERM):
 | `cli` | CLI-only | `src/cli/ui.ts` | 5, plus 3 uncached |
 | `http` | HTTP-only | `src/server/body.ts` | 5, plus 3 uncached |
 | `factory` | factory-only | `src/factory/elapsed.ts` | 3 |
-| `storage` | storage-only | `src/core/store/shared.ts` | 3 |
+| `storage` | storage-only | `packages/storage/src/store/shared.ts` | 3 |
 | `runtime` | runtime-only | `packages/backend-runtime/src/ids.ts` | 3 |
 | `web` | web-only | `web/src/lib/format.ts` | 3 |
 | `contracts` | shared-contract | `packages/contracts/src/errors.ts` | 3 |
@@ -335,7 +335,7 @@ case fell back to full work.
 | CLI-only (`src/cli/ui.ts`) | backend, checks | package-worktree-deps, backend, web, architecture, build | 106 (976) |
 | HTTP-only (`src/server/body.ts`) | backend, checks | same 5 | 106 (976) |
 | factory-only (`src/factory/elapsed.ts`) | backend, checks | same 5 | 106 (976) |
-| storage-only (`src/core/store/shared.ts`) | backend, checks | same 5 | 106 (976) |
+| storage-only (`src/core/store/shared.ts`, before extraction) | backend, checks | same 5 | 106 (976) |
 | runtime-only (`packages/backend-runtime/src/ids.ts`) | backend, checks | same 5 | 106 (976) |
 | web-only (`web/src/lib/format.ts`) | @crane/web, checks | same 5 | 106 (976) |
 | shared-contract (`packages/contracts/src/errors.ts`) | contracts, agent-protocol, agent-policy, agent-drivers, web, backend, checks | all 10 | 119 (1,107) |
@@ -441,3 +441,7 @@ work for task t-u6gyh4, not conclusions:
 ## Runtime extraction implementation
 
 The five runtime modules now live in `packages/backend-runtime/src/`, with explicit named exports in `index.ts` (no implementation subpaths). `currentActor` stays internal; all actor consumers import the package entry. The application binds `factoryRoot`, `factoryBuildOutdated` and the default served dashboard in `src/application.ts`, whose location is the application's `src/` or `dist/`, including installed packages. The CLI eagerly imports this identity before setup or storage. Runtime receives root and compilation mode explicitly; package location cannot identify the application. The loaded timestamp is captured once and remains unchanged after an on-disk rebuild. Existing backend and build suite groups conservatively cover runtime through the backend dependency closure; narrower ownership remains a subsequent task. Application builds remain uncached. No timing improvement is claimed by this extraction.
+
+## Storage extraction implementation
+
+Store and its domain modules, post-mortem helpers, screenshot retention and maintenance now live in `packages/storage/src/`. Production consumers use `@crane/storage`'s single public entry; repository tests can still exercise private algorithms through source paths. Schema, migrations, transactions and domain implementations moved unchanged. Storage depends only on contracts, backend-runtime, Node and better-sqlite3. The root retains its SQLite dependency for the documented CLI setup native-module probe; all database operations remain storage-owned. Nx and composite references include storage; existing broad suite groups cover it through backend's dependency closure until the separate ownership partition task. The benchmark's storage probe follows its new package path. No timing improvement is claimed here.

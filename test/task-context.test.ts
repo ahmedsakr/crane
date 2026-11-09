@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { TaskStatus } from "@crane/contracts";
 import { AgentRunError, type AgentDriver, type RunContext, type SiblingTask } from "@crane/agent-protocol";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { Factory } from "../src/factory/orchestrator.js";
 import { siblingTasksFor } from "../src/factory/task-context.js";
 import { resumePrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";

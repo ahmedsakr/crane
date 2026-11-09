@@ -1,6 +1,6 @@
 import type { Report, VisualReview } from "@crane/contracts";
 import { git } from "@crane/backend-runtime";
-import type { Store } from "../core/store.js";
+import type { Store } from "@crane/storage";
 
 const hasUiFiles = (files: string[]) => files.some(file => /(^|\/)(web|public)\/|\.(tsx|jsx|css|scss|html|vue|svelte)$/i.test(file));
 

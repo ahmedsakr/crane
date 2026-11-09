@@ -10,8 +10,8 @@ import {
   type TaskRunOptions,
   type TaskStatus,
 } from "@crane/contracts";
-import type { Store } from "../../core/store.js";
-import type { NewTaskRecord, StatusTransition } from "../../core/store/tasks.js";
+import type { Store } from "@crane/storage";
+import type { NewTaskRecord, StatusTransition } from "@crane/storage";
 import {
   MAX_GATES,
   checkAcceptance,

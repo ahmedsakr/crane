@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { GOAL_TASK_PHASES, goalProgress, goalTaskPhase, type GoalListItem, type GoalPlan, type TaskStatus } from "@crane/contracts";
-import { Store } from "../src/core/store.js";
-import { goalListItems } from "../src/core/store/goal-progress.js";
+import { Store } from "@crane/storage";
+import { goalListItems } from "../packages/storage/src/store/goal-progress.js";
 import { OperatorActions } from "../src/factory/actions.js";
 import { createApp } from "../src/server/app.js";
 

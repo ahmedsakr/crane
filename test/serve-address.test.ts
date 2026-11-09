@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { saveServeAddress } from "../src/cli/serve.js";
 import { checkExposure } from "../src/server/security.js";
 import { onFixtureCleanup, testHome } from "./support/fixtures.js";

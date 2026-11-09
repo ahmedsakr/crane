@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { EventActor } from "@crane/contracts";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { OperatorActions } from "../src/factory/actions.js";
 import { createApp, type AppOptions } from "../src/server/app.js";
 import { checkExposure, isLoopbackPeer, parsePublicUrl, withFrameAncestors } from "../src/server/security.js";

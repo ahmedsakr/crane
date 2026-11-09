@@ -10,7 +10,7 @@ import { GUARD_REASONS } from "../packages/agent-policy/src/guard-rules.ts";
 import { guardRefusals } from "../packages/agent-drivers/src/simulated.ts";
 import { accessChip, GUARD_ALWAYS_BLOCKS, GUARD_ASKS_FIRST } from "../web/src/lib/command-access.ts";
 import { hardGuardRefusals, refusalLine } from "../web/src/lib/refusals.ts";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 
 // tsx applies the root tsconfig only inside `src`, so web's .tsx files compile to React.createElement here.
 Object.assign(globalThis, { React });
