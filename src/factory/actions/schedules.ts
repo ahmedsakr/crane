@@ -6,7 +6,7 @@ import {
   type CrewSchedule,
   type CrewScheduleInput,
 } from "@crane/contracts";
-import { shortId } from "../../core/ids.js";
+import { shortId } from "@crane/backend-runtime";
 import type { Store } from "../../core/store.js";
 import { createRoleRun } from "./crew.js";
 

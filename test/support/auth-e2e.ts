@@ -5,7 +5,7 @@ import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Server } from "node:http";
 import { Store } from "../../src/core/store.js";
-import { dbPath, craneHome } from "../../src/core/paths.js";
+import { dbPath, craneHome } from "@crane/backend-runtime";
 import { runCli } from "../../src/cli/program.js";
 import { createApp, type AppOptions } from "../../src/server/app.js";
 import { cookieFrom, type App, type Call } from "./api-client.js";

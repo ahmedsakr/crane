@@ -1,6 +1,6 @@
 import { DRIVER_NAMES, errorMessage } from "@crane/contracts";
 import type { Command } from "commander";
-import { DEFAULT_HOST, DEFAULT_PORT } from "../../core/paths.js";
+import { DEFAULT_HOST, DEFAULT_PORT } from "@crane/backend-runtime";
 import { DEFAULT_MAX_TURNS, DEFAULT_TIME_LIMIT_MIN } from "../../factory/settings.js";
 import { factoryIsRunning } from "../../factory/state.js";
 import { checkExposure } from "../../server/security.js";

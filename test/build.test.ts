@@ -34,7 +34,7 @@ test("build: esbuild's backend output runs from the layout the factory expects",
   const setup = spawnSync(process.execPath, [join(out, "cli", "index.js"), "setup", "--json"], {
     encoding: "utf8",
     env: {
-      ...process.env, PATH: out, CRANE_HOME: join(out, "core", "paths.js"),
+      ...process.env, PATH: out, CRANE_HOME: join(out, "cli", "index.js"),
       CRANE_CLAUDE_BIN: join(out, "missing-claude"), CRANE_CODEX_BIN: join(out, "missing-codex"),
     },
   });
@@ -46,19 +46,50 @@ test("build: esbuild's backend output runs from the layout the factory expects",
   }
   assert.equal(setupReport.checks.find((check: { id: string }) => check.id === "sqlite")?.status, "pass");
 
-  // factoryRoot() counts directories up from the compiled file, which a bundle would break.
-  const { factoryRoot } = await import(pathToFileURL(join(out, "core", "paths.js")).href);
+  // Application identity follows application output, independently of compiled workspace locations.
+  const { factoryRoot } = await import(pathToFileURL(join(out, "application.js")).href);
   assert.equal(factoryRoot(), dirname(out));
+
+  // An installed application's identity and assets belong to crane, not its bundled runtime.
+  const installed = mkdtempSync(join(cache, "crane-installed-test-"));
+  t.after(() => rmSync(installed, { recursive: true, force: true }));
+  const app = join(installed, "node_modules", "crane");
+  mkdirSync(app, { recursive: true });
+  cpSync(out, join(app, "dist"), { recursive: true });
+  cpSync(join(root, "bin"), join(app, "bin"), { recursive: true });
+  cpSync(join(root, "package.json"), join(app, "package.json"));
+  const runtime = join(app, "node_modules", "@crane", "backend-runtime");
+  mkdirSync(runtime, { recursive: true });
+  cpSync(join(root, "packages", "backend-runtime", "dist"), join(runtime, "dist"), { recursive: true });
+  cpSync(join(root, "packages", "backend-runtime", "package.json"), join(runtime, "package.json"));
+  mkdirSync(join(app, "web", "dist"), { recursive: true });
+  writeFileSync(join(app, "web", "dist", "index.html"), "installed dashboard");
+  const identity = await import(pathToFileURL(join(app, "dist", "application.js")).href);
+  assert.equal(identity.factoryRoot(), app);
+  const previousHome = process.env.CRANE_HOME;
+  process.env.CRANE_HOME = join(installed, "home");
+  try {
+    assert.equal(identity.servedDashboard()?.dir, join(app, "web", "dist"));
+  } finally {
+    if (previousHome === undefined) delete process.env.CRANE_HOME;
+    else process.env.CRANE_HOME = previousHome;
+  }
+  assert.equal(identity.factoryBuildOutdated(), false, "installed package has no source inputs");
+  const installedHelp = spawnSync(process.execPath, [join(app, "bin", "crane.js"), "--help"], {
+    encoding: "utf8", env: { ...process.env, CRANE_HOME: join(installed, "home") },
+  });
+  assert.equal(installedHelp.status, 0, installedHelp.stderr);
+  assert.match(installedHelp.stdout, /Usage: crane/);
 
   // Serve is loaded on demand, so `--help` above doesn't load it.
   const { serve } = await import(pathToFileURL(join(out, "cli", "serve.js")).href);
   assert.equal(typeof serve, "function");
 
-  const map = JSON.parse(readFileSync(join(out, "core", "paths.js.map"), "utf8"));
-  assert.ok(map.sources.some((source: string) => source.endsWith("src/core/paths.ts")), map.sources.join());
+  const map = JSON.parse(readFileSync(join(out, "application.js.map"), "utf8"));
+  assert.ok(map.sources.some((source: string) => source.endsWith("src/application.ts")), map.sources.join());
   assert.ok(!existsSync(join(out, "src")), "--outbase keeps src/ out of the output path");
 
-  // The outdated notice clears only if a rebuild moves this file's mtime, even when its content is unchanged.
+  // Rebuilds rewrite the application marker even when content is unchanged; running checks retain their captured marker.
   const marker = join(out, "cli", "index.js");
   const old = new Date(1_000_000_000_000);
   utimesSync(marker, old, old);

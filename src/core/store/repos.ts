@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import { isCommandAccess, type Repo, type RepoTools } from "@crane/contracts";
 import type { Store } from "../store.js";
-import { shortId } from "../ids.js";
+import { shortId } from "@crane/backend-runtime";
 import { toRepo, type Row } from "./rows.js";
 import { getSetting, setSetting } from "./settings.js";
 import { now } from "./shared.js";

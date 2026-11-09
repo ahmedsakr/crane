@@ -176,7 +176,7 @@ test("test ownership: no change is an explicit empty selection; actual repositor
   assert.deepEqual(affectedTestGroups(root, ["test/support/imports.ts"]).groups, ids);
   assert.deepEqual(affectedTestGroups(root, ["test/support/fixtures.ts"]).groups, ids);
   assert.deepEqual(affectedTestGroups(root, ["src/core/store.ts"]).fallback, []);
-  for (const file of ["src/core/store.ts", "web/src/App.tsx", "packages/agent-policy/src/denied.ts"]) {
+  for (const file of ["src/core/store.ts", "web/src/App.tsx", "packages/agent-policy/src/denied.ts", "packages/backend-runtime/src/ids.ts"]) {
     const selected = affectedTestGroups(root, [file]);
     assert.ok(selected.groups.includes("architecture"), file);
     assert.ok(selected.groups.includes("build"), file);

@@ -3,7 +3,13 @@ import { temporaryRoot } from "./support/fixtures.js";
 import assert from "node:assert/strict";
 import { mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { createFactoryBuildCheck, webBuildOutdated } from "../src/core/webbuild.ts";
+import { createFactoryBuildCheck, webBuildOutdated } from "@crane/backend-runtime";
+import { factoryRoot, factoryBuildOutdated } from "../src/application.js";
+
+test("source application keeps its checkout identity with compiled workspace dependencies", () => {
+  assert.equal(factoryRoot(), join(import.meta.dirname, ".."));
+  assert.equal(factoryBuildOutdated(), false);
+});
 
 function checkout(ctx: TestContext) {
   const root = temporaryRoot(ctx, "crane-webbuild-");
@@ -118,6 +124,7 @@ test("every package's inputs stale the factory; only contracts stale the dashboa
     ["packages/agent-drivers/src/prompts.ts", false],
     ["packages/agent-policy/package.json", false],
     ["packages/worktree-deps/tsconfig.json", false],
+    ["packages/backend-runtime/src/actor.ts", false],
     // Nothing lists a package, so one no code here has heard of counts as well.
     ["packages/not-yet-written/src/nested/new.ts", false],
   ];

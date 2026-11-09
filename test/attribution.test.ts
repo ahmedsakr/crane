@@ -6,7 +6,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { actorLabel, eventActor, isEventActor, type EventActor, type GoalPlan, type TaskEvent } from "@crane/contracts";
 import { Store } from "../src/core/store.js";
-import { hostActor, withActor } from "../src/core/actor.js";
+import { hostActor, withActor } from "@crane/backend-runtime";
 import { OperatorActions } from "../src/factory/actions.js";
 import { runCli } from "../src/cli/program.js";
 import { eventLine } from "../src/cli/ui.js";

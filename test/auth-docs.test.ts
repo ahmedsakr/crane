@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { buildProgram } from "../src/cli/program.js";
 import { createCliContext, hostActor } from "../src/cli/context.js";
 import { Store } from "../src/core/store.js";
-import { dbPath } from "../src/core/paths.js";
+import { dbPath } from "@crane/backend-runtime";
 import { OperatorActions } from "../src/factory/actions.js";
 import { checkExposure } from "../src/server/security.js";
 import { onFixtureCleanup, testHome } from "./support/fixtures.js";

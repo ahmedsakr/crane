@@ -184,7 +184,6 @@ export const STORE_EXCEPTIONS: Record<string, string> = {
 /** Modules commands and routes may import, by path under src/, and which names (`*` for any). */
 const ALLOWED_MODULES: Record<string, string[]> = {
   "core/store": ["Store"],
-  "core/paths": ["*"],
   "core/screenshots": ["readScreenshot", "screenshotPath"],
   // AccessError only so the invite routes can tell a bad link (401) from bad input when counting guesses.
   "factory/actions": ["AccessError", "OperatorActions", "WRONG_CURRENT_PASSWORD", "checkLookouts", "checkScheduledAt", "toRule"],
@@ -206,6 +205,7 @@ const ALLOWED_MODULES: Record<string, string[]> = {
 };
 
 const ALLOWED_PACKAGES: Record<string, string[]> = {
+  "@crane/backend-runtime": ["DEFAULT_HOST", "DEFAULT_PORT"],
   "@crane/contracts": ["*"],
   "@clack/prompts": ["*"],
   commander: ["*"],

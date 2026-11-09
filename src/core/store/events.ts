@@ -1,5 +1,5 @@
 import type { CommandEvidence, EventType, TaskEvent } from "@crane/contracts";
-import { actorSnapshot } from "../actor.js";
+import { actorSnapshot } from "@crane/backend-runtime";
 import type { Store } from "../store.js";
 import { toEvent, type Row } from "./rows.js";
 import { now } from "./shared.js";

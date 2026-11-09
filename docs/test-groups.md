@@ -114,3 +114,5 @@ outside Codex's no-network sandbox. Locally use `npm run typecheck`, then direct
 `node --import tsx test/test-ownership.test.ts` and
 `node --import tsx test/test-runner.test.ts`. Full validation remains Crane's
 unchanged `npm run typecheck` and `npm test` checks.
+
+Runtime helpers now belong to `@crane/backend-runtime`. Existing backend integration ownership reaches it through backend's dependency closure, and repository-wide build/architecture groups remain selected. Actor tests use the public package entry to share the production context. Narrower runtime suite partitioning is deferred to the ownership task.

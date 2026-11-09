@@ -1,7 +1,7 @@
 # Backend extraction contract and baseline
 
 Status: **contract and baseline recorded**, 2026-11-09, at commit `c41f6db`
-(`main` at `2b34e48` plus the benchmark script). Nothing is extracted yet.
+(`main` at `2b34e48` plus the benchmark script). Runtime extraction is implemented in `packages/backend-runtime`; the remaining packages are pending.
 This document is the contract the extraction tasks follow and the baseline
 they are measured against. Change it together with the extraction that
 changes the facts.
@@ -81,7 +81,7 @@ extraction task records otherwise.
 - `core/`: `paths`, `actor`, `ids`, `git`, `webbuild`
 
 Paths, the actor context, ids and slugs, the `git` exec helper, and build
-identity (`factoryBuildOutdated`, `servedDashboard`, `webBuildOutdated`,
+identity (`createFactoryBuildCheck`, `servedDashboard`, `webBuildOutdated`,
 `dashboardBuilds`, `BUILD_MANIFEST`).
 
 ### `@crane/storage` (25)
@@ -142,7 +142,7 @@ what production code outside the package imports today:
 
 | Package | Module today | Names other layers import |
 | --- | --- | --- |
-| backend-runtime | `core/paths` | `craneHome`, `dbPath`, `worktreesDir`, `buildsDir`, `factoryRoot`, `DEFAULT_HOST`, `DEFAULT_PORT` |
+| backend-runtime | `core/paths` | `craneHome`, `dbPath`, `worktreesDir`, `buildsDir`, `DEFAULT_HOST`, `DEFAULT_PORT` |
 | | `core/actor` | `withActor`, `hostActor`, `actorSnapshot` |
 | | `core/ids` | `shortId`, `slugify` |
 | | `core/git` | `git` |
@@ -195,26 +195,18 @@ must hold after every extraction:
 3. **Lazy serve and start.** The serve command still loads `cli/serve` and
    `cli/start` lazily (`test/boundaries.test.ts`), so other commands don't load
    the HTTP server or the orchestrator.
-4. **Factory root.** `factoryRoot()` resolves `../..` from
-   `src/core/paths.ts`. From `packages/backend-runtime/dist/paths.js` that is
-   `packages/`, and from an installed tarball's
-   `node_modules/@crane/backend-runtime/dist/` it is `node_modules/`. The
-   application must establish the root, for example by passing the root its
-   own entry file implies to runtime before importing storage, factory or
-   server, and runtime must never infer it from its own location. It must
-   resolve to the same directory as today in a source checkout run by tsx, a
-   compiled checkout, and an installed package. Callers today:
-   `cli/start.ts`, `factory/dashboard.ts`, `factory/actions/repos.ts` and
-   `webbuild`'s defaults.
-5. **Build identity.** `factoryBuildOutdated` is created when `webbuild` loads
-   and decides "compiled" from whether that file's path contains `/dist/`.
-   In a package that is always true, so a tsx dev run with a stale root
-   `dist/cli/index.js` would report itself outdated. Compiled-ness must come
-   from the CLI entry that actually loaded (`dist/cli/index.js` versus
-   `src/cli/index.ts`), evaluated after the application sets its identity, not
-   at package import. `factoryOutdated` keeps its meaning: false when running
-   from source, true when `src/` or any `packages/*/{src,package.json,tsconfig.json}`
-   is newer than the loaded `dist/cli/index.js`.
+4. **Factory root.** `src/application.ts` derives the application root from its
+   own file in `src/` or `dist/`, never from the runtime workspace. Its bound
+   helpers are used by CLI startup, factory registration, dashboard builds,
+   factory status and static serving. This preserves source checkout, compiled
+   checkout and installed package roots.
+5. **Build identity.** The CLI eagerly imports `src/application.ts` before
+   setup or storage. It passes application root and compilation mode explicitly
+   to runtime's `createFactoryBuildCheck`; compiled workspace dependencies do
+   not imply compiled application execution. The captured build timestamp
+   remains unchanged after rebuilding files. Source execution never reports
+   backend staleness; compiled execution compares source and package inputs
+   against the build loaded at bootstrap.
 6. **Actor.** `serve` and `start` stay outside the host actor context; signed-in
    requests still run inside `withActor` (see [Shape](../CLAUDE.md)).
 7. **Packaging and restart.** Each new package joins the root `dependencies`,
@@ -264,7 +256,7 @@ exact bytes afterwards (also on SIGINT/SIGTERM):
 | `http` | HTTP-only | `src/server/body.ts` | 5, plus 3 uncached |
 | `factory` | factory-only | `src/factory/elapsed.ts` | 3 |
 | `storage` | storage-only | `src/core/store/shared.ts` | 3 |
-| `runtime` | runtime-only | `src/core/ids.ts` | 3 |
+| `runtime` | runtime-only | `packages/backend-runtime/src/ids.ts` | 3 |
 | `web` | web-only | `web/src/lib/format.ts` | 3 |
 | `contracts` | shared-contract | `packages/contracts/src/errors.ts` | 3 |
 
@@ -344,7 +336,7 @@ case fell back to full work.
 | HTTP-only (`src/server/body.ts`) | backend, checks | same 5 | 106 (976) |
 | factory-only (`src/factory/elapsed.ts`) | backend, checks | same 5 | 106 (976) |
 | storage-only (`src/core/store/shared.ts`) | backend, checks | same 5 | 106 (976) |
-| runtime-only (`src/core/ids.ts`) | backend, checks | same 5 | 106 (976) |
+| runtime-only (`packages/backend-runtime/src/ids.ts`) | backend, checks | same 5 | 106 (976) |
 | web-only (`web/src/lib/format.ts`) | @crane/web, checks | same 5 | 106 (976) |
 | shared-contract (`packages/contracts/src/errors.ts`) | contracts, agent-protocol, agent-policy, agent-drivers, web, backend, checks | all 10 | 119 (1,107) |
 
@@ -445,3 +437,7 @@ work for task t-u6gyh4, not conclusions:
   items 2, 4 and 5 above are checked by reading code, not by running a packed
   build.
 - **Codex's no-network sandbox**, where `npm test` can't run.
+
+## Runtime extraction implementation
+
+The five runtime modules now live in `packages/backend-runtime/src/`, with explicit named exports in `index.ts` (no implementation subpaths). `currentActor` stays internal; all actor consumers import the package entry. The application binds `factoryRoot`, `factoryBuildOutdated` and the default served dashboard in `src/application.ts`, whose location is the application's `src/` or `dist/`, including installed packages. The CLI eagerly imports this identity before setup or storage. Runtime receives root and compilation mode explicitly; package location cannot identify the application. The loaded timestamp is captured once and remains unchanged after an on-disk rebuild. Existing backend and build suite groups conservatively cover runtime through the backend dependency closure; narrower ownership remains a subsequent task. Application builds remain uncached. No timing improvement is claimed by this extraction.

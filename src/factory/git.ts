@@ -1,9 +1,9 @@
 import { errorMessage } from "@crane/contracts";
 import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative } from "node:path";
-import { git } from "../core/git.js";
-import { worktreesDir } from "../core/paths.js";
-import { slugify } from "../core/ids.js";
+import { git } from "@crane/backend-runtime";
+import { worktreesDir } from "@crane/backend-runtime";
+import { slugify } from "@crane/backend-runtime";
 import type { LandedCommit } from "../core/store.js";
 import { fetchDefault } from "./merge-fetch.js";
 import { newestDefault, remoteFor, why } from "./merge-git.js";

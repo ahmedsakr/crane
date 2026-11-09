@@ -53,8 +53,8 @@ function projectFiles(dir: string): string[] {
   });
 }
 
-test("nx: the graph has exactly the six packages, web, backend and checks", () => {
-  assert.equal(PACKAGES.length, 6);
+test("nx: the graph has exactly the seven packages, web, backend and checks", () => {
+  assert.equal(PACKAGES.length, 7);
   assert.deepEqual(projectFiles(".").sort(), Object.values(ROOTS).map((dir) => join(dir, "project.json")).sort(), "no other project.json");
   for (const [name, project] of Object.entries(projects)) assert.equal(project.name, name, `${ROOTS[name]}/project.json`);
   // Nx makes the root package.json a project only for an `nx` field or a project.json beside it.
@@ -160,7 +160,7 @@ test("nx: public scripts reach Nx only through scripts/tasks.ts, and no target s
 test("nx: only deterministic package builds and typechecks cache; bundles and suites always run", () => {
   for (const name of PACKAGES) assert.equal(projects[name]!.targets.build!.cache, true, `${name}:build restores dist with its build info`);
   for (const name of ["backend", "@crane/web", "checks"]) assert.equal(projects[name]!.targets.typecheck!.cache, true, name);
-  // Staleness checks (src/core/webbuild.ts) read these outputs' mtimes, which a cache restore can leave behind.
+  // Staleness checks (backend-runtime/webbuild.ts) read these outputs' mtimes, which a cache restore can leave behind.
   assert.equal(projects.backend!.targets.build!.cache, false);
   assert.equal(projects["@crane/web"]!.targets.build!.cache, false);
   assert.equal(projects.checks!.targets.test!.cache, false);

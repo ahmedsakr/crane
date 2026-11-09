@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { dbPath } from "./paths.js";
+import { dbPath } from "@crane/backend-runtime";
 import { isEmptyDatabase, migrate } from "./store/migrations.js";
 import { analytics } from "./store/analytics.js";
 import { overview } from "./store/overview.js";

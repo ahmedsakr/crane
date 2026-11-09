@@ -1,7 +1,7 @@
 import { mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative } from "node:path";
 import type { RunContext } from "@crane/agent-protocol";
-import { worktreesDir } from "../core/paths.js";
+import { worktreesDir } from "@crane/backend-runtime";
 
 /** Prepare scratch logs before each attempt, without writing in the operator's checkout. */
 export async function prepareAgentLogs(ctx: Pick<RunContext, "cwd" | "repo" | "task" | "job">): Promise<string | undefined> {

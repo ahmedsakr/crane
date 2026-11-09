@@ -3,7 +3,7 @@ import { realpathSync, statSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import type { ReviewCheckpoint } from "@crane/contracts";
 import { preparedDependencyIdentity } from "@crane/worktree-deps";
-import { git } from "../core/git.js";
+import { git } from "@crane/backend-runtime";
 
 export type ReviewInputs = Omit<ReviewCheckpoint, "passed">;
 

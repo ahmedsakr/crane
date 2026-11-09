@@ -5,10 +5,11 @@ import { existsSync } from "node:fs";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Repo } from "@crane/contracts";
-import { buildsDir, factoryRoot } from "../core/paths.js";
-import { BUILD_MANIFEST, dashboardBuilds, webBuildOutdated } from "../core/webbuild.js";
+import { buildsDir } from "@crane/backend-runtime";
+import { factoryRoot } from "../application.js";
+import { BUILD_MANIFEST, dashboardBuilds, webBuildOutdated } from "@crane/backend-runtime";
 import { installDependencies } from "@crane/worktree-deps";
-import { git } from "../core/git.js";
+import { git } from "@crane/backend-runtime";
 
 const run = promisify(execFile);
 

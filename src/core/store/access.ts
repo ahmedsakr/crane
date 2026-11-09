@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import type { InviteSummary, OperatorProfile, OperatorRole, OperatorSession, OperatorSummary } from "@crane/contracts";
-import { shortId } from "../ids.js";
+import { shortId } from "@crane/backend-runtime";
 import type { Row } from "./rows.js";
 
 /** An operator with what only the factory reads: their password hash. */

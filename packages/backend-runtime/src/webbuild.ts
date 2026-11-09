@@ -1,7 +1,6 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, sep } from "node:path";
-import { fileURLToPath } from "node:url";
-import { buildsDir, factoryRoot } from "./paths.js";
+import { join } from "node:path";
+import { buildsDir } from "./paths.js";
 
 /** UI source the build depends on, relative to `web/`. */
 const SOURCES = ["src", "index.html", "vite.config.ts", "package.json"];
@@ -34,7 +33,7 @@ const cache = new Map<string, { at: number; value: boolean }>();
  * rebuilds that checkout. False when there's no build or no source to compare
  * (an installed package, say). Cached briefly since the UI polls.
  */
-export function webBuildOutdated(root = factoryRoot(), now = Date.now()): boolean {
+export function webBuildOutdated(root: string, now = Date.now()): boolean {
   const hit = cache.get(root);
   if (hit && now - hit.at < 5_000) return hit.value;
   const web = join(root, "web");
@@ -67,12 +66,6 @@ export function createFactoryBuildCheck(root: string, compiled: boolean): (now?:
     return value;
   };
 }
-
-/** Whether the running compiled factory needs rebuilding and restarting. Cached briefly since the UI polls. */
-export const factoryBuildOutdated = createFactoryBuildCheck(
-  factoryRoot(),
-  fileURLToPath(import.meta.url).includes(`${sep}dist${sep}`),
-);
 
 // ── dashboards Crane builds itself ──────────────────────────
 
@@ -133,7 +126,7 @@ const servedCache = new Map<string, { at: number; value: ServedDashboard | null 
  * `npm run build` themselves, theirs is. Null when there's no dashboard at all.
  * Cached for a moment, since every request asks.
  */
-export function servedDashboard(root = factoryRoot(), builds = buildsDir(), now = Date.now()): ServedDashboard | null {
+export function servedDashboard(root: string, builds = buildsDir(), now = Date.now()): ServedDashboard | null {
   const key = `${root}\0${builds}`;
   const hit = servedCache.get(key);
   if (hit && now - hit.at < 2_000) return hit.value;
