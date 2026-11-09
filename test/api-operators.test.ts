@@ -1,8 +1,9 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AuthStatus, EventActor, InviteCheck, InviteSummary, OperatorSummary } from "@crane/contracts";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 import { createApp } from "../src/server/app.js";
 import { PUBLIC_ROUTES } from "../src/server/auth.js";
 import { STREAM_RECHECK_MS } from "../src/server/routes/tasks.js";

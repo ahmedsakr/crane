@@ -12,6 +12,7 @@
     "@crane/backend-runtime",
     "@crane/contracts",
     "@crane/diagnostics",
+    "@crane/factory",
     "@crane/storage",
     "@crane/web",
     "@crane/worktree-deps",
@@ -33,6 +34,7 @@
             "@crane/backend-runtime",
             "@crane/contracts",
             "@crane/diagnostics",
+            "@crane/factory",
             "@crane/storage",
             "@crane/worktree-deps"
           ],
@@ -62,6 +64,7 @@
             "@crane/backend-runtime",
             "@crane/contracts",
             "@crane/diagnostics",
+            "@crane/factory",
             "@crane/storage",
             "@crane/worktree-deps"
           ],

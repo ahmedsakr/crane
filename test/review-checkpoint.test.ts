@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -7,9 +8,9 @@ import { preparedDependencyIdentity } from "@crane/worktree-deps";
 import { SimulatedDriver } from "@crane/agent-drivers";
 import type { RunContext, RunResult } from "@crane/agent-protocol";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
-import { Factory } from "../src/factory/orchestrator.js";
-import { changedInputs, type ReviewInputs } from "../src/factory/review-checkpoint.js";
+import { OperatorActions } from "@crane/factory/actions";
+import { Factory } from "@crane/factory/runtime";
+import { changedInputs, type ReviewInputs } from "../packages/factory/src/review-checkpoint.js";
 import { dependencyFingerprint } from "../packages/worktree-deps/src/deps.js";
 import { sh } from "./support/git.js";
 

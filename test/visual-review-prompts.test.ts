@@ -1,9 +1,10 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Task, VisualReview } from "@crane/contracts";
 import { AgentRunError, type AgentDriver, type AgentJob } from "@crane/agent-protocol";
 import { Store } from "@crane/storage";
-import { runAgent } from "../src/factory/agent-runner.js";
+import { runAgent } from "../packages/factory/src/agent-runner.js";
 import { resumePrompt, systemPrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
 
 function prompts(task: Task, job?: AgentJob): string[] {

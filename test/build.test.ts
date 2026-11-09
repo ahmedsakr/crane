@@ -58,10 +58,7 @@ test("build: esbuild's backend output runs from the layout the factory expects",
   cpSync(out, join(app, "dist"), { recursive: true });
   cpSync(join(root, "bin"), join(app, "bin"), { recursive: true });
   cpSync(join(root, "package.json"), join(app, "package.json"));
-  const runtime = join(app, "node_modules", "@crane", "backend-runtime");
-  mkdirSync(runtime, { recursive: true });
-  cpSync(join(root, "packages", "backend-runtime", "dist"), join(runtime, "dist"), { recursive: true });
-  cpSync(join(root, "packages", "backend-runtime", "package.json"), join(runtime, "package.json"));
+  copyBundledPackages(app);
   mkdirSync(join(app, "web", "dist"), { recursive: true });
   writeFileSync(join(app, "web", "dist", "index.html"), "installed dashboard");
   const identity = await import(pathToFileURL(join(app, "dist", "application.js")).href);
@@ -70,6 +67,10 @@ test("build: esbuild's backend output runs from the layout the factory expects",
   process.env.CRANE_HOME = join(installed, "home");
   try {
     assert.equal(identity.servedDashboard()?.dir, join(app, "web", "dist"));
+    const state = await import(pathToFileURL(join(app, "node_modules", "@crane", "factory", "dist", "state.js")).href);
+    const status = state.factoryState({ getSetting: () => null, isPaused: () => false });
+    assert.equal(status.uiBuild, identity.servedDashboard()?.id, "bundled factory shares the installed application's identity");
+    assert.equal(status.factoryOutdated, false);
   } finally {
     if (previousHome === undefined) delete process.env.CRANE_HOME;
     else process.env.CRANE_HOME = previousHome;
@@ -96,6 +97,18 @@ test("build: esbuild's backend output runs from the layout the factory expects",
   emit(out);
   assert.ok(statSync(marker).mtimeMs > old.getTime(), "a rebuild rewrites unchanged output");
 });
+
+/** Mirror the bundled workspace layout, so factory and storage resolve the installed runtime identity. */
+function copyBundledPackages(app: string): void {
+  const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+  for (const name of manifest.bundledDependencies as string[]) {
+    const dir = name.slice("@crane/".length);
+    const target = join(app, "node_modules", name);
+    mkdirSync(target, { recursive: true });
+    cpSync(join(root, "packages", dir, "dist"), join(target, "dist"), { recursive: true });
+    cpSync(join(root, "packages", dir, "package.json"), join(target, "package.json"));
+  }
+}
 
 test("build: tsc is TypeScript 7 and nothing else in the tree can take over its bin", () => {
   const { packages } = JSON.parse(readFileSync(join(root, "package-lock.json"), "utf8"));

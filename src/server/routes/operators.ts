@@ -1,7 +1,7 @@
 import type { Context, Hono } from "hono";
 import { describeClient, inviteLinkPath } from "@crane/contracts";
-import { AccessError } from "../../factory/actions.js";
-import type { IssuedInvite } from "../../factory/actions.js";
+import { AccessError } from "@crane/factory/actions";
+import type { IssuedInvite } from "@crane/factory/actions";
 import { sessionToken, setSessionCookie, signedInActor } from "../auth.js";
 import type { ApiAccess } from "../auth.js";
 import { optionalJsonObject } from "../body.js";

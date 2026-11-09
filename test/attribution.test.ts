@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -7,7 +8,7 @@ import Database from "better-sqlite3";
 import { actorLabel, eventActor, isEventActor, type EventActor, type GoalPlan, type TaskEvent } from "@crane/contracts";
 import { Store } from "@crane/storage";
 import { hostActor, withActor } from "@crane/backend-runtime";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 import { runCli } from "../src/cli/program.js";
 import { eventLine } from "../src/cli/ui.js";
 import { createApp } from "../src/server/app.js";

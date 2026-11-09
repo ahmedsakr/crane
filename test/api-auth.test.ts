@@ -1,10 +1,11 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Hono } from "hono";
 import type { AuthStatus, EventActor, OperatorProfile, OperatorSession } from "@crane/contracts";
 import { Store } from "@crane/storage";
 import { actorSnapshot } from "@crane/backend-runtime";
-import { AccessError, OperatorActions } from "../src/factory/actions.js";
+import { AccessError, OperatorActions } from "@crane/factory/actions";
 import { createApp } from "../src/server/app.js";
 import { NOT_SET_UP, PUBLIC_ROUTES, errorResponse } from "../src/server/auth.js";
 import { STREAM_RECHECK_MS } from "../src/server/routes/tasks.js";

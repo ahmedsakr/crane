@@ -1,3 +1,4 @@
+import "../src/application.js";
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -5,8 +6,8 @@ import { test, type TestContext } from "node:test";
 import type { Repo, Task, ValidationRun } from "@crane/contracts";
 import type { FixChecksJob } from "@crane/agent-protocol";
 import { systemPrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
-import { landTask, MergeError, type MergeRequest } from "../src/factory/merge.js";
-import { failureExcerpt, fixableFailures } from "../src/factory/merge-fixes.js";
+import { landTask, MergeError, type MergeRequest } from "../packages/factory/src/merge.js";
+import { failureExcerpt, fixableFailures } from "../packages/factory/src/merge-fixes.js";
 import { temporaryRoot } from "./support/fixtures.js";
 import { sh } from "./support/git.js";
 

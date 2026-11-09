@@ -53,8 +53,8 @@ function projectFiles(dir: string): string[] {
   });
 }
 
-test("nx: the graph has exactly the eight packages, web, backend and checks", () => {
-  assert.equal(PACKAGES.length, 8);
+test("nx: the graph has exactly the nine packages, web, backend and checks", () => {
+  assert.equal(PACKAGES.length, 9);
   assert.deepEqual(projectFiles(".").sort(), Object.values(ROOTS).map((dir) => join(dir, "project.json")).sort(), "no other project.json");
   for (const [name, project] of Object.entries(projects)) assert.equal(project.name, name, `${ROOTS[name]}/project.json`);
   // Nx makes the root package.json a project only for an `nx` field or a project.json beside it.

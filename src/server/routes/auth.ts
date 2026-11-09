@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
 import { describeClient, normalizeUsername } from "@crane/contracts";
-import { WRONG_CURRENT_PASSWORD } from "../../factory/actions.js";
+import { WRONG_CURRENT_PASSWORD } from "@crane/factory/actions";
 import { clearSessionCookie, sessionToken, setSessionCookie } from "../auth.js";
 import type { ApiAccess } from "../auth.js";
 import { optionalJsonObject } from "../body.js";

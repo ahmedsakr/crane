@@ -1,11 +1,12 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
 import { actorLabel, describeClient, normalizeUsername, type EventActor } from "@crane/contracts";
 import { Store } from "@crane/storage";
 import { actorSnapshot, withActor } from "@crane/backend-runtime";
-import { AccessError, OperatorActions } from "../src/factory/actions.js";
-import { dummyVerify, hashPassword, newToken, tokenDigest, verifyPassword } from "../src/factory/auth-crypto.js";
+import { AccessError, OperatorActions } from "@crane/factory/actions";
+import { dummyVerify, hashPassword, newToken, tokenDigest, verifyPassword } from "../packages/factory/src/auth-crypto.js";
 
 const HOST: EventActor = { kind: "host", name: "ahmed" };
 const ADMIN_PASSWORD = "correct horse battery";

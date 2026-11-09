@@ -1,8 +1,9 @@
+import "../application.js";
 import { createInterface } from "node:readline";
 import type { EventActor } from "@crane/contracts";
 import { hostActor } from "@crane/backend-runtime";
 import type { Store } from "@crane/storage";
-import { OperatorActions } from "../factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 
 /** Where a command reads what the operator types. Tests replace it to feed `--password-stdin`. */
 export interface CliIo {

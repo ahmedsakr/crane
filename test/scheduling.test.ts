@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -6,9 +7,9 @@ import { join } from "node:path";
 import { isScheduled, type NewTask } from "@crane/contracts";
 import type { AgentDriver } from "@crane/agent-protocol";
 import { Store } from "@crane/storage";
-import { OperatorActions, checkScheduledAt } from "../src/factory/actions.js";
+import { OperatorActions, checkScheduledAt } from "@crane/factory/actions";
 import { createApp } from "../src/server/app.js";
-import { Factory } from "../src/factory/orchestrator.js";
+import { Factory } from "@crane/factory/runtime";
 import {
   daysLabel,
   localStartTime,

@@ -1,9 +1,10 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseReport } from "@crane/agent-protocol";
 import type { Report } from "@crane/contracts";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 
 const completed: NonNullable<Report["completion"]> = { status: "completed", reason: "Implemented", evidence: "Feature-specific tests" };
 

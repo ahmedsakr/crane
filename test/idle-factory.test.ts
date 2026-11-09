@@ -1,9 +1,10 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "@crane/storage";
-import { Factory } from "../src/factory/orchestrator.js";
-import { factoryIsRunning } from "../src/factory/state.js";
-import { HEARTBEAT_KEY } from "../src/factory/settings.js";
+import { Factory } from "@crane/factory/runtime";
+import { factoryIsRunning } from "@crane/factory/state";
+import { HEARTBEAT_KEY } from "@crane/factory/settings";
 import type { AgentDriver } from "@crane/agent-protocol";
 import type { Task } from "@crane/contracts";
 

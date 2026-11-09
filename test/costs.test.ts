@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
@@ -6,7 +7,7 @@ import { join } from "node:path";
 import { Store } from "@crane/storage";
 import { usageFromResult } from "../packages/agent-drivers/src/claude-code.js";
 import { usageFromTurn } from "../packages/agent-drivers/src/codex.js";
-import { Factory } from "../src/factory/orchestrator.js";
+import { Factory } from "@crane/factory/runtime";
 import type { AgentDriver, RunContext, RunResult } from "@crane/agent-protocol";
 import type { RunUsage } from "@crane/contracts";
 

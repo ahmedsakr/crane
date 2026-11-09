@@ -1,0 +1,53 @@
+{
+  "name": "@crane/factory",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist/"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./actions": {
+      "types": "./dist/actions.d.ts",
+      "default": "./dist/actions.js"
+    },
+    "./state": {
+      "types": "./dist/state.d.ts",
+      "default": "./dist/state.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "default": "./dist/runtime.js"
+    },
+    "./settings": {
+      "types": "./dist/settings.d.ts",
+      "default": "./dist/settings.js"
+    },
+    "./instruct": {
+      "types": "./dist/instruct.d.ts",
+      "default": "./dist/instruct.js"
+    },
+    "./diff": {
+      "types": "./dist/diff.d.ts",
+      "default": "./dist/diff.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "dev": "tsc -b tsconfig.json --watch"
+  },
+  "dependencies": {
+    "@crane/agent-drivers": "0.1.0",
+    "@crane/agent-policy": "0.1.0",
+    "@crane/agent-protocol": "0.1.0",
+    "@crane/backend-runtime": "0.1.0",
+    "@crane/contracts": "0.1.0",
+    "@crane/diagnostics": "0.1.0",
+    "@crane/storage": "0.1.0",
+    "@crane/worktree-deps": "0.1.0"
+  }
+}

@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -5,9 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { followUpFor, type TaskDetail } from "@crane/contracts";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 import { createApp } from "../src/server/app.js";
-import { driverEffortKey, driverModelKey } from "../src/factory/settings.js";
+import { driverEffortKey, driverModelKey } from "@crane/factory/settings";
 
 function setup(path = ":memory:") {
   const store = new Store(path);

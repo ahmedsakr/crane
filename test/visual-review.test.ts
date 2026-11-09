@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
@@ -6,9 +7,9 @@ import { join } from "node:path";
 import { visualReviewPending, type Report, type VisualReview } from "@crane/contracts";
 import { parseReport } from "@crane/agent-protocol";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 import { createApp } from "../src/server/app.js";
-import { requireCandidateVisualReview, visualReviewRequired, type VisualCandidate } from "../src/factory/visual-review.js";
+import { requireCandidateVisualReview, visualReviewRequired, type VisualCandidate } from "../packages/factory/src/visual-review.js";
 
 const commit = "a".repeat(40);
 const tree = "b".repeat(40);

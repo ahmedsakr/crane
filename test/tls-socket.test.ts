@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { writeFileSync } from "node:fs";
@@ -9,7 +10,7 @@ import { loadTls } from "../src/cli/tls.js";
 import { createApp } from "../src/server/app.js";
 import { checkExposure } from "../src/server/security.js";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 import { onFixtureCleanup, temporaryRoot, testHome } from "./support/fixtures.js";
 import { TLS_CERT, TLS_KEY } from "./support/tls.js";
 

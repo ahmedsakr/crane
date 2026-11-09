@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "@crane/storage";
@@ -6,8 +7,8 @@ import { resumePrompt, userPrompt } from "../packages/agent-drivers/src/prompts.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { OperatorActions } from "../src/factory/actions.js";
-import { Factory } from "../src/factory/orchestrator.js";
+import { OperatorActions } from "@crane/factory/actions";
+import { Factory } from "@crane/factory/runtime";
 import type { AgentDriver, RunContext } from "@crane/agent-protocol";
 
 test("a successful merge queues exactly one independent read-only post-mortem", () => {

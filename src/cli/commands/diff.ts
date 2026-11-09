@@ -1,7 +1,7 @@
 import { lastMergeOutcome, parseDiff, type DiffFile, type DiffLine, type ParsedDiff } from "@crane/contracts";
 import type { Command } from "commander";
 import pc from "picocolors";
-import { diffForTask } from "../../factory/git.js";
+import { diffForTask } from "@crane/factory/diff";
 import type { CliContext } from "../context.js";
 import * as ui from "../ui.js";
 

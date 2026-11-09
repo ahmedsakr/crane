@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync } from "node:fs";
@@ -6,8 +7,8 @@ import { COMMAND_ACCESS, COMMAND_ACCESS_LABEL, isCommandAccess } from "@crane/co
 import type { AgentDriver, RunContext, RunResult } from "@crane/agent-protocol";
 import { Store } from "@crane/storage";
 import { worktreesDir } from "@crane/backend-runtime";
-import { OperatorActions } from "../src/factory/actions.js";
-import { runAgent } from "../src/factory/agent-runner.js";
+import { OperatorActions } from "@crane/factory/actions";
+import { runAgent } from "../packages/factory/src/agent-runner.js";
 import { createApp } from "../src/server/app.js";
 import { temporaryRoot, testHome } from "./support/fixtures.ts";
 

@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { sh } from "./support/git.js";
@@ -7,8 +8,8 @@ import { join } from "node:path";
 import type { TaskStatus } from "@crane/contracts";
 import { AgentRunError, type AgentDriver, type RunContext, type SiblingTask } from "@crane/agent-protocol";
 import { Store } from "@crane/storage";
-import { Factory } from "../src/factory/orchestrator.js";
-import { siblingTasksFor } from "../src/factory/task-context.js";
+import { Factory } from "@crane/factory/runtime";
+import { siblingTasksFor } from "../packages/factory/src/task-context.js";
 import { resumePrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-context-home-"));

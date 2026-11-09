@@ -1,6 +1,7 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { StorageDiagnostics, storageSnapshot } from "../src/factory/storage-diagnostics.js";
+import { StorageDiagnostics, storageSnapshot } from "../packages/factory/src/storage-diagnostics.js";
 import { temporaryRoot } from "./support/fixtures.js";
 
 test("storage diagnostics retain early split errors independently of noisy output", async t => {

@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
@@ -6,8 +7,8 @@ import { AgentRunError, type AgentDriver, type AgentJob } from "@crane/agent-pro
 import { Store } from "@crane/storage";
 import { git } from "@crane/backend-runtime";
 import { worktreesDir } from "@crane/backend-runtime";
-import { prepareAgentLogs } from "../src/factory/agent-logs.js";
-import { runAgent } from "../src/factory/agent-runner.js";
+import { prepareAgentLogs } from "../packages/factory/src/agent-logs.js";
+import { runAgent } from "../packages/factory/src/agent-runner.js";
 import { resumePrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
 import { onFixtureCleanup, temporaryRoot, testHome } from "./support/fixtures.js";
 

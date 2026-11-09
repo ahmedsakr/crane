@@ -1,10 +1,11 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Store } from "@crane/storage";
-import { toRule } from "../src/factory/actions.js";
+import { toRule } from "@crane/factory/actions";
 import { runCli } from "../src/cli/program.js";
 import { ruleLabel } from "@crane/contracts";
 

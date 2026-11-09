@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -10,7 +11,7 @@ import { GUARD_DENY_PREFIX, hookDecision } from "../packages/agent-drivers/src/c
 import { BLOCKED_BRIEF } from "../packages/agent-drivers/src/prompt-briefs.js";
 import { resumePrompt, systemPrompt } from "../packages/agent-drivers/src/prompts.js";
 import { Store } from "@crane/storage";
-import { OperatorActions } from "../src/factory/actions.js";
+import { OperatorActions } from "@crane/factory/actions";
 
 const context: GuardContext = {
   access: "most", profile: "worktree", worktree: "/factory/worktrees/task", checkout: "/code/app",

@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 import type { Repo } from "@crane/contracts";
 import type { Store } from "@crane/storage";
-import { factoryRoot } from "../../application.js";
+import { factoryRoot } from "@crane/backend-runtime";
 import { inferDefaultBranch, isGitRepo, repoRoot } from "../git.js";
 
 export function needRepo(store: Store, idOrName: string): Repo {

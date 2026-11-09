@@ -1,10 +1,11 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import Database from "better-sqlite3";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { draftTask } from "../src/factory/instruct.js";
+import { draftTask } from "@crane/factory/instruct";
 import { parseReport } from "@crane/agent-protocol";
 import { Store } from "@crane/storage";
 import type { Repo } from "@crane/contracts";

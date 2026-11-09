@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -5,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LOOKOUTS, lookoutsLabel, type Autonomy, type NewTask } from "@crane/contracts";
 import { Store } from "@crane/storage";
-import { OperatorActions, checkLookouts } from "../src/factory/actions.js";
+import { OperatorActions, checkLookouts } from "@crane/factory/actions";
 import { createApp } from "../src/server/app.js";
 import { resumePrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
 

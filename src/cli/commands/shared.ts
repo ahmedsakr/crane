@@ -2,8 +2,8 @@ import { LOOKOUTS, driverLabel, errorMessage, type BlockedTool, type Lookout } f
 import type { Command } from "commander";
 import pc from "picocolors";
 import type { Store } from "@crane/storage";
-import { checkLookouts } from "../../factory/actions.js";
-import { factoryDriverName, factoryIsRunning } from "../../factory/state.js";
+import { checkLookouts } from "@crane/factory/actions";
+import { factoryDriverName, factoryIsRunning } from "@crane/factory/state";
 import * as ui from "../ui.js";
 
 export const repoName = (store: Store, id: string | null) => (id ? store.getRepo(id)?.name : undefined);
