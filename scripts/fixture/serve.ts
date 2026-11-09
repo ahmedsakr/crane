@@ -6,7 +6,7 @@
  *   node <FIXTURE_NODE_ARGS> scripts/fixture/serve.ts <port>
  */
 import { serve } from "@hono/node-server";
-import { craneHome } from "../../src/core/paths.js";
+import { craneHome } from "@crane/backend-runtime";
 import { Store } from "../../src/core/store.js";
 import { DEFAULT_DRIVER_KEY, HEARTBEAT_KEY } from "../../src/factory/settings.js";
 import { createApp } from "../../src/server/app.js";

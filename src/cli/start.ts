@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
-import { factoryRoot } from "../core/paths.js";
+import { factoryRoot } from "../application.js";
 import type { ServeOptions } from "./serve.js";
 
 const exec = promisify(execFile);

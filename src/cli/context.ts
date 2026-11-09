@@ -1,6 +1,6 @@
 import { createInterface } from "node:readline";
 import type { EventActor } from "@crane/contracts";
-import { hostActor } from "../core/actor.js";
+import { hostActor } from "@crane/backend-runtime";
 import type { Store } from "../core/store.js";
 import { OperatorActions } from "../factory/actions.js";
 

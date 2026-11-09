@@ -2,7 +2,7 @@ import { errorMessage } from "@crane/contracts";
 import { randomUUID } from "node:crypto";
 import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { extname, isAbsolute, join, resolve, sep } from "node:path";
-import { craneHome } from "./paths.js";
+import { craneHome } from "@crane/backend-runtime";
 import type { Screenshot } from "@crane/contracts";
 import type { Store } from "./store.js";
 

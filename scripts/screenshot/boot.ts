@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import { webBuildOutdated } from "../../src/core/webbuild.js";
+import { webBuildOutdated } from "@crane/backend-runtime";
 import { FIXTURE_NODE_ARGS, createFixtureHome, fixtureEnv } from "../fixture/fixture.ts";
 
 export const root = resolve(dirname(new URL(import.meta.url).pathname), "..", "..");

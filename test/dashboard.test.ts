@@ -4,7 +4,7 @@ import { sh } from "./support/git.js";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dashboardBuilds, servedDashboard } from "../src/core/webbuild.ts";
+import { dashboardBuilds, servedDashboard } from "@crane/backend-runtime";
 import {
   buildDashboard,
   dashboardBuildNeeded,

@@ -10,9 +10,9 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { Store } from "../src/core/store.js";
-import { craneHome } from "../src/core/paths.js";
+import { craneHome } from "@crane/backend-runtime";
 import { OperatorActions } from "../src/factory/actions.js";
-import { withActor } from "../src/core/actor.js";
+import { withActor } from "@crane/backend-runtime";
 import type { TaskKind, Autonomy, TaskStatus, EventActor } from "@crane/contracts";
 
 if (!process.env.CRANE_HOME) {

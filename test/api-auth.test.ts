@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Hono } from "hono";
 import type { AuthStatus, EventActor, OperatorProfile, OperatorSession } from "@crane/contracts";
 import { Store } from "../src/core/store.js";
-import { currentActor } from "../src/core/actor.js";
+import { actorSnapshot } from "@crane/backend-runtime";
 import { AccessError, OperatorActions } from "../src/factory/actions.js";
 import { createApp } from "../src/server/app.js";
 import { NOT_SET_UP, PUBLIC_ROUTES, errorResponse } from "../src/server/auth.js";
@@ -65,7 +65,7 @@ function spyActors(store: Store): (EventActor | null)[] {
   const actors: (EventActor | null)[] = [];
   const addEvent = store.addEvent.bind(store);
   store.addEvent = (...args: Parameters<Store["addEvent"]>) => {
-    actors.push(currentActor());
+    actors.push(actorSnapshot());
     return addEvent(...args);
   };
   return actors;
@@ -169,7 +169,7 @@ test("auth: a signed-in request runs as its operator, so the events it writes sa
     assert.equal((await call(app, "POST", `/api/tasks/${queued.id}/cancel`, { cookie })).status, 200);
     assert.ok(actors.length > 0);
     for (const actor of actors) assert.deepEqual(actor, { kind: "operator", id: sam!.id, name: "Sam Lee" });
-    assert.equal(currentActor(), null);
+    assert.equal(actorSnapshot(), null);
   } finally { store.close(); }
 });
 

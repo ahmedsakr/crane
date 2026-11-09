@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
 import { actorLabel, describeClient, normalizeUsername, type EventActor } from "@crane/contracts";
 import { Store } from "../src/core/store.js";
-import { currentActor, withActor } from "../src/core/actor.js";
+import { actorSnapshot, withActor } from "@crane/backend-runtime";
 import { AccessError, OperatorActions } from "../src/factory/actions.js";
 import { dummyVerify, hashPassword, newToken, tokenDigest, verifyPassword } from "../src/factory/auth-crypto.js";
 
@@ -333,21 +333,21 @@ test("access: expired sessions and links are pruned", async () => {
   assert.deepEqual(rows(store, "sessions").map((s) => (s as { id: string }).id), [fresh.session.id]);
 });
 
-test("actor: currentActor follows withActor across awaits and is null outside", async () => {
-  assert.equal(currentActor(), null);
+test("actor: actorSnapshot follows withActor across awaits and is null outside", async () => {
+  assert.equal(actorSnapshot(), null);
   const sam: EventActor = { kind: "operator", id: "o-sam", name: "Sam" };
-  assert.equal(withActor(HOST, () => currentActor()?.name), "ahmed");
+  assert.equal(withActor(HOST, () => actorSnapshot()?.name), "ahmed");
   const seen = await withActor(sam, async () => {
-    const before = currentActor();
+    const before = actorSnapshot();
     await sleep(5);
-    const inner = await withActor(HOST, async () => { await sleep(1); return currentActor(); });
+    const inner = await withActor(HOST, async () => { await sleep(1); return actorSnapshot(); });
     await Promise.resolve();
-    return [before, inner, currentActor()];
+    return [before, inner, actorSnapshot()];
   });
   assert.deepEqual(seen, [sam, HOST, sam]);
   // Two requests at once each keep their own actor.
-  const both = await Promise.all([sam, HOST].map((actor) => withActor(actor, async () => { await sleep(3); return currentActor(); })));
+  const both = await Promise.all([sam, HOST].map((actor) => withActor(actor, async () => { await sleep(3); return actorSnapshot(); })));
   assert.deepEqual(both, [sam, HOST]);
-  assert.equal(currentActor(), null);
+  assert.equal(actorSnapshot(), null);
   assert.ok(new AccessError(429, "Slow down").status === 429);
 });

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import type { ValidationRun } from "@crane/contracts";
-import { git } from "../core/git.js";
+import { git } from "@crane/backend-runtime";
 import { elapsed } from "./elapsed.js";
 import { StorageDiagnostics } from "./storage-diagnostics.js";
 

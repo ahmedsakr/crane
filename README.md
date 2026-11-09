@@ -434,7 +434,7 @@ npm test
 
 npm remains the installer and workspace manager; Nx is an npm-installed task
 orchestrator, not a replacement package manager. Full `npm run typecheck`
-checks every project through Nx; `npm test` builds all six packages through Nx
+checks every project through Nx; `npm test` builds all seven packages through Nx
 and runs every root suite once. These remain Crane's factory gates.
 
 For development feedback, choose a known-good local commit explicitly:

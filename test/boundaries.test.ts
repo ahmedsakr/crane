@@ -62,7 +62,7 @@ test("boundaries: only the driver registry imports concrete agents", () => {
 test("boundaries: factory status queries don't load the scheduler or drivers", () => {
   // Settings keys are a leaf; status reads only them and the served build. See src/factory/state.ts.
   assert.deepEqual(importsOf("factory/settings.ts"), []);
-  assert.deepEqual(importsOf("factory/state.ts").sort(), ["core/webbuild", "factory/settings"]);
+  assert.deepEqual(importsOf("factory/state.ts").sort(), ["application", "factory/settings"]);
   // Only `crane serve` composes a Factory; the API and the other CLI commands only ask about it.
   const server = sources.filter((f) => f.startsWith("server/"));
   assert.ok(server.includes("server/app.ts") && server.includes("server/routes/tasks.ts"), "expected to find server sources");
@@ -303,4 +303,14 @@ test("responsibilities: the state check catches writes, raw database use and wri
   assert.deepEqual(check('import { execFileSync } from "node:child_process";'), ["cli/commands/sample.ts:1 imports node:child_process"]);
   assert.deepEqual(check('await import("../serve.js");'), ["cli/commands/sample.ts:1 loads cli/serve"]);
   assert.deepEqual(check('import type { Store } from "../../core/store.js";\nimport { shared } from "./shared.js";'), []);
+});
+
+test("boundaries: backend runtime depends only on Node and contract types", () => {
+  const runtime = join(root, "packages", "backend-runtime");
+  assert.deepEqual(packageImportViolations(join(runtime, "src"), (ref) =>
+    ref.spec !== null && (ref.spec.startsWith("node:") || ref.spec === "@crane/contracts" && ref.typeOnly)), []);
+  const config = JSON.parse(readFileSync(join(runtime, "tsconfig.json"), "utf8"));
+  assert.deepEqual(config.compilerOptions.lib, ["ES2022"]);
+  assert.deepEqual(config.compilerOptions.types, ["node"]);
+  assert.equal(config.compilerOptions.composite, true);
 });

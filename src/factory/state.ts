@@ -1,5 +1,5 @@
 import type { Overview } from "@crane/contracts";
-import { factoryBuildOutdated, servedDashboard } from "../core/webbuild.js";
+import { factoryBuildOutdated, servedDashboard } from "../application.js";
 import { DEFAULT_DRIVER_KEY, HEARTBEAT_KEY } from "./settings.js";
 
 /**

@@ -40,7 +40,7 @@ form, so none of them changes the graph.
 
 The wiring task ran `nx show projects --json` with `NX_DAEMON=false` (Node
 v24.14.0, Linux x64): Nx lists exactly the nine projects below. A full
-typecheck has 15 tasks, 9 of them cacheable: the six package `typecheck`
+typecheck has 15 tasks, 9 of them cacheable: the seven package `typecheck`
 targets are no-ops and don't cache. `test/nx-graph.test.ts` checks the files
 Nx reads, not Nx's computed graph.
 
@@ -57,8 +57,9 @@ Nx infers from package.json and the ones in project.json can't disagree.
 | `@crane/diagnostics` | `packages/diagnostics` | none | `build`, `typecheck` |
 | `@crane/worktree-deps` | `packages/worktree-deps` | diagnostics | `build`, `typecheck` |
 | `@crane/agent-drivers` | `packages/agent-drivers` | contracts, agent-protocol, agent-policy, diagnostics | `build`, `typecheck` |
+| `@crane/backend-runtime` | `packages/backend-runtime` | contracts | `build`, `typecheck` |
 | `@crane/web` | `web` | contracts | `build`, `typecheck` |
-| `backend` | `src` | all six packages (the root manifest's `@crane/*` dependencies) | `build`, `typecheck` |
+| `backend` | `src` | all seven packages (the root manifest's `@crane/*` dependencies) | `build`, `typecheck` |
 | `checks` | `test` | every other project | `typecheck`, `test` |
 
 Each project's `implicitDependencies` lists its edges explicitly. For packages
@@ -86,14 +87,14 @@ executor wins. The leftover inferred targets (packages' `dev`, web's `dev`,
 | Target | Meaning | Cache |
 | --- | --- | --- |
 | `build` | Packages: `tsc -b packages/<dir>/tsconfig.json`, which type-checks and emits `dist/` with its build info. Backend: the same esbuild command as `build:backend`, emitting the root `dist/`. Web: `vite build` into `web/dist/`. Each depends on `^build` | packages local; backend and web **never** |
-| `typecheck` | Packages: `nx:noop` after `build`, because a composite build is the type check. Backend: `tsc -p tsconfig.json --noEmit`. Web: `tsc -p tsconfig.json --noEmit` in `web/`. Checks: `tsc -p tsconfig.test.json`. Each depends on the builds it imports: `^build`, and for checks the six package builds, not the backend or web bundles | local |
-| `test` | `checks` only: `node --import tsx scripts/run-test-groups.ts --full`, after the six package builds | **never** |
+| `typecheck` | Packages: `nx:noop` after `build`, because a composite build is the type check. Backend: `tsc -p tsconfig.json --noEmit`. Web: `tsc -p tsconfig.json --noEmit` in `web/`. Checks: `tsc -p tsconfig.test.json`. Each depends on the builds it imports: `^build`, and for checks the seven package builds, not the backend or web bundles | local |
+| `test` | `checks` only: `node --import tsx scripts/run-test-groups.ts --full`, after the seven package builds | **never** |
 
 Package builds cache because their output is complete: `outDir` and
 `tsBuildInfoFile` are both inside the `dist/` Nx stores and restores, so a
 restored package carries the composite build state that matches it, and a
 later `tsc -b` sees it as up to date. The backend and web bundles don't cache:
-`src/core/webbuild.ts` decides whether the running factory and dashboard are
+`packages/backend-runtime/src/webbuild.ts` decides whether the running factory and dashboard are
 outdated from the mtimes of `dist/` and `web/dist/`, and Nx leaves matching
 outputs untouched on a cache hit, so a restored build could keep the notice up
 (or hide it) after a rebuild. No public command runs those two targets.
@@ -118,9 +119,9 @@ starts npm, Nx or `scripts/tasks.ts`, so nothing recurses, and the root has no
 | Command | What runs |
 | --- | --- |
 | `npm run typecheck` | Link check, then `nx run-many -t typecheck` over all nine projects: every package build, backend, web, and tests with scripts |
-| `npm test` | Link check, `nx run-many -t build` for the six packages, then one runner over every root suite (`testPlan`, the same files as the old `test/*.test.ts` glob) |
+| `npm test` | Link check, `nx run-many -t build` for the seven packages, then one runner over every root suite (`testPlan`, the same files as the old `test/*.test.ts` glob) |
 | `npm run affected:typecheck -- --base <rev> (--head <rev> \| --working-tree)` | Link check, then `typecheck` for the changed projects and every project that depends on them |
-| `npm run affected:test -- --base <rev> (--head <rev> \| --working-tree)` | Link check, the six package builds, then the suites of the affected test groups |
+| `npm run affected:test -- --base <rev> (--head <rev> \| --working-tree)` | Link check, the seven package builds, then the suites of the affected test groups |
 
 Add `--list` to an affected command to print its selection and the Nx command
 as JSON without running anything. The link check (`scripts/check-workspace-links.mjs`)
@@ -337,3 +338,5 @@ directly.
 - Nx under Codex's no-network sandbox, and more than one concurrency sample.
 - Stale shared entries in `~/.nx/6c369d3128b6274a/` from pre-fix checkouts.
   Current Crane ignores them; an operator may delete the directory.
+
+The runtime extraction adds `@crane/backend-runtime` at `packages/backend-runtime`, depending only on contracts. Backend and checks depend on it; web remains contracts-only. Its composite build caches like other packages; application bundles and tests remain uncached.

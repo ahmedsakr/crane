@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { withActor } from "../core/actor.js";
+import { withActor } from "@crane/backend-runtime";
 import type { Store } from "../core/store.js";
 import { registerAgents } from "./commands/agents.js";
 import { registerAnalytics } from "./commands/analytics.js";

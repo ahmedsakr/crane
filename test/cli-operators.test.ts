@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { currentActor } from "../src/core/actor.js";
+import { actorSnapshot } from "@crane/backend-runtime";
 import { Store } from "../src/core/store.js";
 import { OperatorActions } from "../src/factory/actions.js";
 import { buildProgram, runCli } from "../src/cli/program.js";
@@ -243,7 +243,7 @@ test("cli: commands run as the host, so the operator events they write carry a h
   const actors: { type: string; actor: EventActor | null }[] = [];
   const addEvent = store.addEvent.bind(store);
   store.addEvent = (taskId, type, message, data) => {
-    actors.push({ type, actor: currentActor() });
+    actors.push({ type, actor: actorSnapshot() });
     return addEvent(taskId, type, message, data);
   };
   assert.equal((await crane(store, ["cancel", task.id])).code, 0);
@@ -251,7 +251,7 @@ test("cli: commands run as the host, so the operator events they write carry a h
   assert.ok(written.length > 0, "cancel writes an operator event");
   for (const { actor } of written) assert.deepEqual(actor, hostActor());
   assert.equal(hostActor().kind, "host");
-  assert.equal(currentActor(), null, "the actor doesn't outlive the command");
+  assert.equal(actorSnapshot(), null, "the actor doesn't outlive the command");
 });
 
 test("cli: --help lists the operators and auth groups", () => {

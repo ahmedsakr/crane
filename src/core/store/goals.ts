@@ -11,7 +11,7 @@ import {
   type Task,
   type TaskStatus,
 } from "@crane/contracts";
-import { shortId } from "../ids.js";
+import { shortId } from "@crane/backend-runtime";
 import type { Store } from "../store.js";
 import { now } from "./shared.js";
 

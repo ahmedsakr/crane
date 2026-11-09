@@ -4,8 +4,8 @@ import { mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from
 import { join } from "node:path";
 import { AgentRunError, type AgentDriver, type AgentJob } from "@crane/agent-protocol";
 import { Store } from "../src/core/store.js";
-import { git } from "../src/core/git.js";
-import { worktreesDir } from "../src/core/paths.js";
+import { git } from "@crane/backend-runtime";
+import { worktreesDir } from "@crane/backend-runtime";
 import { prepareAgentLogs } from "../src/factory/agent-logs.js";
 import { runAgent } from "../src/factory/agent-runner.js";
 import { resumePrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";

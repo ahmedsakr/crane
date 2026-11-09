@@ -1,6 +1,6 @@
 import { errorMessage, visualReviewPending, type Task, type TaskStatus } from "@crane/contracts";
 import type { Store } from "../../core/store.js";
-import { git } from "../../core/git.js";
+import { git } from "@crane/backend-runtime";
 import { removeWorktree } from "../git.js";
 import { claimDecision, needTask, requireStatus, type Decision } from "./tasks.js";
 

@@ -1,6 +1,6 @@
 import { driverLabel, type RunUsage } from "@crane/contracts";
 import { AgentRunError, addRunUsage, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
-import { craneHome } from "../core/paths.js";
+import { craneHome } from "@crane/backend-runtime";
 import type { Store } from "../core/store.js";
 import { driverSettings, isAvailable } from "./drivers.js";
 import { sleep } from "./run-limits.js";
