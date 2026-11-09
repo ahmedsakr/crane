@@ -1,6 +1,6 @@
 import type { Hono } from "hono";
 import type { Overview } from "@crane/contracts";
-import type { Store } from "../../core/store.js";
+import type { Store } from "@crane/storage";
 import type { OperatorActions } from "../../factory/actions.js";
 import type { ApiAccess } from "../auth.js";
 

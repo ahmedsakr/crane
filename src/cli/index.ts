@@ -6,7 +6,7 @@ if (process.argv[2] === "setup") {
   const { setupCommand } = await import("./setup.js");
   await new Command("crane").addCommand(setupCommand()).parseAsync(process.argv);
 } else {
-  const { Store } = await import("../core/store.js");
+  const { Store } = await import("@crane/storage");
   const { runCli } = await import("./program.js");
   await runCli(process.argv, new Store());
 }

@@ -661,7 +661,7 @@ test("merge: a decision on the branch tip still lands as a merge commit", async 
 /** A repo with a task waiting for review on a visual decision, and the factory that ran it. */
 async function taskAwaitingVisualDecision(ctx: TestContext) {
   testHome(ctx);
-  const { Store } = await import("../src/core/store.js");
+  const { Store } = await import("@crane/storage");
   const { OperatorActions } = await import("../src/factory/actions.js");
   const { Factory } = await import("../src/factory/orchestrator.js");
   const { SimulatedDriver } = await import("@crane/agent-drivers");
@@ -761,7 +761,7 @@ test("factory: a UI conflict resolution asks once more, then lands exactly the m
 
 test("factory: a task goes from work to review to merged and pushed, through a conflict", async (ctx) => {
   testHome(ctx);
-  const { Store } = await import("../src/core/store.js");
+  const { Store } = await import("@crane/storage");
   const { OperatorActions } = await import("../src/factory/actions.js");
   const { Factory } = await import("../src/factory/orchestrator.js");
   const { SimulatedDriver } = await import("@crane/agent-drivers");
@@ -832,7 +832,7 @@ test("factory: a task goes from work to review to merged and pushed, through a c
 
 test("factory: a pre-approved UI task waives visual review and lands once its checks pass", async (ctx) => {
   testHome(ctx);
-  const { Store } = await import("../src/core/store.js");
+  const { Store } = await import("@crane/storage");
   const { OperatorActions } = await import("../src/factory/actions.js");
   const { Factory } = await import("../src/factory/orchestrator.js");
   const { SimulatedDriver } = await import("@crane/agent-drivers");
@@ -897,7 +897,7 @@ test("factory: a pre-approved UI task waives visual review and lands once its ch
 });
 
 test("actions: approve merges by default, approve only keeps the branch, merge picks it up later", async (ctx) => {
-  const { Store } = await import("../src/core/store.js");
+  const { Store } = await import("@crane/storage");
   const { OperatorActions } = await import("../src/factory/actions.js");
   const { lastMergeOutcome } = await import("@crane/contracts");
   const store = new Store(join(temporaryRoot(ctx, "crane-"), "t.db"));

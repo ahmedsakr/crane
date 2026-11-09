@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SimulatedDriver } from "@crane/agent-drivers";
 import type { Repo, Task } from "@crane/contracts";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { OperatorActions } from "../src/factory/actions.js";
 import { isTransientFetchFailure, landTask, MergeError, type MergeRequest } from "../src/factory/merge.js";
 import { Factory } from "../src/factory/orchestrator.js";

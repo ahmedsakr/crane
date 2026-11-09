@@ -1,7 +1,7 @@
 import type { Repo, Task } from "@crane/contracts";
 import type { SiblingTask } from "@crane/agent-protocol";
 import { git } from "@crane/backend-runtime";
-import type { Store } from "../core/store.js";
+import type { Store } from "@crane/storage";
 import { comparisonBase } from "./git.js";
 
 /** Read shared refs, never sibling worktrees: their uncommitted work belongs to their agents. */

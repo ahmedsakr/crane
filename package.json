@@ -20,7 +20,8 @@
     "packages/diagnostics",
     "packages/worktree-deps",
     "packages/agent-drivers",
-    "packages/backend-runtime"
+    "packages/backend-runtime",
+    "packages/storage"
   ],
   "bundledDependencies": [
     "@crane/contracts",
@@ -29,7 +30,8 @@
     "@crane/diagnostics",
     "@crane/worktree-deps",
     "@crane/agent-drivers",
-    "@crane/backend-runtime"
+    "@crane/backend-runtime",
+    "@crane/storage"
   ],
   "engines": {
     "node": ">=20.19"
@@ -67,7 +69,8 @@
     "commander": "^14.0.3",
     "hono": "^4.13.14",
     "picocolors": "^1.1.1",
-    "@crane/backend-runtime": "0.1.0"
+    "@crane/backend-runtime": "0.1.0",
+    "@crane/storage": "0.1.0"
   },
   "devDependencies": {
     "@babel/parser": "^7.29.12",

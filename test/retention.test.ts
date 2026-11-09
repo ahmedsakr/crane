@@ -5,9 +5,11 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, wr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ALL_STATUSES, FINISHED_STATUSES, type TaskStatus } from "@crane/contracts";
-import { Store } from "../src/core/store.js";
-import { StorageMaintenance } from "../src/core/retention.js";
-import { pruneOrphanScreenshots, retainScreenshots, screenshotPath } from "../src/core/screenshots.js";
+import { Store } from "@crane/storage";
+import { StorageMaintenance } from "@crane/storage";
+import { retainScreenshots, screenshotPath } from "@crane/storage";
+// Keep private tests on the compiled Store identity used by actions and routes.
+import { pruneOrphanScreenshots } from "../packages/storage/dist/screenshots.js";
 import { OperatorActions } from "../src/factory/actions.js";
 import { createApp } from "../src/server/app.js";
 

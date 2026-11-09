@@ -1,7 +1,7 @@
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { join } from "node:path";
 import { onFixtureCleanup, temporaryRoot } from "./support/fixtures.js";
 

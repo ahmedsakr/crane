@@ -6,8 +6,37 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { draftTask } from "../src/factory/instruct.js";
 import { parseReport } from "@crane/agent-protocol";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import type { Repo } from "@crane/contracts";
+import { temporaryRoot } from "./support/fixtures.ts";
+
+test("store: extraction preserves schema and persisted rows across ordinary opens", (t) => {
+  const file = join(temporaryRoot(t, "crane-storage-reopen-"), "crane.db");
+  const store = new Store(file);
+  const repo = store.addRepo({ path: "/code/persisted" });
+  const task = store.createTask({ kind: "maintenance", title: "Persisted", brief: "Keep", repoId: repo.id, autonomy: "observe" });
+  store.access.createOperator({ username: "robin", name: "Robin", role: "admin", passwordHash: "digest", at: "2026-01-01T00:00:00Z" });
+  store.claimNextTask("a-1");
+  store.addEvent(task.id, "note", "Persist this event");
+  store.close();
+  const snapshot = () => {
+    const db = new Database(file, { readonly: true });
+    try {
+      const schema = db.prepare("SELECT * FROM sqlite_master ORDER BY type, name").all();
+      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name").all() as { name: string }[];
+      const rows = tables.map(({ name }) => db.prepare('SELECT * FROM "' + name.replaceAll('"', '""') + '" ORDER BY rowid').all());
+      return { schema, rows, version: db.pragma("user_version"), vacuum: db.pragma("auto_vacuum") };
+    } finally {
+      db.close();
+    }
+  };
+  const before = snapshot();
+  const reopened = new Store(file);
+  assert.equal(reopened.getTask(task.id)?.title, "Persisted");
+  assert.equal(reopened.access.countOperators(), 1);
+  reopened.close();
+  assert.deepEqual(snapshot(), before);
+});
 
 const repo = (name: string, isFactory = false): Repo => ({
   id: `r-${name}`,

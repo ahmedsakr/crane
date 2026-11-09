@@ -1,7 +1,7 @@
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
 import { errorMessage, type Repo, type Task, type TaskStatus } from "@crane/contracts";
-import type { Store } from "../core/store.js";
+import type { Store } from "@crane/storage";
 import { worktreesDir } from "@crane/backend-runtime";
 import { putAwayWorktree } from "./git.js";
 

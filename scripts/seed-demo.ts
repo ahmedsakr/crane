@@ -9,7 +9,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { craneHome } from "@crane/backend-runtime";
 import { OperatorActions } from "../src/factory/actions.js";
 import { withActor } from "@crane/backend-runtime";

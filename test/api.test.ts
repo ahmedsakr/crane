@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { createApp } from "../src/server/app.js";
 import { ALL_STATUSES, type TaskSummary } from "@crane/contracts";
 import { driverEffortKey, driverModelKey } from "../src/factory/settings.js";

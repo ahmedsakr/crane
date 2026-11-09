@@ -11,7 +11,7 @@ import {
 } from "@crane/contracts";
 import type { Command } from "commander";
 import pc from "picocolors";
-import type { Store } from "../../core/store.js";
+import type { Store } from "@crane/storage";
 import type { CliContext } from "../context.js";
 import * as ui from "../ui.js";
 import { registerCrewSchedules } from "./crew-schedules.js";

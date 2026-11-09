@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { errorMessage, type Repo, type Report, type Task, type ValidationRun } from "@crane/contracts";
 import type { AgentJob } from "@crane/agent-protocol";
 import { worktreesDir } from "@crane/backend-runtime";
-import { retainScreenshots } from "../core/screenshots.js";
+import { retainScreenshots } from "@crane/storage";
 import { runAgent } from "./agent-runner.js";
 import type { DashboardBuilder } from "./dashboard.js";
 import { driverFor } from "./driver-selection.js";

@@ -1,5 +1,5 @@
 import { actorLabel, type EventActor, type InviteCheck, type InviteSummary } from "@crane/contracts";
-import type { InviteRecord, NewInvite } from "../../core/store/access.js";
+import type { InviteRecord, NewInvite } from "@crane/storage";
 import { hashPassword, newToken, tokenDigest } from "../auth-crypto.js";
 import { AccessError } from "./access-errors.js";
 import {

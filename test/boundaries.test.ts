@@ -39,14 +39,10 @@ test("boundaries: agent drivers depend only on contracts, protocol, policy, diag
     ref.spec !== null && (allowed.has(ref.spec) || ref.spec.startsWith("node:"))), []);
 });
 
-test("boundaries: core depends on nothing above it", () => {
-  // Factory, server and CLI build on core, so core importing any of them is a directory-level loop.
-  const core = sources.filter((f) => f.startsWith("core/"));
-  assert.ok(core.includes("core/store.ts"), "expected to find core sources");
-  for (const file of core) {
-    const bad = importsOf(file).filter((i) => /^(factory|server|cli|agents)\//.test(i));
-    assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
-  }
+test("boundaries: storage depends only on Node, SQLite, contracts and backend runtime", () => {
+  const allowed = new Set(["@crane/contracts", "@crane/backend-runtime", "better-sqlite3"]);
+  assert.deepEqual(packageImportViolations(join(root, "packages/storage/src"), (ref) =>
+    ref.spec !== null && (allowed.has(ref.spec) || ref.spec.startsWith("node:"))), []);
 });
 
 test("boundaries: only the driver registry imports concrete agents", () => {
@@ -224,7 +220,7 @@ const DATABASE_EXCEPTIONS = new Map([
 ]);
 
 test("responsibilities: only the store opens and queries the database", () => {
-  const owned = (path: string) => path === "src/core/store.ts" || path.startsWith("src/core/store/");
+  const owned = (path: string) => path.startsWith("packages/storage/src/");
   const files = productionSources().filter((path) => !owned(path));
   assert.ok(files.includes("src/factory/orchestrator.ts") && files.includes("web/src/App.tsx"), "expected production sources");
   const violations = files.flatMap((path) => databaseViolations(path, read(root, path))
@@ -278,7 +274,7 @@ test("responsibilities: CLI commands and API routes change state only through Op
   assert.ok(files.includes("cli/commands/do.ts") && files.includes("server/routes/tasks.ts"), "expected command and route sources");
   assert.deepEqual(files.flatMap((path) => stateChangeViolations(path, read(src, path))), []);
   // The allowed reads are all real Store methods, and each exception is still used.
-  const facade = read(src, "core/store.ts");
+  const facade = read(root, "packages/storage/src/store.ts");
   for (const name of [...STORE_READS, ...Object.keys(STORE_EXCEPTIONS)]) assert.match(facade, new RegExp(`^  ${name}\\(`, "m"), name);
   const used = files.map((path) => read(src, path)).join("\n");
   for (const name of Object.keys(STORE_EXCEPTIONS)) assert.match(used, new RegExp(`store\\.${name}\\(`), `${name} is no longer needed`);
@@ -302,7 +298,7 @@ test("responsibilities: the state check catches writes, raw database use and wri
   assert.deepEqual(check('import { writeFileSync } from "node:fs";'), ["cli/commands/sample.ts:1 imports writeFileSync from node:fs"]);
   assert.deepEqual(check('import { execFileSync } from "node:child_process";'), ["cli/commands/sample.ts:1 imports node:child_process"]);
   assert.deepEqual(check('await import("../serve.js");'), ["cli/commands/sample.ts:1 loads cli/serve"]);
-  assert.deepEqual(check('import type { Store } from "../../core/store.js";\nimport { shared } from "./shared.js";'), []);
+  assert.deepEqual(check('import type { Store } from "@crane/storage";\nimport { shared } from "./shared.js";'), []);
 });
 
 test("boundaries: backend runtime depends only on Node and contract types", () => {

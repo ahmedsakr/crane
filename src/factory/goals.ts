@@ -1,5 +1,5 @@
 import { DRIVER_NAMES, EFFORT_LEVELS, type Goal, type NewTask, type Repo, type TaskRunOptions } from "@crane/contracts";
-import type { Store } from "../core/store.js";
+import type { Store } from "@crane/storage";
 import { driverSettings } from "./drivers.js";
 
 export interface GoalResearchRequest {

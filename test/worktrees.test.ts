@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { sh } from "./support/git.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { OperatorActions } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import { createWorktree } from "../src/factory/git.js";

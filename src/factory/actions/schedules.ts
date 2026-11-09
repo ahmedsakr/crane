@@ -7,7 +7,7 @@ import {
   type CrewScheduleInput,
 } from "@crane/contracts";
 import { shortId } from "@crane/backend-runtime";
-import type { Store } from "../../core/store.js";
+import type { Store } from "@crane/storage";
 import { createRoleRun } from "./crew.js";
 
 export function listCrewSchedules(store: Store, agentId?: string): CrewSchedule[] {

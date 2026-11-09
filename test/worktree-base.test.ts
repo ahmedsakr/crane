@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { SimulatedDriver } from "@crane/agent-drivers";
 import type { Autonomy, NewTask } from "@crane/contracts";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { OperatorActions } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import { createWorktree, diffForTask, finalizeWorktree, PreparationHold } from "../src/factory/git.js";

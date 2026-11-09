@@ -39,8 +39,8 @@ project.json here sets `name` to the package name and uses the object `dependsOn
 form, so none of them changes the graph.
 
 The wiring task ran `nx show projects --json` with `NX_DAEMON=false` (Node
-v24.14.0, Linux x64): Nx lists exactly the nine projects below. A full
-typecheck has 15 tasks, 9 of them cacheable: the seven package `typecheck`
+v24.14.0, Linux x64). After runtime and storage extraction the graph has eleven projects below. A full
+typecheck has 19 tasks, 11 of them cacheable: the eight package `typecheck`
 targets are no-ops and don't cache. `test/nx-graph.test.ts` checks the files
 Nx reads, not Nx's computed graph.
 
@@ -58,8 +58,9 @@ Nx infers from package.json and the ones in project.json can't disagree.
 | `@crane/worktree-deps` | `packages/worktree-deps` | diagnostics | `build`, `typecheck` |
 | `@crane/agent-drivers` | `packages/agent-drivers` | contracts, agent-protocol, agent-policy, diagnostics | `build`, `typecheck` |
 | `@crane/backend-runtime` | `packages/backend-runtime` | contracts | `build`, `typecheck` |
+| `@crane/storage` | `packages/storage` | backend-runtime, contracts | `build`, `typecheck` |
 | `@crane/web` | `web` | contracts | `build`, `typecheck` |
-| `backend` | `src` | all seven packages (the root manifest's `@crane/*` dependencies) | `build`, `typecheck` |
+| `backend` | `src` | all eight packages (the root manifest's `@crane/*` dependencies) | `build`, `typecheck` |
 | `checks` | `test` | every other project | `typecheck`, `test` |
 
 Each project's `implicitDependencies` lists its edges explicitly. For packages
@@ -87,8 +88,8 @@ executor wins. The leftover inferred targets (packages' `dev`, web's `dev`,
 | Target | Meaning | Cache |
 | --- | --- | --- |
 | `build` | Packages: `tsc -b packages/<dir>/tsconfig.json`, which type-checks and emits `dist/` with its build info. Backend: the same esbuild command as `build:backend`, emitting the root `dist/`. Web: `vite build` into `web/dist/`. Each depends on `^build` | packages local; backend and web **never** |
-| `typecheck` | Packages: `nx:noop` after `build`, because a composite build is the type check. Backend: `tsc -p tsconfig.json --noEmit`. Web: `tsc -p tsconfig.json --noEmit` in `web/`. Checks: `tsc -p tsconfig.test.json`. Each depends on the builds it imports: `^build`, and for checks the seven package builds, not the backend or web bundles | local |
-| `test` | `checks` only: `node --import tsx scripts/run-test-groups.ts --full`, after the seven package builds | **never** |
+| `typecheck` | Packages: `nx:noop` after `build`, because a composite build is the type check. Backend: `tsc -p tsconfig.json --noEmit`. Web: `tsc -p tsconfig.json --noEmit` in `web/`. Checks: `tsc -p tsconfig.test.json`. Each depends on the builds it imports: `^build`, and for checks the eight package builds, not the backend or web bundles | local |
+| `test` | `checks` only: `node --import tsx scripts/run-test-groups.ts --full`, after the eight package builds | **never** |
 
 Package builds cache because their output is complete: `outDir` and
 `tsBuildInfoFile` are both inside the `dist/` Nx stores and restores, so a
@@ -118,10 +119,10 @@ starts npm, Nx or `scripts/tasks.ts`, so nothing recurses, and the root has no
 
 | Command | What runs |
 | --- | --- |
-| `npm run typecheck` | Link check, then `nx run-many -t typecheck` over all nine projects: every package build, backend, web, and tests with scripts |
-| `npm test` | Link check, `nx run-many -t build` for the seven packages, then one runner over every root suite (`testPlan`, the same files as the old `test/*.test.ts` glob) |
+| `npm run typecheck` | Link check, then `nx run-many -t typecheck` over all eleven projects: every package build, backend, web, and tests with scripts |
+| `npm test` | Link check, `nx run-many -t build` for the eight packages, then one runner over every root suite (`testPlan`, the same files as the old `test/*.test.ts` glob) |
 | `npm run affected:typecheck -- --base <rev> (--head <rev> \| --working-tree)` | Link check, then `typecheck` for the changed projects and every project that depends on them |
-| `npm run affected:test -- --base <rev> (--head <rev> \| --working-tree)` | Link check, the seven package builds, then the suites of the affected test groups |
+| `npm run affected:test -- --base <rev> (--head <rev> \| --working-tree)` | Link check, the eight package builds, then the suites of the affected test groups |
 
 Add `--list` to an affected command to print its selection and the Nx command
 as JSON without running anything. The link check (`scripts/check-workspace-links.mjs`)

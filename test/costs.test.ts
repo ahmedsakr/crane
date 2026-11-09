@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { usageFromResult } from "../packages/agent-drivers/src/claude-code.js";
 import { usageFromTurn } from "../packages/agent-drivers/src/codex.js";
 import { Factory } from "../src/factory/orchestrator.js";

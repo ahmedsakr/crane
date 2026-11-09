@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { aggregateAnalytics } from "../src/core/store/analytics.js";
-import type { Row } from "../src/core/store/rows.js";
+import { aggregateAnalytics } from "../packages/storage/src/store/analytics.js";
+import type { Row } from "../packages/storage/src/store/rows.js";
 
 function run(taskId: string, finishedAt: number, usd: number, extra: Row = {}): Row {
   return {

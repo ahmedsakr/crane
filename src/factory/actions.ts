@@ -21,8 +21,8 @@ import type {
   TaskGates,
   TaskRunOptions,
 } from "@crane/contracts";
-import type { Store } from "../core/store.js";
-import type { SessionListing } from "../core/store/access.js";
+import type { Store } from "@crane/storage";
+import type { SessionListing } from "@crane/storage";
 import { generatePassword } from "./auth-crypto.js";
 import * as access from "./actions/access.js";
 import * as invites from "./actions/access-invites.js";

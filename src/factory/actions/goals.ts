@@ -1,5 +1,5 @@
 import { validateGoalPlan, type DriverName, type Goal, type NewGoal, type TaskRunOptions } from "@crane/contracts";
-import type { Store } from "../../core/store.js";
+import type { Store } from "@crane/storage";
 import { checkTaskRunOptions, nextRun } from "../action-inputs.js";
 import { goalResearchTask } from "../goals.js";
 import { preApprove } from "./review.js";

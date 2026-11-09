@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { parseReport } from "@crane/agent-protocol";
 
 test("checks: operator configuration overrides factory defaults and remains distinct from unconfigured", () => {

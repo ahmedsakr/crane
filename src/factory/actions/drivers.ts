@@ -1,5 +1,5 @@
 import { driverLabel, type DriverInfo } from "@crane/contracts";
-import type { Store } from "../../core/store.js";
+import type { Store } from "@crane/storage";
 import { checkDriver, checkDriverSettings } from "../action-inputs.js";
 import { driverCatalog, isAvailable, sharedDrivers } from "../drivers.js";
 import { DEFAULT_DRIVER_KEY, driverEffortKey, driverModelKey } from "../settings.js";

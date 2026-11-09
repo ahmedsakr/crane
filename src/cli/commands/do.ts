@@ -18,7 +18,7 @@ import {
 import * as p from "@clack/prompts";
 import type { Command } from "commander";
 import pc from "picocolors";
-import type { Store } from "../../core/store.js";
+import type { Store } from "@crane/storage";
 import { checkScheduledAt } from "../../factory/actions.js";
 import { draftTask } from "../../factory/instruct.js";
 import { factoryIsRunning } from "../../factory/state.js";

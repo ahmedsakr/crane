@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
 import { actorLabel, describeClient, normalizeUsername, type EventActor } from "@crane/contracts";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { actorSnapshot, withActor } from "@crane/backend-runtime";
 import { AccessError, OperatorActions } from "../src/factory/actions.js";
 import { dummyVerify, hashPassword, newToken, tokenDigest, verifyPassword } from "../src/factory/auth-crypto.js";

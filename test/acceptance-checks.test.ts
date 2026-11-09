@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { acceptanceCheckRun, unmetAcceptance, validateGoalPlan, type NewTask, type Report, type ValidationRun, type VisualReview } from "@crane/contracts";
 import { parseReport } from "@crane/agent-protocol";
 import { SimulatedDriver } from "@crane/agent-drivers";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { OperatorActions } from "../src/factory/actions.js";
 import { Factory } from "../src/factory/orchestrator.js";
 import { systemPrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";

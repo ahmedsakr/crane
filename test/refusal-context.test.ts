@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AgentRunError, type AgentDriver, type AgentJob } from "@crane/agent-protocol";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { runAgent } from "../src/factory/agent-runner.js";
 import { resumePrompt, systemPrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
 

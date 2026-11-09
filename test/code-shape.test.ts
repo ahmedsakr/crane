@@ -47,7 +47,7 @@ test("every source file is within every rule, with no exemptions", () => {
 });
 
 test("the tree has no long function, nested ternary, or long production file", () => {
-  assert.ok(TREE.some((file) => file.path === "src/core/store.ts"), "expected to scan the tree");
+  assert.ok(TREE.some((file) => file.path === "packages/storage/src/store.ts"), "expected to scan the tree");
   const longest = Math.max(...TREE.flatMap((file) => file.functions.map((fn) => fn.codeLines)));
   assert.ok(longest <= LIMITS.functionLines, `longest function: ${longest} lines`);
   assert.deepEqual(TREE.flatMap((file) => file.violations.filter((v) => v.rule === "nestedTernary")), []);

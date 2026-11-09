@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { visualReviewPending, type Report, type VisualReview } from "@crane/contracts";
 import { parseReport } from "@crane/agent-protocol";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { OperatorActions } from "../src/factory/actions.js";
 import { createApp } from "../src/server/app.js";
 import { requireCandidateVisualReview, visualReviewRequired, type VisualCandidate } from "../src/factory/visual-review.js";

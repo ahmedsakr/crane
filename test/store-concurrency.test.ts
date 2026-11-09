@@ -4,7 +4,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 
 /**
  * Every process opens the same database, so a transaction that reads and then

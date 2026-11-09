@@ -14,7 +14,7 @@ skip tests in the full suite, or replace either gate.
 
 npm installs and links workspaces using `package-lock.json`; Nx orchestrates
 tasks installed by npm. `npm run typecheck` selects every project's typecheck
-and prerequisite builds. `npm test` builds all seven packages then executes all
+and prerequisite builds. `npm test` builds all eight packages then executes all
 root suites once. Both retain full coverage and remain the factory defaults;
 operator-configured checks, candidate evidence and sandbox deferrals are
 unchanged. A local affected pass is development feedback, not full factory

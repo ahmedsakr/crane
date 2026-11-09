@@ -1,7 +1,7 @@
 import { serve as honoServe, type ServerType } from "@hono/node-server";
 import pc from "picocolors";
 import type { AgentDriver } from "@crane/agent-protocol";
-import type { Store } from "../core/store.js";
+import type { Store } from "@crane/storage";
 import { createApp, type AppOptions } from "../server/app.js";
 import { checkExposure, type ExposureCheck } from "../server/security.js";
 import { Factory } from "../factory/orchestrator.js";

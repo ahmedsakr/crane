@@ -1,7 +1,7 @@
 import { LOOKOUTS, driverLabel, errorMessage, type BlockedTool, type Lookout } from "@crane/contracts";
 import type { Command } from "commander";
 import pc from "picocolors";
-import type { Store } from "../../core/store.js";
+import type { Store } from "@crane/storage";
 import { checkLookouts } from "../../factory/actions.js";
 import { factoryDriverName, factoryIsRunning } from "../../factory/state.js";
 import * as ui from "../ui.js";

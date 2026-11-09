@@ -4,7 +4,7 @@ import { isAbsolute, join, relative } from "node:path";
 import { git } from "@crane/backend-runtime";
 import { worktreesDir } from "@crane/backend-runtime";
 import { slugify } from "@crane/backend-runtime";
-import type { LandedCommit } from "../core/store.js";
+import type { LandedCommit } from "@crane/storage";
 import { fetchDefault } from "./merge-fetch.js";
 import { newestDefault, remoteFor, why } from "./merge-git.js";
 import type { Task, Repo, TaskDiff } from "@crane/contracts";

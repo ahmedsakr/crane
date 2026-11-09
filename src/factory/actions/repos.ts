@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import type { Repo } from "@crane/contracts";
-import type { Store } from "../../core/store.js";
+import type { Store } from "@crane/storage";
 import { factoryRoot } from "../../application.js";
 import { inferDefaultBranch, isGitRepo, repoRoot } from "../git.js";
 

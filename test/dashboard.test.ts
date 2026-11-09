@@ -12,7 +12,7 @@ import {
   pruneDashboardBuilds,
   type BuildWeb,
 } from "../src/factory/dashboard.ts";
-import { Store } from "../src/core/store.ts";
+import { Store } from "@crane/storage";
 import { createApp } from "../src/server/app.ts";
 import type { Repo } from "@crane/contracts";
 

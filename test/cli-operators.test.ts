@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { actorSnapshot } from "@crane/backend-runtime";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { OperatorActions } from "../src/factory/actions.js";
 import { buildProgram, runCli } from "../src/cli/program.js";
 import { createCliContext, hostActor } from "../src/cli/context.js";

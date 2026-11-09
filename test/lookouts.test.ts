@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LOOKOUTS, lookoutsLabel, type Autonomy, type NewTask } from "@crane/contracts";
-import { Store } from "../src/core/store.js";
+import { Store } from "@crane/storage";
 import { OperatorActions, checkLookouts } from "../src/factory/actions.js";
 import { createApp } from "../src/server/app.js";
 import { resumePrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";

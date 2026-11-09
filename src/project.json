@@ -12,6 +12,7 @@
     "@crane/backend-runtime",
     "@crane/contracts",
     "@crane/diagnostics",
+    "@crane/storage",
     "@crane/worktree-deps"
   ],
   "targets": {
