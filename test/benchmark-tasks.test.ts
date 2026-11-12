@@ -18,10 +18,10 @@ test("benchmark: cases cover each extraction boundary with an existing file in t
   ]);
   assert.deepEqual(CASES.filter((entry) => entry.focus).map((entry) => entry.id), ["cli", "http"]);
   const projects = testProjects(root);
-  const expected: Record<string, string> = { web: "@crane/web", contracts: "@crane/contracts", runtime: "@crane/backend-runtime", storage: "@crane/storage", factory: "@crane/factory" };
   for (const entry of CASES) {
     assert.ok(existsSync(join(root, entry.file)), entry.file);
-    assert.equal(projectForPath(entry.file, projects), expected[entry.id] ?? "backend", entry.id);
+    assert.ok(projects.some((project) => project.name === entry.project), `${entry.id}: no project named ${entry.project}`);
+    assert.equal(projectForPath(entry.file, projects), entry.project, `${entry.id}: ${entry.file} is owned by another project; update its project in scripts/benchmark-tasks.ts`);
   }
 });
 

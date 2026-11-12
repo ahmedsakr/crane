@@ -221,8 +221,10 @@ checkout, which Crane's merge note reminds about), TypeScript references,
 public imports, `project.json` and the Nx contract in [nx.md](nx.md) with
 `test/nx-graph.test.ts`, test ownership in `scripts/test-groups.ts` and
 [test-groups.md](test-groups.md), the boundary rules in
-`test/boundaries.test.ts` and CLAUDE.md, the benchmark's case paths in
-`scripts/benchmark-tasks.ts`, and this document. The tasks run one at a time,
+`test/boundaries.test.ts` and CLAUDE.md, the benchmark's case paths and
+their owning `project` in `scripts/benchmark-tasks.ts` (checked by
+`test/benchmark-tasks.test.ts`, which runs without sockets or child processes,
+so sandboxed agents can run it directly), and this document. The tasks run one at a time,
 each starting from its predecessor merged to `main`, because every extraction
 rewrites the root manifest, root imports, architecture assertions and the
 ownership catalog.
