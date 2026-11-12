@@ -247,6 +247,7 @@ agent CLIs or listen on ports.
 | Claude tool result metadata and diagnostic redaction | `node --import tsx test/claude-evidence.test.ts` |
 | Dependency install progress, diagnostic bounds, and process outcomes (in-process fixtures) | `node --import tsx test/install-process.test.ts` |
 | Credential redaction corpus for every diagnostic consumer | `node --import tsx test/diagnostics.test.ts` |
+| Benchmark cases and the project that owns each probe file (any change that moves files between packages) | `node --import tsx test/benchmark-tasks.test.ts` |
 
 This is a conservative starting selection, not an exhaustive list of runnable
 files. For other task-relevant tests, inspect their setup and dependencies

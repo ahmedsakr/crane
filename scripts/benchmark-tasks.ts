@@ -22,18 +22,23 @@ export interface BenchCase {
   boundary: string;
   /** The file a probe export is appended to; small files keep code-shape limits safe. */
   file: string;
+  /**
+   * The Nx project that owns `file`. Moving the file to another package means updating
+   * this on the same line; `test/benchmark-tasks.test.ts` checks it against the graph.
+   */
+  project: string;
   /** Focus cases carry the acceptance target and run the full repetition count. */
   focus: boolean;
 }
 
 export const CASES: readonly BenchCase[] = [
-  { id: "cli", boundary: "CLI-only", file: "src/cli/ui.ts", focus: true },
-  { id: "http", boundary: "HTTP-only", file: "src/server/body.ts", focus: true },
-  { id: "factory", boundary: "factory-only", file: "packages/factory/src/elapsed.ts", focus: false },
-  { id: "storage", boundary: "storage-only", file: "packages/storage/src/store/shared.ts", focus: false },
-  { id: "runtime", boundary: "runtime-only", file: "packages/backend-runtime/src/ids.ts", focus: false },
-  { id: "web", boundary: "web-only", file: "web/src/lib/format.ts", focus: false },
-  { id: "contracts", boundary: "shared-contract", file: "packages/contracts/src/errors.ts", focus: false },
+  { id: "cli", boundary: "CLI-only", file: "src/cli/ui.ts", project: "backend", focus: true },
+  { id: "http", boundary: "HTTP-only", file: "src/server/body.ts", project: "backend", focus: true },
+  { id: "factory", boundary: "factory-only", file: "packages/factory/src/elapsed.ts", project: "@crane/factory", focus: false },
+  { id: "storage", boundary: "storage-only", file: "packages/storage/src/store/shared.ts", project: "@crane/storage", focus: false },
+  { id: "runtime", boundary: "runtime-only", file: "packages/backend-runtime/src/ids.ts", project: "@crane/backend-runtime", focus: false },
+  { id: "web", boundary: "web-only", file: "web/src/lib/format.ts", project: "@crane/web", focus: false },
+  { id: "contracts", boundary: "shared-contract", file: "packages/contracts/src/errors.ts", project: "@crane/contracts", focus: false },
 ];
 
 export type Phase = "cold" | "warm" | "uncached" | "changed" | "changed-uncached";
