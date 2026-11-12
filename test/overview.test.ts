@@ -1,3 +1,4 @@
+import "../src/application.js";
 import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
