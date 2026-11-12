@@ -1,6 +1,7 @@
 import { LOOKOUT, STATUS_LABEL, type CommandAccess, type PrerequisiteState, type Task, type Repo } from "@crane/contracts";
 import { REPORT_FENCE, type AgentJob, type FixChecksJob, type ResolveConflictsJob, type RunContext, type SiblingTask } from "@crane/agent-protocol";
 import { priorRefusalsBrief } from "./refusal-prompts.js";
+import { craneCliBrief } from "./crane-cli.js";
 import { AUTONOMY_BRIEF, FILE_EDIT_BRIEF, KIND_BRIEF, SANDBOX_BRIEF, SANDBOXED_AUTONOMY_BRIEF, SCREENSHOT_BRIEF, VALIDATION_BRIEF, blockedBrief, checkHandleBrief } from "./prompt-briefs.js";
 
 /**
@@ -28,6 +29,8 @@ export interface PromptOptions {
   commandAccess?: CommandAccess;
   /** Shell words that start Crane's check handle; only Claude Code, whose Bash tool reports no exit code. */
   checkHandle?: string;
+  /** Shell words that start the factory's own CLI for reading task records; only Claude Code (`crane-cli.ts`). */
+  craneCli?: string;
 }
 
 interface PromptBriefs { sandbox: string; checks: string; blocked: string }
@@ -50,6 +53,7 @@ export function systemPrompt(task: Task, repo: Repo | null, job?: AgentJob, opts
     sandbox,
     VALIDATION_BRIEF,
     checks,
+    craneCliBrief(opts.craneCli),
     FILE_EDIT_BRIEF,
     task.autonomy !== "observe" ? SCREENSHOT_BRIEF : "",
     reportInstructions(task),

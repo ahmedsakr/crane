@@ -105,6 +105,26 @@ test("cli: follow-up takes acceptance checks, and show reports Crane's result on
   }
 });
 
+test("cli: show --json prints the task, its runs and every event, tool calls included", async () => {
+  const { store, task } = setup();
+  try {
+    const shown = task("failed");
+    store.addEvent(shown.id, "note", "Started");
+    store.addEvent(shown.id, "tool", "Bash: npm test");
+    const result = await crane(store, "show", shown.id, "--json");
+    assert.equal(result.code, 0, result.err);
+    const record = JSON.parse(result.out);
+    assert.equal(record.task.id, shown.id);
+    assert.equal(record.task.status, "failed");
+    assert.deepEqual(record.events, JSON.parse(JSON.stringify(store.listEvents(shown.id))), "every event, not the last few");
+    assert.deepEqual(record.events.slice(-2).map((e: { type: string; message: string }) => [e.type, e.message]), [["note", "Started"], ["tool", "Bash: npm test"]]);
+    assert.ok(Array.isArray(record.runs) && Array.isArray(record.blocked) && Array.isArray(record.prerequisites));
+    assert.equal((await crane(store, "show", "t-missing", "--json")).code, 1);
+  } finally {
+    store.close();
+  }
+});
+
 test("cli: goals supports research, feedback, exact-version approval, progress and cancellation", async () => {
   const { store, repo } = setup();
   const dir = mkdtempSync(join(tmpdir(), "crane-goal-cli-"));

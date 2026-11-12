@@ -6,6 +6,7 @@ import type { Autonomy } from "@crane/contracts";
 import { runAgentProcess, runResumingSession } from "./agent-process.js";
 import { ClaudeStream } from "./claude-stream.js";
 import { checkHandleCommand, claudeSettings, guardForRun } from "./claude-guard.js";
+import { craneCliCommand, craneCliRules } from "./crane-cli.js";
 
 export { describeBlocked, usageFromResult } from "./claude-stream.js";
 
@@ -79,11 +80,15 @@ function operatorRules(repoAllowed: string[] = []): string[] {
  * only its positive list of inspection commands, without auto mode. A guard
  * that fails to answer leaves the call to this list (and, in auto mode, the
  * classifier). See docs/command-guard.md.
+ *
+ * `craneCli` adds narrow rules for the factory CLI's read-only `tasks` and
+ * `show` commands (`crane-cli.ts`), in every mode, so agents can read task logs.
  */
-export function toolsFor(autonomy: Autonomy, repoAllowed: string[] = []): { allowed: string[]; denied: string[] } {
+export function toolsFor(autonomy: Autonomy, repoAllowed: string[] = [], craneCli?: string): { allowed: string[]; denied: string[] } {
   const base = autonomy === "observe" ? READ_ONLY_TOOLS : WRITE_TOOLS;
   const denied = autonomy === "observe" ? ["Edit", "Write", "MultiEdit", "NotebookEdit", ...ALWAYS_DENIED] : ALWAYS_DENIED;
-  return { allowed: [...new Set([...base, ...operatorRules(repoAllowed)])], denied };
+  const cli = craneCliRules(craneCliCommand(craneCli));
+  return { allowed: [...new Set([...base, ...cli, ...operatorRules(repoAllowed)])], denied };
 }
 
 /**
@@ -114,7 +119,9 @@ export function claudeArgs(
     "stream-json",
     "--verbose",
     "--append-system-prompt",
-    systemPrompt(ctx.task, ctx.repo, ctx.job, { checks: ctx.checks, commandAccess: guard?.access, checkHandle: checkHandleFor(autonomy) }),
+    systemPrompt(ctx.task, ctx.repo, ctx.job, {
+      checks: ctx.checks, commandAccess: guard?.access, checkHandle: checkHandleFor(autonomy), craneCli: craneCliCommand(ctx.craneCli) ?? undefined,
+    }),
     "--permission-mode",
     mode,
     "--allowedTools",
@@ -164,7 +171,7 @@ export class ClaudeCodeDriver implements AgentDriver {
     // Resolving conflicts means editing files, so it gets write tools. ALWAYS_DENIED
     // still applies: Crane, not the agent, commits the merge and pushes it.
     const autonomy: Autonomy = ctx.job ? "propose" : ctx.task.autonomy;
-    const tools = toolsFor(autonomy, ctx.allowedTools);
+    const tools = toolsFor(autonomy, ctx.allowedTools, ctx.craneCli);
     const guard = guardForRun(ctx, operatorRules(ctx.allowedTools));
     return runAgentProcess({
       bin: this.bin,

@@ -35,7 +35,22 @@ export function registerShow(program: Command, ctx: CliContext): void {
     .description("Show a task: what it found and what it needs from you")
     .argument("<id>")
     .option("-e, --events", "show the full activity log")
-    .action((id: string, opts: { events?: boolean }) => showTask(ctx, id, opts));
+    .option("--json", "print the task, its runs, blocked commands and every event as JSON")
+    .action((id: string, opts: { events?: boolean; json?: boolean }) => (opts.json ? showTaskJson(ctx, id) : showTask(ctx, id, opts)));
+}
+
+/** Everything `--events` shows, as records: what agents read to investigate a task. */
+function showTaskJson({ store }: CliContext, id: string): void {
+  const task = store.getTask(id) ?? ui.fail(`No task ${id}`);
+  const blocked = store.blockedTools({ taskId: task.id, ...(task.repoId ? { repoId: task.repoId } : {}) });
+  console.log(JSON.stringify({
+    task,
+    goal: store.goalForTask(task.id),
+    prerequisites: store.prerequisiteStates(task),
+    runs: store.listRuns(task.id),
+    blocked,
+    events: store.listEvents(task.id),
+  }, null, 2));
 }
 
 function showTask({ store }: CliContext, id: string, opts: { events?: boolean }): void {

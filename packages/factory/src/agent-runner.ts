@@ -1,6 +1,8 @@
 import { driverLabel, type RunUsage } from "@crane/contracts";
 import { AgentRunError, addRunUsage, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
-import { craneHome } from "@crane/backend-runtime";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { craneHome, factoryRoot } from "@crane/backend-runtime";
 import type { Store } from "@crane/storage";
 import { driverSettings, isAvailable } from "./drivers.js";
 import { sleep } from "./run-limits.js";
@@ -18,8 +20,17 @@ export interface AgentRunnerDeps {
 /** What the caller decides about a run. The runner fills in usage, tools, limits and settings. */
 export type AgentRunRequest = Omit<
   RunContext,
-  "onUsage" | "allowedTools" | "commandAccess" | "craneHome" | "maxTurns" | "model" | "effort" | "logDirectory"
+  "onUsage" | "allowedTools" | "commandAccess" | "craneHome" | "craneCli" | "maxTurns" | "model" | "effort" | "logDirectory"
 >;
+
+/**
+ * The running factory's CLI entry, which agents may use to read task records.
+ * Its schema matches the live database, unlike the CLI on a task's branch.
+ */
+function factoryCli(): string | undefined {
+  const path = join(factoryRoot(), "bin", "crane.js");
+  return existsSync(path) ? path : undefined;
+}
 
 /**
  * Run the agent, giving a transient failure (overload, rate limit, network)
@@ -98,6 +109,7 @@ export async function runAgent(
       allowedTools: tools?.allowed ?? [],
       commandAccess: tools?.commands ?? "listed",
       craneHome: craneHome(),
+      craneCli: factoryCli(),
       maxTurns: deps.maxTurns || undefined,
       model: taskSettings?.model ?? taskSettings?.driverSettings?.model ?? model ?? undefined,
       effort: taskSettings?.effort ?? taskSettings?.driverSettings?.effort ?? effort ?? undefined,
