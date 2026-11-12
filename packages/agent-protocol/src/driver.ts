@@ -65,6 +65,12 @@ export interface RunContext {
   commandAccess?: CommandAccess;
   /** The factory's CRANE_HOME, where its database and worktrees live. */
   craneHome?: string;
+  /**
+   * Absolute path of the running factory's own CLI entry (`bin/crane.js`), so
+   * agents can read task records and activity logs with its read-only
+   * commands. It shares the factory's schema, unlike a task branch's CLI.
+   */
+  craneCli?: string;
   /** Stop the agent after this many turns. */
   maxTurns?: number;
   /** The model the operator chose for this agent. Unset leaves it to the driver's own default. */

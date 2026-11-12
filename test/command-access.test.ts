@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { COMMAND_ACCESS, COMMAND_ACCESS_LABEL, isCommandAccess } from "@crane/contracts";
 import type { AgentDriver, RunContext, RunResult } from "@crane/agent-protocol";
 import { Store } from "@crane/storage";
-import { worktreesDir } from "@crane/backend-runtime";
+import { factoryRoot, worktreesDir } from "@crane/backend-runtime";
 import { OperatorActions } from "@crane/factory/actions";
 import { runAgent } from "../packages/factory/src/agent-runner.js";
 import { createApp } from "../src/server/app.js";
@@ -157,6 +157,7 @@ test("command access: runAgent reads it and CRANE_HOME at the start of every run
     await run();
     assert.deepEqual(driver.calls.map((c) => c.commandAccess), ["listed", "auto"], "a change applies to the next run");
     assert.deepEqual(driver.calls.map((c) => c.craneHome), [process.env.CRANE_HOME, process.env.CRANE_HOME]);
+    assert.equal(driver.calls[0]!.craneCli, join(factoryRoot(), "bin", "crane.js"), "the factory's own CLI, for reading task logs");
 
     await runAgent({ store, maxTurns: 0, retryDelayMs: 1 }, "a-jib", driver, {
       task: store.getTask(task.id)!, repo: null, cwd: "/tmp", signal: new AbortController().signal, emit: () => {},

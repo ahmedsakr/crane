@@ -258,6 +258,15 @@ Crane follows design A. Every write-capable Claude Code run gets inline `--setti
 
 `--allowedTools` and `--disallowedTools` (with `ALWAYS_DENIED`) are the same in every mode. `--permission-mode` is `acceptEdits` in listed and most access and `auto` in auto access; [Auto mode](#auto-mode) covers the rest of that wiring.
 
+### Reading task logs
+
+Agents investigating earlier tasks, post-mortems especially, can read Crane's own records through the running factory's CLI. The factory passes its entry point (`<factory root>/bin/crane.js`) as `RunContext.craneCli`; using it rather than `npm run crane` from a checkout means the CLI always matches the live database's schema and never rebuilds a checkout's packages. `crane-cli.ts` turns it into `node <path>` and, for every Claude Code run, investigate-only included:
+
+- adds two narrow allow rules, `Bash(node <path> tasks:*)` and `Bash(node <path> show:*)`, never a broad `Bash(node:*)`;
+- briefs the agent on `tasks --all --json`, `show <id> --events` (report, runs, blocked commands and every event, tool calls included) and `show <id> --json` (the same records as JSON).
+
+Paths that would need shell quoting get neither, since Claude Code matches rules against the command text. The guard still classifies these calls as usual: `tasks` and `show` are read-only, and every other CLI command is an `operator-actions` refusal. In auto mode the classifier's environment notes that these two commands are investigation; whether auto mode suspends the narrow rules as it does `Bash(node:*)` hasn't been measured. Codex has no equivalent: its sandbox can't open the database outside the worktree.
+
 ## Investigate-only runs
 
 Investigate-only (`observe`) tasks run inside the **operator's checkout**, not an isolated task worktree. Most commands and auto mode therefore never apply to them as they do to write tasks. In `listed` repos their arguments and allowlist are unchanged: no hook, the existing `default` permission mode, `READ_ONLY_TOOLS` plus operator rules, and explicit Edit/Write/MultiEdit/NotebookEdit denies alongside `ALWAYS_DENIED`.
@@ -271,7 +280,7 @@ In `most` and `auto` repos, Crane installs the same hook with `profile: "inspect
 | `awk` | Inline program only; no `system`, redirection, pipes, `getline`, extension/include directives or concealed source escapes |
 | `jq`, `sort`, `uniq`, `cut`, `tr`, `wc`, `diff`, `cmp`, `file`, `stat`, `du`, `df`, `tree`, `which`, `type`, `basename`, `dirname`, `realpath`, `readlink`, `nl`, `column`, `comm`, `xxd`, `od` | Positive read-only flags only; no output-file options or operands, reverse `xxd`, compiled magic files, external helpers or unchecked scripts |
 | `git` | `log`, `show`, `diff`, `status`, `blame`, `rev-parse`, `ls-files`, `ls-tree`, `grep`, `branch --list`/`-a`/`-r`, `remote -v`, `describe`, `merge-base`, `cat-file`, `for-each-ref`, `shortlog`; no branch mutations, output-file options, external diff/textconv helpers or config overrides |
-| `npm` | `ls`, `view`, or exactly `npm run --silent crane -- tasks\|show\|blocked\|repos\|diff ... --json`, with query flags only |
+| `npm` | `ls`, `view`, or exactly `npm run --silent crane -- tasks\|show\|blocked\|repos\|diff ... --json`, with query flags only (of these, only `tasks` and `show` accept `--json`) |
 | `node --version` | No other Node flags or programs |
 
 Existing read-only shell tools (`head`, `tail`, `cat`, `grep`, `rg`, `ls`, `pwd`) also have positive read-only forms so they can participate in pipelines. Every stage must qualify, for example `git log --oneline | head -20` or `find src -name '*.ts' | sort`. Sequential read-only commands may use `&&`, `||`, `;` or newlines. The installed CLI's hook allow covers compounds and pipelines (question 1); Crane does not widen Bash to achieve this.

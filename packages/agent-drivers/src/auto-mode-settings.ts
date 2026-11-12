@@ -30,7 +30,7 @@ function environment(ctx: GuardContext): string[] {
   }
   entries.push(
     `**Trusted repo**: This repository and its configured remotes. Pushing, merging and moving the default branch \`${ctx.defaultBranch}\` happen only through Crane, after the operator approves.`,
-    "**Crane control plane**: The local Crane API (any localhost or 127.0.0.1 URL whose path starts with /api/, by default on port 4471) and the Crane CLI's state-changing commands (such as `crane approve`, `crane merge` or `npm run crane -- <command>`) belong to the human operator.",
+    "**Crane control plane**: The local Crane API (any localhost or 127.0.0.1 URL whose path starts with /api/, by default on port 4471) and the Crane CLI's state-changing commands (such as `crane approve`, `crane merge` or `npm run crane -- <command>`) belong to the human operator. Reading task records with the CLI's read-only `tasks` and `show` commands is investigation, not an operator action.",
   );
   return entries;
 }

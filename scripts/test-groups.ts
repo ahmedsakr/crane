@@ -30,7 +30,7 @@ export const TEST_GROUPS: readonly TestGroup[] = [
     id: "package-agent-drivers", kind: "package", projects: ["@crane/agent-drivers"],
     suites: suites(
       "agent-process", "agent-streams", "check-handle", "claude-evidence",
-      "command-guard-driver", "command-guard-hook", "inspect-driver-args",
+      "command-guard-driver", "command-guard-hook", "crane-cli-access", "inspect-driver-args",
     ),
   },
   {
