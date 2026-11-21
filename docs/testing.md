@@ -351,8 +351,12 @@ but the `browser` field shows when two images came from different versions.
 
 ### Task activity browser review
 
-Run this from the candidate checkout in an operator-approved environment with
-installed dependencies, Chromium, and permission to run the fixture on loopback.
+Confirm the review owner before queueing the task as described in
+[Visual review before approval](../README.md#visual-review-before-approval).
+The named operator or approved runner runs this from a clean, disposable
+checkout of the full candidate SHA shown in **Visual review** or
+`crane show <id>`, with installed dependencies, Chromium, and permission to
+run the fixture on loopback.
 `--fixture --activity-review` starts a fresh disposable home for each viewport.
 It adds a long instruction, a live task with 180 numbered entries, and a second
 task with its own history. The smoke test appends two notes to the live task on
@@ -379,8 +383,13 @@ npm run build:packages && npm run build -w web && (
 ```
 
 The run starts at `/tasks` and opens the seeded `/tasks/<id>` detail routes in
-the same browser session. The screenshot command exits on the first failed
-assertion. Record what passed, failed, or was skipped at each size.
+the same browser session. Retain the exact commands, process exit statuses,
+and logs for both builds and for each viewport invocation. Run each command
+through your runner's process reporting so the loop's final status does not
+stand in for individual results. The screenshot command exits on the first
+failed assertion. Record what passed, failed, or was skipped at each size,
+including any later sizes skipped when the loop stops. Mark an invocation
+with missing exit evidence as unknown.
 
 | Interaction | Expected outcome |
 | --- | --- |
@@ -392,9 +401,13 @@ assertion. Record what passed, failed, or was skipped at each size.
 Open all nine PNGs. At each size, check that Instruction and Activity stay
 within their cards, the focused Instruction remains readable, older entries
 fit without horizontal overflow, and the latest live entry is visible after
-switching back. In the task review record, include the candidate commit, each
-viewport’s interaction outcome, and the screenshot paths and inspection results.
-Record any unreviewed scope explicitly if the operator chooses to waive it.
+switching back. Retain the PNGs and command records somewhere the operator can
+access after the disposable checkout is removed. In the task review record,
+include the full candidate SHA, each viewport’s interaction outcome, the
+screenshot paths and inspection results, and where to find the command records.
+If Crane asks for a fresh visual decision, run the affected checks on the
+new candidate and record its SHA with the new evidence. Record any unreviewed
+scope explicitly if the operator chooses to waive it.
 
 ## Multi-operator remote access
 
