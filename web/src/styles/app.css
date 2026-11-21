@@ -2064,6 +2064,7 @@ button.file-row:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: -1px;
 }
+.visual-capture pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .visual-review-fields {
   display: grid;
   gap: 12px;

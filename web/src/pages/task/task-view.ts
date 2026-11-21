@@ -119,6 +119,11 @@ export function visualReviewText(task: VisualReviewTask): string | undefined {
   return task.visualReview?.note;
 }
 
+export function visualCaptureLabel(task: VisualReviewTask): string | undefined {
+  if (!task.branch || task.visualReview?.status === "not_required") return undefined;
+  return visualReviewPending(task) ? "Visual review checklist" : "Optional capture and inspection";
+}
+
 export function decisionHeading(branch: string | null, mergeError: string | undefined, main: string): string {
   if (mergeError) return `Couldn't merge into ${main}`;
   return branch ? "Changes are ready for review" : "The report is ready";

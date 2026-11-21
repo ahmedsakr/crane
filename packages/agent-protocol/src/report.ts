@@ -49,14 +49,7 @@ export function parseReport(finalText: string): Report {
             reason: String((raw.completion as Record<string, unknown>).reason).trim().slice(0, 2000),
             evidence: String((raw.completion as Record<string, unknown>).evidence).trim().slice(0, 4000),
           } } : {}),
-        ...(raw.visualReview && typeof raw.visualReview === "object"
-          && typeof (raw.visualReview as Record<string, unknown>).required === "boolean"
-          && typeof (raw.visualReview as Record<string, unknown>).reason === "string"
-          && String((raw.visualReview as Record<string, unknown>).reason).trim()
-          ? { visualReview: {
-            required: (raw.visualReview as { required: boolean }).required,
-            reason: String((raw.visualReview as Record<string, unknown>).reason).slice(0, 2000),
-          } } : {}),
+        ...parseVisualReview(raw.visualReview),
         changedFiles: Array.isArray(raw.changedFiles) ? raw.changedFiles.map(String) : [],
         ...(Array.isArray(raw.screenshots) ? { screenshots: raw.screenshots
           .filter((s): s is Screenshot => !!s && typeof s === "object" && typeof s.path === "string" && typeof s.caption === "string")
@@ -71,6 +64,14 @@ export function parseReport(finalText: string): Report {
     }
   }
   return { summary: firstParagraph(finalText) || "The agent finished without a summary.", findings: [], changedFiles: [] };
+}
+
+function parseVisualReview(value: unknown): Pick<Report, "visualReview"> {
+  if (!value || typeof value !== "object") return {};
+  const { required, reason, captureInstructions } = value as Record<string, unknown>;
+  if (typeof required !== "boolean" || typeof reason !== "string" || !reason.trim()) return {};
+  const instructions = typeof captureInstructions === "string" ? captureInstructions.trim().slice(0, 10000) : "";
+  return { visualReview: { required, reason: reason.slice(0, 2000), ...(instructions ? { captureInstructions: instructions } : {}) } };
 }
 
 /**
