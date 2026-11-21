@@ -6,13 +6,14 @@ import { affectedTypecheckProjects, consumersOf } from "../scripts/affected-type
 import { changedPaths, gitIn, type Git } from "../scripts/changes.ts";
 import { NX_FLAGS, nxEnvironment, runTask, taskArguments, UsageError, type TaskArgs, type TaskHost } from "../scripts/tasks.ts";
 import { rootSuites } from "../scripts/test-ownership.ts";
-import { testProjects } from "../scripts/test-projects.ts";
+import { checkProjects, projectForPath, testProjects } from "../scripts/test-projects.ts";
 import { temporaryRoot } from "./support/fixtures.ts";
 import { sh } from "./support/git.ts";
 
 const root = join(import.meta.dirname, "..");
 const PACKAGES = testProjects(root).filter((project) => project.root.startsWith("packages/")).map((project) => project.name);
-const ALL = testProjects(root).map((project) => project.name);
+const CHECKS = checkProjects(root).map((project) => project.name);
+const ALL = [...testProjects(root).map((project) => project.name), ...CHECKS];
 
 test("tasks: arguments need an explicit base and exactly one head or working tree", () => {
   assert.deepEqual(taskArguments(["typecheck"]), { kind: "typecheck", list: false });
@@ -107,9 +108,9 @@ const selected = (paths: string[]) => {
   return selection.full ? [] : selection.projects;
 };
 
-test("affected typecheck: contracts select every downstream package, backend, web and checks", () => {
+test("affected typecheck: contracts select every downstream package, backend, web and all consuming partitions", () => {
   const projects = selected(["packages/contracts/src/task.ts"]);
-  for (const name of ["@crane/contracts", "@crane/agent-protocol", "@crane/agent-policy", "@crane/agent-drivers", "@crane/backend-runtime", "@crane/web", "backend", "checks"]) {
+  for (const name of ["@crane/contracts", "@crane/agent-protocol", "@crane/agent-policy", "@crane/agent-drivers", "@crane/backend-runtime", "@crane/web", "backend", ...CHECKS]) {
     assert.ok(projects.includes(name), name);
   }
   assert.ok(!projects.includes("@crane/diagnostics"));
@@ -117,23 +118,36 @@ test("affected typecheck: contracts select every downstream package, backend, we
 });
 
 test("affected typecheck: isolated changes omit unrelated projects and report their consumers", () => {
+  const leafChecks = ["checks-agents", "checks-cli", "checks-factory", "checks-http", "checks-storage", "checks-support", "checks-tooling", "checks-web-http"];
   assert.deepEqual(selected(["packages/diagnostics/src/index.ts"]).sort(),
-    ["@crane/agent-drivers", "@crane/diagnostics", "@crane/factory", "@crane/http-server", "@crane/worktree-deps", "backend", "checks"]);
-  assert.deepEqual(selected(["packages/agent-policy/src/denied.ts"]).sort(), ["@crane/agent-drivers", "@crane/agent-policy", "@crane/factory", "@crane/http-server", "backend", "checks"]);
-  assert.deepEqual(selected(["web/src/App.tsx"]).sort(), ["@crane/web", "checks"]);
-  assert.deepEqual(selected(["packages/storage/src/store.ts"]).sort(), ["@crane/factory", "@crane/http-server", "@crane/storage", "backend", "checks"]);
-  assert.deepEqual(selected(["packages/backend-runtime/src/ids.ts"]).sort(), ["@crane/backend-runtime", "@crane/factory", "@crane/http-server", "@crane/storage", "backend", "checks"]);
-  assert.deepEqual(selected(["packages/http-server/src/body.ts"]).sort(), ["@crane/http-server", "backend", "checks"]);
-  assert.deepEqual(selected(["src/cli/ui.ts"]).sort(), ["backend", "checks"]);
-  assert.deepEqual(selected(["test/tasks.test.ts", "scripts/test-groups.ts"]), ["checks"]);
+    ["@crane/agent-drivers", "@crane/diagnostics", "@crane/factory", "@crane/http-server", "@crane/worktree-deps", "backend", ...leafChecks]);
+  assert.deepEqual(selected(["packages/agent-policy/src/denied.ts"]).sort(), ["@crane/agent-drivers", "@crane/agent-policy", "@crane/factory", "@crane/http-server", "backend", ...CHECKS]);
+  assert.deepEqual(selected(["web/src/App.tsx"]).sort(), ["@crane/web", "checks-web", "checks-web-http"]);
+  assert.deepEqual(selected(["packages/storage/src/store.ts"]).sort(), ["@crane/factory", "@crane/http-server", "@crane/storage", "backend", ...leafChecks.slice(1)]);
+  assert.deepEqual(selected(["packages/backend-runtime/src/ids.ts"]).sort(), ["@crane/backend-runtime", "@crane/factory", "@crane/http-server", "@crane/storage", "backend", ...leafChecks.slice(1)]);
+  assert.deepEqual(selected(["packages/http-server/src/body.ts"]).sort(), ["@crane/http-server", "backend", "checks-cli", "checks-http", "checks-support", "checks-tooling", "checks-web-http"]);
+  assert.deepEqual(selected(["src/cli/ui.ts"]).sort(), ["backend", "checks-cli"]);
+  assert.deepEqual(selected(["test/tasks.test.ts", "scripts/test-groups.ts"]), ["checks-support", "checks-tooling"]);
   const selection = affectedTypecheckProjects(root, ["packages/agent-policy/src/denied.ts", "docs/nx.md"]);
   assert.ok(!selection.full);
   if (!selection.full) {
     assert.deepEqual(selection.changed, ["@crane/agent-policy"]);
-    assert.deepEqual([...selection.consumers].sort(), ["@crane/agent-drivers", "@crane/factory", "@crane/http-server", "backend", "checks"]);
+    assert.deepEqual([...selection.consumers].sort(), ["@crane/agent-drivers", "@crane/factory", "@crane/http-server", "backend", ...CHECKS]);
     assert.deepEqual(selection.ignored, ["docs/nx.md"]);
   }
-  assert.deepEqual([...consumersOf(["checks"], testProjects(root))], [], "nothing consumes the suites");
+  assert.deepEqual([...consumersOf(CHECKS, [...testProjects(root), ...checkProjects(root)])], [], "nothing consumes a partition as a hub");
+});
+
+test("affected typecheck: virtual ownership and shared inputs are placed independently of physical roots", () => {
+  assert.deepEqual(selected(["test/report.test.ts"]), ["checks-agents"]);
+  assert.deepEqual(selected(["test/support/auth-e2e.ts"]), ["checks-cli"]);
+  assert.deepEqual(selected(["test/support/api-client.ts"]), ["checks-cli", "checks-http", "checks-support"]);
+  assert.deepEqual(selected(["scripts/fixture/activity-review.browser.js"]), ["checks-support"]);
+  assert.deepEqual(selected(["src/application.ts"]),
+    ["backend", "checks-cli", "checks-factory", "checks-http", "checks-storage", "checks-support", "checks-tooling", "checks-web-http"]);
+  const parent = { name: "parent", root: "test", dependencies: [] };
+  const child = { name: "child", root: "test/support", dependencies: [] };
+  assert.equal(projectForPath("test/support/input.ts", [parent, child]), "child");
 });
 
 test("affected typecheck: shared inputs, project configuration, unknown files and no inputs select everything", () => {
@@ -141,6 +155,7 @@ test("affected typecheck: shared inputs, project configuration, unknown files an
     ["package.json"], ["package-lock.json"], ["nx.json"], ["tsconfig.json"], ["scripts/check-workspace-links.mjs"],
     ["scripts/build.mjs"], ["packages/contracts/project.json"], ["web/package.json"], ["packages/diagnostics/tsconfig.json"],
     ["bin/crane.js"], ["packages/new/src/index.ts"], ["docs/nx.md"], ["web/src/App.tsx", "README.md", "unknown.txt"],
+    ["test/unassigned.test.ts"], ["test/support/ambient.d.mts"], ["test/typecheck/http/tsconfig.json"],
   ]) {
     const selection = affectedTypecheckProjects(root, paths);
     assert.equal(selection.full, true, paths.join(", "));
@@ -230,13 +245,13 @@ test("tasks: affected typecheck runs the changed projects and their consumers, w
   const run = host({ paths: ["packages/contracts/src/task.ts"] });
   assert.equal(await runTask(args(affected("typecheck")), run.fake), 0);
   const nx = run.steps[1]!;
-  for (const name of ["@crane/contracts", "@crane/agent-drivers", "@crane/web", "backend", "checks"]) assert.match(nx, new RegExp(`-p \\S*${name}`));
+  for (const name of ["@crane/contracts", "@crane/agent-drivers", "@crane/web", "backend", ...CHECKS]) assert.match(nx, new RegExp(`-p \\S*${name}`));
   assert.doesNotMatch(nx, /@crane\/diagnostics/);
   const log = run.logs.join("\n");
   assert.match(log, /Changed files \(1\): packages\/contracts\/src\/task.ts/);
   assert.match(log, /Changed projects: @crane\/contracts/);
   const consumers = /Dependent consumers: (.*)/.exec(log)?.[1]?.split(", ").sort();
-  assert.deepEqual(consumers, ["@crane/agent-drivers", "@crane/agent-policy", "@crane/agent-protocol", "@crane/backend-runtime", "@crane/factory", "@crane/http-server", "@crane/storage", "@crane/web", "backend", "checks"]);
+  assert.deepEqual(consumers, ["@crane/agent-drivers", "@crane/agent-policy", "@crane/agent-protocol", "@crane/backend-runtime", "@crane/factory", "@crane/http-server", "@crane/storage", "@crane/web", "backend", ...CHECKS]);
 });
 
 test("tasks: unavailable history and global inputs fall back to full work with an explanation", async () => {
@@ -309,7 +324,7 @@ test("tasks: --list prints the selection without checking links, building or run
   assert.equal(await runTask(args([...affected("typecheck"), "--list"]), run.fake), 0);
   assert.deepEqual(run.steps, []);
   const listed = JSON.parse(run.printed[0]!);
-  assert.deepEqual([listed.full, listed.projects.sort()], [false, ["@crane/web", "checks"]]);
+  assert.deepEqual([listed.full, listed.projects.sort()], [false, ["@crane/web", "checks-web", "checks-web-http"]]);
   assert.ok(ALL.length > listed.projects.length);
 });
 

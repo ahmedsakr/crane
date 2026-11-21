@@ -124,10 +124,10 @@ function selectChanges(changed: readonly string[], context: SelectionContext): T
     const project = projectForPath(file, projects);
     const config = /\/(project|package|tsconfig[^/]*)\.json$/.test(file);
     // Shared helpers/scripts/configs and unrecognized paths are deliberately global.
-    if ((!owner && (!project || project === "checks")) || config) {
+    if ((!owner && !project) || config) {
       return { ...full, fallback: [`Global or unclassified input: ${raw}`] };
     }
-    if (project && project !== "checks" && ![...dependencies.values()].some(({ closure }) => closure.has(project))) {
+    if (project && ![...dependencies.values()].some(({ closure }) => closure.has(project))) {
       return { ...full, fallback: [`Project has no test dependency owner: ${project}`] };
     }
     for (const group of groups) {

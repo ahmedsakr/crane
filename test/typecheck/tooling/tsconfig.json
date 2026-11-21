@@ -1,0 +1,21 @@
+{
+  "extends": "../../../tsconfig.checks.json",
+  "files": [
+    "../../benchmark-tasks.test.ts",
+    "../../boundaries.test.ts",
+    "../../build.test.ts",
+    "../../code-shape.test.ts",
+    "../../contracts.test.ts",
+    "../../dashboard.test.ts",
+    "../../nx-graph.test.ts",
+    "../../screenshot-fixture.test.ts",
+    "../../tasks-process.test.ts",
+    "../../tasks.test.ts",
+    "../../test-ownership.test.ts",
+    "../../test-runner-process.test.ts",
+    "../../test-runner.test.ts",
+    "../../webbuild.test.ts",
+    "../../workspace-links.test.ts",
+    "../../worktree-deps.test.ts"
+  ]
+}

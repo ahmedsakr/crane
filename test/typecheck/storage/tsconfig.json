@@ -1,0 +1,17 @@
+{
+  "extends": "../../../tsconfig.checks.json",
+  "files": [
+    "../../backend-runtime.test.ts",
+    "../../checks.test.ts",
+    "../../codex-costs.test.ts",
+    "../../command-evidence.test.ts",
+    "../../fixtures.test.ts",
+    "../../merge-queue.test.ts",
+    "../../overview.test.ts",
+    "../../store-analytics.test.ts",
+    "../../store-claims.test.ts",
+    "../../store-concurrency.test.ts",
+    "../../store-core.test.ts",
+    "../../task-summaries.test.ts"
+  ]
+}

@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { checkPartitionConfigs, partitionName, partitionRoot, partitionSuites } from "../scripts/check-partitions.ts";
 import { toolchain } from "../scripts/nx-toolchain.mjs";
 import { specifiers } from "./support/imports.ts";
 
@@ -29,12 +30,14 @@ type Project = { name: string; implicitDependencies: string[]; tags: string[]; t
 
 const packageDirs = readdirSync(join(root, "packages")).filter((dir) => existsSync(join(root, "packages", dir, "package.json")));
 const PACKAGES = packageDirs.map((dir) => `@crane/${dir}`).sort();
+const PARTITIONS = [...partitionSuites().keys(), "support"].map((id) => [partitionName(id), partitionRoot(id)] as const);
 /** Every project's root, by stable name. Nothing lives at the workspace root. */
 const ROOTS: Record<string, string> = {
   ...Object.fromEntries(packageDirs.map((dir) => [`@crane/${dir}`, `packages/${dir}`])),
   "@crane/web": "web",
   backend: "src",
   checks: "test",
+  ...Object.fromEntries(PARTITIONS),
 };
 const projects: Record<string, Project> = Object.fromEntries(
   Object.entries(ROOTS).map(([name, dir]) => [name, readJson(`${dir}/project.json`)]),
@@ -58,7 +61,7 @@ function projectFiles(dir: string): string[] {
   });
 }
 
-test("nx: the graph has exactly the ten packages, web, backend and checks", () => {
+test("nx: the graph has exactly the ten packages, web, backend, test runner and check partitions", () => {
   assert.equal(PACKAGES.length, 10);
   assert.deepEqual(projectFiles(".").sort(), Object.values(ROOTS).map((dir) => join(dir, "project.json")).sort(), "no other project.json");
   for (const [name, project] of Object.entries(projects)) assert.equal(project.name, name, `${ROOTS[name]}/project.json`);
@@ -89,7 +92,21 @@ test("nx: dependency edges match manifests and TypeScript references", () => {
   assert.deepEqual(projects.backend!.implicitDependencies, [...backendImports].sort(), "backend edges are src/'s workspace imports");
   const shipped = craneDeps(readJson("package.json"));
   for (const dep of projects.backend!.implicitDependencies) assert.ok(shipped.includes(dep), `the root manifest ships ${dep}`);
-  assert.deepEqual(projects.checks!.implicitDependencies, Object.keys(ROOTS).filter((name) => name !== "checks").sort(), "suites import everything");
+  assert.deepEqual(projects.checks!.implicitDependencies, [...PACKAGES, "@crane/web", "backend"].sort(), "full test runner edges");
+});
+
+test("nx: every suite has one compiler partition and its configuration matches the import audit", () => {
+  checkPartitionConfigs(root);
+  const references = readJson("tsconfig.test.json").references.map((ref: { path: string }) => ref.path);
+  assert.deepEqual(references, PARTITIONS.map(([, dir]) => `./${dir}`));
+  for (const [name] of PARTITIONS) {
+    const project = projects[name]!;
+    assert.ok(project.implicitDependencies.every((dep) => !dep.startsWith("checks")), "helpers are hashed directly across partitions");
+    assert.ok(project.targets.typecheck!.inputs!.includes("^default"), name);
+  }
+  for (const name of ["checks-agents", "checks-storage", "checks-factory", "checks-web", "checks-support"]) {
+    assert.ok(!projects[name]!.implicitDependencies.includes("backend"), `${name} skips the CLI`);
+  }
 });
 
 test("nx: the graph is acyclic and every edge names a project", () => {
@@ -108,7 +125,8 @@ test("nx: the graph is acyclic and every edge names a project", () => {
 
 test("nx: targets follow the contract in docs/nx.md", () => {
   const expected: Record<string, string[]> = Object.fromEntries(Object.keys(ROOTS).map((name) => [name, ["build", "typecheck"]]));
-  expected.checks = ["test", "typecheck"];
+  expected.checks = ["test"];
+  for (const [name] of PARTITIONS) expected[name] = ["typecheck"];
   for (const [name, project] of Object.entries(projects)) {
     assert.deepEqual(Object.keys(project.targets).sort(), expected[name], name);
     for (const [targetName, target] of Object.entries(project.targets)) {
@@ -143,7 +161,7 @@ test("nx: targets run the same commands as the public npm scripts", () => {
   assert.equal(command("@crane/web", "build"), web.build);
   assert.equal(command("@crane/web", "typecheck"), web.typecheck);
   assert.equal(command("backend", "typecheck"), "tsc -p tsconfig.json --noEmit");
-  assert.equal(command("checks", "typecheck"), "tsc -p tsconfig.test.json");
+  for (const [name, dir] of PARTITIONS) assert.equal(command(name, "typecheck"), `tsc -p ${dir}/tsconfig.json`);
   // The full runner over every root suite, never `npm test`, which would start Nx again.
   assert.equal(command("checks", "test"), "node --import tsx scripts/run-test-groups.ts --full");
 });
@@ -170,7 +188,9 @@ test("nx: public scripts reach Nx only through scripts/tasks.ts, and no target s
 
 test("nx: only deterministic package builds and typechecks cache; bundles and suites always run", () => {
   for (const name of PACKAGES) assert.equal(projects[name]!.targets.build!.cache, true, `${name}:build restores dist with its build info`);
-  for (const name of ["backend", "@crane/web", "checks"]) assert.equal(projects[name]!.targets.typecheck!.cache, true, name);
+  for (const name of ["backend", "@crane/web", ...PARTITIONS.map(([name]) => name)]) {
+    assert.equal(projects[name]!.targets.typecheck!.cache, true, name);
+  }
   // Staleness checks (backend-runtime/webbuild.ts) read these outputs' mtimes, which a cache restore can leave behind.
   assert.equal(projects.backend!.targets.build!.cache, false);
   assert.equal(projects["@crane/web"]!.targets.build!.cache, false);

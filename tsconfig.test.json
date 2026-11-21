@@ -1,13 +1,32 @@
 {
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "rootDir": ".",
-    "lib": ["ES2022", "DOM"],
-    "jsx": "react-jsx",
-    "noEmit": true,
-    "allowJs": true,
-    "checkJs": true,
-    "allowImportingTsExtensions": true
-  },
-  "include": ["test", "scripts"]
+  "files": [],
+  "references": [
+    {
+      "path": "./test/typecheck/agents"
+    },
+    {
+      "path": "./test/typecheck/storage"
+    },
+    {
+      "path": "./test/typecheck/factory"
+    },
+    {
+      "path": "./test/typecheck/http"
+    },
+    {
+      "path": "./test/typecheck/cli"
+    },
+    {
+      "path": "./test/typecheck/web"
+    },
+    {
+      "path": "./test/typecheck/web-http"
+    },
+    {
+      "path": "./test/typecheck/tooling"
+    },
+    {
+      "path": "./test/typecheck/support"
+    }
+  ]
 }

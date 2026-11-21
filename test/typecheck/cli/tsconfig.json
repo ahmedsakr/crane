@@ -1,0 +1,18 @@
+{
+  "extends": "../../../tsconfig.checks.json",
+  "files": [
+    "../../attribution.test.ts",
+    "../../auth-docs.test.ts",
+    "../../auth-e2e.test.ts",
+    "../../cli-next-steps.test.ts",
+    "../../cli-operators.test.ts",
+    "../../cli.test.ts",
+    "../../serve-address.test.ts",
+    "../../serve.test.ts",
+    "../../setup.test.ts",
+    "../../start.test.ts",
+    "../../support/auth-e2e.ts",
+    "../../tls-socket.test.ts",
+    "../../tls.test.ts"
+  ]
+}

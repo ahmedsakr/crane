@@ -35,11 +35,18 @@ function localUrl(node: Node): string | null {
 }
 
 /** Every module reference in a file, in source order, parsed rather than pattern-matched. */
-export function moduleRefs(file: string, options?: { literalUrls: boolean }): ModuleRef[] {
+export function moduleRefs(file: string, options?: { literalUrls?: boolean; referencePaths?: boolean }): ModuleRef[] {
   const ast = parseSource(readFileSync(file, "utf8"), file);
   const literal = (node: Node | null | undefined) => (node?.type === "StringLiteral" ? node.value : null);
   const found: { at: number; ref: ModuleRef }[] = [];
   const add = (node: Node, ref: ModuleRef) => found.push({ at: node.start ?? 0, ref });
+  if (options?.referencePaths) {
+    for (const comment of ast.comments ?? []) {
+      if ((comment.start ?? 0) > (ast.program.body[0]?.start ?? Infinity)) break;
+      const path = /^\/\s*<reference\s+path\s*=\s*["']([^"']+)["']/.exec(comment.value)?.[1];
+      if (path) found.push({ at: comment.start ?? 0, ref: { spec: `./${path}`, declaration: false, typeOnly: true } });
+    }
+  }
   const visit = (node: Node) => {
     if (node.type === "ImportDeclaration") {
       add(node, { spec: literal(node.source), declaration: true, typeOnly: node.importKind === "type" });

@@ -211,11 +211,15 @@ export function productionHost(root: string): TaskHost {
   return {
     root,
     checkLinks: () => checkWorkspaceLinks(root),
-    nx: (args, observeStdout) => {
+    nx: async (args, observeStdout) => {
       const nxBin = nxEntry(root);
       if (!nxBin) {
         console.error(`Nx is not installed in ${join(root, "node_modules", "nx")}.\nPlease run npm install in your checkout, then retry.`);
-        return Promise.resolve(1);
+        return 1;
+      }
+      if (args.includes("typecheck")) {
+        const { checkPartitionConfigs } = await import("./check-partitions.ts");
+        checkPartitionConfigs(root);
       }
       return runProcess(process.execPath, [nxBin, ...args], {
         cwd: root, label: "Nx", env: nxEnvironment(root), ...(observeStdout ? { observeStdout } : {}),

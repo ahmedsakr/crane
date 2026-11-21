@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { createRequire, isBuiltin } from "node:module";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { moduleRefs, type ModuleRef } from "../test/support/imports.ts";
 
 export interface TestProject {
@@ -24,20 +24,45 @@ export function packageBuildProjects(root: string): string[] {
   return packageRoots(root).map((dir) => manifest(root, dir).name);
 }
 
-/** Read the foundation's explicit graph; never make the root npm package a project. */
+/** Read the production graph used by test execution ownership. */
 export function testProjects(root: string): TestProject[] {
   const packages = packageRoots(root);
-  const projects: TestProject[] = [...packages, "src", "web", "test"].map((dir) => {
-    const project = JSON.parse(readFileSync(join(root, dir, "project.json"), "utf8"));
-    const dependencies = project.implicitDependencies;
-    if (typeof project.name !== "string" || !project.name || !Array.isArray(dependencies) ||
-        dependencies.some((name) => typeof name !== "string")) {
-      throw new Error(`Invalid test project: ${dir}`);
-    }
-    return { name: project.name, root: dir, dependencies };
-  });
+  const projects = [...packages, "src", "web"].map((dir) => readProject(root, dir));
   validateGraph(root, projects, [...packages, "web"]);
   return projects;
+}
+
+function readProject(root: string, dir: string): TestProject {
+  const project = JSON.parse(readFileSync(join(root, dir, "project.json"), "utf8"));
+  const dependencies = project.implicitDependencies;
+  if (typeof project.name !== "string" || !project.name || !Array.isArray(dependencies) ||
+      dependencies.some((name) => typeof name !== "string")) {
+    throw new Error(`Invalid project: ${dir}`);
+  }
+  return { name: project.name, root: dir, dependencies };
+}
+
+export interface CheckProject extends TestProject {
+  files: string[];
+  inputs: string[];
+}
+
+/** Virtual check projects declare their out-of-root compiler entries and hashed imports. */
+export function checkProjects(root: string): CheckProject[] {
+  const base = "test/typecheck";
+  return readdirSync(join(root, base), { withFileTypes: true }).filter((entry) => entry.isDirectory()).map(({ name }) => {
+    const dir = `${base}/${name}`;
+    const project = readProject(root, dir);
+    const config = JSON.parse(readFileSync(join(root, dir, "tsconfig.json"), "utf8"));
+    const { targets } = JSON.parse(readFileSync(join(root, dir, "project.json"), "utf8"));
+    return {
+      ...project,
+      files: (config.files ?? []).map((file: string) => posix.join(dir, file)),
+      inputs: targets.typecheck.inputs.flatMap((input: unknown) =>
+        typeof input === "string" && input.startsWith("{workspaceRoot}/") && !input.includes("*")
+          ? [input.slice("{workspaceRoot}/".length)] : []),
+    };
+  });
 }
 
 function validateGraph(root: string, projects: readonly TestProject[], workspaces: readonly string[]): void {
@@ -72,11 +97,14 @@ export function projectClosure(names: readonly string[], projects: readonly Test
 }
 
 export function projectForPath(file: string, projects: readonly TestProject[]): string | undefined {
-  return projects.find((project) => file.startsWith(`${project.root}/`))?.name;
+  return projects.filter((project) => file.startsWith(`${project.root}/`))
+    .sort((a, b) => b.root.length - a.root.length)[0]?.name;
 }
 
 function sourceFile(file: string): string {
-  const candidates = [file.replace(/\.js$/, ".ts"), file.replace(/\.jsx?$/, ".tsx"), file,
+  const candidates = [file.replace(/\.js$/, ".ts"), file.replace(/\.jsx?$/, ".tsx"),
+    file.replace(/\.([cm])js$/, ".$1ts"), file.replace(/\.([cm])js$/, ".d.$1ts"),
+    file.replace(/\.jsx?$/, ".d.ts"), file,
     `${file}.ts`, `${file}.tsx`, join(file, "index.ts"), join(file, "index.tsx")];
   const found = candidates.find((candidate) => existsSync(candidate) && statSync(candidate).isFile());
   if (!found) throw new Error(`Unresolved test dependency: ${file}`);
@@ -106,7 +134,7 @@ function exportedSource(root: string, project: TestProject, spec: string): strin
 }
 
 /** Audit import sites and helper chains, stopping at project boundaries covered by the graph. */
-export function testDependencyAudit(root: string, projects: readonly TestProject[]) {
+export function testDependencyAudit(root: string, projects: readonly TestProject[], mode: "execution" | "compilation" = "execution") {
   const refs = new Map<string, ModuleRef[]>();
   const workspaceImports = new Set<string>();
   const application = "src/application.ts";
@@ -124,7 +152,7 @@ export function testDependencyAudit(root: string, projects: readonly TestProject
       const target = resolveLocal(file, spec);
       const path = relative(root, target).split(sep).join("/");
       const project = projectForPath(path, projects);
-      if (project && project !== "checks" && path !== application) {
+      if (project && path !== application) {
         deps.projects.add(project);
       } else {
         if (isAbsolute(path) || path.startsWith("../")) throw new Error(`Test dependency outside checkout: ${path}`);
@@ -135,11 +163,13 @@ export function testDependencyAudit(root: string, projects: readonly TestProject
     const visit = (file: string) => {
       if (visited.has(file)) return;
       visited.add(file);
-      const imports = refs.get(file) ?? moduleRefs(file, { literalUrls: true });
+      const imports = refs.get(file) ?? (file.endsWith(".json") ? [] : moduleRefs(file, {
+        literalUrls: mode === "execution", referencePaths: mode === "compilation",
+      }));
       refs.set(file, imports);
       for (const { spec, typeOnly } of imports) {
         if (spec === null) {
-          for (const project of projects) if (project.name !== "checks") deps.projects.add(project.name);
+          if (mode === "execution") for (const project of projects) deps.projects.add(project.name);
         } else if (spec.startsWith(".")) {
           followLocal(file, spec);
         } else {
@@ -149,7 +179,7 @@ export function testDependencyAudit(root: string, projects: readonly TestProject
             if (!workspaceImports.has(spec)) exportedSource(root, workspace, spec);
             workspaceImports.add(spec);
             deps.projects.add(workspace.name);
-          } else if (!isBuiltin(spec)) {
+          } else if (mode === "execution" && !isBuiltin(spec)) {
             createRequire(file).resolve(spec);
           }
         }

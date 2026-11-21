@@ -63,7 +63,8 @@ Nx infers from package.json and the ones in project.json can't disagree.
 | `@crane/http-server` | `packages/http-server` | backend-runtime, contracts, factory, storage | `build`, `typecheck` |
 | `@crane/web` | `web` | contracts | `build`, `typecheck` |
 | `backend` | `src` | agent-protocol, backend-runtime, contracts, factory, http-server, storage (the workspaces `src/` imports) | `build`, `typecheck` |
-| `checks` | `test` | every other project | `typecheck`, `test` |
+| `checks` | `test` | production projects | `test` |
+| `checks-*` | `test/typecheck/<partition>` | production projects the partition imports | `typecheck` |
 
 Each project's `implicitDependencies` lists its edges explicitly. For packages
 and web they equal the manifest's `@crane/*` dependencies, which equal the
@@ -73,8 +74,13 @@ every package the root manifest bundles: the CLI reaches drivers, policy,
 diagnostics and dependency setup only through the factory, so a change there
 reaches `backend` transitively. Nx would also infer them from package.json
 and imports, and the explicit lists make the intended graph checkable without
-running Nx. `checks` covers both `test/` and `scripts/`, the two directories
-`tsconfig.test.json` compiles.
+running Nx. Each suite has one compiler partition derived from `TEST_GROUPS`.
+The support partition covers scripts, JavaScript checked with `checkJs`, and
+test helpers. The CLI partition owns the auth fixture that imports the CLI.
+Shared declarations are compiler inputs for every partition, and the support
+partition checks their bodies. Other shared
+helpers are hashed by the partitions that import them. The application
+identity module (`src/application.ts`) is tracked by file for the same reason.
 
 **No root project.** Nx 24 makes the root package.json a project only when it
 has an `nx` field or a project.json beside it (`packages/nx/src/plugins/package-json/create-nodes.ts`).
@@ -94,7 +100,7 @@ executor wins. The leftover inferred targets (packages' `dev`, web's `dev`,
 | Target | Meaning | Cache |
 | --- | --- | --- |
 | `build` | Packages: `tsc -b packages/<dir>/tsconfig.json`, which type-checks and emits `dist/` with its build info. Backend: the same esbuild command as `build:backend`, emitting the root `dist/`. Web: `vite build` into `web/dist/`. Each depends on `^build` | packages local; backend and web **never** |
-| `typecheck` | Packages: `nx:noop` after `build`, because a composite build is the type check. Backend: `tsc -p tsconfig.json --noEmit`. Web: `tsc -p tsconfig.json --noEmit` in `web/`. Checks: `tsc -p tsconfig.test.json`. Each depends on the builds it imports: `^build`, and for checks the ten package builds, not the backend or web bundles | local |
+| `typecheck` | Packages: `nx:noop` after `build`, because a composite build is the type check. Backend: `tsc -p tsconfig.json --noEmit`. Web: `tsc -p tsconfig.json --noEmit` in `web/`. Check partitions: `tsc -p test/typecheck/<partition>/tsconfig.json` after their workspace package builds. These targets use CLI and web source directly. | local |
 | `test` | `checks` only: `node --import tsx scripts/run-test-groups.ts --full`, after the ten package builds | **never** |
 
 Package builds cache because their output is complete: `outDir` and
@@ -167,12 +173,12 @@ changed files at all.
 project's `project.json`, `package.json` or `tsconfig*.json` (they can change
 the graph), any file no project owns (such as `bin/` or a new package without a
 project.json), an unreadable graph, and a change set with no typecheck input.
-Markdown outside a project is the one thing it skips, since no tsconfig compiles
-it. Files under `scripts/` belong to `checks`, which `tsconfig.test.json` also
-compiles. For example, a change to `packages/contracts/src/` type-checks
-contracts, agent-protocol, agent-policy, agent-drivers, web, backend and checks,
-and a change to `packages/diagnostics/src/` skips contracts, agent-protocol,
-agent-policy and web.
+Markdown outside a project is skipped. A change to a shared checks declaration
+selects the full graph. For suite paths, selection uses the partition's explicit
+compiler entries. A helper or script edit selects its owner and every partition
+that imports the edited file. For example, a CLI-only source edit selects
+`backend` and `checks-cli`. An HTTP-only source edit also selects the HTTP, web
+integration, tooling and support partitions that import HTTP types or sources.
 
 `affected:test` passes the change set to `affectedTestGroups`. Each group
 selects against its transitive workspace inputs, and architecture and build
@@ -187,14 +193,28 @@ Git repositories, selection over the real graph, and the order and exit status
 of each step. `test/tasks-process.test.ts` runs the real npm scripts in a
 disposable checkout with a fake Nx.
 
+### Updating the compiler partitions
+
+Update [test ownership](test-groups.md) when adding, removing or moving a root
+suite. Then run `node --import tsx scripts/check-partitions.ts --write` and
+review the generated project and compiler configs. Do the same when a helper
+chain gains or loses an import that changes partition dependencies. The public
+typecheck commands audit this mapping before running Nx, including when a cache
+hit is possible. This keeps a stray new import or unassigned suite from passing
+with stale metadata. The root `tsconfig.test.json` is a TypeScript solution
+referencing every partition.
+
 ## Inputs and invalidation
 
-`nx.json` defines two named inputs:
+`nx.json` defines these named inputs:
 
 - `default`: `{projectRoot}/**/*` plus `sharedGlobals`. Every cacheable target uses
   it, and adds `^default` so a dependency's sources and configuration count too.
-  Backend `build` adds `bin/`. Checks' `typecheck` adds `scripts/`. Nx doesn't
+  Backend `build` adds `bin/`. Each checks partition adds its suite entries or
+  support globs and any imported helpers outside that set. Nx doesn't
   hash ignored files, so `dist/`, `node_modules/` and `.nx/` never count.
+- `checksDeclarations` hashes the test and script declaration files used by
+  every checks partition.
 - `sharedGlobals`, which changes every task's hash and makes every task affected:
   - `nx.json`, the root `package.json` and `package-lock.json`, every root
     `tsconfig*.json`, and `.gitignore` (which decides which files Nx sees)

@@ -1,0 +1,24 @@
+{
+  "extends": "../../../tsconfig.checks.json",
+  "files": [
+    "../../api-auth.test.ts",
+    "../../api-exposure.test.ts",
+    "../../api-goals.test.ts",
+    "../../api-operators.test.ts",
+    "../../api-routes.test.ts",
+    "../../api-scheduling.test.ts",
+    "../../api-storage.test.ts",
+    "../../api.test.ts",
+    "../../command-access.test.ts",
+    "../../follow-up.test.ts",
+    "../../goal-agents.test.ts",
+    "../../lookouts.test.ts",
+    "../../pre-approve.test.ts",
+    "../../prerequisites.test.ts",
+    "../../remove-repo.test.ts",
+    "../../role-runs.test.ts",
+    "../../screenshots.test.ts",
+    "../../sign-in-limit.test.ts",
+    "../../visual-review.test.ts"
+  ]
+}

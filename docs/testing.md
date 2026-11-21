@@ -127,7 +127,7 @@ Compare these workloads separately:
 
 | Workload | Baseline without Nx | Nx |
 | --- | --- | --- |
-| Full typecheck | `npm run build:packages`, then local `tsc -p tsconfig.json --noEmit`, `tsc -p tsconfig.test.json`, and web's local `tsc -p tsconfig.json --noEmit` from `web/` | `npm run typecheck` |
+| Full typecheck | `npm run build:packages`, then local `tsc -p tsconfig.json --noEmit`, `tsc -b tsconfig.test.json`, and web's local `tsc -p tsconfig.json --noEmit` from `web/` | `npm run typecheck` |
 | Full tests | `npm run build:packages`, then `node --import tsx scripts/run-test-groups.ts --full` | `npm test` |
 | Selected typechecks | Link preflight and package prerequisites, then the exact compiler commands for the projects in `--list`, in dependency order | affected typecheck with the same boundary |
 | Selected tests | `npm run build:packages`, then runner with repeated `--group` for the exact selected group union | affected test with the same boundary |
@@ -267,7 +267,8 @@ wildcard to run every test file directly.
 ## Shared test helpers
 
 Keep repo-local helpers in `test/support/`; the `test/*.test.ts` runner glob
-excludes them, and `tsconfig.test.json` typechecks them. `git.ts` exports `sh`
+excludes them, and the [compiler partitions](nx.md#updating-the-compiler-partitions)
+typecheck them. `git.ts` exports `sh`
 for git commands with a fixed test identity and signing disabled.
 `fake-agents.ts` holds the Claude event-replay, Claude lost-session, and Codex
 CLI fixtures. Add stream fixture changes there so callers share the same

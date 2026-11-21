@@ -1,0 +1,67 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "checks-cli",
+  "projectType": "application",
+  "tags": [
+    "kind:checks"
+  ],
+  "implicitDependencies": [
+    "@crane/backend-runtime",
+    "@crane/contracts",
+    "@crane/factory",
+    "@crane/http-server",
+    "@crane/storage",
+    "backend"
+  ],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node scripts/check-workspace-links.mjs && tsc -p test/typecheck/cli/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": [
+        {
+          "projects": [
+            "@crane/agent-drivers",
+            "@crane/agent-policy",
+            "@crane/agent-protocol",
+            "@crane/backend-runtime",
+            "@crane/contracts",
+            "@crane/diagnostics",
+            "@crane/factory",
+            "@crane/http-server",
+            "@crane/storage",
+            "@crane/worktree-deps"
+          ],
+          "target": "build"
+        }
+      ],
+      "inputs": [
+        "default",
+        "^default",
+        "checksDeclarations",
+        "{workspaceRoot}/test/attribution.test.ts",
+        "{workspaceRoot}/test/auth-docs.test.ts",
+        "{workspaceRoot}/test/auth-e2e.test.ts",
+        "{workspaceRoot}/test/cli-next-steps.test.ts",
+        "{workspaceRoot}/test/cli-operators.test.ts",
+        "{workspaceRoot}/test/cli.test.ts",
+        "{workspaceRoot}/test/serve-address.test.ts",
+        "{workspaceRoot}/test/serve.test.ts",
+        "{workspaceRoot}/test/setup.test.ts",
+        "{workspaceRoot}/test/start.test.ts",
+        "{workspaceRoot}/test/support/auth-e2e.ts",
+        "{workspaceRoot}/test/tls-socket.test.ts",
+        "{workspaceRoot}/test/tls.test.ts",
+        "{workspaceRoot}/src/application.ts",
+        "{workspaceRoot}/test/support/api-client.ts",
+        "{workspaceRoot}/test/support/fixtures.ts",
+        "{workspaceRoot}/test/support/git.ts",
+        "{workspaceRoot}/test/support/tls.ts"
+      ],
+      "outputs": [],
+      "cache": true
+    }
+  }
+}

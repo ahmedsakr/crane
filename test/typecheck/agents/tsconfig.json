@@ -1,0 +1,24 @@
+{
+  "extends": "../../../tsconfig.checks.json",
+  "files": [
+    "../../agent-policy.test.ts",
+    "../../agent-process.test.ts",
+    "../../agent-streams.test.ts",
+    "../../check-handle.test.ts",
+    "../../claude-evidence.test.ts",
+    "../../command-guard-driver.test.ts",
+    "../../command-guard-hook.test.ts",
+    "../../command-guard-inspect.test.ts",
+    "../../command-guard.test.ts",
+    "../../contract-helpers.test.ts",
+    "../../crane-cli-access.test.ts",
+    "../../deps-copy.test.ts",
+    "../../deps.test.ts",
+    "../../diagnostics.test.ts",
+    "../../inspect-driver-args.test.ts",
+    "../../install-process.test.ts",
+    "../../report.test.ts",
+    "../../shared-helpers.test.ts",
+    "../../simulated-refusals.test.ts"
+  ]
+}

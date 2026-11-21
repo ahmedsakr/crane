@@ -1,0 +1,91 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "checks-factory",
+  "projectType": "application",
+  "tags": [
+    "kind:checks"
+  ],
+  "implicitDependencies": [
+    "@crane/agent-drivers",
+    "@crane/agent-policy",
+    "@crane/agent-protocol",
+    "@crane/backend-runtime",
+    "@crane/contracts",
+    "@crane/factory",
+    "@crane/storage",
+    "@crane/worktree-deps"
+  ],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node scripts/check-workspace-links.mjs && tsc -p test/typecheck/factory/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": [
+        {
+          "projects": [
+            "@crane/agent-drivers",
+            "@crane/agent-policy",
+            "@crane/agent-protocol",
+            "@crane/backend-runtime",
+            "@crane/contracts",
+            "@crane/diagnostics",
+            "@crane/factory",
+            "@crane/storage",
+            "@crane/worktree-deps"
+          ],
+          "target": "build"
+        }
+      ],
+      "inputs": [
+        "default",
+        "^default",
+        "checksDeclarations",
+        "{workspaceRoot}/test/acceptance-checks.test.ts",
+        "{workspaceRoot}/test/access.test.ts",
+        "{workspaceRoot}/test/agent-logs.test.ts",
+        "{workspaceRoot}/test/auto-mode.test.ts",
+        "{workspaceRoot}/test/completion.test.ts",
+        "{workspaceRoot}/test/costs.test.ts",
+        "{workspaceRoot}/test/crew-schedules.test.ts",
+        "{workspaceRoot}/test/decision-races.test.ts",
+        "{workspaceRoot}/test/drivers.test.ts",
+        "{workspaceRoot}/test/factory-elapsed.test.ts",
+        "{workspaceRoot}/test/goals.test.ts",
+        "{workspaceRoot}/test/guard-refusals.test.ts",
+        "{workspaceRoot}/test/idle-factory.test.ts",
+        "{workspaceRoot}/test/limits.test.ts",
+        "{workspaceRoot}/test/live-diff.test.ts",
+        "{workspaceRoot}/test/merge-fetch-retry.test.ts",
+        "{workspaceRoot}/test/merge-fixes.test.ts",
+        "{workspaceRoot}/test/merge.test.ts",
+        "{workspaceRoot}/test/postmortem.test.ts",
+        "{workspaceRoot}/test/process-trees.test.ts",
+        "{workspaceRoot}/test/queue.test.ts",
+        "{workspaceRoot}/test/refusal-context.test.ts",
+        "{workspaceRoot}/test/restart.test.ts",
+        "{workspaceRoot}/test/retention.test.ts",
+        "{workspaceRoot}/test/review-checkpoint.test.ts",
+        "{workspaceRoot}/test/roles.test.ts",
+        "{workspaceRoot}/test/scheduling.test.ts",
+        "{workspaceRoot}/test/storage-diagnostics.test.ts",
+        "{workspaceRoot}/test/task-context.test.ts",
+        "{workspaceRoot}/test/task-draft.test.ts",
+        "{workspaceRoot}/test/visual-review-prompts.test.ts",
+        "{workspaceRoot}/test/work-run.test.ts",
+        "{workspaceRoot}/test/worktree-base.test.ts",
+        "{workspaceRoot}/test/worktrees.test.ts",
+        "{workspaceRoot}/src/application.ts",
+        "{workspaceRoot}/test/support/crew-schedule-fixture.ts",
+        "{workspaceRoot}/test/support/fake-agents.ts",
+        "{workspaceRoot}/test/support/fixtures.ts",
+        "{workspaceRoot}/test/support/git.ts",
+        "{workspaceRoot}/test/support/goal-fixture.ts",
+        "{workspaceRoot}/test/support/retention-fixture.ts"
+      ],
+      "outputs": [],
+      "cache": true
+    }
+  }
+}

@@ -20,37 +20,6 @@
     "backend"
   ],
   "targets": {
-    "typecheck": {
-      "executor": "nx:run-commands",
-      "options": {
-        "command": "node scripts/check-workspace-links.mjs && tsc -p tsconfig.test.json",
-        "cwd": "{workspaceRoot}"
-      },
-      "dependsOn": [
-        {
-          "projects": [
-            "@crane/agent-drivers",
-            "@crane/agent-policy",
-            "@crane/agent-protocol",
-            "@crane/backend-runtime",
-            "@crane/contracts",
-            "@crane/diagnostics",
-            "@crane/factory",
-            "@crane/http-server",
-            "@crane/storage",
-            "@crane/worktree-deps"
-          ],
-          "target": "build"
-        }
-      ],
-      "inputs": [
-        "default",
-        "{workspaceRoot}/scripts/**/*",
-        "^default"
-      ],
-      "outputs": [],
-      "cache": true
-    },
     "test": {
       "executor": "nx:run-commands",
       "options": {

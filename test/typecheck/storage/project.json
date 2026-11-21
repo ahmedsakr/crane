@@ -1,0 +1,59 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "checks-storage",
+  "projectType": "application",
+  "tags": [
+    "kind:checks"
+  ],
+  "implicitDependencies": [
+    "@crane/agent-drivers",
+    "@crane/agent-protocol",
+    "@crane/backend-runtime",
+    "@crane/contracts",
+    "@crane/storage"
+  ],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node scripts/check-workspace-links.mjs && tsc -p test/typecheck/storage/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": [
+        {
+          "projects": [
+            "@crane/agent-drivers",
+            "@crane/agent-policy",
+            "@crane/agent-protocol",
+            "@crane/backend-runtime",
+            "@crane/contracts",
+            "@crane/diagnostics",
+            "@crane/storage"
+          ],
+          "target": "build"
+        }
+      ],
+      "inputs": [
+        "default",
+        "^default",
+        "checksDeclarations",
+        "{workspaceRoot}/test/backend-runtime.test.ts",
+        "{workspaceRoot}/test/checks.test.ts",
+        "{workspaceRoot}/test/codex-costs.test.ts",
+        "{workspaceRoot}/test/command-evidence.test.ts",
+        "{workspaceRoot}/test/fixtures.test.ts",
+        "{workspaceRoot}/test/merge-queue.test.ts",
+        "{workspaceRoot}/test/overview.test.ts",
+        "{workspaceRoot}/test/store-analytics.test.ts",
+        "{workspaceRoot}/test/store-claims.test.ts",
+        "{workspaceRoot}/test/store-concurrency.test.ts",
+        "{workspaceRoot}/test/store-core.test.ts",
+        "{workspaceRoot}/test/task-summaries.test.ts",
+        "{workspaceRoot}/src/application.ts",
+        "{workspaceRoot}/test/support/fixtures.ts"
+      ],
+      "outputs": [],
+      "cache": true
+    }
+  }
+}

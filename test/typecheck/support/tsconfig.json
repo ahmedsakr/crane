@@ -1,0 +1,16 @@
+{
+  "extends": "../../../tsconfig.checks.json",
+  "compilerOptions": {
+    "skipLibCheck": false
+  },
+  "include": [
+    "../../../scripts/**/*",
+    "../../**/*"
+  ],
+  "exclude": [
+    "../../*.test.ts",
+    "../../support/auth-e2e.ts",
+    "../../../**/node_modules",
+    "../../../**/dist"
+  ]
+}

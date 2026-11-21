@@ -10,6 +10,7 @@
       "{workspaceRoot}/package-lock.json",
       "{workspaceRoot}/tsconfig.json",
       "{workspaceRoot}/tsconfig.packages.json",
+      "{workspaceRoot}/tsconfig.checks.json",
       "{workspaceRoot}/tsconfig.test.json",
       "{workspaceRoot}/.gitignore",
       "{workspaceRoot}/scripts/build.mjs",
@@ -19,6 +20,14 @@
       { "env": "NODE_OPTIONS" },
       { "env": "NODE_ENV" }
     ],
-    "default": ["{projectRoot}/**/*", "sharedGlobals"]
+    "default": ["{projectRoot}/**/*", "sharedGlobals"],
+    "checksDeclarations": [
+      "{workspaceRoot}/scripts/**/*.d.ts",
+      "{workspaceRoot}/scripts/**/*.d.mts",
+      "{workspaceRoot}/scripts/**/*.d.cts",
+      "{workspaceRoot}/test/**/*.d.ts",
+      "{workspaceRoot}/test/**/*.d.mts",
+      "{workspaceRoot}/test/**/*.d.cts"
+    ]
   }
 }

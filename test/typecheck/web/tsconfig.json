@@ -1,0 +1,22 @@
+{
+  "extends": "../../../tsconfig.checks.json",
+  "files": [
+    "../../home-derived.test.ts",
+    "../../instruct-draft.test.ts",
+    "../../placement.test.ts",
+    "../../poll.test.ts",
+    "../../queue-reorder.test.ts",
+    "../../site.test.ts",
+    "../../slab-chart.test.ts",
+    "../../task-view.test.ts",
+    "../../web-account.test.ts",
+    "../../web-auth.test.ts",
+    "../../web-blocks.test.ts",
+    "../../web-command-access.test.ts",
+    "../../web-command-policy.test.ts",
+    "../../web-crew.test.ts",
+    "../../web-operators.test.ts",
+    "../../web-pages.test.ts",
+    "../../web-scheduling.test.ts"
+  ]
+}
