@@ -10,8 +10,8 @@ still open. Change the names and contract below only together with this
 document and `test/nx-graph.test.ts`.
 
 Root suite ownership and the uncached runner are described in
-[Root test ownership](test-groups.md). The planned split of `backend` into
-runtime, storage, factory and HTTP packages, and its timing baseline, are in
+[Root test ownership](test-groups.md). The split into runtime, storage, factory
+and HTTP packages and the timing baseline are in
 [Backend extraction](backend-extraction.md). Suite counts below are from the
 commits measured then.
 
@@ -174,10 +174,13 @@ contracts, agent-protocol, agent-policy, agent-drivers, web, backend and checks,
 and a change to `packages/diagnostics/src/` skips contracts, agent-protocol,
 agent-policy and web.
 
-`affected:test` passes the change set (or "unavailable") to
-`affectedTestGroups`, whose fallbacks are listed in
-[Root test ownership](test-groups.md#enumeration-and-conservative-selection).
-A fallback runs the full suite set in one runner invocation.
+`affected:test` passes the change set to `affectedTestGroups`. Each group
+selects against its transitive workspace inputs, and architecture and build
+scans always run. CLI, HTTP and web have separate ownership, with explicit
+groups for cross-layer behavior. When ownership or dependencies cannot be
+verified, one runner invocation receives the full suite set. Both paths build
+all workspace packages before starting the uncached test runner.
+[Root test ownership](test-groups.md#enumeration-and-conservative-selection)
 
 `test/tasks.test.ts` checks argument handling, change resolution in disposable
 Git repositories, selection over the real graph, and the order and exit status

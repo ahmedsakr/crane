@@ -7,24 +7,9 @@ import { join } from "node:path";
 import { nextCrewFire, type CrewScheduleInput } from "@crane/contracts";
 import { Store } from "@crane/storage";
 import { OperatorActions } from "@crane/factory/actions";
-import { createApp } from "@crane/http-server";
 import { Factory } from "@crane/factory/runtime";
 import { SimulatedDriver } from "@crane/agent-drivers";
-
-const policy: CrewScheduleInput = {
-  repoId: "r-test", daysMask: 62, localTime: "09:00", timezone: "America/Toronto", preApprove: true, enabled: true,
-};
-const monday = Date.parse("2030-06-17T13:00:00Z");
-
-function setup(file = ":memory:") {
-  const store = new Store(file);
-  const actions = new OperatorActions(store);
-  const repo = store.addRepo({ path: process.cwd(), name: "crane", isFactory: true });
-  store.upsertAgent({ id: "a-tests", name: "Tests", driver: "simulated" });
-  store.setSetting("crew_role_a-tests", "tests");
-  const input = { ...policy, repoId: repo.id };
-  return { store, actions, repo, input };
-}
+import { monday, policy, setupCrewSchedule as setup } from "./support/crew-schedule-fixture.js";
 
 test("crew schedules: wall clock survives DST, spring gaps skip and folds fire only once", () => {
   const next = (after: string, extra: Partial<CrewScheduleInput> = {}) => nextCrewFire({ ...policy, ...extra }, Date.parse(after));
@@ -202,28 +187,6 @@ test("crew schedules: persistent slots are claimed once across store connections
       assert.equal(other.listCrewSchedules()[0]!.lastOutcome, `Queued ${other.listTasks()[0]!.id}`);
     } finally { other.close(); }
   } finally { store.close(); rmSync(dir, { recursive: true, force: true }); }
-});
-
-test("crew schedules: API CRUD validates input and ownership without sockets", async (t) => {
-  t.mock.timers.enable({ apis: ["Date"], now: monday - 60_000 });
-  const { store, input } = setup();
-  const app = createApp(store);
-  const base = "/api/agents/a-tests/schedules";
-  const post = (path: string, body: unknown) => app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  try {
-    for (const bad of [null, {}, [], { ...input, preApprove: "yes" }, { ...input, daysMask: 0 }]) assert.equal((await post(base, bad)).status, 400);
-    const created = await post(base, input);
-    assert.equal(created.status, 201);
-    const s = await created.json();
-    assert.equal((await (await app.request(base)).json()).length, 1);
-    // The crew page reads every member's schedules in one request.
-    assert.deepEqual((await (await app.request("/api/crew/schedules")).json()).map((x: { id: string; agentId: string }) => [x.id, x.agentId]), [[s.id, "a-tests"]]);
-    assert.equal((await post(`${base}/${s.id}`, { ...input, preApprove: false, enabled: false })).status, 200);
-    assert.equal(store.listCrewSchedules()[0]!.preApprove, false);
-    assert.equal((await post(`${base}/missing`, input)).status, 400);
-    assert.equal((await app.request(`${base}/${s.id}`, { method: "DELETE" })).status, 200);
-    assert.equal(store.listCrewSchedules().length, 0);
-  } finally { store.close(); }
 });
 
 test("crew schedules: older task databases gain nullable schedule provenance on reopen", () => {

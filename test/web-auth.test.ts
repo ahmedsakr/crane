@@ -20,15 +20,14 @@ import { runAction } from "../web/src/lib/action.ts";
 
 // tsx applies the root tsconfig only inside `src`, so web's .tsx files compile to React.createElement here.
 Object.assign(globalThis, { React });
-// By computed path: these import web modules without extensions, which only web's own tsconfig accepts.
-const webModule = <T>(path: string): Promise<T> => import(new URL(`../web/src/${path}`, import.meta.url).href);
+// Keep NodeNext from traversing web's extensionless imports.
 type ApiErrorLike = Error & { status: number; body: unknown };
-const { ApiError, responseError } = await webModule<{
+const { ApiError, responseError } = await import(new URL("../web/src/lib/api.ts", import.meta.url).href) as {
   ApiError: new (message: string, status: number, body: unknown) => ApiErrorLike;
   responseError: (status: number, body: unknown) => Error;
-}>("lib/api.ts");
-const { SignIn } = await webModule<{ SignIn: ComponentType<never> }>("pages/SignIn.tsx");
-const { AccountMenuList } = await webModule<{ AccountMenuList: ComponentType<never> }>("components/shell/AccountMenu.tsx");
+};
+const { SignIn } = await import(new URL("../web/src/pages/SignIn.tsx", import.meta.url).href) as { SignIn: ComponentType<never> };
+const { AccountMenuList } = await import(new URL("../web/src/components/shell/AccountMenu.tsx", import.meta.url).href) as { AccountMenuList: ComponentType<never> };
 
 const operator: OperatorProfile = { id: "o-1", username: "robin", name: "Robin Park", role: "admin", createdAt: "2026-11-01T00:00:00.000Z", lastSeenAt: null };
 const session: OperatorSession = {

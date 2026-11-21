@@ -8,12 +8,10 @@ import { canPreApprove, instructExamples, mergeDraft } from "../web/src/lib/inst
 
 // tsx applies the root tsconfig only inside `src`, so web's .tsx files compile to React.createElement here.
 Object.assign(globalThis, { React });
-// By computed path: these import web modules without extensions, which only web's own tsconfig accepts.
-const webModule = <Name extends string>(path: string): Promise<Record<Name, ComponentType<never>>> =>
-  import(new URL(`../web/src/components/${path}`, import.meta.url).href);
-const { InstructChoices } = await webModule<"InstructChoices">("InstructChoices.tsx");
-const { InstructOptions } = await webModule<"InstructOptions">("InstructOptions.tsx");
-const { ScheduleFields } = await webModule<"ScheduleFields">("ScheduleFields.tsx");
+// Keep NodeNext from traversing web's extensionless imports.
+const { InstructChoices } = await import(new URL("../web/src/components/InstructChoices.tsx", import.meta.url).href) as Record<"InstructChoices", ComponentType<never>>;
+const { InstructOptions } = await import(new URL("../web/src/components/InstructOptions.tsx", import.meta.url).href) as Record<"InstructOptions", ComponentType<never>>;
+const { ScheduleFields } = await import(new URL("../web/src/components/ScheduleFields.tsx", import.meta.url).href) as Record<"ScheduleFields", ComponentType<never>>;
 
 const render = (component: ComponentType<never>, props: object) => renderToStaticMarkup(h(component, props as never));
 

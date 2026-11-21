@@ -1,7 +1,7 @@
 /** Execution ownership, not an import-derived partition. Keep each root suite here once. */
 export interface TestGroup {
   id: string;
-  kind: "package" | "backend" | "web" | "architecture" | "build";
+  kind: "package" | "backend" | "web" | "integration" | "architecture" | "build";
   /** Nx project names; selection includes each project's transitive dependencies. */
   projects: readonly string[];
   /** Repository scans/build contracts read beyond their imports: select on any change. */
@@ -13,10 +13,8 @@ const suites = (...names: string[]) => names.map((name) => `test/${name}.test.ts
 
 export const TEST_GROUPS: readonly TestGroup[] = [
   {
-    id: "package-contracts", kind: "package",
-    // Shared-helper parity compares contracts, protocol and private driver implementations.
-    projects: ["@crane/contracts", "@crane/agent-protocol", "@crane/agent-drivers"],
-    suites: suites("shared-helpers"),
+    id: "package-contracts", kind: "package", projects: ["@crane/contracts"],
+    suites: suites("contract-helpers"),
   },
   {
     id: "package-agent-protocol", kind: "package", projects: ["@crane/agent-protocol"],
@@ -31,6 +29,7 @@ export const TEST_GROUPS: readonly TestGroup[] = [
     suites: suites(
       "agent-process", "agent-streams", "check-handle", "claude-evidence",
       "command-guard-driver", "command-guard-hook", "crane-cli-access", "inspect-driver-args",
+      "shared-helpers", "simulated-refusals",
     ),
   },
   {
@@ -40,41 +39,81 @@ export const TEST_GROUPS: readonly TestGroup[] = [
     suites: suites("diagnostics"),
   },
   {
-    id: "package-worktree-deps", kind: "package",
-    // deps checks backend elapsed formatting; computed export probes conservatively cover all projects.
-    projects: ["@crane/worktree-deps", "backend", "@crane/web"],
-    suites: suites("deps", "install-process", "worktree-deps"),
+    id: "package-worktree-deps", kind: "package", projects: ["@crane/worktree-deps"],
+    suites: suites("deps", "deps-copy", "install-process"),
   },
   {
-    id: "backend", kind: "backend", projects: ["backend", "@crane/web"],
-    // Integration suites include web helpers (scheduling and visual review).
+    id: "backend-runtime", kind: "package", projects: ["@crane/backend-runtime"],
+    suites: suites("backend-runtime"),
+  },
+  {
+    id: "storage", kind: "package", projects: ["@crane/storage"],
+    suites: suites("fixtures", "merge-queue", "overview", "store-analytics", "store-claims", "store-concurrency", "store-core", "task-summaries"),
+  },
+  {
+    id: "factory-actions", kind: "package", projects: ["@crane/factory"],
+    suites: suites("access", "completion", "crew-schedules", "decision-races", "goals", "queue", "retention", "roles", "scheduling", "task-draft"),
+  },
+  {
+    id: "factory-agents", kind: "package", projects: ["@crane/factory"],
+    suites: suites("agent-logs", "auto-mode", "costs", "drivers", "guard-refusals", "limits", "refusal-context", "restart", "task-context", "visual-review-prompts"),
+  },
+  {
+    id: "factory-execution", kind: "package", projects: ["@crane/factory"],
     suites: suites(
-      "acceptance-checks", "access", "agent-logs", "api-auth", "api-exposure", "api-operators",
-      "api-routes", "api", "attribution", "auth-docs", "auth-e2e", "auto-mode", "checks",
-      "cli-next-steps", "cli-operators", "cli", "codex-costs", "command-access", "command-evidence",
-      "completion", "core", "costs", "crew-schedules", "decision-races", "drivers", "fixtures",
-      "follow-up", "goal-agents", "goals", "guard-refusals", "idle-factory", "limits", "live-diff",
-      "lookouts", "merge-fetch-retry", "merge-fixes", "merge-queue", "merge", "overview",
-      "postmortem", "pre-approve", "prerequisites", "process-trees", "queue", "refusal-context",
-      "remove-repo", "restart", "retention", "review-checkpoint", "role-runs", "roles", "scheduling",
-      "screenshots", "serve-address", "serve", "setup", "sign-in-limit", "start", "storage-diagnostics",
-      "store-analytics", "store-claims", "store-concurrency", "task-context", "task-summaries",
-      "tls-socket", "tls", "visual-review-prompts", "visual-review", "work-run", "worktree-base", "worktrees",
+      "acceptance-checks", "factory-elapsed", "idle-factory", "live-diff", "merge-fetch-retry",
+      "merge-fixes", "merge", "postmortem", "process-trees", "review-checkpoint",
+      "storage-diagnostics", "work-run", "worktree-base", "worktrees",
     ),
   },
   {
-    id: "web", kind: "web", projects: ["@crane/web", "backend"],
-    // Home/API and command-access parity tests intentionally import backend/private packages too.
+    id: "storage-agent-evidence", kind: "integration", projects: ["@crane/storage", "@crane/agent-drivers"],
+    suites: suites("codex-costs", "command-evidence"),
+  },
+  {
+    id: "storage-check-reports", kind: "integration", projects: ["@crane/storage", "@crane/agent-protocol"],
+    suites: suites("checks"),
+  },
+  {
+    id: "http", kind: "package", projects: ["@crane/http-server"],
+    suites: suites("api-auth", "api-exposure", "api-operators", "api-routes", "api", "sign-in-limit"),
+  },
+  {
+    id: "http-factory", kind: "integration", projects: ["@crane/http-server"],
+    // Exercise the same domain through HTTP and the underlying services.
     suites: suites(
-      "home-derived", "home-site", "instruct-draft", "placement", "poll", "queue-reorder", "site",
+      "api-goals", "api-scheduling", "api-storage", "command-access", "follow-up", "goal-agents",
+      "lookouts", "pre-approve", "prerequisites", "remove-repo", "role-runs", "screenshots", "visual-review",
+    ),
+  },
+  {
+    id: "cli", kind: "backend", projects: ["backend"],
+    suites: suites("cli-next-steps", "cli-operators", "cli", "setup", "start"),
+  },
+  {
+    id: "cli-http", kind: "integration", projects: ["backend", "@crane/http-server"],
+    suites: suites("attribution", "auth-docs", "auth-e2e", "serve-address", "serve", "tls-socket", "tls"),
+  },
+  {
+    id: "web", kind: "web", projects: ["@crane/web"],
+    suites: suites(
+      "home-derived", "instruct-draft", "placement", "poll", "queue-reorder", "site",
       "slab-chart", "task-view", "web-account", "web-auth", "web-blocks", "web-command-access",
-      "web-crew", "web-operator-api", "web-operators", "web-pages",
+      "web-crew", "web-operators", "web-pages", "web-scheduling",
     ),
+  },
+  {
+    id: "web-http", kind: "integration", projects: ["@crane/web", "@crane/http-server"],
+    suites: suites("home-site", "web-operator-api"),
+  },
+  {
+    id: "web-policy", kind: "integration", projects: ["@crane/web", "@crane/agent-policy"],
+    suites: suites("web-command-policy"),
   },
   {
     id: "architecture", kind: "architecture", projects: [], repositoryWide: true,
     // Filesystem scans include source shape, boundaries, manifests and project discovery.
-    suites: suites("boundaries", "code-shape", "contracts", "nx-graph", "test-ownership"),
+    suites: suites("boundaries", "code-shape", "contracts", "nx-graph", "test-ownership", "worktree-deps"),
   },
   {
     id: "build", kind: "build", projects: [], repositoryWide: true,
@@ -85,3 +124,26 @@ export const TEST_GROUPS: readonly TestGroup[] = [
     ),
   },
 ];
+
+/** Narrow suites whose filesystem access has been reviewed along with their local helpers. */
+export const AUDITED_FILESYSTEM = new Set([
+  // Disposable repo, home, database, install, process or server fixtures.
+  ...suites(
+    "acceptance-checks", "agent-logs", "api-exposure", "attribution", "auto-mode", "cli", "codex-costs",
+    "command-access", "command-evidence", "command-guard-driver", "costs", "crew-schedules", "decision-races",
+    "deps", "deps-copy", "drivers", "fixtures", "follow-up", "goals", "limits", "live-diff", "lookouts",
+    "merge", "merge-fetch-retry", "merge-fixes", "overview", "postmortem", "prerequisites", "process-trees",
+    "queue", "refusal-context", "restart", "retention", "review-checkpoint", "scheduling", "screenshots", "serve",
+    "store-claims", "store-concurrency", "store-core", "task-context", "tls", "tls-socket", "visual-review",
+    "worktree-base", "worktrees",
+  ),
+  "test/support/auth-e2e.ts",
+  "test/support/fake-agents.ts",
+  "test/support/fixtures.ts",
+  "test/support/retention-fixture.ts",
+  // The root README and manifest are global inputs.
+  ...suites("auth-docs", "setup"),
+  // These inspect driver source or built artifacts. Their owners include the drivers project.
+  ...suites("check-handle", "command-guard-hook", "guard-refusals"),
+  "test/support/imports.ts",
+]);

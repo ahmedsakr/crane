@@ -476,9 +476,9 @@ source tests also consume this one identity through backend-runtime.
 
 Workspace manifests, lock metadata, bundling, composite references, Nx edges,
 test dependency assertions and the benchmark factory probe follow the new
-package. Broad backend/web test ownership remains conservative through the
-backend dependency closure; narrowing it and partitioning checks compilation
-remain serialized follow-up tasks. Tests and application bundles stay uncached,
+package. The ownership follow-up partitioned suites using the extracted
+boundaries. Checks compilation remains a serialized follow-up. Tests and
+application bundles stay uncached,
 with checkout-local cache configuration unchanged. No timing improvement is
 claimed by this extraction; full/affected workload comparison remains the
 series' verification task in an environment supporting the complete suites.

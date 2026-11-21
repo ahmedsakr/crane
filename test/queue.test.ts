@@ -7,7 +7,6 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { Store } from "@crane/storage";
 import { OperatorActions } from "@crane/factory/actions";
-import { createApp } from "@crane/http-server";
 import type { NewTask, Task } from "@crane/contracts";
 
 const ids = (tasks: Task[]) => tasks.map(t => t.id);
@@ -126,52 +125,5 @@ test("queue: a failed history write rolls back the whole move", (t) => {
     assert.throws(() => store.moveQueuedTask(b.id, a.id), /disk is full/);
     assert.deepEqual(ids(store.listQueuedTasks()), [a.id, b.id]);
     assert.deepEqual(store.eventsSince(0), before);
-  } finally { store.close(); }
-});
-
-test("queue API: full pickup order and validated moves, including tasks beyond the list limit", async () => {
-  const store = new Store(":memory:");
-  try {
-    const tasks = Array.from({ length: 205 }, (_, i) => make(store, `Task ${i}`));
-    const first = tasks[0]!;
-    const tail = tasks[204]!;
-    store.updateTask(tail.id, { report: { summary: "Queue summary", findings: [], changedFiles: ["file.ts"] } });
-    store.db.prepare("UPDATE tasks SET brief = ? WHERE id = ?").run("Large brief".repeat(10000), tail.id);
-    const app = createApp(store);
-    const response = await app.request("/api/tasks/queue");
-    assert.equal(response.status, 200);
-    const queue = await response.json();
-    assert.deepEqual(ids(queue), ids(tasks));
-    assert.equal(queue[204].reportSummary, "Queue summary");
-    assert.equal(queue[204].changedFileCount, 1);
-    assert.ok(queue.every((task: object) => !("brief" in task) && !("report" in task)));
-    const moved = await app.request(`/api/tasks/${tail.id}/move`, {
-      method: "POST", body: JSON.stringify({ beforeId: first.id }),
-    });
-    assert.equal(moved.status, 200);
-    const reordered = await moved.json();
-    assert.deepEqual(ids(reordered), [tail.id, ...ids(tasks.slice(0, 204))]);
-    assert.deepEqual(reordered[0], queue[204]);
-    const last = await app.request(`/api/tasks/${tail.id}/move`, {
-      method: "POST", body: JSON.stringify({ beforeId: null }),
-    });
-    assert.equal(last.status, 200);
-    assert.deepEqual(ids(await last.json()), ids(tasks));
-    const snapshot = { queue: store.listQueuedTasks(), events: store.eventsSince(0) };
-    for (const body of [undefined, "{", "null", "[]", "42", "true", "{}", '{"beforeId":42}', '{"beforeId":""}', '{"beforeId":"missing"}']) {
-      const invalid = await app.request(`/api/tasks/${tail.id}/move`, { method: "POST", body });
-      assert.equal(invalid.status, 400, body);
-      assert.deepEqual({ queue: store.listQueuedTasks(), events: store.eventsSince(0) }, snapshot);
-    }
-    const forged = await app.request(`/api/tasks/${tail.id}/move`, {
-      method: "POST", headers: { origin: "https://evil.example" }, body: JSON.stringify({ beforeId: first.id }),
-    });
-    assert.equal(forged.status, 403);
-    assert.deepEqual({ queue: store.listQueuedTasks(), events: store.eventsSince(0) }, snapshot);
-    store.claimNextTask("a-one");
-    const stale = await app.request(`/api/tasks/${tail.id}/move`, {
-      method: "POST", body: JSON.stringify({ beforeId: first.id }),
-    });
-    assert.equal(stale.status, 400);
   } finally { store.close(); }
 });

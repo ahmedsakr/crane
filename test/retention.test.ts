@@ -1,49 +1,15 @@
 import "../src/application.js";
-import { test, type TestContext } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
-import Database from "better-sqlite3";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { ALL_STATUSES, FINISHED_STATUSES, type TaskStatus } from "@crane/contracts";
-import { Store } from "@crane/storage";
 import { StorageMaintenance } from "@crane/storage";
 import { retainScreenshots, screenshotPath } from "@crane/storage";
 // Keep private tests on the compiled Store identity used by actions and routes.
 import { pruneOrphanScreenshots } from "../packages/storage/dist/screenshots.js";
 import { OperatorActions } from "@crane/factory/actions";
-import { createApp } from "@crane/http-server";
-
-const clock = Date.parse("2026-10-20T12:00:00.000Z");
-const day = 86_400_000;
-const old = new Date(clock - 40 * day).toISOString();
-const cutoff = new Date(clock - 30 * day).toISOString();
-
-function setup(t: TestContext, legacy = false) {
-  const root = mkdtempSync(join(tmpdir(), "crane-retention-"));
-  const previousHome = process.env.CRANE_HOME;
-  process.env.CRANE_HOME = root;
-  const file = join(root, "crane.db");
-  if (legacy) {
-    const db = new Database(file);
-    db.exec("CREATE TABLE legacy_fixture (value TEXT)");
-    db.close();
-  }
-  const store = new Store(file);
-  t.after(() => {
-    store.close();
-    if (previousHome === undefined) delete process.env.CRANE_HOME;
-    else process.env.CRANE_HOME = previousHome;
-    rmSync(root, { recursive: true, force: true });
-  });
-  const task = (status: TaskStatus = "done", finishedAt: string | null = old) => {
-    const task = store.createTask({ kind: "maintenance", title: "History", brief: "", repoId: null, autonomy: "observe" });
-    store.updateTask(task.id, { status, finishedAt });
-    return task.id;
-  };
-  const ageEvents = () => store.db.prepare("UPDATE events SET ts = ?").run(old);
-  return { root, store, task, ageEvents };
-}
+import { clock, cutoff, day, old, setupRetention as setup } from "./support/retention-fixture.js";
 
 test("retention: disabled by default, with no deletion or legacy vacuum on store open or tick", t => {
   const { store, task, ageEvents } = setup(t, true);
@@ -265,20 +231,4 @@ test("retention: attachment cleanup skips unexpected files and directory/file sy
   symlinkSync(outside, join(root, "attachments"));
   assert.equal(pruneOrphanScreenshots(store), 0, "root directory symlinks are also skipped");
   assert.ok(existsSync(external));
-});
-
-test("retention API: show, enable and disable; malformed policies save nothing", async t => {
-  const { store } = setup(t);
-  const app = createApp(store);
-  assert.deepEqual(await (await app.request("/api/factory/retention")).json(), { finishedTaskDays: null });
-  const post = (body: string) => app.request("/api/factory/retention", {
-    method: "POST", headers: { "content-type": "application/json" }, body,
-  });
-  assert.equal((await post('{"finishedTaskDays":30}')).status, 200);
-  for (const body of ["{", "null", "[]", "{}", ...[0, -1, 1.5, 36501, "30", false, {}].map(finishedTaskDays => JSON.stringify({ finishedTaskDays }))]) {
-    assert.equal((await post(body)).status, 400, body);
-    assert.deepEqual(store.retentionSettings(), { finishedTaskDays: 30 }, body);
-  }
-  assert.equal((await post('{"finishedTaskDays":null}')).status, 200);
-  assert.deepEqual(store.retentionSettings(), { finishedTaskDays: null });
 });

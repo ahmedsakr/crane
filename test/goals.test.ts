@@ -4,36 +4,13 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { goalWaves, validateGoalPlan, type Goal, type GoalPlan, type Report } from "@crane/contracts";
+import { goalWaves, validateGoalPlan, type GoalPlan, type Report } from "@crane/contracts";
 import { parseReport, type AgentDriver } from "@crane/agent-protocol";
 import { Store } from "@crane/storage";
 import { OperatorActions } from "@crane/factory/actions";
 import { Factory } from "@crane/factory/runtime";
-import { createApp } from "@crane/http-server";
 import { SimulatedDriver } from "@crane/agent-drivers";
-
-const plan = (): GoalPlan => ({ summary: "Deliver reliable saved carts", approach: "Extract cart storage first; then UI and API can run together. Integrate after both land.",
-  improvements: ["Later, unify the cart and checkout telemetry"], tasks: [
-    { key: "storage", title: "Extract cart storage", brief: "Extract storage and retain existing behavior", dependsOn: [], driver: "codex", model: null, effort: "high", rationale: "Careful contract refactoring before callers change", acceptance: ["Existing storage callers keep working"] },
-    { key: "ui", title: "Build saved cart UI", brief: "Use the storage contract for saved carts", dependsOn: ["storage"], driver: "claude-code", model: "sonnet", effort: "high", rationale: "UI work after the shared contract lands", acceptance: ["Saved carts can be reopened"] },
-    { key: "api", title: "Add saved cart API", brief: "Use the storage contract in the API", dependsOn: ["storage"], driver: "codex", model: null, effort: "medium", rationale: "Independent API work after the contract", acceptance: ["API can save and restore a cart"] },
-    { key: "integration", title: "Verify saved carts", brief: "Exercise both paths and fix integration gaps", dependsOn: ["ui", "api"], driver: "claude-code", model: "opus", effort: "high", rationale: "Cross-cutting verification after both branches merge", acceptance: ["A cart saved through the UI survives reload"] },
-  ] });
-
-function setup(file = ":memory:") {
-  const store = new Store(file);
-  const repo = store.addRepo({ path: "/goals-repo", name: "storefront" });
-  const actions = new OperatorActions(store);
-  const goal = actions.createGoal({ repoId: repo.id, outcome: "Customers can save and reopen carts", driver: "codex", effort: "high" });
-  return { store, repo, actions, goal };
-}
-
-function researchResult(store: Store, goal: Goal, change: Partial<Report> = {}) {
-  store.updateTask(goal.researchTaskId, { status: "needs_review", report: { summary: "Planning complete", findings: [], changedFiles: [],
-    completion: { status: "completed", reason: "Research complete", evidence: "Read storage, API and UI" }, goalPlan: plan(), ...change } });
-  store.syncGoals();
-  return store.getGoal(goal.id)!;
-}
+import { plan, researchResult, setupGoal as setup } from "./support/goal-fixture.js";
 
 test("goals: validate DAGs, provider settings, complete briefs and stable waves", () => {
   assert.deepEqual(goalWaves(validateGoalPlan(plan())).map((w) => w.map((t) => t.key)), [["storage"], ["ui", "api"], ["integration"]]);
@@ -359,26 +336,4 @@ test("goals: actual factory research run feeds the goal review without starting 
     assert.equal(store.listTasks().length, 1);
     assert.equal(store.listRuns(goal.researchTaskId)[0]!.outcome, "succeeded");
   } finally { await factory.stop(); store.close(); }
-});
-
-test("goals API: malformed decisions, stale versions and invalid graphs do not start work", async () => {
-  const { store, goal } = setup();
-  try {
-    const app = createApp(store);
-    const ready = researchResult(store, goal);
-    const send = (path: string, body: unknown, method = "POST") => app.request(path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-    for (const body of [null, [], true, {}, { revision: ready.revision, autoMerge: "yes" }, { revision: goal.revision }]) {
-      assert.equal((await send(`/api/goals/${goal.id}/approve`, body)).status, 400);
-      assert.equal(store.listTasks().length, 1);
-    }
-    assert.equal((await send(`/api/goals/${goal.id}/plan`, { revision: ready.revision, plan: {} }, "PUT")).status, 400);
-    assert.equal((await app.request("/api/goals/missing")).status, 404);
-    const response = await send(`/api/goals/${goal.id}/approve`, { revision: ready.revision, autoMerge: true });
-    assert.equal(response.status, 200);
-    assert.equal((await response.json()).tasks.length, 4);
-    const detail = await (await app.request(`/api/goals/${goal.id}`)).json();
-    assert.equal(detail.tasks.length, 4);
-    const taskDetail = await (await app.request(`/api/tasks/${detail.tasks[0].id}`)).json();
-    assert.equal(taskDetail.goalId, goal.id);
-  } finally { store.close(); }
 });

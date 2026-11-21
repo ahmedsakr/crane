@@ -21,9 +21,8 @@ interface OperatorApi {
   checkInvite: (token: string) => Promise<InviteCheck>;
   acceptInvite: (token: string, input: { username?: string; name?: string; password: string }) => Promise<AuthStatus>;
 }
-// As in the other web tests, don't make NodeNext traverse web's extensionless imports.
-const apiPath = new URL("../web/src/lib/api.ts", import.meta.url).href;
-const { api } = await import(apiPath) as { api: OperatorApi };
+// Keep NodeNext from traversing web's extensionless imports.
+const { api } = await import(new URL("../web/src/lib/api.ts", import.meta.url).href) as { api: OperatorApi };
 const host: EventActor = { kind: "host", name: "Host" };
 const password = "demo-password-123";
 

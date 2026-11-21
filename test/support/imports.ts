@@ -22,8 +22,20 @@ export function parseSource(source: string, file: string) {
   });
 }
 
+/** Recognize import(new URL("./source.ts", import.meta.url).href) without evaluating code. */
+function localUrl(node: Node): string | null {
+  if (node.type !== "MemberExpression" || node.computed || node.property.type !== "Identifier" || node.property.name !== "href") return null;
+  const target = node.object;
+  if (target.type !== "NewExpression" || target.callee.type !== "Identifier" || target.callee.name !== "URL" || target.arguments.length !== 2) return null;
+  const [path, base] = target.arguments;
+  if (path?.type !== "StringLiteral" || !/^\.\.?\//.test(path.value) || /[%?#\\]/.test(path.value)) return null;
+  if (base?.type !== "MemberExpression" || base.computed || base.property.type !== "Identifier" || base.property.name !== "url") return null;
+  if (base.object.type !== "MetaProperty" || base.object.meta.name !== "import" || base.object.property.name !== "meta") return null;
+  return path.value;
+}
+
 /** Every module reference in a file, in source order, parsed rather than pattern-matched. */
-export function moduleRefs(file: string): ModuleRef[] {
+export function moduleRefs(file: string, options?: { literalUrls: boolean }): ModuleRef[] {
   const ast = parseSource(readFileSync(file, "utf8"), file);
   const literal = (node: Node | null | undefined) => (node?.type === "StringLiteral" ? node.value : null);
   const found: { at: number; ref: ModuleRef }[] = [];
@@ -39,7 +51,7 @@ export function moduleRefs(file: string): ModuleRef[] {
       const target = node.moduleReference;
       add(node, { spec: target.type === "TSExternalModuleReference" ? literal(target.expression) : null, declaration: false, typeOnly: node.importKind === "type" });
     } else if (node.type === "ImportExpression") {
-      add(node, { spec: literal(node.source), declaration: false, typeOnly: false });
+      add(node, { spec: literal(node.source) ?? (options?.literalUrls ? localUrl(node.source) : null), declaration: false, typeOnly: false });
     } else if (node.type === "CallExpression" && node.callee.type === "Identifier" && node.callee.name === "require") {
       add(node, { spec: literal(node.arguments[0]), declaration: false, typeOnly: false });
     }

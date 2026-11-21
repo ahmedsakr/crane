@@ -133,7 +133,7 @@ async function test(args: TaskArgs, host: TaskHost): Promise<number> {
   const links = args.list ? 0 : host.checkLinks();
   if (links) return links;
   const { affectedTestGroups, testPlan } = await import("./test-ownership.ts");
-  const { testProjects } = await import("./test-projects.ts");
+  const { packageBuildProjects } = await import("./test-projects.ts");
   const plan = args.affected ? affectedTestGroups(host.root, changes(host, args.affected, "test")) : testPlan(host.root);
   for (const reason of plan.fallback) host.log(`  Full test run: ${reason}`);
   if (args.affected && !plan.fallback.length) {
@@ -141,7 +141,7 @@ async function test(args: TaskArgs, host: TaskHost): Promise<number> {
     host.log(`  Running ${plan.suites.length} suite(s)`);
   }
   // Suites may import any package's compiled output, so every package builds first.
-  const packages = testProjects(host.root).filter((project) => project.root.startsWith("packages/")).map((project) => project.name);
+  const packages = packageBuildProjects(host.root);
   const nxArgs = ["run-many", "-t", "build", "-p", packages.join(","), ...NX_FLAGS];
   if (args.list) {
     host.print(JSON.stringify({ kind: "test", ...plan, nx: nxArgs }, null, 2));

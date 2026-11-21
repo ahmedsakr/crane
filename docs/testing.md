@@ -50,8 +50,10 @@ self-comparison, no changes, a head not checked out or a dirty `--head` run
 selects full work and reports why. Nothing silently fetches. Global config,
 graph changes and unknown ownership also select full work. Typecheck expands
 changed projects to dependent consumers; tests use audited ownership groups,
-always adding architecture/build scans. Helpers, scripts, docs, new/deleted
-suites and uncertain imports select every test group. Outside-project Markdown
+always adding architecture and build scans. For example, a CLI edit reaches
+CLI and CLI/HTTP suites, while a web edit reaches web, web/HTTP and web/policy
+suites. Helpers, scripts, docs, new/deleted suites, unaudited filesystem access
+and uncertain imports select every test group. Outside-project Markdown
 is ignored by typecheck selection, but a change set with no typecheck input
 still falls back fully. See [exact selection rules](nx.md#commands) and
 [test ownership](test-groups.md#enumeration-and-conservative-selection).

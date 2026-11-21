@@ -10,12 +10,10 @@ import { ToastContext, type ToastMessage } from "../web/src/lib/toast.ts";
 // tsx applies the root tsconfig only inside `src`, so web's .tsx files compile to React.createElement here.
 Object.assign(globalThis, { React });
 const { Section } = await import("../web/src/components/Section.tsx");
-// By computed path: these import web modules without extensions, which only web's own tsconfig accepts.
-const webModule = (path: string): Promise<Record<string, ComponentType<never>>> =>
-  import(new URL(`../web/src/components/${path}`, import.meta.url).href);
-const { StatusChip } = await webModule("Status.tsx");
-const { TaskRow } = await webModule("TaskRow.tsx");
-const { BlockedItem } = await webModule("BlockedItem.tsx");
+// Keep NodeNext from traversing web's extensionless imports.
+const { StatusChip } = await import(new URL("../web/src/components/Status.tsx", import.meta.url).href) as Record<string, ComponentType<never>>;
+const { TaskRow } = await import(new URL("../web/src/components/TaskRow.tsx", import.meta.url).href) as Record<string, ComponentType<never>>;
+const { BlockedItem } = await import(new URL("../web/src/components/BlockedItem.tsx", import.meta.url).href) as Record<string, ComponentType<never>>;
 
 const render = (component: ComponentType<never>, props: object) =>
   renderToStaticMarkup(h(MemoryRouter, null, h(component, props as never)));

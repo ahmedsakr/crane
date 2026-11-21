@@ -14,16 +14,14 @@ import { siteTasks, zoneCounts, zoneSummary } from "../web/src/lib/site/summary.
 
 // tsx applies the root tsconfig only inside `src`, so web's .tsx files compile to React.createElement here.
 Object.assign(globalThis, { React });
-// By computed path: these import web modules without extensions, which only web's own tsconfig accepts.
-const webModule = <Name extends string>(path: string): Promise<Record<Name, ComponentType<never>>> =>
-  import(new URL(`../web/src/${path}`, import.meta.url).href);
-const { FileDiff } = await webModule<"FileDiff">("components/diff/FileDiff.tsx");
-const { ChangedFiles } = await webModule<"ChangedFiles">("components/diff/ChangedFiles.tsx");
-const { DailyChart } = await webModule<"DailyChart">("pages/analytics/DailyChart.tsx");
-const { GoalDecision } = await webModule<"GoalDecision">("pages/goals/GoalDecision.tsx");
-const { PlanEditor } = await webModule<"PlanEditor">("pages/goals/PlanEditor.tsx");
-const { GoalView } = await webModule<"GoalView">("pages/GoalPage.tsx");
-const { Timeline } = await webModule<"Timeline">("pages/task/Timeline.tsx");
+// Keep NodeNext from traversing web's extensionless imports.
+const { FileDiff } = await import(new URL("../web/src/components/diff/FileDiff.tsx", import.meta.url).href) as Record<"FileDiff", ComponentType<never>>;
+const { ChangedFiles } = await import(new URL("../web/src/components/diff/ChangedFiles.tsx", import.meta.url).href) as Record<"ChangedFiles", ComponentType<never>>;
+const { DailyChart } = await import(new URL("../web/src/pages/analytics/DailyChart.tsx", import.meta.url).href) as Record<"DailyChart", ComponentType<never>>;
+const { GoalDecision } = await import(new URL("../web/src/pages/goals/GoalDecision.tsx", import.meta.url).href) as Record<"GoalDecision", ComponentType<never>>;
+const { PlanEditor } = await import(new URL("../web/src/pages/goals/PlanEditor.tsx", import.meta.url).href) as Record<"PlanEditor", ComponentType<never>>;
+const { GoalView } = await import(new URL("../web/src/pages/GoalPage.tsx", import.meta.url).href) as Record<"GoalView", ComponentType<never>>;
+const { Timeline } = await import(new URL("../web/src/pages/task/Timeline.tsx", import.meta.url).href) as Record<"Timeline", ComponentType<never>>;
 
 const render = (component: ComponentType<never>, props: object) =>
   renderToStaticMarkup(h(MemoryRouter, null, h(component, props as never)));
