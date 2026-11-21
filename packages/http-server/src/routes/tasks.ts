@@ -9,7 +9,15 @@ import { admit } from "../auth.js";
 import { optionalJsonObject } from "../body.js";
 import type { RouteDeps } from "./deps.js";
 
-function taskDetail(store: Store, m: Task): TaskDetail {
+function taskHistory(store: Store, taskId: string, after?: number): Pick<TaskDetail, "events" | "eventsAfter"> {
+  const events = store.listEvents(taskId, after);
+  if (after === undefined) return { events };
+  // A retention sweep removes old rows and writes a note in the same transaction.
+  if (events.some((e) => e.type === "note" && e.data?.retention)) return { events: store.listEvents(taskId) };
+  return { events, eventsAfter: after };
+}
+
+function taskDetail(store: Store, m: Task, after?: number): TaskDetail {
   const repo = m.repoId ? store.getRepo(m.repoId) : null;
   // Who's working it, or, before it's picked up, the crew member it was started for.
   const agentId = m.agentId ?? (m.status === "queued" ? m.assignee : null);
@@ -18,7 +26,7 @@ function taskDetail(store: Store, m: Task): TaskDetail {
   const blocked = store.blockedTools({ taskId: m.id, ...(m.repoId ? { repoId: m.repoId } : {}) });
   return {
     goalId: store.goalForTask(m.id),
-    task: m, repo, agent, events: store.listEvents(m.id), runs: store.listRuns(m.id), blocked,
+    task: m, repo, agent, ...taskHistory(store, m.id, after), runs: store.listRuns(m.id), blocked,
     prerequisites: store.prerequisiteStates(m), followUps: store.followUps(m.id),
     followUpSource: store.followUpSource(m),
   };
@@ -80,7 +88,12 @@ export function registerTaskRoutes(api: Hono, deps: RouteDeps): void {
   api.get("/tasks/:id", (c) => {
     const m = store.getTask(c.req.param("id"));
     if (!m) return c.json({ error: "Not found" }, 404);
-    return c.json(taskDetail(store, m));
+    const raw = c.req.query("after");
+    const after = raw === undefined ? undefined : Number(raw);
+    if (raw !== undefined && (!/^\d+$/.test(raw) || !Number.isSafeInteger(after))) {
+      return c.json({ error: "Invalid event cursor" }, 400);
+    }
+    return c.json(taskDetail(store, m, after));
   });
   api.get("/tasks/:id/screenshots/:name", (c) => screenshot(store, c, c.req.param("id"), c.req.param("name")));
   api.get("/tasks/:id/diff", async (c) => {

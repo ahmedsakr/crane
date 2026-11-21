@@ -174,7 +174,7 @@ export const api = {
   tasks: (status?: string) => req<TaskSummary[]>(`/tasks${status ? `?status=${status}` : ""}`),
   queue: () => req<TaskSummary[]>("/tasks/queue"),
   moveQueuedTask: (id: string, beforeId: string | null) => post<TaskSummary[]>(`/tasks/${id}/move`, { beforeId }),
-  task: (id: string) => req<TaskDetail>(`/tasks/${id}`),
+  task: (id: string, after?: number) => req<TaskDetail>(`/tasks/${id}${after === undefined ? "" : `?after=${after}`}`),
   diff: (id: string) => req<TaskDiff>(`/tasks/${id}/diff`),
   draft: (text: string) => post<TaskDraft>("/instruct/draft", { text }),
   createTask: (m: NewTask) => post<Task>("/tasks", m),

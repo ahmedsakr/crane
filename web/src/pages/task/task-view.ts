@@ -45,6 +45,29 @@ export function taskView(detail: TaskDetail, events: TaskEvent[]) {
 
 export type TaskView = ReturnType<typeof taskView>;
 
+export interface TaskDetailWithHistory extends TaskDetail {
+  /** Remount the timeline when a trim invalidates its saved row indexes. */
+  historyRevision: number;
+}
+
+function historyRevision(events: TaskEvent[]): number {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]!;
+    if (event.type === "note" && event.data?.retention) return event.id;
+  }
+  return 0;
+}
+
+export function mergeTaskDetail(previous: TaskDetailWithHistory | null, next: TaskDetail): TaskDetailWithHistory {
+  if (!previous || previous.task.id !== next.task.id || next.eventsAfter === undefined) {
+    return { ...next, historyRevision: historyRevision(next.events) };
+  }
+  const cursor = previous.events.at(-1)?.id ?? 0;
+  const added = next.events.filter((e) => e.id > cursor);
+  const events = added.length ? [...previous.events, ...added] : previous.events;
+  return { ...next, events, eventsAfter: undefined, historyRevision: previous.historyRevision };
+}
+
 /** Whether an agent is working on the task's branch right now, so its changes are worth following live. */
 export const isWorking = (task: Task | undefined): boolean => task?.status === "running" && !!task.branch;
 
@@ -220,6 +243,7 @@ export function keyTimeline(groups: (TaskEvent | ToolGroup)[], known: ToolGroupK
 
 /** The stream can replay what a poll already returned, so each event is kept once, in the order first seen. */
 export function uniqueEvents(polled: TaskEvent[], live: TaskEvent[]): TaskEvent[] {
+  if (live.length === 0) return polled;
   const seen = new Set<number>();
   return [...polled, ...live].filter((e) => !seen.has(e.id) && seen.add(e.id));
 }
