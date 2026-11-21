@@ -15,6 +15,7 @@
  *                     held factory state (scripts/fixture/). Waits for the page
  *                     to stop changing and stores what it pinned in each PNG.
  *                     For comparing images, see npm run screenshot:matrix.
+ *   --activity-review  add the long-history task and append control to --fixture
  *   --target <sel>    crop screenshots to the part of this element in the viewport
  *   --size <WxH>      viewport, default 1280x800
  *   --media <f>=<v>   emulate a media feature for the whole run, like
@@ -53,6 +54,7 @@ const args = process.argv.slice(2);
 let path = "/";
 let origin: string | null = null;
 let fixture = false;
+let activityReview = false;
 let target: string | null = null;
 let size = "1280x800";
 let username: string | null = null;
@@ -70,6 +72,7 @@ for (let i = 0; i < args.length; i++) {
   };
   if (a === "--url") origin = next().replace(/\/$/, "");
   else if (a === "--fixture") fixture = true;
+  else if (a === "--activity-review") activityReview = true;
   else if (a === "--target") target = next();
   else if (a === "--size") size = next();
   else if (a === "--operator") username = next();
@@ -89,6 +92,7 @@ for (let i = 0; i < args.length; i++) {
 const [width, height] = size.split("x").map(Number) as [number, number];
 if (!width || !height) fail(`--size should look like 1280x800, got ${size}`);
 if (fixture && origin) fail("--fixture boots its own factory, so it can't be used with --url.");
+if (activityReview && !fixture) fail("--activity-review requires --fixture.");
 if ((username === null) !== (password === null)) fail("--operator and --password go together.");
 if (fixture && username) fail("--fixture holds its data still, so it can't add an operator. Use the live demo for signed-in views.");
 if (signIn && !username) fail("--sign-in needs --operator and --password.");
@@ -279,7 +283,7 @@ async function fixtureMetadata(base: string, cdp: Cdp) {
   const { product } = await cdp.send("Browser.getVersion");
   return {
     fixture: FIXTURE,
-    capture: { path, size, media, target, steps: steps.filter((s) => s.op !== "shot") },
+    capture: { path, size, media, target, ...(activityReview && { activityReview }), steps: steps.filter((s) => s.op !== "shot") },
     build: sha256(readFileSync(join(root, "web", "dist", "index.html"))),
     data: sha256(await (await fetch(`${base}/api/tasks`)).text()),
     browser: product as string,
@@ -307,7 +311,11 @@ async function runSteps(page: PageCommand, tools: ReturnType<typeof pageTools>) 
     else if (op === "click") await click(page, evaluate, arg);
     else if (op === "type") await page("Input.insertText", { text: arg });
     else if (op === "key") {
-      for (const type of ["keyDown", "keyUp"]) await page("Input.dispatchKeyEvent", { type, key: arg, code: arg });
+      // Chromium uses the virtual key code for its native page-scrolling action.
+      const scrollKeys: Record<string, number> = { PageUp: 33, PageDown: 34 };
+      for (const type of ["keyDown", "keyUp"]) {
+        await page("Input.dispatchKeyEvent", { type, key: arg, code: arg, windowsVirtualKeyCode: scrollKeys[arg] });
+      }
     } else if (op === "scroll") {
       const [sel, px] = arg.split(/=(?=[^=]*$)/) as [string, string];
       await evaluate(`document.querySelector(${JSON.stringify(sel)}).scrollTop = ${Number(px)}`);
@@ -350,7 +358,7 @@ async function signInFromPage(cdp: Cdp, page: PageCommand, evaluate: Evaluate, b
 }
 
 async function main() {
-  const base = fixture ? await bootFixture() : (origin ?? (await bootDemo(operator)));
+  const base = fixture ? await bootFixture(activityReview) : (origin ?? (await bootDemo(operator)));
   const browser = launchBrowser();
   const page = await configurePage(browser.cdp);
   const metadata = fixture ? await fixtureMetadata(base, browser.cdp) : null;
