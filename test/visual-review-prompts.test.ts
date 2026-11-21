@@ -26,9 +26,8 @@ test("visual handoffs expose pre-approval for work, resolver edits, validation a
     for (const job of jobs) {
       for (const prompt of prompts(task, job)) {
         assert.match(prompt, /Operator pre-approval: 2026-11-03T10:00:00Z/);
-        assert.match(prompt, /Disclose missing inspection and offer capture instructions as optional/);
-        assert.match(prompt, /supersedes visual-review handoffs/);
-        assert.match(prompt, /no additional operator visual decision is required/);
+        assert.match(prompt, /Pre-approval authorizes Crane to record automatic candidate waivers/);
+        assert.match(prompt, /Crane labels the operator checklist using the latest stored decision/);
         assert.match(prompt, /visualReview.required: true even when pre-approved/);
         assert.match(prompt, /preserve sandbox restrictions/);
         if (job?.kind === "resolve_conflicts") assert.match(prompt, /does not by itself cover UI changed during conflict resolution/);
@@ -50,18 +49,19 @@ test("visual handoffs retain pending decisions after pre-approval withdrawal and
         note: "Original view", decidedAt: status === "pending" ? null : "2026-11-01" };
       for (const prompt of prompts({ ...task, preApprovedAt: null, visualReview })) {
         assert.match(prompt, /Operator pre-approval: none/);
-        assert.match(prompt, /If UI work has no covering candidate decision, include the required operator checklist/);
+        assert.match(prompt, /No pre-approval authorizes an automatic waiver at the time of this prompt/);
         assert.ok(prompt.includes(JSON.stringify(visualReview)));
         assert.match(prompt, /do not infer coverage from an old inspected, waived, or not_required status/);
         assert.match(prompt, /do not grant a waiver yourself/);
       }
     }
     for (const prompt of [systemPrompt(task, null), resumePrompt({ task })]) {
-      assert.match(prompt, /only when a visual decision remains outstanding and the task is not pre-approved/);
+      assert.match(prompt, /Put remaining capture steps in visualReview.captureInstructions/);
+      assert.match(prompt, /Leave approval requirements and checklist labels to Crane's review view/);
       assert.match(prompt, /A waiver does not mean inspection occurred/);
       assert.match(prompt, /defer capture directly without attempting it/);
       assert.match(prompt, /npm run build -w web && npm run screenshot/);
-      assert.match(prompt, /Crane alone verifies decision coverage/);
+      assert.match(prompt, /Crane alone verifies candidate coverage/);
     }
     assert.doesNotMatch(userPrompt({ ...task, autonomy: "observe" }), /Current visual-decision context/);
   } finally { store.close(); }

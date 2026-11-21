@@ -276,11 +276,11 @@ function visualDecisionBrief(task?: Task, job?: AgentJob): string {
   if (!task || (task.autonomy === "observe" && !job)) return "";
   return [
     "## Current visual-decision context",
-    "This snapshot supersedes visual-review handoffs in the original brief, previous reports, and session history. It describes authorization and recorded candidate identity, not proof that anyone inspected the current edits.",
+    "This snapshot describes authorization and recorded candidate identity when the prompt was created. Use it as background. Crane labels the operator checklist using the latest stored decision.",
     `Operator pre-approval: ${task.preApprovedAt ?? "none"}.`,
     task.preApprovedAt
-      ? "Pre-approval authorizes Crane to record automatic candidate waivers, including resolved merge candidates. Disclose missing inspection and offer capture instructions as optional; no additional operator visual decision is required while this authorization remains active."
-      : "No pre-approval authorizes an automatic waiver. If UI work has no covering candidate decision, include the required operator checklist before approval or merge.",
+      ? "Pre-approval authorizes Crane to record automatic candidate waivers, including resolved merge candidates."
+      : "No pre-approval authorizes an automatic waiver at the time of this prompt.",
     `Recorded visual review: ${JSON.stringify(task.visualReview ?? null)}.`,
     jobDecisionLine(job),
     "Crane verifies candidate coverage after your edits; do not infer coverage from an old inspected, waived, or not_required status, and do not grant a waiver yourself. Keep classifying UI work as visualReview.required: true even when pre-approved, and preserve sandbox restrictions.",
@@ -404,7 +404,11 @@ function reportInstructions(task?: Task): string {
           },
         ],
         changedFiles: ["path/relative/to/repo"],
-        visualReview: { required: true, reason: "Changed views and remaining review, or why no UI was changed if required is false" },
+        visualReview: {
+          required: true,
+          reason: "Changed views and missing inspection, or why no UI was changed if required is false",
+          captureInstructions: "If capture or inspection remains, list the exact commands, routes, interactions, and viewport sizes.",
+        },
         screenshots: [{ path: ".crane/screenshots/updated-view.png", caption: "Updated view at 1280 × 800" }],
         ...acceptance,
       },

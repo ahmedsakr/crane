@@ -57,3 +57,15 @@ test("report: an empty structured summary uses prose outside the fence", () => {
     assert.deepEqual(report, { summary: "Validation is incomplete.", findings: [], changedFiles: [] });
   }
 });
+
+test("report: capture instructions remain agent evidence without accepting a candidate decision", () => {
+  const visualReview = { required: true, reason: "Inspection deferred" };
+  const captureInstructions = "npm run build -w web\nnpm run screenshot -- /tasks";
+  const parse = (instructions: unknown) => parseReport(
+    `\`\`\`crane-report\n${JSON.stringify({ visualReview: { ...visualReview, captureInstructions: instructions, status: "waived", commit: "abc" } })}\n\`\`\``
+  ).visualReview;
+  assert.deepEqual(parse(captureInstructions), { ...visualReview, captureInstructions });
+  for (const invalid of [undefined, " ", ["command"], { command: "npm test" }]) {
+    assert.deepEqual(parse(invalid), visualReview);
+  }
+});

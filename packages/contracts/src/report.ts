@@ -17,8 +17,8 @@ export interface Report {
   completion?: { status: "completed" | "blocked" | "incomplete" | "already_satisfied"; reason: string; evidence: string };
   /** Factory-owned Git evidence, never read from agent output. */
   hasContribution?: boolean;
-  /** Agent classification only; operator decisions live on Task.visualReview. Missing means unknown. */
-  visualReview?: { required: boolean; reason: string };
+  /** Agent classification and capture steps. Operator decisions live on Task.visualReview. Missing means unknown. */
+  visualReview?: { required: boolean; reason: string; captureInstructions?: string };
   /** Factory-owned evidence; never accepted from agent output. Full reports are available on task detail. */
   validation?: ValidationRun[];
   summary: string;

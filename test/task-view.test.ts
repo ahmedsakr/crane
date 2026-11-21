@@ -22,6 +22,7 @@ import {
   taskView,
   uniqueEvents,
   usedDriver,
+  visualCaptureLabel,
   visualReviewHeading,
   visualReviewText,
   waitingOn,
@@ -109,6 +110,21 @@ test("visual review: pending, waived, and recorded decisions read differently", 
   const decided = makeTask({ branch, visualReview: { status: "not_required", note: "No UI changed" } });
   assert.equal(visualReviewHeading(decided), "not required");
   assert.equal(visualReviewText(decided), "No UI changed");
+});
+
+test("capture instructions follow current authorization and the candidate decision", () => {
+  const pending = makeTask({ branch: "crane/x", visualReview: { status: "pending" } });
+  const preApproved = { ...pending, preApprovedAt: "2026-11-21" };
+  const checklist = "Visual review checklist";
+  const optional = "Optional capture and inspection";
+  assert.equal(visualCaptureLabel(pending), checklist);
+  assert.equal(visualCaptureLabel(preApproved), optional);
+  assert.equal(visualCaptureLabel({ ...preApproved, preApprovedAt: null }), checklist);
+  for (const status of ["waived", "inspected"] as const) {
+    assert.equal(visualCaptureLabel(makeTask({ branch: "crane/x", visualReview: { status } })), optional);
+  }
+  assert.equal(visualCaptureLabel(makeTask({ branch: "crane/x", visualReview: { status: "not_required" } })), undefined);
+  assert.equal(visualCaptureLabel(makeTask({ branch: null })), undefined);
 });
 
 test("decision copy: a merge failure outranks the branch, and unmet criteria come first", () => {
