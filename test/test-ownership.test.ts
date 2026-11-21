@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { TEST_GROUPS, type TestGroup } from "../scripts/test-groups.ts";
 import { affectedTestGroups, dependencyProblems, rootSuites, suiteCatalog, testPlan } from "../scripts/test-ownership.ts";
-import { importedTestProjects, projectClosure, testProjects } from "../scripts/test-projects.ts";
+import { importedTestProjects, projectClosure, testDependencyAudit, testProjects } from "../scripts/test-projects.ts";
 import { temporaryRoot } from "./support/fixtures.ts";
 
 const root = join(import.meta.dirname, "..");
@@ -99,11 +99,10 @@ function fixture(t: Parameters<typeof temporaryRoot>[0]) {
     { root: "packages/shared", name: "@fixture/shared", implicitDependencies: [] },
     { root: "src", name: "backend", implicitDependencies: ["@fixture/one"] },
     { root: "web", name: "@fixture/web", implicitDependencies: ["@fixture/shared"] },
-    { root: "test", name: "checks", implicitDependencies: ["backend", "@fixture/web"] },
   ];
   for (const project of projects) {
     put(root, `${project.root}/project.json`, JSON.stringify(project));
-    if (project.root === "src" || project.root === "test") continue;
+    if (project.root === "src") continue;
     put(root, `${project.root}/package.json`, JSON.stringify({
       name: project.name,
       dependencies: Object.fromEntries(project.implicitDependencies.map((name) => [name, "1.0.0"])),
@@ -129,6 +128,16 @@ test("test ownership: private source and transitive project imports select their
   assert.deepEqual(plan(["packages/one/src/private.ts"]).groups, ["package", "backend", "architecture", "build"]);
   assert.deepEqual(plan(["packages/shared/src/index.ts"]).groups, ["package", "backend", "web", "architecture", "build"]);
   assert.deepEqual(plan(["web/src/view.ts"]).groups, ["web", "architecture", "build"]);
+});
+
+test("compiler ownership: follows declaration references without attributing a runtime URL import", (t) => {
+  const { root } = fixture(t);
+  put(root, "test/web.test.ts", `/// <reference path = "./support/ambient.d.mts" />
+await import(new URL("../web/src/view.ts", import.meta.url).href);`);
+  put(root, "test/support/ambient.d.mts", 'export type Shared = import("@fixture/shared").Shared;');
+  const audit = testDependencyAudit(root, testProjects(root), "compilation")("test/web.test.ts");
+  assert.deepEqual([...audit.files], ["test/support/ambient.d.mts"]);
+  assert.deepEqual([...audit.projects], ["@fixture/shared"]);
 });
 
 test("test ownership: cross-project import additions fall back fully until metadata is corrected", (t) => {

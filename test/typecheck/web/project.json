@@ -1,0 +1,55 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "checks-web",
+  "projectType": "application",
+  "tags": [
+    "kind:checks"
+  ],
+  "implicitDependencies": [
+    "@crane/agent-policy",
+    "@crane/contracts",
+    "@crane/web"
+  ],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node scripts/check-workspace-links.mjs && tsc -p test/typecheck/web/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": [
+        {
+          "projects": [
+            "@crane/agent-policy",
+            "@crane/contracts"
+          ],
+          "target": "build"
+        }
+      ],
+      "inputs": [
+        "default",
+        "^default",
+        "checksDeclarations",
+        "{workspaceRoot}/test/home-derived.test.ts",
+        "{workspaceRoot}/test/instruct-draft.test.ts",
+        "{workspaceRoot}/test/placement.test.ts",
+        "{workspaceRoot}/test/poll.test.ts",
+        "{workspaceRoot}/test/queue-reorder.test.ts",
+        "{workspaceRoot}/test/site.test.ts",
+        "{workspaceRoot}/test/slab-chart.test.ts",
+        "{workspaceRoot}/test/task-view.test.ts",
+        "{workspaceRoot}/test/web-account.test.ts",
+        "{workspaceRoot}/test/web-auth.test.ts",
+        "{workspaceRoot}/test/web-blocks.test.ts",
+        "{workspaceRoot}/test/web-command-access.test.ts",
+        "{workspaceRoot}/test/web-command-policy.test.ts",
+        "{workspaceRoot}/test/web-crew.test.ts",
+        "{workspaceRoot}/test/web-operators.test.ts",
+        "{workspaceRoot}/test/web-pages.test.ts",
+        "{workspaceRoot}/test/web-scheduling.test.ts"
+      ],
+      "outputs": [],
+      "cache": true
+    }
+  }
+}

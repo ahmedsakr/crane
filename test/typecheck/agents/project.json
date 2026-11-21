@@ -1,0 +1,67 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "checks-agents",
+  "projectType": "application",
+  "tags": [
+    "kind:checks"
+  ],
+  "implicitDependencies": [
+    "@crane/agent-drivers",
+    "@crane/agent-policy",
+    "@crane/agent-protocol",
+    "@crane/contracts",
+    "@crane/diagnostics",
+    "@crane/worktree-deps"
+  ],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node scripts/check-workspace-links.mjs && tsc -p test/typecheck/agents/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": [
+        {
+          "projects": [
+            "@crane/agent-drivers",
+            "@crane/agent-policy",
+            "@crane/agent-protocol",
+            "@crane/contracts",
+            "@crane/diagnostics",
+            "@crane/worktree-deps"
+          ],
+          "target": "build"
+        }
+      ],
+      "inputs": [
+        "default",
+        "^default",
+        "checksDeclarations",
+        "{workspaceRoot}/test/agent-policy.test.ts",
+        "{workspaceRoot}/test/agent-process.test.ts",
+        "{workspaceRoot}/test/agent-streams.test.ts",
+        "{workspaceRoot}/test/check-handle.test.ts",
+        "{workspaceRoot}/test/claude-evidence.test.ts",
+        "{workspaceRoot}/test/command-guard-driver.test.ts",
+        "{workspaceRoot}/test/command-guard-hook.test.ts",
+        "{workspaceRoot}/test/command-guard-inspect.test.ts",
+        "{workspaceRoot}/test/command-guard.test.ts",
+        "{workspaceRoot}/test/contract-helpers.test.ts",
+        "{workspaceRoot}/test/crane-cli-access.test.ts",
+        "{workspaceRoot}/test/deps-copy.test.ts",
+        "{workspaceRoot}/test/deps.test.ts",
+        "{workspaceRoot}/test/diagnostics.test.ts",
+        "{workspaceRoot}/test/inspect-driver-args.test.ts",
+        "{workspaceRoot}/test/install-process.test.ts",
+        "{workspaceRoot}/test/report.test.ts",
+        "{workspaceRoot}/test/shared-helpers.test.ts",
+        "{workspaceRoot}/test/simulated-refusals.test.ts",
+        "{workspaceRoot}/test/support/claude-results.ts",
+        "{workspaceRoot}/test/support/fake-agents.ts",
+        "{workspaceRoot}/test/support/imports.ts"
+      ],
+      "outputs": [],
+      "cache": true
+    }
+  }
+}

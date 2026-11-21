@@ -1,0 +1,7 @@
+{
+  "extends": "../../../tsconfig.checks.json",
+  "files": [
+    "../../home-site.test.ts",
+    "../../web-operator-api.test.ts"
+  ]
+}

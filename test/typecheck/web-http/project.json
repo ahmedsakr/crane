@@ -1,0 +1,52 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "checks-web-http",
+  "projectType": "application",
+  "tags": [
+    "kind:checks"
+  ],
+  "implicitDependencies": [
+    "@crane/backend-runtime",
+    "@crane/contracts",
+    "@crane/factory",
+    "@crane/http-server",
+    "@crane/storage",
+    "@crane/web"
+  ],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node scripts/check-workspace-links.mjs && tsc -p test/typecheck/web-http/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": [
+        {
+          "projects": [
+            "@crane/agent-drivers",
+            "@crane/agent-policy",
+            "@crane/agent-protocol",
+            "@crane/backend-runtime",
+            "@crane/contracts",
+            "@crane/diagnostics",
+            "@crane/factory",
+            "@crane/http-server",
+            "@crane/storage",
+            "@crane/worktree-deps"
+          ],
+          "target": "build"
+        }
+      ],
+      "inputs": [
+        "default",
+        "^default",
+        "checksDeclarations",
+        "{workspaceRoot}/test/home-site.test.ts",
+        "{workspaceRoot}/test/web-operator-api.test.ts",
+        "{workspaceRoot}/src/application.ts"
+      ],
+      "outputs": [],
+      "cache": true
+    }
+  }
+}

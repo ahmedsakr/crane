@@ -1,0 +1,93 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "checks-tooling",
+  "projectType": "application",
+  "tags": [
+    "kind:checks"
+  ],
+  "implicitDependencies": [
+    "@crane/agent-drivers",
+    "@crane/agent-protocol",
+    "@crane/backend-runtime",
+    "@crane/contracts",
+    "@crane/diagnostics",
+    "@crane/factory",
+    "@crane/http-server",
+    "@crane/storage",
+    "@crane/worktree-deps"
+  ],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node scripts/check-workspace-links.mjs && tsc -p test/typecheck/tooling/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": [
+        {
+          "projects": [
+            "@crane/agent-drivers",
+            "@crane/agent-policy",
+            "@crane/agent-protocol",
+            "@crane/backend-runtime",
+            "@crane/contracts",
+            "@crane/diagnostics",
+            "@crane/factory",
+            "@crane/http-server",
+            "@crane/storage",
+            "@crane/worktree-deps"
+          ],
+          "target": "build"
+        }
+      ],
+      "inputs": [
+        "default",
+        "^default",
+        "checksDeclarations",
+        "{workspaceRoot}/test/benchmark-tasks.test.ts",
+        "{workspaceRoot}/test/boundaries.test.ts",
+        "{workspaceRoot}/test/build.test.ts",
+        "{workspaceRoot}/test/code-shape.test.ts",
+        "{workspaceRoot}/test/contracts.test.ts",
+        "{workspaceRoot}/test/dashboard.test.ts",
+        "{workspaceRoot}/test/nx-graph.test.ts",
+        "{workspaceRoot}/test/screenshot-fixture.test.ts",
+        "{workspaceRoot}/test/tasks-process.test.ts",
+        "{workspaceRoot}/test/tasks.test.ts",
+        "{workspaceRoot}/test/test-ownership.test.ts",
+        "{workspaceRoot}/test/test-runner-process.test.ts",
+        "{workspaceRoot}/test/test-runner.test.ts",
+        "{workspaceRoot}/test/webbuild.test.ts",
+        "{workspaceRoot}/test/workspace-links.test.ts",
+        "{workspaceRoot}/test/worktree-deps.test.ts",
+        "{workspaceRoot}/scripts/affected-typecheck.ts",
+        "{workspaceRoot}/scripts/benchmark-tasks.ts",
+        "{workspaceRoot}/scripts/changes.ts",
+        "{workspaceRoot}/scripts/check-partitions.ts",
+        "{workspaceRoot}/scripts/check-workspace-links.mjs",
+        "{workspaceRoot}/scripts/fixture/activity-review.ts",
+        "{workspaceRoot}/scripts/fixture/fixture.ts",
+        "{workspaceRoot}/scripts/fixture/matrix.ts",
+        "{workspaceRoot}/scripts/fixture/png.ts",
+        "{workspaceRoot}/scripts/nx-toolchain.mjs",
+        "{workspaceRoot}/scripts/run-test-groups.ts",
+        "{workspaceRoot}/scripts/screenshot-matrix.ts",
+        "{workspaceRoot}/scripts/tasks.ts",
+        "{workspaceRoot}/scripts/test-groups.ts",
+        "{workspaceRoot}/scripts/test-ownership.ts",
+        "{workspaceRoot}/scripts/test-projects.ts",
+        "{workspaceRoot}/scripts/test-runner.ts",
+        "{workspaceRoot}/scripts/test-timings.ts",
+        "{workspaceRoot}/src/application.ts",
+        "{workspaceRoot}/test/support/code-shape.ts",
+        "{workspaceRoot}/test/support/fixtures.ts",
+        "{workspaceRoot}/test/support/git.ts",
+        "{workspaceRoot}/test/support/imports.ts",
+        "{workspaceRoot}/test/support/production-loads.ts",
+        "{workspaceRoot}/test/support/responsibilities.ts"
+      ],
+      "outputs": [],
+      "cache": true
+    }
+  }
+}

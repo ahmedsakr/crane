@@ -30,6 +30,7 @@ function checkout(t: TestContext) {
   for (const script of ["tasks.ts", "changes.ts", "test-runner.ts", "check-workspace-links.mjs"]) {
     cpSync(join(root, "scripts", script), join(dir, "scripts", script));
   }
+  put("scripts/check-partitions.ts", "export function checkPartitionConfigs() {}");
   put("package.json", JSON.stringify({ type: "module", workspaces: ["a"], scripts: { typecheck: scripts.typecheck, test: scripts.test } }));
   put("a/package.json", JSON.stringify({ name: "@fixture/a" }));
   mkdirSync(join(dir, "node_modules", "@fixture"), { recursive: true });

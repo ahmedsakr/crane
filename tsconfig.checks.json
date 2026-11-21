@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "lib": ["ES2022", "DOM"],
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "scripts/**/*.d.ts",
+    "scripts/**/*.d.mts",
+    "scripts/**/*.d.cts",
+    "test/**/*.d.ts",
+    "test/**/*.d.mts",
+    "test/**/*.d.cts"
+  ]
+}

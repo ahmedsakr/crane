@@ -1,0 +1,75 @@
+{
+  "$schema": "../../../node_modules/nx/schemas/project-schema.json",
+  "name": "checks-http",
+  "projectType": "application",
+  "tags": [
+    "kind:checks"
+  ],
+  "implicitDependencies": [
+    "@crane/agent-drivers",
+    "@crane/agent-protocol",
+    "@crane/backend-runtime",
+    "@crane/contracts",
+    "@crane/factory",
+    "@crane/http-server",
+    "@crane/storage"
+  ],
+  "targets": {
+    "typecheck": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node scripts/check-workspace-links.mjs && tsc -p test/typecheck/http/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": [
+        {
+          "projects": [
+            "@crane/agent-drivers",
+            "@crane/agent-policy",
+            "@crane/agent-protocol",
+            "@crane/backend-runtime",
+            "@crane/contracts",
+            "@crane/diagnostics",
+            "@crane/factory",
+            "@crane/http-server",
+            "@crane/storage",
+            "@crane/worktree-deps"
+          ],
+          "target": "build"
+        }
+      ],
+      "inputs": [
+        "default",
+        "^default",
+        "checksDeclarations",
+        "{workspaceRoot}/test/api-auth.test.ts",
+        "{workspaceRoot}/test/api-exposure.test.ts",
+        "{workspaceRoot}/test/api-goals.test.ts",
+        "{workspaceRoot}/test/api-operators.test.ts",
+        "{workspaceRoot}/test/api-routes.test.ts",
+        "{workspaceRoot}/test/api-scheduling.test.ts",
+        "{workspaceRoot}/test/api-storage.test.ts",
+        "{workspaceRoot}/test/api.test.ts",
+        "{workspaceRoot}/test/command-access.test.ts",
+        "{workspaceRoot}/test/follow-up.test.ts",
+        "{workspaceRoot}/test/goal-agents.test.ts",
+        "{workspaceRoot}/test/lookouts.test.ts",
+        "{workspaceRoot}/test/pre-approve.test.ts",
+        "{workspaceRoot}/test/prerequisites.test.ts",
+        "{workspaceRoot}/test/remove-repo.test.ts",
+        "{workspaceRoot}/test/role-runs.test.ts",
+        "{workspaceRoot}/test/screenshots.test.ts",
+        "{workspaceRoot}/test/sign-in-limit.test.ts",
+        "{workspaceRoot}/test/visual-review.test.ts",
+        "{workspaceRoot}/src/application.ts",
+        "{workspaceRoot}/test/support/api-client.ts",
+        "{workspaceRoot}/test/support/crew-schedule-fixture.ts",
+        "{workspaceRoot}/test/support/fixtures.ts",
+        "{workspaceRoot}/test/support/goal-fixture.ts",
+        "{workspaceRoot}/test/support/retention-fixture.ts"
+      ],
+      "outputs": [],
+      "cache": true
+    }
+  }
+}
