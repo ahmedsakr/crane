@@ -33,7 +33,7 @@ export interface BenchCase {
 
 export const CASES: readonly BenchCase[] = [
   { id: "cli", boundary: "CLI-only", file: "src/cli/ui.ts", project: "backend", focus: true },
-  { id: "http", boundary: "HTTP-only", file: "src/server/body.ts", project: "backend", focus: true },
+  { id: "http", boundary: "HTTP-only", file: "packages/http-server/src/body.ts", project: "@crane/http-server", focus: true },
   { id: "factory", boundary: "factory-only", file: "packages/factory/src/elapsed.ts", project: "@crane/factory", focus: false },
   { id: "storage", boundary: "storage-only", file: "packages/storage/src/store/shared.ts", project: "@crane/storage", focus: false },
   { id: "runtime", boundary: "runtime-only", file: "packages/backend-runtime/src/ids.ts", project: "@crane/backend-runtime", focus: false },

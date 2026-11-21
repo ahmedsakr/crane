@@ -1,0 +1,40 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "@crane/http-server",
+  "projectType": "library",
+  "tags": [
+    "kind:package"
+  ],
+  "implicitDependencies": [
+    "@crane/backend-runtime",
+    "@crane/contracts",
+    "@crane/factory",
+    "@crane/storage"
+  ],
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node scripts/check-workspace-links.mjs && tsc -b packages/http-server/tsconfig.json",
+        "cwd": "{workspaceRoot}"
+      },
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "default",
+        "^default"
+      ],
+      "outputs": [
+        "{projectRoot}/dist"
+      ],
+      "cache": true
+    },
+    "typecheck": {
+      "executor": "nx:noop",
+      "dependsOn": [
+        "build"
+      ]
+    }
+  }
+}

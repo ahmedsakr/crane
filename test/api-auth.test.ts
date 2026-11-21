@@ -6,10 +6,10 @@ import type { AuthStatus, EventActor, OperatorProfile, OperatorSession } from "@
 import { Store } from "@crane/storage";
 import { actorSnapshot } from "@crane/backend-runtime";
 import { AccessError, OperatorActions } from "@crane/factory/actions";
-import { createApp } from "../src/server/app.js";
-import { NOT_SET_UP, PUBLIC_ROUTES, errorResponse } from "../src/server/auth.js";
-import { STREAM_RECHECK_MS } from "../src/server/routes/tasks.js";
-import { AttemptLimiter, FIRST_WAIT_MS, LIMIT_WINDOW_MS, MAX_WAIT_MS, TooManyAttempts } from "../src/server/sign-in-limit.js";
+import { createApp } from "@crane/http-server";
+import { NOT_SET_UP, PUBLIC_ROUTES, errorResponse } from "../packages/http-server/src/auth.js";
+import { STREAM_RECHECK_MS } from "../packages/http-server/src/routes/tasks.js";
+import { AttemptLimiter, FIRST_WAIT_MS, LIMIT_WINDOW_MS, MAX_WAIT_MS, TooManyAttempts } from "../packages/http-server/src/sign-in-limit.js";
 import { NOTE, call, cookieFrom, openStream, within, type App, type Call } from "./support/api-client.js";
 
 const HOST: EventActor = { kind: "host", name: "ahmed" };

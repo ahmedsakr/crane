@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "@crane/storage";
 import { OperatorActions } from "@crane/factory/actions";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 import { MAINTENANCE_ROLE } from "@crane/contracts";
 
 function setup() {

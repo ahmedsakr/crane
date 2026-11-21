@@ -7,8 +7,8 @@ import { join } from "node:path";
 import type { EventActor } from "@crane/contracts";
 import { Store } from "@crane/storage";
 import { OperatorActions } from "@crane/factory/actions";
-import { createApp, type AppOptions } from "../src/server/app.js";
-import { checkExposure, isLoopbackPeer, parsePublicUrl, withFrameAncestors } from "../src/server/security.js";
+import { createApp, type AppOptions } from "@crane/http-server";
+import { checkExposure, isLoopbackPeer, parsePublicUrl, withFrameAncestors } from "../packages/http-server/src/security.js";
 
 /**
  * Serving a factory others reach: through a public URL behind a reverse proxy, with or without trusting the proxy's

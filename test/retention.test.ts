@@ -12,7 +12,7 @@ import { retainScreenshots, screenshotPath } from "@crane/storage";
 // Keep private tests on the compiled Store identity used by actions and routes.
 import { pruneOrphanScreenshots } from "../packages/storage/dist/screenshots.js";
 import { OperatorActions } from "@crane/factory/actions";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 
 const clock = Date.parse("2026-10-20T12:00:00.000Z");
 const day = 86_400_000;

@@ -14,7 +14,7 @@ import {
   type BuildWeb,
 } from "../packages/factory/src/dashboard.ts";
 import { Store } from "@crane/storage";
-import { createApp } from "../src/server/app.ts";
+import { createApp } from "@crane/http-server";
 import type { Repo } from "@crane/contracts";
 
 /** Stands in for `npm run build -w web`: "bundles" web/index.html, so the output shows which commit was built. */

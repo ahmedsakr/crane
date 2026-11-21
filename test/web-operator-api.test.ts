@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import type { AuthStatus, EventActor, InviteCheck, InviteSummary, OperatorRole, OperatorSummary } from "@crane/contracts";
 import { Store } from "@crane/storage";
 import { OperatorActions } from "@crane/factory/actions";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 
 type Issued = { invite: InviteSummary; path: string; token: string };
 interface OperatorApi {

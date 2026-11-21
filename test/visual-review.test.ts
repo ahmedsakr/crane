@@ -8,7 +8,7 @@ import { visualReviewPending, type Report, type VisualReview } from "@crane/cont
 import { parseReport } from "@crane/agent-protocol";
 import { Store } from "@crane/storage";
 import { OperatorActions } from "@crane/factory/actions";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 import { requireCandidateVisualReview, visualReviewRequired, type VisualCandidate } from "../packages/factory/src/visual-review.js";
 
 const commit = "a".repeat(40);

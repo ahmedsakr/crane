@@ -71,6 +71,16 @@ test("build: esbuild's backend output runs from the layout the factory expects",
     const status = state.factoryState({ getSetting: () => null, isPaused: () => false });
     assert.equal(status.uiBuild, identity.servedDashboard()?.id, "bundled factory shares the installed application's identity");
     assert.equal(status.factoryOutdated, false);
+    // The bundled HTTP package serves the installed application's dashboard through the same identity.
+    const { Store } = await import(pathToFileURL(join(app, "node_modules", "@crane", "storage", "dist", "index.js")).href);
+    const { createApp } = await import(pathToFileURL(join(app, "node_modules", "@crane", "http-server", "dist", "index.js")).href);
+    const store = new Store(":memory:");
+    try {
+      const page = await createApp(store).request("/");
+      assert.equal(await page.text(), "installed dashboard", "bundled HTTP serves the installed application's assets");
+    } finally {
+      store.close();
+    }
   } finally {
     if (previousHome === undefined) delete process.env.CRANE_HOME;
     else process.env.CRANE_HOME = previousHome;
@@ -89,6 +99,8 @@ test("build: esbuild's backend output runs from the layout the factory expects",
   const map = JSON.parse(readFileSync(join(out, "application.js.map"), "utf8"));
   assert.ok(map.sources.some((source: string) => source.endsWith("src/application.ts")), map.sources.join());
   assert.ok(!existsSync(join(out, "src")), "--outbase keeps src/ out of the output path");
+  assert.ok(!existsSync(join(out, "server")), "HTTP is emitted only by its workspace build");
+  assert.ok(specifiers(join(out, "cli", "serve.js")).includes("@crane/http-server"), "the CLI loads HTTP from its workspace");
 
   // Rebuilds rewrite the application marker even when content is unchanged; running checks retain their captured marker.
   const marker = join(out, "cli", "index.js");

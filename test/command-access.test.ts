@@ -9,7 +9,7 @@ import { Store } from "@crane/storage";
 import { factoryRoot, worktreesDir } from "@crane/backend-runtime";
 import { OperatorActions } from "@crane/factory/actions";
 import { runAgent } from "../packages/factory/src/agent-runner.js";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 import { temporaryRoot, testHome } from "./support/fixtures.ts";
 
 function setup(path = "/code/app") {

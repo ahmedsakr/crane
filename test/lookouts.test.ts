@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { LOOKOUTS, lookoutsLabel, type Autonomy, type NewTask } from "@crane/contracts";
 import { Store } from "@crane/storage";
 import { OperatorActions, checkLookouts } from "@crane/factory/actions";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 import { resumePrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-lookouts-home-"));

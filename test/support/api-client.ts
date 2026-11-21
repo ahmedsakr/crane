@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { setTimeout as sleep } from "node:timers/promises";
-import type { createApp } from "../../src/server/app.js";
+import type { createApp } from "@crane/http-server";
 
 /**
  * Calling the API with `app.request()`, without sockets. Clients name themselves with `x-client`, which the tests'

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { followUpFor, type TaskDetail } from "@crane/contracts";
 import { Store } from "@crane/storage";
 import { OperatorActions } from "@crane/factory/actions";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 import { driverEffortKey, driverModelKey } from "@crane/factory/settings";
 
 function setup(path = ":memory:") {

@@ -60,22 +60,27 @@ Nx infers from package.json and the ones in project.json can't disagree.
 | `@crane/backend-runtime` | `packages/backend-runtime` | contracts | `build`, `typecheck` |
 | `@crane/storage` | `packages/storage` | backend-runtime, contracts | `build`, `typecheck` |
 | `@crane/factory` | `packages/factory` | agent-drivers, agent-policy, agent-protocol, backend-runtime, contracts, diagnostics, storage, worktree-deps | `build`, `typecheck` |
+| `@crane/http-server` | `packages/http-server` | backend-runtime, contracts, factory, storage | `build`, `typecheck` |
 | `@crane/web` | `web` | contracts | `build`, `typecheck` |
-| `backend` | `src` | all nine packages (the root manifest's `@crane/*` dependencies) | `build`, `typecheck` |
+| `backend` | `src` | agent-protocol, backend-runtime, contracts, factory, http-server, storage (the workspaces `src/` imports) | `build`, `typecheck` |
 | `checks` | `test` | every other project | `typecheck`, `test` |
 
 Each project's `implicitDependencies` lists its edges explicitly. For packages
 and web they equal the manifest's `@crane/*` dependencies, which equal the
-package's TypeScript `references`. Nx would also infer them from package.json
+package's TypeScript `references`. For `backend` they equal the workspaces
+`src/` refers to in any form, including type and lazy imports, rather than
+every package the root manifest bundles: the CLI reaches drivers, policy,
+diagnostics and dependency setup only through the factory, so a change there
+reaches `backend` transitively. Nx would also infer them from package.json
 and imports, and the explicit lists make the intended graph checkable without
 running Nx. `checks` covers both `test/` and `scripts/`, the two directories
 `tsconfig.test.json` compiles.
 
 **No root project.** Nx 24 makes the root package.json a project only when it
 has an `nx` field or a project.json beside it (`packages/nx/src/plugins/package-json/create-nodes.ts`).
-Crane has neither. The root manifest is the backend's, so its `@crane/*`
-dependencies become `backend`'s edges, and nothing can depend on a root hub that
-owns every file. Root files belong to no project and reach tasks only through
+Crane has neither. The root manifest is the backend's, but `backend`'s edges come
+from its `project.json`, not from every `@crane/*` package the manifest bundles,
+and nothing can depend on a root hub that owns every file. Root files belong to no project and reach tasks only through
 `sharedGlobals` (below), which is what makes them global.
 
 Inferred npm-script targets: Nx turns each workspace's package.json scripts
@@ -89,8 +94,8 @@ executor wins. The leftover inferred targets (packages' `dev`, web's `dev`,
 | Target | Meaning | Cache |
 | --- | --- | --- |
 | `build` | Packages: `tsc -b packages/<dir>/tsconfig.json`, which type-checks and emits `dist/` with its build info. Backend: the same esbuild command as `build:backend`, emitting the root `dist/`. Web: `vite build` into `web/dist/`. Each depends on `^build` | packages local; backend and web **never** |
-| `typecheck` | Packages: `nx:noop` after `build`, because a composite build is the type check. Backend: `tsc -p tsconfig.json --noEmit`. Web: `tsc -p tsconfig.json --noEmit` in `web/`. Checks: `tsc -p tsconfig.test.json`. Each depends on the builds it imports: `^build`, and for checks the nine package builds, not the backend or web bundles | local |
-| `test` | `checks` only: `node --import tsx scripts/run-test-groups.ts --full`, after the nine package builds | **never** |
+| `typecheck` | Packages: `nx:noop` after `build`, because a composite build is the type check. Backend: `tsc -p tsconfig.json --noEmit`. Web: `tsc -p tsconfig.json --noEmit` in `web/`. Checks: `tsc -p tsconfig.test.json`. Each depends on the builds it imports: `^build`, and for checks the ten package builds, not the backend or web bundles | local |
+| `test` | `checks` only: `node --import tsx scripts/run-test-groups.ts --full`, after the ten package builds | **never** |
 
 Package builds cache because their output is complete: `outDir` and
 `tsBuildInfoFile` are both inside the `dist/` Nx stores and restores, so a
@@ -120,10 +125,10 @@ starts npm, Nx or `scripts/tasks.ts`, so nothing recurses, and the root has no
 
 | Command | What runs |
 | --- | --- |
-| `npm run typecheck` | Link check, then `nx run-many -t typecheck` over all twelve projects: every package build, backend, web, and tests with scripts |
-| `npm test` | Link check, `nx run-many -t build` for the nine packages, then one runner over every root suite (`testPlan`, the same files as the old `test/*.test.ts` glob) |
+| `npm run typecheck` | Link check, then `nx run-many -t typecheck` over all thirteen projects: every package build, backend, web, and tests with scripts |
+| `npm test` | Link check, `nx run-many -t build` for the ten packages, then one runner over every root suite (`testPlan`, the same files as the old `test/*.test.ts` glob) |
 | `npm run affected:typecheck -- --base <rev> (--head <rev> \| --working-tree)` | Link check, then `typecheck` for the changed projects and every project that depends on them |
-| `npm run affected:test -- --base <rev> (--head <rev> \| --working-tree)` | Link check, the nine package builds, then the suites of the affected test groups |
+| `npm run affected:test -- --base <rev> (--head <rev> \| --working-tree)` | Link check, the ten package builds, then the suites of the affected test groups |
 
 Add `--list` to an affected command to print its selection and the Nx command
 as JSON without running anything. The link check (`scripts/check-workspace-links.mjs`)

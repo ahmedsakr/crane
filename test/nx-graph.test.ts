@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { toolchain } from "../scripts/nx-toolchain.mjs";
+import { specifiers } from "./support/imports.ts";
 
 /**
  * Nx's project graph and target contract (docs/nx.md), checked from the files
@@ -44,6 +45,10 @@ const LINK_CHECK = /^node (\.\.\/)?scripts\/check-workspace-links\.mjs && /;
 const craneDeps = (manifest: { dependencies?: Record<string, string> }) =>
   Object.keys(manifest.dependencies ?? {}).filter((name) => name.startsWith("@crane/")).sort();
 
+/** Every TypeScript source under a directory, as absolute paths. */
+const sourceFiles = (dir: string) => (readdirSync(join(root, dir), { recursive: true }) as string[])
+  .filter((file) => /\.tsx?$/.test(file)).map((file) => join(root, dir, file));
+
 function projectFiles(dir: string): string[] {
   return readdirSync(join(root, dir), { withFileTypes: true }).flatMap((entry) => {
     if (entry.isDirectory()) {
@@ -53,8 +58,8 @@ function projectFiles(dir: string): string[] {
   });
 }
 
-test("nx: the graph has exactly the nine packages, web, backend and checks", () => {
-  assert.equal(PACKAGES.length, 9);
+test("nx: the graph has exactly the ten packages, web, backend and checks", () => {
+  assert.equal(PACKAGES.length, 10);
   assert.deepEqual(projectFiles(".").sort(), Object.values(ROOTS).map((dir) => join(dir, "project.json")).sort(), "no other project.json");
   for (const [name, project] of Object.entries(projects)) assert.equal(project.name, name, `${ROOTS[name]}/project.json`);
   // Nx makes the root package.json a project only for an `nx` field or a project.json beside it.
@@ -77,7 +82,13 @@ test("nx: dependency edges match manifests and TypeScript references", () => {
     assert.deepEqual(projects[name]!.implicitDependencies, referenced, `${name} references`);
   }
   assert.deepEqual(projects["@crane/web"]!.implicitDependencies, craneDeps(readJson("web/package.json")));
-  assert.deepEqual(projects.backend!.implicitDependencies, craneDeps(readJson("package.json")), "the root manifest is the backend's");
+  // The application's edges are the workspaces src/ refers to in any form (lazy and type imports count), not
+  // everything the root manifest bundles: the CLI reaches drivers and dependency setup only through the factory.
+  const backendImports = new Set(sourceFiles("src").flatMap(specifiers)
+    .filter((spec) => spec.startsWith("@crane/")).map((spec) => spec.split("/").slice(0, 2).join("/")));
+  assert.deepEqual(projects.backend!.implicitDependencies, [...backendImports].sort(), "backend edges are src/'s workspace imports");
+  const shipped = craneDeps(readJson("package.json"));
+  for (const dep of projects.backend!.implicitDependencies) assert.ok(shipped.includes(dep), `the root manifest ships ${dep}`);
   assert.deepEqual(projects.checks!.implicitDependencies, Object.keys(ROOTS).filter((name) => name !== "checks").sort(), "suites import everything");
 });
 

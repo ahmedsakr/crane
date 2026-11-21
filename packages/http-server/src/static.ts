@@ -2,7 +2,7 @@ import type { Hono } from "hono";
 import { getMimeType } from "hono/utils/mime";
 import { readFileSync, statSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
-import { servedDashboard } from "../application.js";
+import { servedApplicationDashboard as servedDashboard } from "@crane/backend-runtime";
 
 /**
  * The file a request path names in the first of `dirs` that has it. Only

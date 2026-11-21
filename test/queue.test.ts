@@ -7,7 +7,7 @@ import { join } from "node:path";
 import Database from "better-sqlite3";
 import { Store } from "@crane/storage";
 import { OperatorActions } from "@crane/factory/actions";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 import type { NewTask, Task } from "@crane/contracts";
 
 const ids = (tasks: Task[]) => tasks.map(t => t.id);

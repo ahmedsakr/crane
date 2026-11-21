@@ -37,7 +37,7 @@ Four new workspaces under `packages/`, each named `@crane/<dir>` as
 | `@crane/storage` | `packages/storage` | backend-runtime, contracts | `better-sqlite3` |
 | `@crane/factory` | `packages/factory` | storage, backend-runtime, contracts, agent-drivers, agent-policy, agent-protocol, diagnostics, worktree-deps | Node only |
 | `@crane/http-server` | `packages/http-server` | factory, storage, backend-runtime, contracts | `hono` |
-| `backend` | `src` (only `src/cli/`) | every `@crane/*` package (the root manifest's dependencies, which `test/contracts.test.ts` requires to list every package) | `commander`, `@clack/prompts`, `picocolors`, `@hono/node-server`, `better-sqlite3` (only `crane setup`'s probe) |
+| `backend` | `src` (only `src/cli/` and `application.ts`) | http-server, factory, storage, backend-runtime, agent-protocol, contracts: what `src/` imports in any form (`test/nx-graph.test.ts`). The root manifest still lists and bundles every package, which `test/contracts.test.ts` requires, so the installed CLI ships them | `commander`, `@clack/prompts`, `picocolors`, `@hono/node-server`, `better-sqlite3` (only `crane setup`'s probe) |
 
 Edges are exactly what the current imports need, and the graph is acyclic.
 Measured over today's `src/` with `test/support/imports.ts`'s `moduleRefs`
@@ -255,7 +255,7 @@ exact bytes afterwards (also on SIGINT/SIGTERM):
 | Case | Boundary | File today | Repetitions |
 | --- | --- | --- | --- |
 | `cli` | CLI-only | `src/cli/ui.ts` | 5, plus 3 uncached |
-| `http` | HTTP-only | `src/server/body.ts` | 5, plus 3 uncached |
+| `http` | HTTP-only | `packages/http-server/src/body.ts` | 5, plus 3 uncached |
 | `factory` | factory-only | `packages/factory/src/elapsed.ts` | 3 |
 | `storage` | storage-only | `packages/storage/src/store/shared.ts` | 3 |
 | `runtime` | runtime-only | `packages/backend-runtime/src/ids.ts` | 3 |

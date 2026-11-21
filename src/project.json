@@ -6,15 +6,12 @@
     "kind:backend"
   ],
   "implicitDependencies": [
-    "@crane/agent-drivers",
-    "@crane/agent-policy",
     "@crane/agent-protocol",
     "@crane/backend-runtime",
     "@crane/contracts",
-    "@crane/diagnostics",
     "@crane/factory",
-    "@crane/storage",
-    "@crane/worktree-deps"
+    "@crane/http-server",
+    "@crane/storage"
   ],
   "targets": {
     "build": {

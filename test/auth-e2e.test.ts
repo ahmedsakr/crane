@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { AuthStatus, InviteCheck, InviteSummary, TaskDetail } from "@crane/contracts";
-import { PUBLIC_ROUTES } from "../src/server/auth.js";
-import { STREAM_RECHECK_MS } from "../src/server/routes/tasks.js";
-import { checkExposure } from "../src/server/security.js";
+import { PUBLIC_ROUTES } from "../packages/http-server/src/auth.js";
+import { STREAM_RECHECK_MS } from "../packages/http-server/src/routes/tasks.js";
+import { checkExposure } from "@crane/http-server";
 import { onFixtureCleanup } from "./support/fixtures.js";
 import { within } from "./support/api-client.js";
 import {

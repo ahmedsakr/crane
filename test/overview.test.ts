@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { Store } from "@crane/storage";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 import type { BlockedCall, Overview } from "@crane/contracts";
 
 const FACTORY: Overview["factory"] = {

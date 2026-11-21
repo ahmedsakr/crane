@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { nextCrewFire, type CrewScheduleInput } from "@crane/contracts";
 import { Store } from "@crane/storage";
 import { OperatorActions } from "@crane/factory/actions";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 import { Factory } from "@crane/factory/runtime";
 import { SimulatedDriver } from "@crane/agent-drivers";
 

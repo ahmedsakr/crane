@@ -1,3 +1,4 @@
+import "../../src/application.js";
 import assert from "node:assert/strict";
 import type { TestContext } from "node:test";
 import { serve } from "@hono/node-server";
@@ -7,7 +8,7 @@ import type { Server } from "node:http";
 import { Store } from "@crane/storage";
 import { dbPath, craneHome } from "@crane/backend-runtime";
 import { runCli } from "../../src/cli/program.js";
-import { createApp, type AppOptions } from "../../src/server/app.js";
+import { createApp, type AppOptions } from "@crane/http-server";
 import { cookieFrom, type App, type Call } from "./api-client.js";
 import { onFixtureCleanup, temporaryRoot, testHome } from "./fixtures.js";
 import { sh } from "./git.js";

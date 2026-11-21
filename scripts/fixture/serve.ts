@@ -5,11 +5,13 @@
  *
  *   node <FIXTURE_NODE_ARGS> scripts/fixture/serve.ts <port>
  */
+// The HTTP package never binds application identity itself; this script is the application here.
+import "../../src/application.js";
 import { serve } from "@hono/node-server";
 import { craneHome } from "@crane/backend-runtime";
 import { Store } from "@crane/storage";
 import { DEFAULT_DRIVER_KEY, HEARTBEAT_KEY } from "@crane/factory/settings";
-import { createApp } from "../../src/server/app.js";
+import { createApp } from "@crane/http-server";
 
 /** Kept here rather than read from the factory, so a change to its crew doesn't move fixture pixels. */
 const CREW = [

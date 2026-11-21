@@ -9,7 +9,7 @@ import { parseReport, type AgentDriver, type RunContext } from "@crane/agent-pro
 import { Store } from "@crane/storage";
 import { OperatorActions } from "@crane/factory/actions";
 import { Factory } from "@crane/factory/runtime";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 import { systemPrompt, userPrompt } from "../packages/agent-drivers/src/prompts.js";
 
 process.env.CRANE_HOME = mkdtempSync(join(tmpdir(), "crane-prereq-home-"));

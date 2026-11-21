@@ -3,7 +3,7 @@ import type { Command } from "commander";
 import { DEFAULT_HOST, DEFAULT_PORT } from "@crane/backend-runtime";
 import { DEFAULT_MAX_TURNS, DEFAULT_TIME_LIMIT_MIN } from "@crane/factory/settings";
 import { factoryIsRunning } from "@crane/factory/state";
-import { checkExposure } from "../../server/security.js";
+import { checkExposure } from "@crane/http-server";
 import type { CliContext } from "../context.js";
 import * as ui from "../ui.js";
 import { loadTls, type TlsOptions } from "../tls.js";

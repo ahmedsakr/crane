@@ -181,7 +181,10 @@ export const STORE_EXCEPTIONS: Record<string, string> = {
   close: "closes the command's own database handle, so `crane start` can hand the database to the process it supervises",
 };
 
-/** Modules commands and routes may import, by path under src/, and which names (`*` for any). */
+/**
+ * Modules commands and routes may import, and which names (`*` for any). Paths are under src/, except `server/`,
+ * which names packages/http-server/src.
+ */
 const ALLOWED_MODULES: Record<string, string[]> = {
   "cli/ui": ["*"],
   "cli/context": ["*"],
@@ -206,6 +209,8 @@ const ALLOWED_PACKAGES: Record<string, string[]> = {
   "@crane/storage": ["Store", "readScreenshot", "screenshotPath"],
   "@crane/backend-runtime": ["DEFAULT_HOST", "DEFAULT_PORT"],
   "@crane/contracts": ["*"],
+  // `crane serve` refuses an exposed address before it starts anything; the check only reads its options.
+  "@crane/http-server": ["checkExposure"],
   "@clack/prompts": ["*"],
   commander: ["*"],
   hono: ["*"],

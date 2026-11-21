@@ -1,0 +1,27 @@
+{
+  "name": "@crane/http-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist/"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "dev": "tsc -b tsconfig.json --watch"
+  },
+  "dependencies": {
+    "@crane/backend-runtime": "0.1.0",
+    "@crane/contracts": "0.1.0",
+    "@crane/factory": "0.1.0",
+    "@crane/storage": "0.1.0",
+    "@hono/node-server": "^2.1.5",
+    "hono": "^4.13.14"
+  }
+}

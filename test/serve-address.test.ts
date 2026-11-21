@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "@crane/storage";
 import { saveServeAddress } from "../src/cli/serve.js";
-import { checkExposure } from "../src/server/security.js";
+import { checkExposure } from "@crane/http-server";
 import { onFixtureCleanup, testHome } from "./support/fixtures.js";
 
 test("serve address: saves the normalized public origin and replaces a previous address", (t) => {
