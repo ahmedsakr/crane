@@ -6,7 +6,6 @@ import { useAction } from "../lib/action";
 import { useToast } from "../lib/toast";
 import { useApp } from "../lib/app-context";
 import { ChangeAgentSheet } from "../components/ChangeAgentSheet";
-import { Section } from "../components/Section";
 import { StatusChip } from "../components/Status";
 import { AcceptanceSection } from "./task/AcceptanceSection";
 import { BlockedSection } from "./task/BlockedSection";
@@ -79,17 +78,6 @@ function TaskRail({ detail, view, drivers, actions, onChangeAgent }: Omit<PagePa
   );
 }
 
-function TaskActivity({ task, events }: { task: Task; events: TaskEvent[] }) {
-  return (
-    <Section title={<>
-      Activity
-      {(task.status === "running" || task.status === "merging") && <span className="dot dot-running" title="Live" />}
-    </>}>
-      <Timeline events={events} />
-    </Section>
-  );
-}
-
 function ChangeAgent({ task, onSaved, onClose }: { task: Task; onSaved: () => void; onClose: () => void }) {
   const toast = useToast();
   return (
@@ -125,7 +113,7 @@ export function TaskPage() {
   const changes = useTaskDiff(id, working || (showDiff && !!data?.task.branch), working);
 
   if (error) return <p className="muted" style={{ paddingTop: 40 }}>{error}</p>;
-  if (!data) return <p className="muted" style={{ paddingTop: 40 }}>Loading…</p>;
+  if (!data || data.task.id !== id) return <p className="muted" style={{ paddingTop: 40 }}>Loading…</p>;
   const { task, repo, agent } = data;
   const view = taskView(data, events);
   const actions = { busy: !!busy, run };
@@ -147,7 +135,7 @@ export function TaskPage() {
           <BlockedSection blocked={data.blocked} events={events} taskId={task.id} repoName={repo?.name} onDone={reload} />
           <FindingsSection task={task} followUps={view.followUps} drivers={drivers} open={finding} onOpenChange={setFinding} refresh={refresh} actions={actions} />
           <TaskChanges task={task} working={working} changes={changes} open={showDiff} onOpenChange={setShowDiff} />
-          <TaskActivity task={task} events={events} />
+          <Timeline key={task.id} events={events} live={task.status === "running" || task.status === "merging"} />
         </div>
         <TaskRail {...parts} drivers={drivers} onChangeAgent={() => setChangingAgent(true)} />
       </div>

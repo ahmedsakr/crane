@@ -6,8 +6,9 @@ import { addLiveEvent, uniqueEvents } from "./task-view";
 /** The task's events: what the last poll returned, then anything streamed since while it's active. */
 export function useTaskEvents(id: string, data: TaskDetail | null): TaskEvent[] {
   const [live, setLive] = useState<TaskEvent[]>([]);
-  const lastId = data?.events.at(-1)?.id ?? 0;
-  useEffect(() => setLive([]), [lastId]);
-  useEventStream(data && ACTIVE_STATUSES.includes(data.task.status) ? id : null, (e) => setLive((l) => addLiveEvent(l, e)), lastId);
-  return useMemo(() => uniqueEvents(data?.events ?? [], live), [data, live]);
+  const current = data?.task.id === id ? data : null;
+  const lastId = current?.events.at(-1)?.id ?? 0;
+  useEffect(() => setLive((events) => events.filter((event) => event.taskId === id && event.id > lastId)), [id, lastId]);
+  useEventStream(current && ACTIVE_STATUSES.includes(current.task.status) ? id : null, (e) => setLive((l) => addLiveEvent(l, e)), lastId);
+  return useMemo(() => uniqueEvents(current?.events ?? [], live.filter((event) => event.taskId === id && event.id > lastId)), [current, id, lastId, live]);
 }

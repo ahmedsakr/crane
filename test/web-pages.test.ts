@@ -4,7 +4,7 @@ import * as React from "react";
 import { createElement as h, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import { goalProgress, parseDiff, type DiffFile, type Goal, type GoalPlan, type GoalTask, type Task, type TaskStatus } from "@crane/contracts";
+import { goalProgress, parseDiff, type DiffFile, type Goal, type GoalPlan, type GoalTask, type Task, type TaskEvent, type TaskStatus } from "@crane/contracts";
 import { axisTick, emptyRangeHint, labelsDay, niceCeil, parseRange, perShippedTask, rangeParams, spendComparison, tipPosition, tokensIn, unknownCostNote } from "../web/src/lib/analytics.ts";
 import { filePathLabel, fileStatusLabel, gutterWidth, inlineLineText, noLinesNote, openFileIndex, saveDiffLayout, savedDiffLayout } from "../web/src/lib/diff-view.ts";
 import { addTask, canAddTask, goalListGroups, isCancellable, isPlanEditable, listProgress, patchTask, plannedText, removeTask, splitLines, taskForKey, withDependency, withoutBlankLines } from "../web/src/lib/goal-plan.ts";
@@ -23,9 +23,22 @@ const { DailyChart } = await webModule<"DailyChart">("pages/analytics/DailyChart
 const { GoalDecision } = await webModule<"GoalDecision">("pages/goals/GoalDecision.tsx");
 const { PlanEditor } = await webModule<"PlanEditor">("pages/goals/PlanEditor.tsx");
 const { GoalView } = await webModule<"GoalView">("pages/GoalPage.tsx");
+const { Timeline } = await webModule<"Timeline">("pages/task/Timeline.tsx");
 
 const render = (component: ComponentType<never>, props: object) =>
   renderToStaticMarkup(h(MemoryRouter, null, h(component, props as never)));
+
+test("activity starts with at most 50 recent events and offers older entries even when all visible steps fold", () => {
+  const events: TaskEvent[] = Array.from({ length: 51 }, (_, i) => ({
+    id: i + 1, taskId: "t-1", type: "tool", message: `Activity event #${i + 1}.`, ts: "2026-01-01T00:00:00Z", data: null,
+  }));
+  const html = render(Timeline, { events, live: false });
+  assert.match(html, /<button[^>]*aria-controls="task-activity-body"[^>]*>Show older entries<\/button>/);
+  assert.match(html, /id="task-activity-body"[^>]*role="region"[^>]*tabindex="0"/);
+  assert.match(html, /50 steps: Activity event #2\./);
+  assert.ok(!html.includes("Activity event #1."));
+  assert.ok(!render(Timeline, { events: events.slice(1), live: false }).includes("Show older entries"));
+});
 
 const task = (key: string, change: Partial<GoalTask> = {}): GoalTask => ({
   key, title: `Task ${key}`, brief: "Do it", dependsOn: [], driver: "codex", model: null, effort: null, rationale: "Why", acceptance: ["Done"], ...change,
