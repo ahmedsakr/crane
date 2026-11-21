@@ -98,7 +98,7 @@ export async function bootDemo(operator: Credentials | null): Promise<string> {
 }
 
 /** Like bootDemo, with the seed and server pinned and no factory process. */
-export async function bootFixture(): Promise<string> {
+export async function bootFixture(activityReview: boolean): Promise<string> {
   if (!existsSync(join(root, "web", "dist", "index.html"))) fail("Build the UI first: npm run build -w web");
   // An outdated build shows a notice in the page, and would compare the wrong UI anyway.
   if (webBuildOutdated(root)) fail("web/dist is older than its source. Rebuild it first: npm run build -w web");
@@ -106,7 +106,9 @@ export async function bootFixture(): Promise<string> {
   cleanup.push(() => rmSync(home, { recursive: true, force: true }));
   execFileSync(process.execPath, [...FIXTURE_NODE_ARGS, "scripts/seed-demo.ts"], { cwd: root, env: fixtureEnv(home, "seed"), stdio: ["ignore", "ignore", "inherit"] });
   const port = await freePort();
-  const server = spawn(process.execPath, [...FIXTURE_NODE_ARGS, "scripts/fixture/serve.ts", String(port)], {
+  const args = [...FIXTURE_NODE_ARGS, "scripts/fixture/serve.ts", String(port)];
+  if (activityReview) args.push("--activity-review");
+  const server = spawn(process.execPath, args, {
     cwd: root,
     env: fixtureEnv(home, "serve"),
     stdio: ["ignore", "ignore", "inherit"],

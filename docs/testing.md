@@ -349,6 +349,53 @@ The fixture doesn't pin the browser or the machine's font rendering. Compare
 images from one machine and browser; the bundled UI fonts are the same everywhere,
 but the `browser` field shows when two images came from different versions.
 
+### Task activity browser review
+
+Run this from the candidate checkout in an operator-approved environment with
+installed dependencies, Chromium, and permission to run the fixture on loopback.
+`--fixture --activity-review` starts a fresh disposable home for each viewport.
+It adds a long instruction, a live task with 180 numbered entries, and a second
+task with its own history. The smoke test appends two notes to the live task on
+demand and observes them through the dashboard’s normal event updates.
+
+```sh
+npm run build:packages && npm run build -w web && (
+  for viewport in 1280x800 1280x600 390x844; do
+    npm run screenshot -- /tasks --fixture --activity-review --size "$viewport" \
+      --wait-for '.rows a.row' \
+      --eval "$(cat scripts/fixture/activity-review.browser.js)" \
+      --eval 'activityReview.open()' \
+      --key PageDown --eval 'activityReview.instructionScrolled()' \
+      --shot ".crane/screenshots/activity-instruction-$viewport.png" \
+      --eval 'activityReview.focusActivity()' \
+      --key PageUp --eval 'activityReview.activityScrolled()' \
+      --eval 'activityReview.loadOlder()' \
+      --shot ".crane/screenshots/activity-reading-$viewport.png" \
+      --eval 'activityReview.checkLive()' \
+      --eval 'activityReview.switchTasks()' \
+      --out ".crane/screenshots/activity-latest-$viewport.png" || exit "$?"
+  done
+)
+```
+
+The run starts at `/tasks` and opens the seeded `/tasks/<id>` detail routes in
+the same browser session. The screenshot command exits on the first failed
+assertion. Record what passed, failed, or was skipped at each size.
+
+| Interaction | Expected outcome |
+| --- | --- |
+| Page Down in Instruction and Page Up in Activity | The focused body scrolls while the page stays in place. |
+| Show older entries, then scroll up to the boundary | Both actions prepend a batch and keep the visible row at the same offset. |
+| Append while reading older entries, then append from 24 px above the bottom | The first note preserves the visible row and the second brings the view to the newest entry. |
+| Switch to the second task and back | Both detail pages open at their own latest entry. The first task opens with its recent batch again. |
+
+Open all nine PNGs. At each size, check that Instruction and Activity stay
+within their cards, the focused Instruction remains readable, older entries
+fit without horizontal overflow, and the latest live entry is visible after
+switching back. In the task review record, include the candidate commit, each
+viewport’s interaction outcome, and the screenshot paths and inspection results.
+Record any unreviewed scope explicitly if the operator chooses to waive it.
+
 ## Multi-operator remote access
 
 `test/auth-e2e.test.ts` uses the same Node HTTP adapter as `serve`, bound to

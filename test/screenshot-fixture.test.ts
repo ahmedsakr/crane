@@ -7,6 +7,8 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { deflateSync } from "node:zlib";
 import Database from "better-sqlite3";
+import { Store } from "@crane/storage";
+import { createActivityReview } from "../scripts/fixture/activity-review.ts";
 import { FIXTURE, FIXTURE_NODE_ARGS, createFixtureHome, fixedClockSource, fixtureEnv, isFixtureHome, seededRandom } from "../scripts/fixture/fixture.ts";
 import { matrixCells, parseMatrix } from "../scripts/fixture/matrix.ts";
 import { diffPngs, readPng, readPngMetadata, withPngMetadata } from "../scripts/fixture/png.ts";
@@ -121,6 +123,27 @@ test("screenshot fixture: the seeded generator repeats, and streams differ", () 
   assert.deepEqual(draw("a"), draw("a"));
   assert.notDeepEqual(draw("a"), draw("b"));
   assert.ok(draw("a").every((n) => n >= 0 && n < 1));
+});
+
+test("activity review fixture seeds two histories and appends only to the live task", async (t) => {
+  const store = new Store(":memory:");
+  t.after(() => store.close());
+  const review = createActivityReview(store);
+  const url = "http://localhost/_fixture/activity-review";
+  const { primary, secondary } = await review(new Request(url))!.json();
+  assert.equal(store.getTask(primary)?.status, "running");
+  assert.equal(store.getTask(primary)?.brief.split("\n\n").length, 45);
+  assert.equal(store.listEvents(primary).length, 181);
+  assert.equal(store.listEvents(primary).at(-1)?.message, "Long activity history entry 180");
+  assert.equal(store.listEvents(secondary).length, 25);
+  assert.equal(review(new Request("http://localhost/api/tasks")), null);
+  assert.equal(review(new Request(url, { method: "POST" }))?.status, 403);
+  assert.equal(store.listEvents(primary).length, 181);
+  const append = () => review(new Request(url, { method: "POST", headers: { "X-Crane-Activity-Review": "append" } }));
+  assert.equal((await append()!.json()).message, "Live review entry 1");
+  assert.equal((await append()!.json()).message, "Live review entry 2");
+  assert.equal(store.listEvents(primary).at(-1)?.message, "Live review entry 2");
+  assert.equal(store.listEvents(secondary).length, 25);
 });
 
 test("screenshot fixture: the clock stops for every way of asking, and explicit dates still work", () => {

@@ -12,6 +12,8 @@ import { craneHome } from "@crane/backend-runtime";
 import { Store } from "@crane/storage";
 import { DEFAULT_DRIVER_KEY, HEARTBEAT_KEY } from "@crane/factory/settings";
 import { createApp } from "@crane/http-server";
+import { createActivityReview } from "./activity-review.ts";
+import { isFixtureHome } from "./fixture.ts";
 
 /** Kept here rather than read from the factory, so a change to its crew doesn't move fixture pixels. */
 const CREW = [
@@ -49,8 +51,11 @@ function stablePaths(store: Store): (body: string) => string {
 
 const port = Number(process.argv[2]);
 if (!port) throw new Error("Pass the port to listen on");
+const activityReview = process.argv[3] === "--activity-review";
+if (activityReview && !isFixtureHome(craneHome())) throw new Error("Activity review requires a disposable screenshot fixture home");
 const store = new Store();
 holdFactoryState(store);
+const review = activityReview ? createActivityReview(store) : null;
 const app = createApp(store);
 const rewrite = stablePaths(store);
 
@@ -58,6 +63,8 @@ serve({
   hostname: "127.0.0.1",
   port,
   fetch: async (request) => {
+    const activity = review?.(request);
+    if (activity) return activity;
     const response = await app.fetch(request);
     if (!response.headers.get("content-type")?.startsWith("application/json")) return response;
     const headers = new Headers(response.headers);
