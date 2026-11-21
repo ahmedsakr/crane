@@ -4,22 +4,16 @@ import * as React from "react";
 import { createElement as h, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
-import { classifyToolCall, type GuardContext } from "@crane/agent-policy";
-import { COMMAND_ACCESS_LABEL, type BlockedTool, type Task, type TaskEvent } from "@crane/contracts";
-import { GUARD_REASONS } from "../packages/agent-policy/src/guard-rules.ts";
-import { guardRefusals } from "../packages/agent-drivers/src/simulated.ts";
+import { COMMAND_ACCESS_LABEL, type BlockedTool, type TaskEvent } from "@crane/contracts";
 import { accessChip, GUARD_ALWAYS_BLOCKS, GUARD_ASKS_FIRST } from "../web/src/lib/command-access.ts";
 import { hardGuardRefusals, refusalLine } from "../web/src/lib/refusals.ts";
-import { Store } from "@crane/storage";
 
 // tsx applies the root tsconfig only inside `src`, so web's .tsx files compile to React.createElement here.
 Object.assign(globalThis, { React });
-// By computed path: these import web modules without extensions, which only web's own tsconfig accepts.
-const webModule = (path: string): Promise<Record<string, ComponentType<never>>> =>
-  import(new URL(`../web/src/${path}`, import.meta.url).href);
-const { AccessChoices, GuardDetails } = await webModule("pages/repos/CommandsSheet.tsx");
-const { BlockedItem, GuardBlockedItem } = await webModule("components/BlockedItem.tsx");
-const { BlockedSection } = await webModule("pages/task/BlockedSection.tsx");
+// Keep NodeNext from traversing web's extensionless imports.
+const { AccessChoices, GuardDetails } = await import(new URL("../web/src/pages/repos/CommandsSheet.tsx", import.meta.url).href) as Record<string, ComponentType<never>>;
+const { BlockedItem, GuardBlockedItem } = await import(new URL("../web/src/components/BlockedItem.tsx", import.meta.url).href) as Record<string, ComponentType<never>>;
+const { BlockedSection } = await import(new URL("../web/src/pages/task/BlockedSection.tsx", import.meta.url).href) as Record<string, ComponentType<never>>;
 
 const render = (component: ComponentType<never>, props: object) =>
   renderToStaticMarkup(h(MemoryRouter, null, h(component, props as never)));
@@ -59,11 +53,6 @@ test("commands sheet: what the guard blocks and what auto mode costs wait behind
   }
   assert.match(html, /uses more tokens and adds a short wait per command/);
   assert.match(html, /fall back to only allowed commands when it&#x27;s unavailable/);
-});
-
-test("commands sheet: its lists cover every guard category, split by whether the operator can allow it", () => {
-  assert.deepEqual([...Object.keys(GUARD_ALWAYS_BLOCKS), ...Object.keys(GUARD_ASKS_FIRST)].sort(), Object.keys(GUARD_REASONS).sort());
-  for (const category of Object.keys(GUARD_ASKS_FIRST)) assert.match(GUARD_REASONS[category as keyof typeof GUARD_REASONS], /requires? an operator rule/);
 });
 
 test("repo rows: only the wider settings show a chip", () => {
@@ -126,41 +115,4 @@ test("task page: the blocked section lists decisions first, then hard guard refu
   assert.match(hardOnly, /<span class="count">1<\/span>/);
   assert.doesNotMatch(hardOnly, /Allowing applies|<button/, "nothing to decide, so nothing to allow");
   assert.equal(render(BlockedSection!, { ...props, blocked: [], events: [] }), "");
-});
-
-test("blocked tools: the aggregate carries the latest guard or auto-mode refusal, and not allowlist text", () => {
-  const store = new Store(":memory:");
-  try {
-    const repo = store.addRepo({ path: "/code/app", name: "app" });
-    const task = store.createTask({ kind: "maintenance", title: "Guarded", brief: "", autonomy: "propose", repoId: repo.id });
-    store.addEvent(task.id, "blocked", "Blocked: npm publish", { tool: "Bash", rules: ["Bash(npm publish:*)"], refusal: { source: "claude-code.tool_result", reason: "This command requires approval" } });
-    store.addEvent(task.id, "blocked", "Blocked: npm publish", { tool: "Bash", rules: ["Bash(npm publish:*)"], refusal: PUBLISH, guard: { category: "publish", overridable: true } });
-    store.addEvent(task.id, "blocked", "Blocked: npm run db:reset", { tool: "Bash", rules: ["Bash(npm run db:reset:*)"], refusal: AUTO });
-    store.addEvent(task.id, "blocked", "Blocked: docker compose up", { tool: "Bash", rules: ["Bash(docker compose:*)"], refusal: { source: "claude-code.tool_result", reason: "This command requires approval" } });
-    const byRule = Object.fromEntries(store.blockedTools({ taskId: task.id }).map((b) => [b.rule, b]));
-    assert.deepEqual(byRule["Bash(npm publish:*)"]!.refusal, PUBLISH, "the latest of its refusals");
-    assert.equal(byRule["Bash(npm publish:*)"]!.times, 2);
-    assert.deepEqual(byRule["Bash(npm run db:reset:*)"]!.refusal, AUTO);
-    assert.equal("refusal" in byRule["Bash(docker compose:*)"]!, false);
-  } finally { store.close(); }
-});
-
-test("simulated driver: wider command access shows each kind of refusal, with the guard's real verdicts", () => {
-  const task = { id: "t-1", autonomy: "propose" } as Task;
-  const ctx = { task, repo: null, cwd: "/factory/worktrees/t-1", craneHome: "/factory", allowedTools: [] };
-  assert.deepEqual(guardRefusals({ ...ctx, commandAccess: "listed" }), []);
-  assert.deepEqual(guardRefusals({ ...ctx }), [], "no setting reads as only allowed commands");
-  assert.deepEqual(guardRefusals({ ...ctx, task: { ...task, autonomy: "observe" }, commandAccess: "auto" }), [], "investigate-only runs have no guard");
-  const most = guardRefusals({ ...ctx, commandAccess: "most" });
-  assert.deepEqual(most.map((r) => [r.command, r.refusal?.source, r.guard?.overridable, r.rules]), [
-    ["git branch -f main HEAD", "crane.guard", false, []],
-    ["npm publish", "crane.guard", true, ["Bash(npm publish:*)"]],
-  ]);
-  const guard: GuardContext = { access: "most", profile: "worktree", worktree: ctx.cwd, checkout: ctx.cwd, defaultBranch: "main", craneHome: "/factory", home: null, allowed: [] };
-  for (const r of most) assert.equal(r.refusal?.reason, classifyToolCall({ tool: "Bash", input: { command: r.command! } }, guard).reason);
-  const auto = guardRefusals({ ...ctx, commandAccess: "auto" });
-  assert.equal(auto.length, 3);
-  assert.equal(auto[2]!.refusal?.source, "claude.auto-mode");
-  assert.deepEqual(auto[2]!.rules, ["Bash(npm run db:reset:*)"]);
-  assert.equal(auto[2]!.guard, undefined);
 });

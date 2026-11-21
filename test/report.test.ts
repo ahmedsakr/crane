@@ -69,3 +69,18 @@ test("report: capture instructions remain agent evidence without accepting a can
     assert.deepEqual(parse(invalid), visualReview);
   }
 });
+
+test("report: parses the fenced block", () => {
+  const text = 'Done.\n\n```crane-report\n{"summary":"All good.","findings":[{"title":"A","detail":"B","impact":"high","effort":"tiny"}],"changedFiles":["x.ts"]}\n```';
+  const r = parseReport(text);
+  assert.equal(r.summary, "All good.");
+  assert.equal(r.findings[0]!.impact, "high");
+  assert.equal(r.findings[0]!.effort, "medium"); // unknown values fall back
+  assert.deepEqual(r.changedFiles, ["x.ts"]);
+});
+
+test("report: falls back to the first paragraph", () => {
+  const r = parseReport("The cache key ignores the locale.\n\nMore detail here.");
+  assert.equal(r.summary, "The cache key ignores the locale.");
+  assert.equal(r.findings.length, 0);
+});

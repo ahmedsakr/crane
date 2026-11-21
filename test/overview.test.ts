@@ -6,7 +6,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
 import { Store } from "@crane/storage";
-import { createApp } from "@crane/http-server";
 import type { BlockedCall, Overview } from "@crane/contracts";
 
 const FACTORY: Overview["factory"] = {
@@ -220,38 +219,22 @@ test("blocked tools: filters on the shared totals by repo, task and how widespre
   } finally { store.close(); }
 });
 
-test("api: tabs share one overview for a moment, and actions show immediately", async (t) => {
+const PUBLISH = { source: "crane.guard", reason: "Publishing or changing remote resources requires an operator rule for this repository." } as const;
+const AUTO = { source: "claude.auto-mode", reason: "Resetting the shared database goes beyond what the task asked for." } as const;
+
+test("blocked tools: the aggregate carries the latest guard or auto-mode refusal, and not allowlist text", () => {
   const store = new Store(":memory:");
   try {
-    const { task } = seeded(store);
-    const app = createApp(store);
-    const computed = t.mock.method(store, "overview");
-    const read = async () => {
-      const response = await app.request("/api/overview");
-      assert.equal(response.status, 200);
-      assert.match(response.headers.get("content-type") ?? "", /^application\/json/);
-      return await response.json() as Overview;
-    };
-
-    const first = await read();
-    assert.deepEqual(await read(), first);
-    assert.equal(computed.mock.callCount(), 1, "a second tab gets the same answer");
-
-    const paused = await app.request("/api/factory/pause", { method: "POST" });
-    assert.equal(paused.status, 200);
-    assert.equal((await read()).factory.paused, true, "an action shows on the very next poll");
-    assert.equal(computed.mock.callCount(), 2);
-
-    const failed = await app.request("/api/tasks/t-unknown/merge", { method: "POST" });
-    assert.equal(failed.status, 400);
-    await read();
-    assert.equal(computed.mock.callCount(), 3, "a failed action may have changed something before it failed");
-
-    // Work the factory does itself shows within the sharing window.
-    const queued = task("Started by the factory");
-    assert.ok(!(await read()).inFlight.some((x) => x.id === queued.id), "still shared");
-    await new Promise((resolve) => setTimeout(resolve, 1050));
-    assert.ok((await read()).inFlight.some((x) => x.id === queued.id));
-    assert.equal(computed.mock.callCount(), 4);
+    const repo = store.addRepo({ path: "/code/app", name: "app" });
+    const task = store.createTask({ kind: "maintenance", title: "Guarded", brief: "", autonomy: "propose", repoId: repo.id });
+    store.addEvent(task.id, "blocked", "Blocked: npm publish", { tool: "Bash", rules: ["Bash(npm publish:*)"], refusal: { source: "claude-code.tool_result", reason: "This command requires approval" } });
+    store.addEvent(task.id, "blocked", "Blocked: npm publish", { tool: "Bash", rules: ["Bash(npm publish:*)"], refusal: PUBLISH, guard: { category: "publish", overridable: true } });
+    store.addEvent(task.id, "blocked", "Blocked: npm run db:reset", { tool: "Bash", rules: ["Bash(npm run db:reset:*)"], refusal: AUTO });
+    store.addEvent(task.id, "blocked", "Blocked: docker compose up", { tool: "Bash", rules: ["Bash(docker compose:*)"], refusal: { source: "claude-code.tool_result", reason: "This command requires approval" } });
+    const byRule = Object.fromEntries(store.blockedTools({ taskId: task.id }).map((b) => [b.rule, b]));
+    assert.deepEqual(byRule["Bash(npm publish:*)"]!.refusal, PUBLISH, "the latest of its refusals");
+    assert.equal(byRule["Bash(npm publish:*)"]!.times, 2);
+    assert.deepEqual(byRule["Bash(npm run db:reset:*)"]!.refusal, AUTO);
+    assert.equal("refusal" in byRule["Bash(docker compose:*)"]!, false);
   } finally { store.close(); }
 });

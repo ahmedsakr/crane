@@ -150,10 +150,11 @@ test("affected typecheck: shared inputs, project configuration, unknown files an
 });
 
 /** A host that records each step, with git answering as a branch that changed `paths`. */
-function host(options: { paths?: string[] | null; links?: number; nx?: number; suites?: number } = {}) {
+function host(options: { paths?: string[] | null; links?: number; nx?: number; suites?: number; root?: string } = {}) {
   const steps: string[] = [];
   const logs: string[] = [];
   const printed: string[] = [];
+  const executions: (readonly string[])[] = [];
   const commit = "a".repeat(40);
   const other = "b".repeat(40);
   const git: Git = (args) => {
@@ -167,7 +168,7 @@ function host(options: { paths?: string[] | null; links?: number; nx?: number; s
     return ok("");
   };
   const fake: TaskHost = {
-    root, git,
+    root: options.root ?? root, git,
     checkLinks: () => { steps.push("links"); return options.links ?? 0; },
     nx: async (args, observeStdout) => {
       steps.push(`nx ${args.join(" ")}`);
@@ -175,11 +176,15 @@ function host(options: { paths?: string[] | null; links?: number; nx?: number; s
       observeStdout?.("10 tasks.\n");
       return options.nx ?? 0;
     },
-    runSuites: async (suites) => { steps.push(`suites ${suites.length}`); return options.suites ?? 0; },
+    runSuites: async (suites) => {
+      executions.push(suites);
+      steps.push(`suites ${suites.length}`);
+      return options.suites ?? 0;
+    },
     log: (message) => logs.push(message),
     print: (text) => printed.push(text),
   };
-  return { fake, steps, logs, printed };
+  return { fake, steps, logs, printed, executions };
 }
 
 const args = (argv: string[]): TaskArgs => taskArguments(argv);
@@ -195,6 +200,7 @@ test("tasks: full tests build every package before one runner over every root su
   const run = host();
   assert.equal(await runTask(args(["test"]), run.fake), 0);
   assert.deepEqual(run.steps, ["links", `nx run-many -t build -p ${PACKAGES.join(",")} ${NX_FLAGS.join(" ")}`, `suites ${rootSuites(root).length}`]);
+  assert.deepEqual(run.executions, [rootSuites(root)]);
   assert.match(run.logs.join("\n"), /Test execution: \d+ ms wall time/);
   assert.match(run.logs.at(-1)!, /Package build: \d+ ms wall time \(exit 0, Nx cache 4\/10 hits\)/);
 });
@@ -214,7 +220,10 @@ test("tasks: failures keep their exit status, and a failed package build runs no
   assert.equal(build.steps.some((step) => step.startsWith("suites")), false);
   assert.match(build.logs.at(-1)!, /Package build: \d+ ms wall time \(exit 3,/);
   assert.equal(await runTask(args(["test"]), host({ suites: 5 }).fake), 5);
-  assert.equal(await runTask(args(affected("test")), host({ suites: 9, paths: ["src/core/store.ts"] }).fake), 9);
+  const selected = host({ nx: 3, paths: ["src/cli/ui.ts"] });
+  assert.equal(await runTask(args(affected("test")), selected.fake), 3);
+  assert.deepEqual(selected.executions, []);
+  assert.equal(await runTask(args(affected("test")), host({ suites: 9, paths: ["src/cli/ui.ts"] }).fake), 9);
 });
 
 test("tasks: affected typecheck runs the changed projects and their consumers, with diagnostics", async () => {
@@ -260,6 +269,39 @@ test("tasks: affected tests run only the selected groups' suites, after every pa
   assert.ok(count > 0 && count < rootSuites(root).length, run.steps[2]);
   assert.match(run.logs.join("\n"), /Test groups \(\d+\): .*package-agent-protocol/);
   assert.doesNotMatch(run.logs.join("\n"), /Test groups.*package-agent-policy/);
+});
+
+test("tasks: repeated CLI-only checks execute the same suites even when the package build reports cache hits", async () => {
+  const run = host({ paths: ["src/cli/ui.ts"] });
+  const request = args(affected("test"));
+  for (let index = 0; index < 2; index++) assert.equal(await runTask(request, run.fake), 0);
+  assert.equal(run.executions.length, 2);
+  assert.deepEqual(run.executions[0], run.executions[1]);
+  assert.ok(run.executions[0]!.includes("test/cli.test.ts"));
+  assert.ok(run.executions[0]!.includes("test/auth-e2e.test.ts"));
+  assert.ok(!run.executions[0]!.includes("test/goals.test.ts"));
+  assert.ok(run.executions[0]!.length < 106);
+  assert.deepEqual(run.steps, [
+    "links", `nx run-many -t build -p ${PACKAGES.join(",")} ${NX_FLAGS.join(" ")}`, `suites ${run.executions[0]!.length}`,
+    "links", `nx run-many -t build -p ${PACKAGES.join(",")} ${NX_FLAGS.join(" ")}`, `suites ${run.executions[0]!.length}`,
+  ]);
+});
+
+test("tasks: an unreadable selection graph still sends the full plan through the prerequisite build", async (t) => {
+  const dir = temporaryRoot(t, "crane-affected-graph-");
+  const put = (file: string, value: string) => {
+    mkdirSync(dirname(join(dir, file)), { recursive: true });
+    writeFileSync(join(dir, file), value);
+  };
+  put("packages/a/package.json", '{"name":"@fixture/a"}');
+  put("packages/a/project.json", "invalid json");
+  const suites = rootSuites(root);
+  for (const suite of suites) put(suite, "");
+  const run = host({ root: dir, paths: ["packages/a/src/index.ts"] });
+  assert.equal(await runTask(args(affected("test")), run.fake), 0);
+  assert.match(run.logs.join("\n"), /Full test run: Cannot verify test dependencies/);
+  assert.deepEqual(run.steps, ["links", `nx run-many -t build -p @fixture/a ${NX_FLAGS.join(" ")}`, `suites ${suites.length}`]);
+  assert.deepEqual(run.executions, [suites]);
 });
 
 test("tasks: --list prints the selection without checking links, building or running", async () => {

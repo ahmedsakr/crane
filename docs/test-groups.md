@@ -10,29 +10,38 @@ once. Group ids are stable interfaces for `scripts/tasks.ts`:
 
 | Group | Scope and dependencies |
 | --- | --- |
-| `package-contracts` | Shared helper parity; contracts, protocol and private driver sources |
+| `package-contracts` | Shared labels and pure contract helpers |
 | `package-agent-protocol` | Report parsing; protocol and contracts |
 | `package-agent-policy` | Permission rules; policy and contracts |
-| `package-agent-drivers` | Driver streams, hooks and process helpers; drivers and its package dependencies |
+| `package-agent-drivers` | Driver streams, hooks, process helpers and protocol parity |
 | `package-diagnostics` | Redaction and both consumers; diagnostics, drivers and worktree-deps |
-| `package-worktree-deps` | Dependency installation, package-source scans and elapsed parity; all projects for computed export probes |
-| `backend` | Backend/integration suites; backend and web (parity helpers), including their dependencies |
-| `web` | UI helpers, rendering and API parity; web and backend, including their dependencies |
-| `architecture` | Repository-wide source shape, boundaries, manifests, graph and ownership scans |
+| `package-worktree-deps` | Dependency preparation, installation, copying and progress |
+| `backend-runtime` | Actor context and runtime helpers |
+| `storage` | Store persistence, indexes, claims, analytics and summaries |
+| `factory-actions` | Operator actions, goals, crew, queue, scheduling and retention settings |
+| `factory-agents` | Agent runs, drivers, cost, prompts, evidence and restart |
+| `factory-execution` | Work and merge execution, checks, storage diagnostics and worktrees |
+| `storage-agent-evidence`, `storage-check-reports` | Stored command/cost evidence from drivers and check report evidence from the protocol |
+| `http` | Routes, authentication, exposure and sign-in limiting |
+| `http-factory` | Factory and storage behavior exercised through HTTP |
+| `cli` | Command registration, operator commands, setup and startup |
+| `cli-http` | Attribution across CLI and HTTP, auth bootstrap, serving and TLS |
+| `web` | Pure web helpers and rendering, including browser scheduling behavior |
+| `web-http`, `web-policy` | Client/server behavior for Home and operator APIs, and UI parity with command guard categories |
+| `architecture` | Repository-wide source shape, boundaries, export probes, manifests, graph and ownership scans |
 | `build` | Repository-wide build ordering, workspace links, dashboard staleness, screenshots and runner contracts |
 
-An execution owner need not be the only project a suite imports. For example,
-diagnostics tests read private driver and install-process sources. Backend and
-web integration groups intentionally overlap in *inputs*, never in execution.
-The contracts suite is owned by architecture because it scans every package,
-the web tree and root manifests. It is not just a contracts unit suite.
+An execution owner can consume several projects. For example, diagnostics
+tests import private driver and dependency-install sources, and the Home
+integration drives the web model from the real HTTP overview. The architecture
+owner includes the contracts suite because it scans package and web source and
+root manifests.
 
-These groups are coarse. `backend` holds 71 suites and its closure covers
-every project, so any package, backend or web edit still selects nearly every
-suite (106 of 119 at the [extraction baseline](backend-extraction.md#selection-matrix));
-only an edit confined to root suites narrows much. Count suites from
-`rootSuites`, not from these figures. The measured effect is in
-[Measured results](nx.md#measured-results).
+At the ownership split, a CLI-only edit selected 28 of 131 suites, an HTTP-only
+edit selected 49, and a web-only edit selected 35. The earlier CLI and HTTP
+probes selected 106 of 119 suites. These are selection counts. Package builds
+and repository-wide scans still contribute to the affected workload.
+[Extraction baseline](backend-extraction.md#selection-matrix)
 
 ## Enumeration and conservative selection
 
@@ -57,14 +66,22 @@ Execute a plan's `suites` once. When `fallback` is nonempty, command wiring must
 invoke the full runner once rather than fan out the returned group ids: separate
 group invocations would each detect catalog drift and repeat full execution.
 
-Project dependencies come from the merged `project.json` graph, including its
-transitive edges. The import audit uses `test/support/imports.ts` to check named
-imports, re-exports and helper chains, public package subpaths and private
-package source imports (`.js` specifiers resolve to `.ts` source). Missing inputs,
-parse failures or dependency drift cause full selection. Computed imports require
-declared coverage of every production project; otherwise selection falls back
-fully. This audit supplements explicit ownership: arbitrary filesystem reads
-cannot define reliable ownership by themselves.
+Project dependencies come from the `project.json` graph. The audit checks
+workspace edges against manifests and expands each group's transitive closure.
+It follows imports, type references, re-exports and helper chains. Literal
+dynamic imports, including `import(new URL("./file.ts", import.meta.url).href)`,
+are checked without executing them. Public workspace subpaths and private
+relative `dist/` imports resolve to source before builds exist. Suites that
+load `src/application.ts` for application identity track that file and its
+imports. A CLI-only edit reaches the suites exercising the CLI project.
+
+Missing or unresolved imports, parse failures and graph drift select full
+work. Computed imports require declared coverage of every production project.
+The audit also flags Node filesystem imports in narrow suites and their
+helpers unless the importing file is in `AUDITED_FILESYSTEM`. Review the actual
+paths before adding an entry. Scratch fixture reads stay with their owners,
+checkout inputs must be covered by the owner's project closure or global-input
+rules, and arbitrary repository scans belong in architecture or build.
 
 Architecture and build groups run on **every changed path**, including added or
 deleted source files with no importers. `test/support/**`, `scripts/**`, project
@@ -84,7 +101,7 @@ environment that permits Node's test worker processes:
 ```sh
 npm run build:packages && node --import tsx scripts/run-test-groups.ts --full
 npm run build:packages && node --import tsx scripts/run-test-groups.ts --group package-agent-policy
-node --import tsx scripts/run-test-groups.ts --group web --group backend --list
+node --import tsx scripts/run-test-groups.ts --group web --group web-http --list
 node --import tsx scripts/run-test-groups.ts --full --list
 ```
 
@@ -114,5 +131,3 @@ outside Codex's no-network sandbox. Locally use `npm run typecheck`, then direct
 `node --import tsx test/test-ownership.test.ts` and
 `node --import tsx test/test-runner.test.ts`. Full validation remains Crane's
 unchanged `npm run typecheck` and `npm test` checks.
-
-Runtime helpers now belong to `@crane/backend-runtime`. Existing backend integration ownership reaches it through backend's dependency closure, and repository-wide build/architecture groups remain selected. Actor tests use the public package entry to share the production context. Narrower runtime suite partitioning is deferred to the ownership task.

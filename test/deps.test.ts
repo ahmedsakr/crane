@@ -1,4 +1,3 @@
-import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -7,7 +6,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { installDependencies, preparedDependencyIdentity, type InstallDependenciesOptions } from "@crane/worktree-deps";
 import { copyDependencies, dependencyFingerprint, npmInstallMatches } from "../packages/worktree-deps/src/deps.js";
-import { elapsed } from "../packages/factory/src/elapsed.js";
 
 function fixture(t: { after(fn: () => void): void }) {
   const root = mkdtempSync(join(tmpdir(), "crane-deps-"));
@@ -375,12 +373,6 @@ test("dependencies: a copied preparation reports progress and its duration", asy
   assert.deepEqual(progress, [`Copying dependencies from your checkout${reason}`]);
   assert.match(note!, /^Copied dependencies from your checkout \(node_modules\) in \d+\.\ds · /);
   assert.ok(note!.endsWith(reason), note!);
-});
-
-test("dependencies: durations read naturally", () => {
-  assert.equal(elapsed(420), "0.4s");
-  assert.equal(elapsed(12_400), "12s");
-  assert.equal(elapsed(161_000), "2m 41s");
 });
 
 test("dependencies: cancelling a copy cleans the destination without falling back to installation", async t => {

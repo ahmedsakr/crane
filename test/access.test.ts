@@ -1,10 +1,8 @@
 import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { setTimeout as sleep } from "node:timers/promises";
-import { actorLabel, describeClient, normalizeUsername, type EventActor } from "@crane/contracts";
+import type { EventActor } from "@crane/contracts";
 import { Store } from "@crane/storage";
-import { actorSnapshot, withActor } from "@crane/backend-runtime";
 import { AccessError, OperatorActions } from "@crane/factory/actions";
 import { dummyVerify, hashPassword, newToken, tokenDigest, verifyPassword } from "../packages/factory/src/auth-crypto.js";
 
@@ -59,22 +57,8 @@ test("access: tokens are random, URL-safe, and stored as SHA-256 digests", () =>
   assert.equal(tokenDigest(token), tokenDigest(token));
 });
 
-test("access: contract helpers describe clients and actors", () => {
-  const cases: [string | null, string | null][] = [
-    ["Mozilla/5.0 (Macintosh; Intel Mac OS X 14.1; rv:120.0) Gecko/20100101 Firefox/120.0", "Firefox on macOS"],
-    ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36 Edg/120.0", "Edge on Windows"],
-    ["Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36", "Chrome on Linux"],
-    ["Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1", "Safari on iOS"],
-    ["Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36", "Chrome on Android"],
-    ["curl/8.4.0", "curl"],
-    ["something else", null],
-    ["", null],
-    [null, null],
-  ];
-  for (const [ua, label] of cases) assert.equal(describeClient(ua), label, String(ua));
-  assert.equal(actorLabel({ kind: "operator", id: "o-1", name: "Sam" }), "Sam");
-  assert.equal(actorLabel(HOST), "ahmed on the host");
-  assert.equal(normalizeUsername("  Sam.Lee "), "sam.lee");
+test("access: errors preserve their response status", () => {
+  assert.equal(new AccessError(429, "Slow down").status, 429);
 });
 
 test("access: adding an operator checks the username, name and password", async () => {
@@ -332,23 +316,4 @@ test("access: expired sessions and links are pruned", async () => {
   later(6 * DAY + 1);
   assert.deepEqual(actions.pruneAccess(), { sessions: 1, invites: 1 });
   assert.deepEqual(rows(store, "sessions").map((s) => (s as { id: string }).id), [fresh.session.id]);
-});
-
-test("actor: actorSnapshot follows withActor across awaits and is null outside", async () => {
-  assert.equal(actorSnapshot(), null);
-  const sam: EventActor = { kind: "operator", id: "o-sam", name: "Sam" };
-  assert.equal(withActor(HOST, () => actorSnapshot()?.name), "ahmed");
-  const seen = await withActor(sam, async () => {
-    const before = actorSnapshot();
-    await sleep(5);
-    const inner = await withActor(HOST, async () => { await sleep(1); return actorSnapshot(); });
-    await Promise.resolve();
-    return [before, inner, actorSnapshot()];
-  });
-  assert.deepEqual(seen, [sam, HOST, sam]);
-  // Two requests at once each keep their own actor.
-  const both = await Promise.all([sam, HOST].map((actor) => withActor(actor, async () => { await sleep(3); return actorSnapshot(); })));
-  assert.deepEqual(both, [sam, HOST]);
-  assert.equal(actorSnapshot(), null);
-  assert.ok(new AccessError(429, "Slow down").status === 429);
 });

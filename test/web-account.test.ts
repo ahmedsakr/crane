@@ -8,21 +8,20 @@ import { createAuthStore } from "../web/src/lib/auth.ts";
 
 // tsx applies the root tsconfig only inside `src`, so web's .tsx files compile to React.createElement here.
 Object.assign(globalThis, { React });
-// By computed path: these import web modules without extensions, which only web's own tsconfig accepts.
-const webModule = <T>(path: string): Promise<T> => import(new URL(`../web/src/${path}`, import.meta.url).href);
+// Keep NodeNext from traversing web's extensionless imports.
 type PasswordDraft = { current: string; next: string; confirm: string };
-const account = await webModule<{
+const account = await import(new URL("../web/src/lib/account.ts", import.meta.url).href) as {
   devicesLabel: (n: number) => string;
   orderSessions: (sessions: OperatorSession[]) => OperatorSession[];
   deviceName: (s: OperatorSession) => string;
   deviceDetail: (s: OperatorSession) => string;
   passwordProblem: (draft: PasswordDraft) => string | null;
   nameProblem: (name: string) => string | null;
-}>("lib/account.ts");
-const { until } = await webModule<{ until: (iso: string | null | undefined) => string }>("lib/format.ts");
-const { AccountSummary } = await webModule<{ AccountSummary: ComponentType<never> }>("components/account/AccountSummary.tsx");
-const { DeviceList } = await webModule<{ DeviceList: ComponentType<never> }>("components/account/DeviceList.tsx");
-const { PasswordForm } = await webModule<{ PasswordForm: ComponentType<never> }>("components/account/PasswordForm.tsx");
+};
+const { until } = await import(new URL("../web/src/lib/format.ts", import.meta.url).href) as { until: (iso: string | null | undefined) => string };
+const { AccountSummary } = await import(new URL("../web/src/components/account/AccountSummary.tsx", import.meta.url).href) as { AccountSummary: ComponentType<never> };
+const { DeviceList } = await import(new URL("../web/src/components/account/DeviceList.tsx", import.meta.url).href) as { DeviceList: ComponentType<never> };
+const { PasswordForm } = await import(new URL("../web/src/components/account/PasswordForm.tsx", import.meta.url).href) as { PasswordForm: ComponentType<never> };
 
 const render = (component: ComponentType<never>, props: object) => renderToStaticMarkup(h(component, props as never));
 const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000).toISOString();

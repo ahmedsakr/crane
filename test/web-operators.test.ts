@@ -8,9 +8,9 @@ import { USERNAME_PATTERN } from "@crane/contracts";
 
 Object.assign(globalThis, { React });
 // Computed paths let web modules use web's extensionless imports, as in the existing web suites.
-const webModule = <T>(path: string): Promise<T> => import(new URL(`../web/src/${path}`, import.meta.url).href);
+// Keep NodeNext from traversing web's extensionless imports.
 type JoinDraft = { name: string; username: string; password: string; confirm: string };
-const { INVALID_LINK, USERNAME_HINT, USERNAME_INPUT_PATTERN, inviteChecker, joinProblem, linkFailure, takeInviteToken } = await webModule<{
+const { INVALID_LINK, USERNAME_HINT, USERNAME_INPUT_PATTERN, inviteChecker, joinProblem, linkFailure, takeInviteToken } = await import(new URL("../web/src/lib/join.ts", import.meta.url).href) as {
   INVALID_LINK: string;
   USERNAME_HINT: string;
   USERNAME_INPUT_PATTERN: string;
@@ -18,20 +18,20 @@ const { INVALID_LINK, USERNAME_HINT, USERNAME_INPUT_PATTERN, inviteChecker, join
   joinProblem: (kind: InviteCheck["kind"], draft: JoinDraft) => string | null;
   linkFailure: (error: unknown) => { invalid: boolean; message: string };
   takeInviteToken: (location: Pick<Location, "hash" | "pathname" | "search">, history: Pick<History, "state" | "replaceState">) => string;
-}>("lib/join.ts");
-const { absoluteInviteLink, invitedAs, pendingLinkLabel } = await webModule<{
+};
+const { absoluteInviteLink, invitedAs, pendingLinkLabel } = await import(new URL("../web/src/lib/operators.ts", import.meta.url).href) as {
   absoluteInviteLink: (origin: string, path: string) => string;
   invitedAs: (invite: InviteCheck) => string;
   pendingLinkLabel: (invite: InviteSummary) => string;
-}>("lib/operators.ts");
-const { OperatorList } = await webModule<{ OperatorList: ComponentType<never> }>("pages/operators/OperatorList.tsx");
-const { OperatorActions, RemoveOperator } = await webModule<{
+};
+const { OperatorList } = await import(new URL("../web/src/pages/operators/OperatorList.tsx", import.meta.url).href) as { OperatorList: ComponentType<never> };
+const { OperatorActions, RemoveOperator } = await import(new URL("../web/src/pages/operators/OperatorActions.tsx", import.meta.url).href) as {
   OperatorActions: ComponentType<never>; RemoveOperator: ComponentType<never>;
-}>("pages/operators/OperatorActions.tsx");
-const { InviteForm } = await webModule<{ InviteForm: ComponentType<never> }>("pages/operators/InviteSheet.tsx");
-const { LinkResult } = await webModule<{ LinkResult: ComponentType<never> }>("pages/operators/LinkResult.tsx");
-const { PendingInvites } = await webModule<{ PendingInvites: ComponentType<never> }>("pages/operators/PendingInvites.tsx");
-const { JoinView } = await webModule<{ JoinView: ComponentType<never> }>("pages/join/JoinView.tsx");
+};
+const { InviteForm } = await import(new URL("../web/src/pages/operators/InviteSheet.tsx", import.meta.url).href) as { InviteForm: ComponentType<never> };
+const { LinkResult } = await import(new URL("../web/src/pages/operators/LinkResult.tsx", import.meta.url).href) as { LinkResult: ComponentType<never> };
+const { PendingInvites } = await import(new URL("../web/src/pages/operators/PendingInvites.tsx", import.meta.url).href) as { PendingInvites: ComponentType<never> };
+const { JoinView } = await import(new URL("../web/src/pages/join/JoinView.tsx", import.meta.url).href) as { JoinView: ComponentType<never> };
 const render = (component: ComponentType<never>, props: object) => renderToStaticMarkup(h(component, props as never));
 const noop = () => {};
 const operator: OperatorSummary = {

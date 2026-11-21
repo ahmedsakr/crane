@@ -16,7 +16,8 @@ test("test ownership: every root suite has exactly one explicit execution owner"
   assert.deepEqual(catalog.problems, [], "update ownership for added/deleted suites");
   assert.deepEqual(TEST_GROUPS.flatMap((group) => group.suites).sort(), actual);
   assert.equal(Object.keys(catalog.owners).length, actual.length);
-  assert.deepEqual([...new Set(TEST_GROUPS.map((group) => group.kind))].sort(), ["architecture", "backend", "build", "package", "web"]);
+  assert.deepEqual([...new Set(TEST_GROUPS.map((group) => group.kind))].sort(),
+    ["architecture", "backend", "build", "integration", "package", "web"]);
 });
 
 test("test ownership: full execution equals the original immediate shell glob, once per file", () => {
@@ -30,6 +31,52 @@ test("test ownership: full execution equals the original immediate shell glob, o
 
 test("test ownership: named imports and helper chains fit the declared Nx project dependencies", () => {
   assert.deepEqual(dependencyProblems(root, TEST_GROUPS, testProjects(root)), []);
+});
+
+test("test ownership: production changes select their actual suite consumers", () => {
+  const select = (file: string) => {
+    const plan = affectedTestGroups(root, [file]);
+    assert.deepEqual(plan.fallback, [], file);
+    assert.ok(plan.groups.includes("architecture"), file);
+    assert.ok(plan.groups.includes("build"), file);
+    return plan;
+  };
+  const scenarios = [
+    ["packages/backend-runtime/src/ids.ts", ["backend-runtime", "storage", "factory-actions", "http", "cli", "web-http"], ["web"]],
+    ["packages/storage/src/store.ts", ["storage", "factory-agents", "http", "cli-http", "web-http"], ["backend-runtime", "web"]],
+    ["packages/factory/src/elapsed.ts", ["factory-actions", "factory-execution", "http", "cli", "web-http"], ["storage", "package-worktree-deps", "web"]],
+    ["packages/contracts/src/task.ts", ["package-contracts", "backend-runtime", "storage", "factory-agents", "http", "cli", "web"], ["package-worktree-deps"]],
+  ] as const;
+  for (const [file, included, excluded] of scenarios) {
+    const { groups } = select(file);
+    for (const id of included) assert.ok(groups.includes(id), `${file} should select ${id}`);
+    for (const id of excluded) assert.ok(!groups.includes(id), `${file} should skip ${id}`);
+  }
+
+  const cli = select("src/cli/ui.ts");
+  assert.deepEqual(cli.groups, ["cli", "cli-http", "architecture", "build"]);
+  assert.ok(cli.suites.includes("test/attribution.test.ts"));
+  assert.ok(cli.suites.includes("test/auth-e2e.test.ts"));
+  const http = select("packages/http-server/src/body.ts");
+  assert.deepEqual(http.groups, ["http", "http-factory", "cli", "cli-http", "web-http", "architecture", "build"]);
+  for (const suite of ["api-scheduling", "api-goals", "api-storage", "auth-e2e", "web-operator-api", "home-site"]) {
+    assert.ok(http.suites.includes(`test/${suite}.test.ts`), suite);
+  }
+  for (const plan of [cli, http]) assert.ok(plan.suites.length < 106, "pre-refactor CLI/HTTP baseline in docs/backend-extraction.md");
+
+  const web = select("web/src/App.tsx");
+  assert.deepEqual(web.groups, ["web", "web-http", "web-policy", "architecture", "build"]);
+  for (const suite of ["web-scheduling", "web-command-access", "web-command-policy", "web-operator-api", "home-site"]) {
+    assert.ok(web.suites.includes(`test/${suite}.test.ts`), suite);
+  }
+  for (const suite of ["goals", "scheduling", "crew-schedules", "deps", "work-run"]) {
+    assert.ok(!web.suites.includes(`test/${suite}.test.ts`), suite);
+  }
+
+  const application = select("src/application.ts");
+  assert.ok(application.suites.includes("test/api-auth.test.ts"), "HTTP suites bind real application identity");
+  assert.ok(application.suites.includes("test/work-run.test.ts"), "factory suites bind real application identity");
+  assert.ok(!application.suites.includes("test/web-scheduling.test.ts"), "pure web never loads application identity");
 });
 
 function put(root: string, file: string, text: string): void {
@@ -54,13 +101,21 @@ function fixture(t: Parameters<typeof temporaryRoot>[0]) {
     { root: "web", name: "@fixture/web", implicitDependencies: ["@fixture/shared"] },
     { root: "test", name: "checks", implicitDependencies: ["backend", "@fixture/web"] },
   ];
-  for (const project of projects) put(root, `${project.root}/project.json`, JSON.stringify(project));
+  for (const project of projects) {
+    put(root, `${project.root}/project.json`, JSON.stringify(project));
+    if (project.root === "src" || project.root === "test") continue;
+    put(root, `${project.root}/package.json`, JSON.stringify({
+      name: project.name,
+      dependencies: Object.fromEntries(project.implicitDependencies.map((name) => [name, "1.0.0"])),
+      exports: { ".": { default: "./dist/index.js" }, "./rules": { default: "./dist/index.js" } },
+    }));
+  }
   for (const file of ["packages/one/src/private.ts", "packages/shared/src/index.ts", "src/main.ts", "web/src/view.ts"]) put(root, file, "export {};\n");
   put(root, "test/package.test.ts", 'import "../packages/one/src/private.js";');
   put(root, "test/backend.test.ts", 'import "./support/outer.js"; import "../src/main.js";');
   put(root, "test/support/outer.ts", 'export * from "./inner.js";');
   put(root, "test/support/inner.ts", 'import "../../packages/shared/src/index.js";');
-  put(root, "test/web.test.ts", 'import "../web/src/view.ts"; import type {} from "@fixture/shared";');
+  put(root, "test/web.test.ts", 'await import(new URL("../web/src/view.ts", import.meta.url).href); type View = import("@fixture/shared/rules").View;');
   put(root, "test/scan.test.ts", 'import { readdirSync } from "node:fs"; readdirSync("packages");');
   put(root, "test/build.test.ts", 'import { readFileSync } from "node:fs"; readFileSync("package.json");');
   const plan = (paths: string[] | null) => affectedTestGroups(root, paths, fixtureGroups);
@@ -95,6 +150,28 @@ test("test ownership: computed imports require conservative coverage of every pr
   assert.match(selected.fallback.join("\n"), /needs backend/);
 });
 
+test("test ownership: literal dynamic, type-only, and prebuild private imports resolve to their projects", (t) => {
+  const { root, plan, all } = fixture(t);
+  const graph = testProjects(root);
+  assert.deepEqual([...importedTestProjects(root, "test/web.test.ts", graph)].sort(), ["@fixture/shared", "@fixture/web"]);
+  put(root, "test/package.test.ts", 'await import("../packages/one/dist/private.js");');
+  assert.deepEqual(plan(["packages/one/src/private.ts"]).groups, ["package", "backend", "architecture", "build"]);
+  for (const spec of ["@fixture/shared/unexported", "@fixture/typo", "../web/src/missing.ts"]) {
+    put(root, "test/web.test.ts", `await import("${spec}");`);
+    const selected = plan(["packages/one/src/private.ts"]);
+    assert.deepEqual(selected.groups, all, spec);
+    assert.match(selected.fallback.join("\n"), /Cannot verify test dependencies/);
+  }
+});
+
+test("test ownership: a filesystem read in an unaudited helper makes selection global", (t) => {
+  const { root, plan, all } = fixture(t);
+  put(root, "test/support/inner.ts", 'import { readFileSync } from "node:fs"; readFileSync("web/src/view.ts");');
+  const selected = plan(["web/src/view.ts"]);
+  assert.deepEqual(selected.groups, all);
+  assert.match(selected.fallback.join("\n"), /backend.test.ts .*unaudited filesystem access in test\/support\/inner.ts/);
+});
+
 test("test ownership: shared helpers, including new and deleted helpers, select every group", (t) => {
   const { root, plan, all } = fixture(t);
   for (const file of ["test/support/inner.ts", "test/support/new.ts", "scripts/test-groups.ts", "package-lock.json"]) {
@@ -119,6 +196,7 @@ test("test ownership: filesystem scans run for source additions, removals and un
   assert.deepEqual(plan(["README.md"]).groups, all);
   assert.deepEqual(plan(["packages/new/src/index.ts"]).groups, all);
   put(root, "packages/new/project.json", JSON.stringify({ name: "@fixture/new", implicitDependencies: [] }));
+  put(root, "packages/new/package.json", JSON.stringify({ name: "@fixture/new" }));
   assert.deepEqual(plan(["packages/new/src/index.ts"]).groups, all);
   assert.match(plan(["packages/new/src/index.ts"]).fallback.join("\n"), /no test dependency owner/);
   assert.deepEqual(plan(["packages/one/tsconfig.json"]).groups, all);
@@ -131,6 +209,9 @@ test("test ownership: unresolved private sources and unreadable graph inputs fai
   assert.deepEqual(plan(["packages/one/src/private.ts"]).groups, all);
   assert.match(plan(["packages/one/src/private.ts"]).fallback.join("\n"), /Unresolved test dependency/);
   put(root, "packages/one/src/private.ts", "export {};\n");
+  put(root, "packages/one/project.json", JSON.stringify({ name: "@fixture/one", implicitDependencies: [] }));
+  assert.match(plan(["web/src/view.ts"]).fallback.join("\n"), /graph differs from manifest/);
+  put(root, "packages/one/project.json", JSON.stringify({ name: "@fixture/one", implicitDependencies: ["@fixture/shared"] }));
   put(root, "web/project.json", "invalid json");
   assert.deepEqual(plan(["web/src/view.ts"]).groups, all);
   assert.match(plan(["web/src/view.ts"]).fallback.join("\n"), /Cannot verify test dependencies/);
