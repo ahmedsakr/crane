@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { actorLabel, eventActor, type TaskEvent } from "@crane/contracts";
 import { clock, plural } from "../../lib/format";
-import { groupEvents } from "./task-view";
+import { groupEvents, keyTimeline, type TimelineEntry, type ToolGroupKeys } from "./task-view";
 
 /** Who made an operator decision, as quiet text after it; nothing when it was unattributed. */
 function EventActorName({ event }: { event: TaskEvent }) {
@@ -29,12 +29,23 @@ function ToolSteps({ tools, open, onOpen }: { tools: TaskEvent[]; open: boolean;
   );
 }
 
+/** Timeline entries keyed by event ID, with each tool group keeping its key as older or newer events extend it. */
+function useTimelineEntries(events: TaskEvent[]): TimelineEntry[] {
+  const known = useRef<ToolGroupKeys>(new Map());
+  return useMemo(() => {
+    const keyed = keyTimeline(groupEvents(events), known.current);
+    known.current = keyed.known;
+    return keyed.entries;
+  }, [events]);
+}
+
 export function Timeline({ events }: { events: TaskEvent[] }) {
-  const [open, setOpen] = useState<Set<number>>(new Set());
+  const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
+  const entries = useTimelineEntries(events);
   return (
     <ol className="timeline">
-      {groupEvents(events).map((g, i) => {
-        if ("tools" in g) return <ToolSteps key={`g${i}`} tools={g.tools} open={open.has(i)} onOpen={() => setOpen(new Set(open).add(i))} />;
+      {entries.map(({ key, item: g }) => {
+        if ("tools" in g) return <ToolSteps key={key} tools={g.tools} open={open.has(key)} onOpen={() => setOpen((o) => new Set(o).add(key))} />;
         return (
           <li key={g.id} className={`tl tl-${g.type}`}>
             <span className="tl-time">{clock(g.ts)}</span>
