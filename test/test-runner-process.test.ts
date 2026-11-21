@@ -18,7 +18,7 @@ function launch(t: TestContext, files: Record<string, string>) {
   const log = join(dir, "output.log");
   const fd = openSync(log, "w");
   const source = `import { runTestSuites } from ${JSON.stringify(runner)};
-    process.exitCode = await runTestSuites(${JSON.stringify(Object.keys(files).map((name) => join(dir, name)))}, { cwd: ${JSON.stringify(root)} });`;
+    process.exitCode = await runTestSuites(${JSON.stringify(Object.keys(files).map((name) => join(dir, name)))}, { cwd: ${JSON.stringify(root)}, reportTimings: true });`;
   // Don't inherit the outer node:test worker context into a fresh runner.
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
@@ -53,12 +53,14 @@ test("test runner process: actual Node failures retain assertion diagnostics and
   assert.match(f.output(), /expected fixture failure/);
   assert.match(f.output(), /isolated fixture/);
   assert.doesNotMatch(f.output(), /ERR_ASSERTION/);
+  assert.match(f.output(), /unclassified: \d+ ms \(files: 3\)/);
 });
 
 test("test runner process: successful isolated files return an authoritative zero exit", { timeout: 30_000 }, async (t) => {
   const f = launch(t, { "pass.test.ts": 'import { test } from "node:test"; test("pass fixture", () => {});' });
   assert.deepEqual(await f.done, { code: 0, signal: null });
   assert.match(f.output(), /pass fixture/);
+  assert.match(f.output(), /unclassified: \d+ ms \(files: 1\)/);
 });
 
 test("test runner process: SIGTERM cancels the worker group and cannot report success", { timeout: 30_000, skip: process.platform === "win32" }, async (t) => {

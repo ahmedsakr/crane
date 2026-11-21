@@ -169,7 +169,12 @@ function host(options: { paths?: string[] | null; links?: number; nx?: number; s
   const fake: TaskHost = {
     root, git,
     checkLinks: () => { steps.push("links"); return options.links ?? 0; },
-    nx: async (args) => { steps.push(`nx ${args.join(" ")}`); return options.nx ?? 0; },
+    nx: async (args, observeStdout) => {
+      steps.push(`nx ${args.join(" ")}`);
+      observeStdout?.("Nx read the output from the cache instead of running the command for 4 out of ");
+      observeStdout?.("10 tasks.\n");
+      return options.nx ?? 0;
+    },
     runSuites: async (suites) => { steps.push(`suites ${suites.length}`); return options.suites ?? 0; },
     log: (message) => logs.push(message),
     print: (text) => printed.push(text),
@@ -190,6 +195,8 @@ test("tasks: full tests build every package before one runner over every root su
   const run = host();
   assert.equal(await runTask(args(["test"]), run.fake), 0);
   assert.deepEqual(run.steps, ["links", `nx run-many -t build -p ${PACKAGES.join(",")} ${NX_FLAGS.join(" ")}`, `suites ${rootSuites(root).length}`]);
+  assert.match(run.logs.join("\n"), /Test execution: \d+ ms wall time/);
+  assert.match(run.logs.at(-1)!, /Package build: \d+ ms wall time \(exit 0, Nx cache 4\/10 hits\)/);
 });
 
 test("tasks: a broken workspace link stops before Nx can replay anything from its cache", async () => {
@@ -205,6 +212,7 @@ test("tasks: failures keep their exit status, and a failed package build runs no
   const build = host({ nx: 3 });
   assert.equal(await runTask(args(["test"]), build.fake), 3);
   assert.equal(build.steps.some((step) => step.startsWith("suites")), false);
+  assert.match(build.logs.at(-1)!, /Package build: \d+ ms wall time \(exit 3,/);
   assert.equal(await runTask(args(["test"]), host({ suites: 5 }).fake), 5);
   assert.equal(await runTask(args(affected("test")), host({ suites: 9, paths: ["src/core/store.ts"] }).fake), 9);
 });

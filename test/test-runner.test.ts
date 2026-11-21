@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import type { ChildProcess, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { resolve } from "node:path";
 import { test } from "node:test";
+import type { TestEvent } from "node:test/reporters";
 import { testArguments } from "../scripts/run-test-groups.ts";
 import { runTestSuites, type TestRuntime } from "../scripts/test-runner.ts";
+import testTimings from "../scripts/test-timings.ts";
 
 function fixture(platform: NodeJS.Platform = "linux") {
   const child = Object.assign(new EventEmitter(), { pid: 123, kill: (signal: string) => { killed.push([123, signal]); return true; } });
@@ -101,4 +104,23 @@ test("test runner: refuses empty/duplicate lists and malformed command arguments
   assert.deepEqual(testArguments(["--full", "--list"]), { groups: undefined, list: true });
   assert.deepEqual(testArguments(["--group", "web", "--group", "backend"]), { groups: ["web", "backend"], list: false });
   for (const args of [["--group"], ["--group", "--list"], ["--full", "--group", "web"], ["--typo"]]) assert.throws(() => testArguments(args));
+});
+
+test("test timing reporter: counts completed files by group and ignores individual tests", async () => {
+  function complete(path: string, duration_ms: number, name?: string): TestEvent {
+    const file = resolve(path);
+    return { type: "test:complete", data: {
+      file, name: name ?? file, nesting: 0, testNumber: 1, details: { duration_ms, passed: true },
+    } };
+  }
+  async function* events() {
+    yield complete("test/tasks.test.ts", 25);
+    yield complete("test/tasks.test.ts", 15, "individual test");
+    yield complete("test/test-runner.test.ts", 50);
+    yield complete("test/unassigned.test.ts", 10);
+  }
+  let output = "";
+  for await (const line of testTimings(events())) output += line;
+  assert.match(output, /build: 75 ms \(files: 2\)/);
+  assert.match(output, /unclassified: 10 ms \(files: 1\)/);
 });

@@ -65,7 +65,7 @@ export function taskArguments(argv: readonly string[]): TaskArgs {
 export interface TaskHost {
   root: string;
   checkLinks(): number;
-  nx(args: readonly string[]): Promise<number>;
+  nx(args: readonly string[], observeStdout?: (chunk: string) => void): Promise<number>;
   runSuites(suites: readonly string[]): Promise<number>;
   git: Git;
   /** Diagnostics, on stderr in production. */
@@ -79,6 +79,13 @@ export interface TaskHost {
  * It also replaces the TUI (Nx refuses `--tui` with `--outputStyle`; the environment sets NX_TUI=false too).
  */
 export const NX_FLAGS = ["--outputStyle=static-failures-only"];
+
+/** Nx emits a count when available. Some versions omit it on a cold or failed run. */
+export function parseNxCache(log: string): { hits: number; total: number } | null {
+  const match = /Cache:\s+(\d+)\/(\d+) hit/.exec(log)
+    ?? /read the output from the cache instead of running the command for (\d+) out of (\d+) tasks/.exec(log);
+  return match ? { hits: Number(match[1]), total: Number(match[2]) } : null;
+}
 
 function listFiles(files: readonly string[], limit = 20): string {
   const shown = files.slice(0, limit).join(", ");
@@ -140,7 +147,26 @@ async function test(args: TaskArgs, host: TaskHost): Promise<number> {
     host.print(JSON.stringify({ kind: "test", ...plan, nx: nxArgs }, null, 2));
     return 0;
   }
-  return await host.nx(nxArgs) || host.runSuites(plan.suites);
+  return runTestSteps(host, nxArgs, plan.suites);
+}
+
+async function runTestSteps(host: TaskHost, nxArgs: readonly string[], suites: readonly string[]): Promise<number> {
+  let nxTail = "";
+  const buildStart = performance.now();
+  const buildCode = await host.nx(nxArgs, (chunk) => { nxTail = (nxTail + chunk).slice(-16_384); });
+  const buildMs = Math.round(performance.now() - buildStart);
+  try {
+    if (buildCode) return buildCode;
+    const testStart = performance.now();
+    const testCode = await host.runSuites(suites);
+    host.log(`Test execution: ${Math.round(performance.now() - testStart)} ms wall time (${suites.length} files selected)`);
+    return testCode;
+  } finally {
+    // Repeat the build evidence at the end so verbose test output cannot displace it from the check detail.
+    const cache = parseNxCache(nxTail);
+    const hits = cache ? `${cache.hits}/${cache.total} hits` : "count unavailable";
+    host.log(`Package build: ${buildMs} ms wall time (exit ${buildCode}, Nx cache ${hits})`);
+  }
 }
 
 export function runTask(args: TaskArgs, host: TaskHost): Promise<number> {
@@ -185,15 +211,17 @@ export function productionHost(root: string): TaskHost {
   return {
     root,
     checkLinks: () => checkWorkspaceLinks(root),
-    nx: (args) => {
+    nx: (args, observeStdout) => {
       const nxBin = nxEntry(root);
       if (!nxBin) {
         console.error(`Nx is not installed in ${join(root, "node_modules", "nx")}.\nPlease run npm install in your checkout, then retry.`);
         return Promise.resolve(1);
       }
-      return runProcess(process.execPath, [nxBin, ...args], { cwd: root, label: "Nx", env: nxEnvironment(root) });
+      return runProcess(process.execPath, [nxBin, ...args], {
+        cwd: root, label: "Nx", env: nxEnvironment(root), ...(observeStdout ? { observeStdout } : {}),
+      });
     },
-    runSuites: (suites) => runTestSuites(suites, { cwd: root }),
+    runSuites: (suites) => runTestSuites(suites, { cwd: root, reportTimings: true }),
     git: gitIn(root),
     log: (message) => console.error(message),
     print: (text) => console.log(text),
