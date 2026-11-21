@@ -10,6 +10,7 @@ import {
   driverName,
   groupEvents,
   isWorking,
+  keyTimeline,
   mergingSummary,
   pendingSummary,
   preApprovalText,
@@ -204,6 +205,36 @@ test("showsRuns: several runs, or one that spent something", () => {
 test("groupEvents folds runs of tool calls and leaves everything else in order", () => {
   const groups = groupEvents([event(1, "tool"), event(2, "tool"), event(3, "status"), event(4, "tool")]);
   assert.deepEqual(groups.map((g) => ("tools" in g ? g.tools.map((e) => e.id) : g.id)), [[1, 2], 3, [4]]);
+});
+
+test("keyTimeline names entries by event ID, not position", () => {
+  const { entries } = keyTimeline(groupEvents([event(1, "tool"), event(2, "tool"), event(3, "status"), event(4, "tool")]), new Map());
+  assert.deepEqual(entries.map((e) => e.key), ["tools-1", "event-3", "tools-4"]);
+});
+
+test("keyTimeline keeps each group's key when an older batch is prepended", () => {
+  const first = keyTimeline(groupEvents([event(10, "tool"), event(11, "tool"), event(12, "status"), event(13, "tool")]), new Map());
+  const older = [event(7, "tool"), event(8, "status"), event(9, "tool")];
+  const next = keyTimeline(groupEvents([...older, event(10, "tool"), event(11, "tool"), event(12, "status"), event(13, "tool")]), first.known);
+  // 9 extends the leading group backwards; it keeps its first-shown key, and the new groups are named by their first event.
+  assert.deepEqual(next.entries.map((e) => e.key), ["tools-7", "event-8", "tools-10", "event-12", "tools-13"]);
+  const leading = next.entries[2]!.item;
+  assert.ok("tools" in leading);
+  assert.deepEqual(leading.tools.map((e) => e.id), [9, 10, 11]);
+});
+
+test("keyTimeline keeps a group's key as live events extend it and across repeated keying", () => {
+  const first = keyTimeline(groupEvents([event(1, "status"), event(2, "tool")]), new Map());
+  const live = keyTimeline(groupEvents([event(1, "status"), event(2, "tool"), event(3, "tool")]), first.known);
+  const again = keyTimeline(groupEvents([event(0, "tool"), event(1, "status"), event(2, "tool"), event(3, "tool")]), live.known);
+  assert.deepEqual(live.entries.map((e) => e.key), ["event-1", "tools-2"]);
+  assert.deepEqual(again.entries.map((e) => e.key), ["tools-0", "event-1", "tools-2"]);
+});
+
+test("keyTimeline names a different task's groups afresh", () => {
+  const first = keyTimeline(groupEvents([event(1, "tool"), event(2, "tool")]), new Map());
+  const other = keyTimeline(groupEvents([event(50, "tool"), event(51, "status")]), first.known);
+  assert.deepEqual(other.entries.map((e) => e.key), ["tools-50", "event-51"]);
 });
 
 test("event streams keep each event once, in the order first seen", () => {

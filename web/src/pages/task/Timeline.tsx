@@ -1,8 +1,8 @@
-import { Component, createRef, useState } from "react";
+import { Component, createRef, useMemo, useRef, useState } from "react";
 import { actorLabel, eventActor, type TaskEvent } from "@crane/contracts";
 import { Section } from "../../components/Section";
 import { clock, plural } from "../../lib/format";
-import { groupEvents } from "./task-view";
+import { groupEvents, keyTimeline, type TimelineEntry, type ToolGroupKeys } from "./task-view";
 
 const PAGE_SIZE = 50;
 const EDGE_DISTANCE = 32;
@@ -31,13 +31,26 @@ function ToolSteps({ tools }: { tools: TaskEvent[] }) {
   );
 }
 
+/**
+ * Timeline entries keyed by event ID, with each tool group keeping its key as older or newer events extend it.
+ * Tool folds stay within each shown batch, so prepending rows leaves existing folds and open steps in place.
+ */
+function useTimelineEntries(events: TaskEvent[], starts: number[]): TimelineEntry[] {
+  const known = useRef<ToolGroupKeys>(new Map());
+  return useMemo(() => {
+    const groups = starts.flatMap((start, i) => groupEvents(events.slice(start, starts[i + 1])));
+    const keyed = keyTimeline(groups, known.current);
+    known.current = keyed.known;
+    return keyed.entries;
+  }, [events, starts]);
+}
+
 function TimelineRows({ events, starts }: { events: TaskEvent[]; starts: number[] }) {
-  // Keep tool folds within each batch so prepending rows preserves existing folds and open steps.
-  const groups = starts.flatMap((start, i) => groupEvents(events.slice(start, starts[i + 1])));
+  const entries = useTimelineEntries(events, starts);
   return (
     <ol className="timeline">
-      {groups.map((g) => {
-        if ("tools" in g) return <ToolSteps key={g.tools[0]!.id} tools={g.tools} />;
+      {entries.map(({ key, item: g }) => {
+        if ("tools" in g) return <ToolSteps key={key} tools={g.tools} />;
         return (
           <li key={g.id} className={`tl tl-${g.type}`}>
             <span className="tl-time">{clock(g.ts)}</span>

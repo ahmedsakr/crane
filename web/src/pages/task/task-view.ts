@@ -184,6 +184,40 @@ export function groupEvents(events: TaskEvent[]): (TaskEvent | ToolGroup)[] {
   return out;
 }
 
+export interface TimelineEntry {
+  key: string;
+  item: TaskEvent | ToolGroup;
+}
+
+/** Which group key each tool event was shown under, from the last time the timeline was keyed. */
+export type ToolGroupKeys = ReadonlyMap<number, string>;
+
+function toolGroupKey(group: ToolGroup, known: ToolGroupKeys, used: Set<string>): string {
+  for (const tool of group.tools) {
+    const key = known.get(tool.id);
+    if (key !== undefined && !used.has(key)) return key;
+  }
+  return `tools-${group.tools[0]!.id}`;
+}
+
+/**
+ * Give each timeline entry a stable identity: an event its ID, and a tool group its first event's ID.
+ * A group that older or newer events extend keeps the key it was first shown with, so its expansion,
+ * its rendered row and any scroll anchor on it survive a prepended batch.
+ */
+export function keyTimeline(groups: (TaskEvent | ToolGroup)[], known: ToolGroupKeys): { entries: TimelineEntry[]; known: ToolGroupKeys } {
+  const next = new Map<number, string>();
+  const used = new Set<string>();
+  const entries = groups.map((item): TimelineEntry => {
+    if (!("tools" in item)) return { key: `event-${item.id}`, item };
+    const key = toolGroupKey(item, known, used);
+    used.add(key);
+    for (const tool of item.tools) next.set(tool.id, key);
+    return { key, item };
+  });
+  return { entries, known: next };
+}
+
 /** The stream can replay what a poll already returned, so each event is kept once, in the order first seen. */
 export function uniqueEvents(polled: TaskEvent[], live: TaskEvent[]): TaskEvent[] {
   const seen = new Set<number>();
