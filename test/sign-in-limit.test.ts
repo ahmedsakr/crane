@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AttemptLimiter, TooManyAttempts, clientAddressKey } from "../src/server/sign-in-limit.js";
+import { AttemptLimiter, TooManyAttempts, clientAddressKey } from "../packages/http-server/src/sign-in-limit.js";
 
 test("client keys: an IPv6 address counts under its /64, however it is written", () => {
   for (const address of ["2001:db8:0:1::5", "2001:0db8:0000:0001:ffff:ffff:ffff:ffff", "2001:DB8:0:1:a:b:c:d", "2001:db8::1:0:0:0:7"]) {

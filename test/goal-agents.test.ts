@@ -5,7 +5,7 @@ import { GOAL_TASK_PHASES, goalProgress, goalTaskPhase, type GoalListItem, type 
 import { Store } from "@crane/storage";
 import { goalListItems } from "../packages/storage/src/store/goal-progress.js";
 import { OperatorActions } from "@crane/factory/actions";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 
 const plan = (): GoalPlan => ({ summary: "Save carts", approach: "Storage first, then the UI", improvements: [], tasks: [
   { key: "storage", title: "Extract storage", brief: "Extract it", dependsOn: [], driver: "codex", model: "gpt-5-codex", effort: "high", rationale: "Refactor first", acceptance: ["Callers keep working"] },

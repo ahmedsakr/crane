@@ -22,7 +22,8 @@
     "packages/agent-drivers",
     "packages/backend-runtime",
     "packages/storage",
-    "packages/factory"
+    "packages/factory",
+    "packages/http-server"
   ],
   "bundledDependencies": [
     "@crane/contracts",
@@ -33,7 +34,8 @@
     "@crane/agent-drivers",
     "@crane/backend-runtime",
     "@crane/storage",
-    "@crane/factory"
+    "@crane/factory",
+    "@crane/http-server"
   ],
   "engines": {
     "node": ">=20.19"
@@ -69,11 +71,11 @@
     "@hono/node-server": "^2.1.5",
     "better-sqlite3": "^12.11.1",
     "commander": "^14.0.3",
-    "hono": "^4.13.14",
     "picocolors": "^1.1.1",
     "@crane/backend-runtime": "0.1.0",
     "@crane/storage": "0.1.0",
-    "@crane/factory": "0.1.0"
+    "@crane/factory": "0.1.0",
+    "@crane/http-server": "0.1.0"
   },
   "devDependencies": {
     "@babel/parser": "^7.29.12",
@@ -82,6 +84,7 @@
     "@types/node": "^20.19.0",
     "concurrently": "^9.2.1",
     "esbuild": "~0.28.2",
+    "hono": "^4.13.14",
     "nx": "24.0.5",
     "tsx": "^4.23.15",
     "typescript": "~7.0.2"

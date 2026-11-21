@@ -11,7 +11,7 @@ import { hostActor, withActor } from "@crane/backend-runtime";
 import { OperatorActions } from "@crane/factory/actions";
 import { runCli } from "../src/cli/program.js";
 import { eventLine } from "../src/cli/ui.js";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 
 /**
  * With several operators, history says who did what: operator events carry a

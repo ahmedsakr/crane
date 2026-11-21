@@ -8,7 +8,7 @@ import { isScheduled, type NewTask } from "@crane/contracts";
 import type { AgentDriver } from "@crane/agent-protocol";
 import { Store } from "@crane/storage";
 import { OperatorActions, checkScheduledAt } from "@crane/factory/actions";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 import { Factory } from "@crane/factory/runtime";
 import {
   daysLabel,

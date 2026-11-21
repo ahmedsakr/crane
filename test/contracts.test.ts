@@ -85,6 +85,26 @@ test("factory exposes focused entry points while hiding lifecycle implementation
   }
 });
 
+test("HTTP exposes app construction and the exposure check, hiding routes and middleware", async () => {
+  const api = await import("@crane/http-server");
+  assert.deepEqual(Object.keys(api).sort(), ["checkExposure", "createApp"]);
+  for (const path of ["@crane/http-server/src/app.js", "@crane/http-server/dist/app.js", "@crane/http-server/auth"]) {
+    await assert.rejects(import(path), { code: "ERR_PACKAGE_PATH_NOT_EXPORTED" });
+  }
+});
+
+test("Hono belongs to the HTTP package; the CLI keeps only the listener it starts", () => {
+  const http = packages.find((p) => p.manifest.name === "@crane/http-server")!.manifest;
+  const app = readJson(join(root, "package.json"));
+  assert.ok(http.dependencies.hono, "the HTTP package imports hono");
+  assert.equal(app.dependencies.hono, undefined, "src/ never imports hono");
+  // src/cli/serve.ts listens with @hono/node-server; the HTTP package reads the peer address from it.
+  assert.equal(app.dependencies["@hono/node-server"], http.dependencies["@hono/node-server"]);
+  for (const p of packages.filter((p) => p.manifest.name !== "@crane/http-server")) {
+    assert.equal(p.manifest.dependencies?.hono, undefined, p.dir);
+  }
+});
+
 test("storage exposes only its production API and rejects private subpaths", async () => {
   const api = await import("@crane/storage");
   assert.deepEqual(Object.keys(api).sort(), [

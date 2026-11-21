@@ -2,7 +2,7 @@ import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "@crane/storage";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 import { ALL_STATUSES, type TaskSummary } from "@crane/contracts";
 import { driverEffortKey, driverModelKey } from "@crane/factory/settings";
 

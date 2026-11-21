@@ -408,13 +408,14 @@ When an agent is blocked from a command, the task records the refusal, including
 
 ```
 src/
-  core/      domain types and the SQLite store (the single source of truth)
-  factory/   orchestrator, git worktrees, operator actions, instruction parsing
-  server/    HTTP API + server-sent events
-  cli/       the `crane` command
+  cli/       the `crane` command, `crane serve`/`start`, TLS and the HTTP listener
 web/         the dashboard (React + Vite)
 packages/
   contracts/       shared types, labels, helpers, and rule grammar
+  backend-runtime/ paths, actor context, ids, git and build identity
+  storage/         the SQLite store (the single source of truth)
+  factory/         orchestrator, git worktrees, operator actions, instruction parsing
+  http-server/     HTTP API, sign-in, server-sent events and the served dashboard
   agent-protocol/  factory/driver interface, reports, and combined costs
   agent-policy/    deny list and shared permission-rule handling
   agent-drivers/   concrete drivers, prompts, CLI helpers, and provider pricing

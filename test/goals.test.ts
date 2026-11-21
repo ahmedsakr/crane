@@ -9,7 +9,7 @@ import { parseReport, type AgentDriver } from "@crane/agent-protocol";
 import { Store } from "@crane/storage";
 import { OperatorActions } from "@crane/factory/actions";
 import { Factory } from "@crane/factory/runtime";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 import { SimulatedDriver } from "@crane/agent-drivers";
 
 const plan = (): GoalPlan => ({ summary: "Deliver reliable saved carts", approach: "Extract cart storage first; then UI and API can run together. Integrate after both land.",

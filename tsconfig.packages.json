@@ -27,6 +27,9 @@
     },
     {
       "path": "./packages/factory"
+    },
+    {
+      "path": "./packages/http-server"
     }
   ]
 }

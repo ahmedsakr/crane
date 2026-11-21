@@ -4,9 +4,9 @@ import assert from "node:assert/strict";
 import type { AuthStatus, EventActor, InviteCheck, InviteSummary, OperatorSummary } from "@crane/contracts";
 import { Store } from "@crane/storage";
 import { OperatorActions } from "@crane/factory/actions";
-import { createApp } from "../src/server/app.js";
-import { PUBLIC_ROUTES } from "../src/server/auth.js";
-import { STREAM_RECHECK_MS } from "../src/server/routes/tasks.js";
+import { createApp } from "@crane/http-server";
+import { PUBLIC_ROUTES } from "../packages/http-server/src/auth.js";
+import { STREAM_RECHECK_MS } from "../packages/http-server/src/routes/tasks.js";
 import { NOTE, call, cookieFrom, openStream, within, type App, type Call } from "./support/api-client.js";
 
 const HOST: EventActor = { kind: "host", name: "ahmed" };

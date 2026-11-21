@@ -26,6 +26,7 @@ const policyRoot = join(root, "packages", "agent-policy");
 const driversRoot = join(root, "packages", "agent-drivers");
 const diagnosticsRoot = join(root, "packages", "diagnostics");
 const factorySrc = join(root, "packages", "factory", "src");
+const httpSrc = join(root, "packages", "http-server", "src");
 
 /** Every relative import in a source file, resolved to a path under `root` like `factory/git`. */
 function importsOf(file: string, root = src): string[] {
@@ -49,11 +50,45 @@ test("boundaries: factory compiles independently with only downward workspace de
   assert.deepEqual(config.include, ["src"]);
 });
 
+test("boundaries: HTTP compiles independently and imports no CLI or application code", () => {
+  const allowed = new Set([
+    "@crane/backend-runtime", "@crane/contracts", "@crane/storage",
+    "@crane/factory/actions", "@crane/factory/state", "@crane/factory/instruct", "@crane/factory/diff",
+    "hono", "hono/cookie", "hono/streaming", "hono/utils/cookie", "hono/utils/mime", "@hono/node-server/conninfo",
+  ]);
+  // Relative imports must stay inside the package, so nothing reaches src/cli or src/application.ts.
+  assert.deepEqual(packageImportViolations(httpSrc, (ref) =>
+    ref.spec !== null && (allowed.has(ref.spec) || ref.spec.startsWith("node:"))), []);
+  const config = JSON.parse(readFileSync(join(httpSrc, "../tsconfig.json"), "utf8"));
+  assert.equal(config.compilerOptions.rootDir, "src");
+  assert.equal(config.compilerOptions.composite, true);
+  assert.deepEqual(config.include, ["src"]);
+  // The application is the CLI and its identity; no source shim re-exports an extracted package.
+  assert.deepEqual(sources.filter((file) => !file.startsWith("cli/")), ["application.ts"]);
+});
+
+test("boundaries: every suite that builds the HTTP app binds application identity", () => {
+  // createApp reads the application's identity (dashboard, overview, builds) but never binds it, so a suite
+  // that forgets fails only on the routes that need it. See test/overview.test.ts's history.
+  const bindsDirectly = (file: string) => specifiers(file).some((spec) => /^(\.\.\/)+src\/application\.js$/.test(spec));
+  const binding = filesUnder(join(root, "test", "support")).filter((f) => bindsDirectly(join(root, "test", "support", f)))
+    .map((f) => `./support/${f.replace(/\.ts$/, ".js")}`);
+  const binds = (file: string) => bindsDirectly(file) || specifiers(file).some((spec) => binding.includes(spec));
+  const suites = [
+    ...readdirSync(join(root, "test")).filter((f) => f.endsWith(".ts")),
+    ...filesUnder(join(root, "test", "support")).map((f) => `support/${f}`),
+  ];
+  // Suites that load an installed copy (test/build.test.ts) bind that copy's application instead.
+  const buildsApp = (file: string) => specifiers(file).includes("@crane/http-server") && /\bcreateApp\(/.test(readFileSync(file, "utf8"));
+  const missing = suites.filter((f) => buildsApp(join(root, "test", f)) && !binds(join(root, "test", f)));
+  assert.deepEqual(missing, [], "import \"../src/application.js\" first");
+});
+
 test("boundaries: ordinary CLI and HTTP loading cannot eagerly reach the serving lifecycle", () => {
   const forbidden = ["src/cli/serve.ts", "src/cli/start.ts", ...[
     "orchestrator", "dashboard", "checks", "work-run", "merge-run",
   ].map((name) => `packages/factory/src/${name}.ts`)];
-  for (const entry of ["src/cli/program.ts", "src/server/app.ts"]) {
+  for (const entry of ["src/cli/program.ts", "packages/http-server/src/index.ts"]) {
     const loaded = eagerProductionLoads(root, entry);
     assert.ok(loaded.includes("packages/factory/src/actions.ts"), `${entry} uses the shared OperatorActions`);
     assert.deepEqual(loaded.filter((path) => forbidden.includes(path)), [], entry);
@@ -89,10 +124,10 @@ test("boundaries: factory status queries don't load the scheduler or drivers", (
   assert.deepEqual(importsOf("settings.ts", factorySrc), []);
   assert.deepEqual(specifiers(join(factorySrc, "state.ts")).sort(), ["./settings.js", "@crane/backend-runtime", "@crane/contracts"]);
   // Only `crane serve` composes a Factory; the API and the other CLI commands only ask about it.
-  const server = sources.filter((f) => f.startsWith("server/"));
-  assert.ok(server.includes("server/app.ts") && server.includes("server/routes/tasks.ts"), "expected to find server sources");
-  for (const file of [...server, "cli/index.ts"]) {
-    const bad = specifiers(join(src, file)).filter((i) => i === "@crane/factory/runtime");
+  const server = filesUnder(httpSrc);
+  assert.ok(server.includes("app.ts") && server.includes("routes/tasks.ts"), "expected to find server sources");
+  for (const file of [...server.map((f) => join(httpSrc, f)), join(src, "cli/index.ts")]) {
+    const bad = specifiers(file).filter((i) => i === "@crane/factory/runtime");
     assert.deepEqual(bad, [], `${file} imports ${bad.join(", ")}`);
   }
 });
@@ -298,14 +333,16 @@ test("responsibilities: the page check catches cross-page imports", () => {
 test("responsibilities: CLI commands and API routes change state only through OperatorActions", () => {
   const files = [
     ...filesUnder(join(src, "cli", "commands")).map((f) => `cli/commands/${f}`),
-    ...filesUnder(join(src, "server", "routes")).map((f) => `server/routes/${f}`),
+    ...filesUnder(join(httpSrc, "routes")).map((f) => `server/routes/${f}`),
   ];
   assert.ok(files.includes("cli/commands/do.ts") && files.includes("server/routes/tasks.ts"), "expected command and route sources");
-  assert.deepEqual(files.flatMap((path) => stateChangeViolations(path, read(src, path))), []);
+  // Routes keep `server/` paths, which name the HTTP package's sources, so their relative imports resolve as before.
+  const source = (path: string) => path.startsWith("server/") ? read(httpSrc, path.slice("server/".length)) : read(src, path);
+  assert.deepEqual(files.flatMap((path) => stateChangeViolations(path, source(path))), []);
   // The allowed reads are all real Store methods, and each exception is still used.
   const facade = read(root, "packages/storage/src/store.ts");
   for (const name of [...STORE_READS, ...Object.keys(STORE_EXCEPTIONS)]) assert.match(facade, new RegExp(`^  ${name}\\(`, "m"), name);
-  const used = files.map((path) => read(src, path)).join("\n");
+  const used = files.map(source).join("\n");
   for (const name of Object.keys(STORE_EXCEPTIONS)) assert.match(used, new RegExp(`store\\.${name}\\(`), `${name} is no longer needed`);
   for (const [path, modules] of Object.entries(LAZY_RUNTIME_EXCEPTIONS)) {
     assert.deepEqual(importsOf(path).filter((m) => modules.includes(m)).sort(), [...modules].sort());

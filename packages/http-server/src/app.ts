@@ -1,4 +1,3 @@
-import "../application.js";
 import { Hono } from "hono";
 import type { Store } from "@crane/storage";
 import { OperatorActions } from "@crane/factory/actions";
@@ -29,6 +28,9 @@ export type AppOptions = AccessOptions;
  * The dashboard's HTTP server: security headers and the refusal check before anything else, then the API under
  * `/api` behind the sign-in gate, then the built web app, which stays public. Refusals about who is asking answer with their own
  * status; any other error an action throws answers 400 with its message.
+ *
+ * The application (`src/application.ts`) must bind its identity before requests arrive: the dashboard, the overview's
+ * build status and dashboard builds all read it, and this package never imports the application itself.
  */
 export function createApp(store: Store, opts: AppOptions = {}) {
   const app = new Hono();

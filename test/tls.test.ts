@@ -5,7 +5,7 @@ import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createServer } from "node:https";
 import { loadTls } from "../src/cli/tls.js";
-import { checkExposure } from "../src/server/security.js";
+import { checkExposure } from "@crane/http-server";
 import { temporaryRoot } from "./support/fixtures.js";
 import { TLS_CERT, TLS_KEY } from "./support/tls.js";
 

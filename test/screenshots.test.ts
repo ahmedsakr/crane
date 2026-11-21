@@ -10,7 +10,7 @@ import { resumePrompt, systemPrompt } from "../packages/agent-drivers/src/prompt
 import { readScreenshot, retainScreenshots, screenshotPath } from "@crane/storage";
 import { Store } from "@crane/storage";
 import { Factory } from "@crane/factory/runtime";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 import type { AgentDriver } from "@crane/agent-protocol";
 
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=", "base64");

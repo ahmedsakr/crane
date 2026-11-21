@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import type { GoalPlan, Overview } from "@crane/contracts";
 import { Store } from "@crane/storage";
 import { OperatorActions } from "@crane/factory/actions";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 import { SiteModel } from "../web/src/lib/site.ts";
 
 const FACTORY: Overview["factory"] = {

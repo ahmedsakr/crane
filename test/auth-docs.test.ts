@@ -8,7 +8,7 @@ import { createCliContext, hostActor } from "../src/cli/context.js";
 import { Store } from "@crane/storage";
 import { dbPath } from "@crane/backend-runtime";
 import { OperatorActions } from "@crane/factory/actions";
-import { checkExposure } from "../src/server/security.js";
+import { checkExposure } from "@crane/http-server";
 import { onFixtureCleanup, testHome } from "./support/fixtures.js";
 import { PASSWORD, PUBLIC_URL, assertSecretFree, hostCommand } from "./support/auth-e2e.js";
 

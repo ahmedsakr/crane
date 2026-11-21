@@ -1,7 +1,8 @@
+import "../src/application.js";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "@crane/storage";
-import { createApp } from "../src/server/app.js";
+import { createApp } from "@crane/http-server";
 
 /** Every route the API answers. Paths and methods are the dashboard's and CLI's contract, so they mustn't drift. */
 const ROUTES = [
