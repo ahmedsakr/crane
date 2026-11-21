@@ -87,8 +87,10 @@ export function FactsRail({ detail, view }: { detail: TaskDetail; view: TaskView
     </div>
 
     <div className="card card-pad">
-      <h3 className="card-title">Instruction</h3>
-      <p style={{ margin: 0, fontSize: 14, whiteSpace: "pre-wrap", color: "var(--ink-2)" }}>{detail.task.brief}</p>
+      <h3 className="card-title" id="task-instruction">Instruction</h3>
+      <div className="task-widget-body task-instruction" role="region" aria-labelledby="task-instruction" tabIndex={0}>
+        {detail.task.brief}
+      </div>
     </div>
   </>;
 }
