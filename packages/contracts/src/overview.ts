@@ -85,6 +85,8 @@ export interface TaskDetail {
   /** Who's working it, or, before it's picked up, the crew member it was started for. */
   agent: Agent | null;
   events: TaskEvent[];
+  /** Present when events contains only IDs greater than this cursor. Otherwise events is a full snapshot. */
+  eventsAfter?: number;
   runs: AgentRun[];
   /** Commands this task was blocked from that still wait on a decision, counted across the repo. */
   blocked: BlockedTool[];

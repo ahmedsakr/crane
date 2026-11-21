@@ -10,6 +10,7 @@ import {
   driverName,
   groupEvents,
   isWorking,
+  mergeTaskDetail,
   mergingSummary,
   pendingSummary,
   preApprovalText,
@@ -24,6 +25,7 @@ import {
   visualReviewText,
   waitingOn,
 } from "../web/src/pages/task/task-view.ts";
+import { hardGuardRefusals } from "../web/src/lib/refusals.ts";
 
 const baseTask = {
   id: "t-1",
@@ -212,6 +214,36 @@ test("event streams keep each event once, in the order first seen", () => {
   const live = [event(3, "status")];
   assert.equal(addLiveEvent(live, event(3, "status")), live);
   assert.deepEqual(addLiveEvent(live, event(4, "status")).map((e) => e.id), [3, 4]);
+});
+
+test("cursor polls keep earlier schedule, refusal and merge evidence while updating task details", () => {
+  const task = makeTask({ scheduleId: "s-1" });
+  const scheduled = { ...event(1, "operator", "Started by a schedule"), data: { scheduleId: "s-1" } };
+  const refusal = {
+    ...event(2, "blocked", "Blocked: example"),
+    data: { refusal: { source: "crane.guard", reason: "Example" }, guard: { overridable: false } },
+  };
+  const merge = { ...event(3, "status"), data: { merge: { commit: "abc" } } };
+  const detail = { task, repo: null, runs: [], events: [scheduled, refusal, merge] } as unknown as TaskDetail;
+  const initial = mergeTaskDetail(null, detail);
+  const next = mergeTaskDetail(initial, { ...detail, task: { ...task, status: "merged" }, eventsAfter: 3, events: [event(5, "note")] });
+  assert.equal(next.task.status, "merged");
+  assert.deepEqual(next.events.map((e) => e.id), [1, 2, 3, 5]);
+  assert.equal(scheduleOrigin(next.task, next.events), scheduled.message);
+  assert.equal(hardGuardRefusals(next.events)[0]?.what, "example");
+  assert.equal(taskView(next, next.events).merge?.commit, "abc");
+
+  const idle = mergeTaskDetail(next, { ...detail, eventsAfter: 5, events: [] });
+  assert.equal(idle.events, next.events);
+  const replay = mergeTaskDetail(next, { ...detail, eventsAfter: 3, events: [event(5, "note"), event(9, "tool")] });
+  assert.deepEqual(replay.events.map((e) => e.id), [1, 2, 3, 5, 9]);
+
+  const trim = { ...event(10, "note"), data: { retention: { events: 1 } } };
+  const afterTrim = mergeTaskDetail(replay, { ...detail, events: [...next.events, trim] });
+  assert.deepEqual(afterTrim.events.map((e) => e.id), [1, 2, 3, 5, 10]);
+  assert.equal(afterTrim.historyRevision, 10);
+  assert.equal(mergeTaskDetail(afterTrim, { ...detail, eventsAfter: 10, events: [] }).historyRevision, 10);
+  assert.deepEqual(mergeTaskDetail(afterTrim, { ...detail, task: makeTask({ id: "t-2" }), events: [] }).events, []);
 });
 
 test("changesFor never shows another task's changes", () => {

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Store } from "@crane/storage";
 import { createApp } from "../src/server/app.js";
-import { ALL_STATUSES, type TaskSummary } from "@crane/contracts";
+import { ALL_STATUSES, type TaskDetail, type TaskSummary } from "@crane/contracts";
 import { driverEffortKey, driverModelKey } from "@crane/factory/settings";
 
 test("api: invalid task decision bodies leave tasks and history unchanged", async () => {
@@ -300,6 +300,56 @@ test("api: polled task lists send summaries, and task detail keeps full briefs a
     assert.deepEqual(detail.task.report, report);
     assert.deepEqual(store.listTasks().find(t => t.id === ids[0])?.report, report, "CLI lists retain full reports");
     assert.equal(store.getTask(ids[0]!)?.report?.validation?.[0]?.logs, logs, "nothing is removed from storage");
+  } finally { store.close(); }
+});
+
+test("api: task polls return only events beyond a task's cursor", async () => {
+  const store = new Store(":memory:");
+  try {
+    const task = store.createTask({ kind: "maintenance", title: "History", brief: "", repoId: null, autonomy: "observe" });
+    const other = store.createTask({ kind: "maintenance", title: "Other", brief: "", repoId: null, autonomy: "observe" });
+    const path = `/api/tasks/${task.id}`;
+    const app = createApp(store);
+    for (let i = 0; i < 100; i++) store.addEvent(task.id, "tool", "historical output ".repeat(100));
+    const cursor = store.latestEventId();
+    const snapshot = await app.request(path);
+    const full = await snapshot.text();
+    assert.equal((JSON.parse(full) as TaskDetail).events.length, 101);
+    assert.equal((JSON.parse(full) as TaskDetail).eventsAfter, undefined);
+
+    store.addEvent(other.id, "note", "Other task's new event");
+    store.updateTask(task.id, { status: "done" });
+    const newest = store.addEvent(task.id, "note", "Finished");
+    const response = await app.request(`${path}?after=${cursor}`);
+    assert.equal(response.status, 200);
+    const body = await response.text();
+    const delta = JSON.parse(body) as TaskDetail;
+    assert.equal(delta.task.status, "done");
+    assert.equal(delta.eventsAfter, cursor);
+    assert.deepEqual(delta.events, [newest]);
+    assert.ok(body.length < full.length / 10, "poll payload excludes historical output");
+    const idle = await (await app.request(`${path}?after=${newest.id}`)).json() as TaskDetail;
+    assert.deepEqual(idle.events, []);
+    for (const invalid of ["", "-1", "1.2", "NaN", "9007199254740992"]) {
+      assert.equal((await app.request(`${path}?after=${invalid}`)).status, 400, invalid);
+    }
+  } finally { store.close(); }
+});
+
+test("api: task polls replace history when retention removes cached events", async () => {
+  const store = new Store(":memory:");
+  try {
+    const task = store.createTask({ kind: "maintenance", title: "Trimmed", brief: "", repoId: null, autonomy: "observe" });
+    store.updateTask(task.id, { status: "done", finishedAt: "2020-01-01T00:00:00.000Z" });
+    const removed = store.addEvent(task.id, "tool", "Old step");
+    assert.equal(store.pruneTaskHistory("2099-01-01T00:00:00.000Z", 30), 1);
+    const app = createApp(store);
+    const response = await app.request(`/api/tasks/${task.id}?after=${removed.id}`);
+    assert.equal(response.status, 200);
+    const detail = await response.json() as TaskDetail;
+    assert.equal(detail.eventsAfter, undefined);
+    assert.deepEqual(detail.events, store.listEvents(task.id));
+    assert.ok(!detail.events.some((event) => event.id === removed.id));
   } finally { store.close(); }
 });
 

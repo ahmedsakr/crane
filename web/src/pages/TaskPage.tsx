@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, KIND_LABEL, type DriverInfo, type Task, type TaskDetail, type TaskEvent } from "../lib/api";
-import { useDrivers, usePoll, useTick } from "../lib/hooks";
+import { useDrivers, useTick } from "../lib/hooks";
 import { useAction } from "../lib/action";
 import { useToast } from "../lib/toast";
 import { useApp } from "../lib/app-context";
@@ -24,6 +24,7 @@ import { TaskChanges } from "./task/TaskChanges";
 import { TaskSummaryLine } from "./task/TaskSummaryLine";
 import { isWorking, mergingSummary, scheduleOrigin, taskView, type TaskView } from "./task/task-view";
 import { Timeline } from "./task/Timeline";
+import { useTaskDetail } from "./task/useTaskDetail";
 import { useTaskDiff } from "./task/useTaskDiff";
 import { useTaskEvents } from "./task/useTaskEvents";
 import { ValidationRuns } from "./task/ValidationRuns";
@@ -90,7 +91,7 @@ function ChangeAgent({ task, onSaved, onClose }: { task: Task; onSaved: () => vo
 export function TaskPage() {
   const { id = "" } = useParams();
   const { refresh: refreshApp } = useApp();
-  const { data, error, refresh } = usePoll<TaskDetail>(() => api.task(id), 3000, [id]);
+  const { data, error, refresh } = useTaskDetail(id);
   const [showDiff, setShowDiff] = useState(false);
   const [finding, setFinding] = useState<number | null>(null);
   const [changingAgent, setChangingAgent] = useState(false);
@@ -135,7 +136,7 @@ export function TaskPage() {
           <BlockedSection blocked={data.blocked} events={events} taskId={task.id} repoName={repo?.name} onDone={reload} />
           <FindingsSection task={task} followUps={view.followUps} drivers={drivers} open={finding} onOpenChange={setFinding} refresh={refresh} actions={actions} />
           <TaskChanges task={task} working={working} changes={changes} open={showDiff} onOpenChange={setShowDiff} />
-          <Timeline key={task.id} events={events} live={task.status === "running" || task.status === "merging"} />
+          <Timeline key={`${task.id}:${data.historyRevision}`} events={events} live={task.status === "running" || task.status === "merging"} />
         </div>
         <TaskRail {...parts} drivers={drivers} onChangeAgent={() => setChangingAgent(true)} />
       </div>
