@@ -6,7 +6,9 @@ import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { TEST_GROUPS } from "./test-groups.ts";
 import { rootSuites, suiteCatalog } from "./test-ownership.ts";
-import { nxEntry, nxEnvironment } from "./tasks.ts";
+import { nxEntry, nxEnvironment, parseNxCache } from "./tasks.ts";
+
+export { parseNxCache } from "./tasks.ts";
 
 /**
  * Times Crane's public task commands over fixed, repeatable workloads, so the backend
@@ -87,13 +89,6 @@ export function median(values: readonly number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
   const middle = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2;
-}
-
-/** Nx's own cache summary (Nx 24's `Cache: 9/15 hit`, or the older sentence), absent when Nx didn't run. */
-export function parseNxCache(log: string): { hits: number; total: number } | null {
-  const match = /Cache:\s+(\d+)\/(\d+) hit/.exec(log)
-    ?? /read the output from the cache instead of running the command for (\d+) out of (\d+) tasks/.exec(log);
-  return match ? { hits: Number(match[1]), total: Number(match[2]) } : null;
 }
 
 /** The node:test summary counts, from either the TAP (`# tests 5`) or spec (`ℹ tests 5`) reporter. */

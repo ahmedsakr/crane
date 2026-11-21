@@ -20,6 +20,12 @@ operator-configured checks, candidate evidence and sandbox deferrals are
 unchanged. A local affected pass is development feedback, not full factory
 validation or evidence that a different candidate passed.
 
+The review and merge check details for `npm test` include package-build and
+test-runner wall times, Nx's package-build cache count when available, and
+elapsed file times summed by test group. Test files can run in parallel, so
+the group totals can add up to more than the test-runner wall time. Files
+without a group are listed under `unclassified`.
+
 ```sh
 # Compare two committed trees; HEAD must be checked out and clean.
 npm run affected:typecheck -- --base main --head HEAD --list

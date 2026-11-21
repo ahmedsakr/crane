@@ -25,6 +25,8 @@ export interface ProcessRunOptions extends TestRunOptions {
   label: string;
   /** Replaces the inherited environment; omitted, the child inherits it unchanged. */
   env?: NodeJS.ProcessEnv;
+  /** Observe stdout as it is forwarded to the caller. */
+  observeStdout?: (chunk: string) => void;
 }
 
 function signalExit(signal: NodeJS.Signals): number {
@@ -33,27 +35,36 @@ function signalExit(signal: NodeJS.Signals): number {
 
 /**
  * One native node:test invocation, with its normal per-file process isolation.
- * No shell, output parser, reporter replacement, result cache or piped diagnostics.
+ * No shell, result cache or piped diagnostics.
  * Wait for close (including stdio), and never turn missing exit evidence into success.
  */
-export function runTestSuites(suites: readonly string[], options: TestRunOptions): Promise<number> {
+export function runTestSuites(suites: readonly string[], options: TestRunOptions & { reportTimings?: boolean }): Promise<number> {
   if (!suites.length || new Set(suites).size !== suites.length) throw new Error("Test execution needs a nonempty, unique suite list");
-  return runProcess(process.execPath, ["--import", "tsx", "--test", ...suites], { ...options, label: "Test execution" });
+  const args = ["--import", "tsx", "--test"];
+  if (options.reportTimings) {
+    args.push("--test-reporter", process.stdout.isTTY ? "spec" : "tap", "--test-reporter-destination", "stdout",
+      "--test-reporter", new URL("./test-timings.ts", import.meta.url).href, "--test-reporter-destination", "stderr");
+  }
+  return runProcess(process.execPath, [...args, ...suites], { ...options, label: "Test execution" });
 }
 
 /**
- * Run one command in its own POSIX process group with inherited stdio, forwarding
+ * Run one command in its own POSIX process group, forwarding
  * SIGINT/SIGTERM to the whole group. Resolves with the child's numeric exit code,
  * 128 + signal for a signal or cancellation, and 1 when there is no exit evidence.
  */
 export function runProcess(command: string, args: readonly string[], options: ProcessRunOptions): Promise<number> {
   const host = options.runtime ?? runtime;
   const diagnostic = options.diagnostic ?? ((message: string) => console.error(message));
-  const { label } = options;
+  const { label, observeStdout } = options;
   return new Promise((resolve) => {
     const child = host.spawn(command, [...args], {
-      cwd: options.cwd, stdio: "inherit", detached: host.platform !== "win32", ...(options.env ? { env: options.env } : {}),
+      cwd: options.cwd, stdio: observeStdout ? ["inherit", "pipe", "inherit"] : "inherit",
+      detached: host.platform !== "win32", ...(options.env ? { env: options.env } : {}),
     });
+    if (observeStdout && child.stdout) {
+      child.stdout.setEncoding("utf8").on("data", observeStdout).pipe(process.stdout, { end: false });
+    }
     let cancelled: NodeJS.Signals | undefined;
     let failed = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
