@@ -23,6 +23,7 @@ import type {
   TaskRunOptions,
 } from "@crane/contracts";
 import { withActor } from "@crane/backend-runtime";
+import { runnerLabel } from "@crane/contracts";
 import type { RunnerRecord, Store } from "@crane/storage";
 import type { SessionListing } from "@crane/storage";
 import type { TaskAgentInput } from "./action-inputs.js";
@@ -114,7 +115,8 @@ export class OperatorActions {
 
   // Tasks
 
-  createTask(input: NewTask): Task {
+  createTask(input: NewTask, by?: EventActor): Task {
+    if (by) return withActor(by, () => tasks.createTask(this.store, input));
     return tasks.createTask(this.store, input);
   }
 
@@ -126,12 +128,13 @@ export class OperatorActions {
     return tasks.schedule(this.store, id, scheduledAt);
   }
 
-  changeAgent(id: string, input: TaskAgentInput): Task {
+  changeAgent(id: string, input: TaskAgentInput, by?: EventActor): Task {
+    if (by) return withActor(by, () => tasks.changeAgent(this.store, id, input));
     return tasks.changeAgent(this.store, id, input);
   }
 
   setTaskRunner(by: EventActor, taskId: string, runnerId: string | null): Task {
-    return withActor(by, () => tasks.changeAgent(this.store, taskId, { runnerId }));
+    return this.changeAgent(taskId, { runnerId }, by);
   }
 
   waivePrerequisites(id: string, note?: string): Task {
@@ -252,6 +255,14 @@ export class OperatorActions {
 
   listRunners(by: EventActor): RunnerSummary[] {
     return runners.listRunners(this.access, by);
+  }
+
+  /** Display a task's route, including a revoked container that is still assigned. */
+  runnerLabel(id: string): string | null {
+    const runner = this.store.runners.byId(id);
+    if (!runner) return null;
+    const owner = this.store.access.operatorById(runner.operatorId);
+    return runnerLabel({ name: runner.name, ownerName: owner?.name ?? "Removed operator" });
   }
 
   renameRunner(by: EventActor, id: string, name: unknown): RunnerSummary {

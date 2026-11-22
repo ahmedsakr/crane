@@ -10,6 +10,7 @@ import {
   lookoutsLabel,
   type Autonomy,
   type DriverInfo,
+  type EventActor,
   type Lookout,
   type Task,
   type TaskDraft,
@@ -24,11 +25,12 @@ import { draftTask } from "@crane/factory/instruct";
 import { factoryIsRunning } from "@crane/factory/state";
 import type { CliContext } from "../context.js";
 import * as ui from "../ui.js";
+import { AS_OPERATOR_HELP, cliActor } from "./operator-identity.js";
 import { ACCEPT_CHECK_HELP, ACCEPT_HELP, AFTER_HELP, LOOK_FOR_HELP, collect, lookFor, repoName, startsOnce } from "./shared.js";
 
 interface DoOptions {
   repo?: string; kind?: TaskKind; autonomy?: Autonomy; agent?: string; yes?: boolean; after: string[]; accept: string[]; acceptCheck: string[];
-  lookFor: string[]; at?: string; preApprove?: boolean;
+  lookFor: string[]; at?: string; preApprove?: boolean; runner?: string; asOperator?: string;
 }
 
 /** What the operator has settled on so far; the menu changes one of these. */
@@ -60,6 +62,8 @@ export function registerDo(program: Command, ctx: CliContext): void {
     .option("-k, --kind <kind>", "maintenance | repo_feature | factory_feature")
     .option("-a, --autonomy <level>", "observe | propose | act")
     .option("--agent <agent>", `which agent works it: ${DRIVER_NAMES.join(" | ")} (default: the factory's default)`)
+    .option("--runner <id>", "run this task on your container")
+    .option("--as-operator <username>", AS_OPERATOR_HELP)
     .option("--at <timestamp>", "start no earlier than this ISO timestamp with timezone, e.g. 2030-06-15T09:00:00-04:00")
     .option("--pre-approve", "merge after checks and acceptance pass; waive visual review including conflict resolutions")
     .option("--after <id>", AFTER_HELP, collect, [])
@@ -73,17 +77,26 @@ export function registerDo(program: Command, ctx: CliContext): void {
 async function instruct(ctx: CliContext, words: string[], opts: DoOptions) {
   const lookouts = lookFor(opts.lookFor);
   let scheduledAt: string | null;
-  try { scheduledAt = checkScheduledAt(opts.at); } catch (err) { return ui.fail(errorMessage(err)); }
+  let by: EventActor;
+  try {
+    scheduledAt = checkScheduledAt(opts.at);
+    by = await cliActor(ctx, opts.asOperator);
+  } catch (err) {
+    return ui.fail(errorMessage(err));
+  }
   p.intro(`${ui.accent("▟")} ${pc.bold("New task")}`);
   const text = await askInstruction(words);
   if (text === null) return p.cancel(NOTHING_CREATED);
   const draft = await resolveRepo(ctx.store, text, opts);
   if (!draft) return p.cancel(NOTHING_CREATED);
-  const { agents, driver } = await resolveAgent(ctx, opts.agent);
+  const runner = opts.runner ?? ctx.actions.defaultRunner(by);
+  const { agents, driver } = await resolveAgent(ctx, opts.agent, runner !== null);
   const choices: Choices = { draft, driver, scheduledAt, preApprove: opts.preApprove ?? false, lookouts };
-  p.note(summaryLines(choices, agents, opts, repoName(ctx.store, draft.repoId)).join("\n"), "Here's what I understood");
+  const summary = summaryLines(choices, agents, opts, repoName(ctx.store, draft.repoId));
+  if (runner) summary.push(`${ui.dim("Container")} ${runner}`);
+  p.note(summary.join("\n"), "Here's what I understood");
   if (!opts.yes && !(await confirmOrChange(choices, agents))) return p.cancel(NOTHING_CREATED);
-  createTask(ctx, choices, opts);
+  createTask(ctx, choices, opts, by);
 }
 
 /** The instruction from the command line, or asked for. Null when the operator cancels. */
@@ -128,8 +141,9 @@ function chooseRepo(draft: TaskDraft, repoId: string, isFactory: boolean): void 
 }
 
 /** The agent asked for, else the factory's default (null). Fails on an unknown or missing agent. */
-async function resolveAgent({ actions }: CliContext, asked: string | undefined): Promise<{ agents: Agents; driver: string | null }> {
-  const catalog = await actions.drivers();
+async function resolveAgent({ actions }: CliContext, asked: string | undefined, onContainer: boolean): Promise<{ agents: Agents; driver: string | null }> {
+  const local = await actions.drivers();
+  const catalog = onContainer ? local.map((d) => ({ ...d, available: true, hint: "Runs on your container" })) : local;
   const agents = { choosable: choosableDrivers(catalog), defaultAgent: catalog.find((d) => d.isDefault) };
   if (!asked || asked === "default") return { agents, driver: null };
   const d = catalog.find((x) => x.name === asked);
@@ -275,10 +289,10 @@ const CHANGES: Record<string, Change | undefined> = {
   lookouts: changeLookouts,
 };
 
-function createTask({ store, actions }: CliContext, choices: Choices, opts: DoOptions): void {
+function createTask({ store, actions }: CliContext, choices: Choices, opts: DoOptions, by: EventActor): void {
   try {
     const { draft, ...rest } = choices;
-    const task = actions.createTask({ ...draft, ...rest, prerequisites: opts.after, acceptance: opts.accept, acceptanceChecks: opts.acceptCheck });
+    const task = actions.createTask({ ...draft, ...rest, runnerId: opts.runner, prerequisites: opts.after, acceptance: opts.accept, acceptanceChecks: opts.acceptCheck }, by);
     const waiting = store.unmetPrerequisites(task).map((t) => t.id);
     p.outro(createdMessage(task, waiting, factoryIsRunning(store)));
   } catch (err) {

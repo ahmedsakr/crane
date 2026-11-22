@@ -18,6 +18,7 @@ import { registerPermissions } from "./commands/permissions.js";
 import { registerQueue } from "./commands/queue.js";
 import { registerRepos } from "./commands/repos.js";
 import { registerRetention } from "./commands/retention.js";
+import { registerRunners } from "./commands/runners.js";
 import { registerSchedule } from "./commands/schedule.js";
 import { registerServe } from "./commands/serve.js";
 import { registerShow } from "./commands/show.js";
@@ -56,6 +57,7 @@ export function buildProgram(ctx: CliContext): Command {
   registerFactoryControl(program, ctx);
   registerServe(program, ctx);
   registerOperators(program, ctx);
+  registerRunners(program, ctx);
   registerAuth(program, ctx);
   return program;
 }
