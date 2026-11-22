@@ -18,7 +18,7 @@ import { CLAUDE_FRESH_RUN, fakeClaude, fakeCodex } from "./support/fake-agents.j
 const repo: Repo = { id: "r-a", name: "app", path: "/code/app", defaultBranch: "trunk", isFactory: false, addedAt: "" };
 const task = (autonomy: Task["autonomy"]): Task => ({
   id: "t-a", kind: "maintenance", title: "Auto", brief: "Auto", repoId: repo.id, autonomy, status: "running",
-  agentId: null, branch: null, worktree: null, sessionId: null, driver: null, model: null, effort: null, driverSettings: null,
+  agentId: null, branch: null, worktree: null, sessionId: null, driver: null, runnerId: null, model: null, effort: null, driverSettings: null,
   assignee: null, postmortemOf: null, preApprovedAt: null, prerequisites: [], prerequisitesWaivedAt: null, acceptance: [],
   acceptanceChecks: [], lookouts: [], report: null, costUsd: 0, createdAt: "", createdBy: null, scheduledAt: null,
   scheduleId: null, followUpOf: null, followUpFinding: null, startedAt: null, finishedAt: null,

@@ -35,6 +35,7 @@ const baseTask = {
   autonomy: "propose",
   branch: null,
   driver: null,
+  runnerId: null,
   assignee: null,
   postmortemOf: null,
   scheduledAt: null,

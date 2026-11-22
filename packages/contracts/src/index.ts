@@ -154,3 +154,25 @@ export {
   isEventActor,
   eventActor,
 } from "./access.js";
+export type {
+  RunnerSummary,
+  RunnerJobKind,
+  RunnerJobState,
+  RunnerEventType,
+  RunnerHeartbeat,
+  RunnerHeartbeatReply,
+  RunnerSiblingTask,
+  RunnerFailedCheck,
+  RunnerAgentJob,
+  RunnerJob,
+  RunnerEventBatch,
+  RunnerResult,
+} from "./runners.js";
+export {
+  RUNNER_JOB_KINDS,
+  RUNNER_JOB_STATES,
+  RUNNER_EVENT_TYPES,
+  RUNNER_LIMITS,
+  isRunnerOnline,
+  runnerLabel,
+} from "./runners.js";
