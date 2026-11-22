@@ -34,6 +34,8 @@ export interface AgentRun extends RunUsage {
   kind: RunKind;
   agentId: string | null;
   driver: string;
+  /** The container the run was sent to, or null for the factory's own crew. */
+  runnerId: string | null;
   outcome: RunOutcome;
   startedAt: string;
   finishedAt: string | null;

@@ -1,5 +1,5 @@
 import { completionReviewReason, driverLabel, errorMessage, isDriverName, unmetAcceptance, type EventType, type Repo, type Report, type ReviewCheckpoint, type Task, type TaskStatus } from "@crane/contracts";
-import { AgentRunError } from "@crane/agent-protocol";
+import { AgentRunError, type AgentDriver } from "@crane/agent-protocol";
 import { installDependencies } from "@crane/worktree-deps";
 import type { Store } from "@crane/storage";
 import { retainScreenshots } from "@crane/storage";
@@ -9,7 +9,9 @@ import { driverFor, type DriverRegistry } from "./driver-selection.js";
 import { elapsed } from "./elapsed.js";
 import { createWorktree, finalizeWorktree, PreparationHold, requireCommits } from "./git.js";
 import { candidateUnchanged, changedInputs, reviewInputs } from "./review-checkpoint.js";
+import { RemoteDriver, type RemoteDriverOptions } from "./remote/driver.js";
 import { minutes } from "./run-limits.js";
+import { isLaneMember } from "./runner-lane.js";
 import { candidateVisualReview } from "./visual-review.js";
 
 export type CrewMember = { id: string; name: string };
@@ -28,6 +30,8 @@ export interface WorkRunDeps {
   requeueStopped: (taskId: string) => void;
   /** A task stopped, so its worktree may be ready to put away. */
   taskEnded: (status: TaskStatus | undefined) => void;
+  /** How runs sent to a container wait on it. */
+  remote?: RemoteDriverOptions;
 }
 
 /** One agent working one task. */
@@ -122,15 +126,30 @@ async function resumeCheckpoint({ store }: WorkRunDeps, { task, emit }: WorkRun,
   return null;
 }
 
+/**
+ * Whether the task's session can carry on with `driver`. A session belongs to
+ * the agent that started it, where it ran: the same agent on another container,
+ * or on the crew, has no copy of it. Older runs didn't record their agent, so
+ * trust those. Says why when it can't.
+ */
+function sessionSwitch(store: Store, task: Task, driver: AgentDriver): string | null {
+  if (!task.sessionId) return null;
+  const owner = store.lastWorkDriver(task.id);
+  if (!isDriverName(owner)) return null;
+  const runnerId = driver instanceof RemoteDriver ? driver.runnerId : null;
+  const moved = store.lastWorkRunner(task.id) !== runnerId;
+  if (owner === driver.name && !moved) return null;
+  const where = runnerId ? "this task's container" : "the factory's crew";
+  const to = moved ? `${driverLabel(driver.name)} on ${where}` : driverLabel(driver.name);
+  return `Switching to ${to}, which starts a new session on the work so far`;
+}
+
 async function runWorkAgent(deps: WorkRunDeps, { agent, task, signal, emit }: WorkRun, { repo, cwd, dependencyProblem }: Workspace): Promise<Report> {
   const { store, drivers, agentRunner, recording } = deps;
-  const driver = driverFor(store, drivers, task, agent.id);
-  // A session belongs to the agent that started it. Older runs didn't record theirs, so trust those.
-  const owner = store.lastWorkDriver(task.id);
-  const resumable = !!task.sessionId && (!isDriverName(owner) || owner === driver.name);
-  if (task.sessionId && !resumable) {
-    emit("note", `Switching to ${driverLabel(driver.name)}, which starts a new session on the work so far`);
-  }
+  const driver = driverFor(store, drivers, task, agent.id, deps.remote);
+  const switching = sessionSwitch(store, task, driver);
+  if (switching) emit("note", switching);
+  const resumable = !!task.sessionId && !switching;
   const result = await runAgent(agentRunner, agent.id, driver, {
     task: store.getTask(task.id)!,
     repo,
@@ -217,7 +236,7 @@ function fileOutcome({ store, log }: WorkRunDeps, { agent, task }: WorkRun, repo
   // A pre-approved task skips review and goes to the merge queue. Its checks passed above.
   const next = store.finishWork(task.id, needsOperator ? "needs_review" : "done");
   if (!next) return;
-  store.bumpAgentCompleted(agent.id);
+  if (!isLaneMember(agent.id)) store.bumpAgentCompleted(agent.id);
   log(`${agent.name} finished ${task.id}${next === "merging" ? ", pre-approved, so it's queued to merge" : ""}`);
 }
 

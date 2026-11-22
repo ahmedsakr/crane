@@ -8,6 +8,8 @@ import { driverSettings, isAvailable } from "./drivers.js";
 import { sleep } from "./run-limits.js";
 import { siblingTasksFor } from "./task-context.js";
 import { prepareAgentLogs } from "./agent-logs.js";
+import { RemoteDriver } from "./remote/driver.js";
+import { isLaneMember } from "./runner-lane.js";
 
 export interface AgentRunnerDeps {
   store: Store;
@@ -67,6 +69,20 @@ async function runWithRetry(deps: AgentRunnerDeps, driver: AgentDriver, ctx: Run
   }
 }
 
+/** A container must be online with the agent signed in; a local agent must be installed here. */
+async function requireAvailable(driver: AgentDriver): Promise<void> {
+  if (driver instanceof RemoteDriver) {
+    const reason = driver.unavailableReason();
+    if (reason) throw new Error(reason);
+    return;
+  }
+  if (!(await isAvailable(driver))) {
+    throw new Error(
+      `${driverLabel(driver.name)} isn't installed where the factory runs, or didn't answer. Install it and restart the factory, or retry the task on another agent.`,
+    );
+  }
+}
+
 /**
  * Run the driver with a row in the runs ledger around it, so every run's
  * cost lands on its task: succeeded, failed, or cancelled. A retry after a
@@ -79,17 +95,15 @@ export async function runAgent(
   ctx: AgentRunRequest,
 ): Promise<RunResult> {
   const { store } = deps;
-  if (!(await isAvailable(driver))) {
-    throw new Error(
-      `${driverLabel(driver.name)} isn't installed where the factory runs, or didn't answer. Install it and restart the factory, or retry the task on another agent.`,
-    );
-  }
-  store.setAgentDriver(agentId, driver.name);
+  await requireAvailable(driver);
+  // Lane slots aren't crew, so they have no agents row to update.
+  if (!isLaneMember(agentId)) store.setAgentDriver(agentId, driver.name);
   const runId = store.startRun({
     taskId: ctx.task.id,
     kind: ctx.job?.kind ?? "work",
     agentId,
     driver: driver.name,
+    runnerId: driver instanceof RemoteDriver ? driver.runnerId : null,
   });
   let usage: RunUsage | null = null;
   // A driver can report more than once in a run (a failed resume, then a fresh session), so add them up.

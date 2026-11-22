@@ -14,7 +14,7 @@ import { hasVisualDecision, requireCandidateVisualReview, visualReviewRequired }
 import type { CrewMember, WorkRunDeps } from "./work-run.js";
 
 /** What landing a task needs from the factory that started it. */
-export type MergeRunDeps = Pick<WorkRunDeps, "store" | "drivers" | "agentRunner" | "timeLimitMin" | "log"> & {
+export type MergeRunDeps = Pick<WorkRunDeps, "store" | "drivers" | "agentRunner" | "timeLimitMin" | "log" | "remote"> & {
   /** Builds the dashboard from a merge into Crane's own repo, when this factory does that. */
   dashboard: DashboardBuilder | null;
 };
@@ -111,9 +111,10 @@ function conflictResolver(deps: MergeRunDeps, run: MergeRun, repo: Repo) {
   return { run: resolve, fix, changedUi: () => changedUi };
 }
 
-async function runMergeAgent({ store, drivers, agentRunner }: MergeRunDeps, { agent, task, signal, emit }: MergeRun, repo: Repo, cwd: string, job: AgentJob): Promise<Report> {
+/** A resolver or check-fix run. A task routed to a container gets it there too, through `driverFor`. */
+async function runMergeAgent({ store, drivers, agentRunner, remote }: MergeRunDeps, { agent, task, signal, emit }: MergeRun, repo: Repo, cwd: string, job: AgentJob): Promise<Report> {
   const current = store.getTask(task.id)!;
-  const { report } = await runAgent(agentRunner, agent.id, driverFor(store, drivers, current, agent.id), {
+  const { report } = await runAgent(agentRunner, agent.id, driverFor(store, drivers, current, agent.id, remote), {
     task: current, repo, cwd, signal, emit, job,
     checks: store.repoChecks(repo.id),
   });
