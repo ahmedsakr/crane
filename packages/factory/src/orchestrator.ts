@@ -1,11 +1,12 @@
-import { crewSettingKey, type Store } from "@crane/storage";
-import { errorMessage, type AgentState, type EventType, type Task } from "@crane/contracts";
+import { crewSettingKey, type RunnerJobRecord, type Store } from "@crane/storage";
+import { errorMessage, type AgentState, type EventType, type RunnerSummary, type Task } from "@crane/contracts";
 import type { AgentDriver } from "@crane/agent-protocol";
 import type { AgentRunnerDeps } from "./agent-runner.js";
 import { defaultDriver } from "./driver-selection.js";
 import { DashboardBuilder } from "./dashboard.js";
 import { handleMergeFailure, runMerge, type MergeRun, type MergeRunDeps } from "./merge-run.js";
-import { envNumber, timeLimit } from "./run-limits.js";
+import { envNumber, FactoryStopping, timeLimit } from "./run-limits.js";
+import { isLaneMember, laneMembers, liveLease } from "./runner-lane.js";
 import { DEFAULT_DRIVER_KEY, DEFAULT_MAX_TURNS, DEFAULT_TIME_LIMIT_MIN, HEARTBEAT_KEY } from "./settings.js";
 import { StorageMaintenance } from "@crane/storage";
 import { OperatorActions } from "./actions.js";
@@ -29,6 +30,8 @@ export interface FactoryOptions {
   timeLimitMin?: number;
   /** How long to wait before retrying a transient failure, before jitter. Default CRANE_RETRY_DELAY_SEC, or 60s. */
   retryDelayMs?: number;
+  /** How often a run sent to a container checks on its job. Default 1000ms. */
+  remotePollMs?: number;
 }
 
 /**
@@ -39,6 +42,7 @@ const STOP_GRACE_MS = 3500;
 /** Leave room for tick jitter within the six-second freshness window. */
 const HEARTBEAT_MS = 3000;
 const STOPPED_MESSAGE = "Stopped with the factory. Back in the queue to pick up where it left off";
+const EXPIRED_MESSAGE = "Its container stopped answering, so its job expired. Back in the queue to pick up where it left off";
 
 /**
  * The factory floor. Keeps a crew of agents busy: each idle agent claims the
@@ -55,6 +59,8 @@ export class Factory {
   private agentStates = new Map<string, { state: AgentState; taskId: string | null }>();
   private lastHeartbeat: number | null = null;
   private mergingRepos = new Set<string>(); // repoIds with a merge in progress
+  /** Running container tasks whose container kept working them through a restart, waiting for their lane. */
+  private kept = new Set<string>();
   private crew: CrewMember[];
   private tickMs: number;
   private log: (line: string) => void;
@@ -111,6 +117,7 @@ export class Factory {
       recording: (write) => this.recording(write),
       requeueStopped: (taskId) => this.requeue(taskId, STOPPED_MESSAGE),
       taskEnded: (status) => this.sweeper.taskEnded(status),
+      remote: { pollMs: opts.remotePollMs ?? 1000 },
     };
     if (opts.buildDashboard) {
       this.dashboard = new DashboardBuilder({
@@ -126,6 +133,7 @@ export class Factory {
       timeLimitMin: this.timeLimitMin,
       log: this.log,
       dashboard: this.dashboard,
+      remote: this.workRun.remote,
     };
   }
 
@@ -144,8 +152,13 @@ export class Factory {
 
     // A previous factory stopped without getting to put its work back (it crashed,
     // or was killed before it could). Requeue it; the agent picks up where it left off.
+    // A container still leased on a task's job is still working it, so that task stays
+    // running and its lane waits on the same job.
+    this.kept.clear();
     for (const m of this.store.listTasks({ status: ["running"] })) {
-      this.requeue(m.id, "The factory stopped unexpectedly. Back in the queue to pick up where it left off");
+      if (!this.requeue(m.id, "The factory stopped unexpectedly. Back in the queue to pick up where it left off")) {
+        this.store.addEvent(m.id, "note", "The factory restarted while its container kept working on it");
+      }
     }
     // Runs it was in the middle of never reported their usage. Close them so they don't read as live.
     this.store.closeStaleRuns();
@@ -168,7 +181,8 @@ export class Factory {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.stopping = true;
-    for (const ac of this.running.values()) ac.abort();
+    // The reason tells a container's run to leave its job working, for the next factory.
+    for (const ac of this.running.values()) ac.abort(new FactoryStopping());
 
     // Give agents a moment to exit, so their last events and the requeue are recorded in order.
     let timeout: NodeJS.Timeout | undefined;
@@ -184,12 +198,22 @@ export class Factory {
     this.store.setSetting(HEARTBEAT_KEY, "0");
   }
 
-  /** Put a running task back in the queue, keeping its worktree and session for the next agent. */
-  private requeue(taskId: string, message: string) {
-    if (this.store.getTask(taskId)?.status !== "running") return;
+  /**
+   * Put a running task back in the queue, keeping its worktree and session for
+   * the next agent. A container task whose job is still leased stays running
+   * instead, for its lane to wait on again; that returns false.
+   */
+  private requeue(taskId: string, message: string): boolean {
+    const task = this.store.getTask(taskId);
+    if (task?.status !== "running") return true;
+    if (task.runnerId && liveLease(this.store, taskId)) {
+      this.kept.add(taskId);
+      return false;
+    }
     this.store.closeUnresolvedCommands(taskId);
     this.store.updateTask(taskId, { status: "queued", agentId: null });
     this.store.addEvent(taskId, "status", message, { status: "queued" });
+    return true;
   }
 
   /**
@@ -227,6 +251,8 @@ export class Factory {
   }
 
   private setAgentState(id: string, state: AgentState, taskId: string | null) {
+    // Lane slots aren't crew: the task's own status and agent id say what they're doing.
+    if (isLaneMember(id)) return;
     const previous = this.agentStates.get(id);
     if (previous?.state === state && previous.taskId === taskId) return;
     this.store.setAgentState(id, state, taskId);
@@ -249,7 +275,8 @@ export class Factory {
     this.sweepWorktrees();
 
     const paused = this.store.isPaused();
-    const pending = paused ? { queued: false, merging: false } : this.store.pendingWork();
+    const pending = paused ? { queued: false, merging: false, runners: [] } : this.store.pendingWork();
+    this.assignLanes(pending.runners);
     for (const agent of this.crew) {
       if (this.busy.has(agent.id)) continue;
       this.setAgentState(agent.id, paused ? "paused" : "idle", null);
@@ -264,6 +291,62 @@ export class Factory {
       const task = pending.queued ? this.claimNextTask(agent.id, active) : null;
       if (!task) continue;
       this.track(this.work(agent, task), agent.id, task.id);
+    }
+  }
+
+  /**
+   * Container lanes: each online container works its own routed tasks, as many
+   * at once as its capacity, without taking a crew slot. Tasks a container kept
+   * working through a restart come first, since they already hold its capacity.
+   * Their runs continue while paused; `runnerIds` is empty then, so nothing new starts.
+   */
+  private assignLanes(runnerIds: readonly string[]) {
+    const now = Date.now();
+    this.handBackExpired(this.store.runners.expireLeases(new Date(now).toISOString()));
+    this.resumeKept(now);
+    for (const runnerId of runnerIds) {
+      const runner = this.store.runners.summary(runnerId, now);
+      // An offline container's tasks wait queued until it checks in again.
+      if (!runner?.online) continue;
+      for (const member of this.freeSlots(runner)) {
+        const task = this.store.claimNextRunnerTask(runner.id, member.id);
+        if (!task) break;
+        this.track(this.work(member, task), member.id, task.id);
+      }
+    }
+  }
+
+  private freeSlots(runner: RunnerSummary): CrewMember[] {
+    return laneMembers(runner).filter((m) => !this.busy.has(m.id));
+  }
+
+  /** Jobs whose lease ran out with no run here waiting on them: their tasks go back in the queue. */
+  private handBackExpired(jobs: RunnerJobRecord[]) {
+    for (const job of jobs) {
+      this.kept.delete(job.taskId);
+      if (!this.running.has(job.taskId)) this.requeue(job.taskId, EXPIRED_MESSAGE);
+    }
+  }
+
+  /** Wait again on the jobs containers kept working while the factory restarted, once each is back online with room. */
+  private resumeKept(now: number) {
+    for (const taskId of this.kept) {
+      const task = this.store.getTask(taskId);
+      if (!task?.runnerId || task.status !== "running" || this.running.has(taskId)) {
+        this.kept.delete(taskId);
+        continue;
+      }
+      // Its job ended while nobody waited on it (cancelled, say): it runs again from the queue.
+      if (this.requeue(taskId, STOPPED_MESSAGE)) {
+        this.kept.delete(taskId);
+        continue;
+      }
+      const runner = this.store.runners.summary(task.runnerId, now);
+      const member = runner?.online ? this.freeSlots(runner)[0] : undefined;
+      if (!member) continue;
+      this.kept.delete(taskId);
+      this.store.updateTask(taskId, { agentId: member.id });
+      this.track(this.work(member, { ...task, agentId: member.id }), member.id, taskId);
     }
   }
 

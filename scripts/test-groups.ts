@@ -62,7 +62,7 @@ export const TEST_GROUPS: readonly TestGroup[] = [
     id: "factory-execution", kind: "package", projects: ["@crane/factory"],
     suites: suites(
       "acceptance-checks", "factory-elapsed", "idle-factory", "live-diff", "merge-fetch-retry",
-      "merge-fixes", "merge", "postmortem", "process-trees", "remote-dispatch", "review-checkpoint",
+      "merge-fixes", "merge", "postmortem", "process-trees", "remote-dispatch", "review-checkpoint", "runner-lane",
       "runner-jobs", "storage-diagnostics", "work-run", "worktree-base", "worktrees",
     ),
   },

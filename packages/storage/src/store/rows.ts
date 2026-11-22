@@ -85,6 +85,7 @@ export function toRun(r: Row): AgentRun {
     kind: r.kind as RunKind,
     agentId: (r.agent_id as string) ?? null,
     driver: r.driver as string,
+    runnerId: (r.runner_id as string | null) ?? null,
     model: (r.model as string) ?? null,
     outcome: r.outcome as RunOutcome,
     costUsd: r.cost_usd as number,

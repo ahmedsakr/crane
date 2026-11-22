@@ -30,6 +30,7 @@
     "../../roles.test.ts",
     "../../runner-actions.test.ts",
     "../../runner-jobs.test.ts",
+    "../../runner-lane.test.ts",
     "../../scheduling.test.ts",
     "../../storage-diagnostics.test.ts",
     "../../task-context.test.ts",

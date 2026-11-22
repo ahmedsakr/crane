@@ -18,6 +18,17 @@ export function timeLimit(ac: AbortController, limitMinutes: number) {
   return { hit: () => hit, clear: () => timer && clearTimeout(timer) };
 }
 
+/**
+ * The abort reason when the factory is stopping rather than cancelling the run.
+ * A container keeps working a task's own job through it, so the next factory
+ * can wait on that job instead of sending the work again.
+ */
+export class FactoryStopping extends Error {
+  constructor() {
+    super("The factory is stopping");
+  }
+}
+
 export function sleep(ms: number, signal: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
     if (signal.aborted) return reject(new Error("Cancelled"));
