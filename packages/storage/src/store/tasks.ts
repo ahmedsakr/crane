@@ -15,8 +15,6 @@ export type NewTaskRecord = NewTask & {
   followUp?: { of: string; finding: number };
   /** The merged task this post-mortem reviews. */
   postmortemOf?: string | null;
-  /** The container that runs it; only that container's lane claims it. Null or absent is the factory's own crew. */
-  runnerId?: string | null;
 };
 
 export const TASK_SUMMARY_COLUMNS = `id, kind, title, repo_id AS repoId, status, branch, assignee,

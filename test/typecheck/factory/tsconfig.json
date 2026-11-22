@@ -27,6 +27,7 @@
     "../../retention.test.ts",
     "../../review-checkpoint.test.ts",
     "../../roles.test.ts",
+    "../../runner-actions.test.ts",
     "../../scheduling.test.ts",
     "../../storage-diagnostics.test.ts",
     "../../task-context.test.ts",

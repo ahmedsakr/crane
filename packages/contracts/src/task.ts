@@ -181,6 +181,8 @@ export interface NewTask extends TaskRunOptions {
   brief: string;
   repoId: string | null;
   autonomy: Autonomy;
+  /** Container to use. Omit it to use the operator's default, or pass null to use the factory crew. */
+  runnerId?: string | null;
   /** Earliest pickup time: a future ISO 8601 timestamp with a timezone, or null for now. */
   scheduledAt?: string | null;
   /** Merge once the run and checks pass, without waiting for review. */

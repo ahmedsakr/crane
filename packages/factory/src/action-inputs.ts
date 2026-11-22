@@ -16,6 +16,32 @@ import {
   type MaintenanceRole,
   type TaskRunOptions,
 } from "@crane/contracts";
+import { checkName } from "./actions/access-rules.js";
+import type { RunnersRequired } from "./settings.js";
+
+export type TaskAgentInput = TaskRunOptions & { runnerId?: string | null };
+
+export const checkRunnerName = (input: unknown): string => checkName(input);
+
+export function checkRunnerCapacity(input: unknown): number {
+  if (typeof input !== "number" || !Number.isInteger(input) || input < 1 || input > 8) {
+    throw new Error("Choose a container capacity from 1 to 8");
+  }
+  return input;
+}
+
+export function checkRunnerId(input: unknown): string | null {
+  if (input === null) return null;
+  if (typeof input !== "string" || !input.trim() || input.length > 100 || /\p{Cc}/u.test(input)) {
+    throw new Error("Choose a container or clear the container");
+  }
+  return input.trim();
+}
+
+export function checkRunnersRequired(input: unknown): RunnersRequired {
+  if (input !== "off" && input !== "on") throw new Error("Choose whether containers are required, on or off");
+  return input;
+}
 
 /**
  * Accept what an operator would type: a rule (`Bash(npm ci:*)`, `WebFetch`)
@@ -150,6 +176,15 @@ export function checkTaskRunOptions(input: TaskRunOptions): TaskRunOptions {
 }
 
 export type TaskRun = { driver: string | null; model: string | null; effort: string | null };
+
+export function checkTaskAgent(current: TaskRun, input: TaskAgentInput) {
+  if (!input || (input.driver === undefined && input.model === undefined && input.effort === undefined && input.runnerId === undefined)) {
+    throw new Error("Give an agent, model, effort or container to change");
+  }
+  const changeRun = input.driver !== undefined || input.model !== undefined || input.effort !== undefined;
+  const runnerId = input.runnerId === undefined ? undefined : checkRunnerId(input.runnerId);
+  return { run: nextRun(current, input), changeRun, runnerId };
+}
 
 /**
  * What a run uses after the operator's changes, checked. A field left out stays

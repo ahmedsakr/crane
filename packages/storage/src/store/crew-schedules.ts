@@ -12,6 +12,7 @@ export function listCrewSchedules(store: Store, agentId?: string): CrewSchedule[
 function toCrewSchedule(r: Row): CrewSchedule {
   return {
     id: r.id as string, agentId: r.agent_id as string, repoId: r.repo_id as string,
+    runnerId: r.runner_id as string | null,
     daysMask: r.days_mask as number, localTime: r.local_time as string, timezone: r.timezone as string,
     preApprove: !!r.pre_approve, enabled: !!r.enabled, nextFireAt: r.next_fire_at as string,
     lastFiredAt: r.last_fired_at as string | null, lastOutcome: r.last_outcome as string | null,
@@ -19,11 +20,12 @@ function toCrewSchedule(r: Row): CrewSchedule {
 }
 
 export function saveCrewSchedule(store: Store, id: string, agentId: string, input: CrewScheduleInput, nextFireAt: string): CrewSchedule {
-  store.db.prepare(`INSERT INTO crew_schedules(id, agent_id, repo_id, days_mask, local_time, timezone, pre_approve, enabled, next_fire_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET
+  store.db.prepare(`INSERT INTO crew_schedules(id, agent_id, repo_id, days_mask, local_time, timezone, pre_approve, enabled, next_fire_at, runner_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET
     repo_id=excluded.repo_id, days_mask=excluded.days_mask, local_time=excluded.local_time,
-    timezone=excluded.timezone, pre_approve=excluded.pre_approve, enabled=excluded.enabled, next_fire_at=excluded.next_fire_at`)
-    .run(id, agentId, input.repoId, input.daysMask, input.localTime, input.timezone, +input.preApprove, +input.enabled, nextFireAt);
+    timezone=excluded.timezone, pre_approve=excluded.pre_approve, enabled=excluded.enabled,
+    next_fire_at=excluded.next_fire_at, runner_id=excluded.runner_id`)
+    .run(id, agentId, input.repoId, input.daysMask, input.localTime, input.timezone, +input.preApprove, +input.enabled, nextFireAt, input.runnerId ?? null);
   return listCrewSchedules(store, agentId).find((s) => s.id === id)!;
 }
 

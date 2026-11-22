@@ -17,12 +17,15 @@ import type {
   RepoTools,
   RetentionSettings,
   RoleRunOptions,
+  RunnerSummary,
   Task,
   TaskGates,
   TaskRunOptions,
 } from "@crane/contracts";
-import type { Store } from "@crane/storage";
+import { withActor } from "@crane/backend-runtime";
+import type { RunnerRecord, Store } from "@crane/storage";
 import type { SessionListing } from "@crane/storage";
+import type { TaskAgentInput } from "./action-inputs.js";
 import { generatePassword } from "./auth-crypto.js";
 import * as access from "./actions/access.js";
 import * as invites from "./actions/access-invites.js";
@@ -34,15 +37,19 @@ import * as goals from "./actions/goals.js";
 import * as permissions from "./actions/permissions.js";
 import * as repos from "./actions/repos.js";
 import * as review from "./actions/review.js";
+import * as runners from "./actions/runners.js";
 import * as schedules from "./actions/schedules.js";
 import * as settings from "./actions/settings.js";
 import * as tasks from "./actions/tasks.js";
+import type { RunnersRequired } from "./settings.js";
 
 export { checkLookouts, checkScheduledAt, toRule } from "./action-inputs.js";
 export { AccessError } from "./actions/access-errors.js";
 export { SESSION_LIFETIME_MS, SIGN_IN_FIRST, WRONG_CURRENT_PASSWORD } from "./actions/access-rules.js";
 export type { Authenticated, SignedIn } from "./actions/access-sessions.js";
 export type { AcceptInput, IssuedInvite } from "./actions/access-invites.js";
+export type { TaskAgentInput } from "./action-inputs.js";
+export type { IssuedRunner, NewRunnerInput } from "./actions/runners.js";
 
 /**
  * Everything an operator can do, shared by the web UI and the CLI so both
@@ -107,7 +114,7 @@ export class OperatorActions {
 
   // Tasks
 
-  createTask(input: NewTask & { scheduleId?: string }): Task {
+  createTask(input: NewTask): Task {
     return tasks.createTask(this.store, input);
   }
 
@@ -119,8 +126,12 @@ export class OperatorActions {
     return tasks.schedule(this.store, id, scheduledAt);
   }
 
-  changeAgent(id: string, input: TaskRunOptions): Task {
+  changeAgent(id: string, input: TaskAgentInput): Task {
     return tasks.changeAgent(this.store, id, input);
+  }
+
+  setTaskRunner(by: EventActor, taskId: string, runnerId: string | null): Task {
+    return withActor(by, () => tasks.changeAgent(this.store, taskId, { runnerId }));
   }
 
   waivePrerequisites(id: string, note?: string): Task {
@@ -231,6 +242,52 @@ export class OperatorActions {
 
   fireCrewSchedules(at = Date.now()): void {
     schedules.fireCrewSchedules(this.store, at);
+  }
+
+  // Containers
+
+  addRunner(by: EventActor, input: runners.NewRunnerInput): runners.IssuedRunner {
+    return runners.addRunner(this.access, by, input);
+  }
+
+  listRunners(by: EventActor): RunnerSummary[] {
+    return runners.listRunners(this.access, by);
+  }
+
+  renameRunner(by: EventActor, id: string, name: unknown): RunnerSummary {
+    return runners.renameRunner(this.access, by, id, name);
+  }
+
+  setRunnerCapacity(by: EventActor, id: string, capacity: unknown): RunnerSummary {
+    return runners.setRunnerCapacity(this.access, by, id, capacity);
+  }
+
+  rotateRunnerToken(by: EventActor, id: string): runners.IssuedRunner {
+    return runners.rotateRunnerToken(this.access, by, id);
+  }
+
+  removeRunner(by: EventActor, id: string): void {
+    runners.removeRunner(this.access, by, id);
+  }
+
+  authenticateRunner(token: unknown): RunnerRecord | null {
+    return runners.authenticateRunner(this.access, token);
+  }
+
+  defaultRunner(by: EventActor): string | null {
+    return runners.defaultRunner(this.store, by);
+  }
+
+  setDefaultRunner(by: EventActor, runnerId: unknown): string | null {
+    return runners.setDefaultRunner(this.access, by, runnerId);
+  }
+
+  runnersRequired(): RunnersRequired {
+    return runners.runnersRequired(this.store);
+  }
+
+  setRunnersRequired(by: EventActor, value: unknown): RunnersRequired {
+    return runners.setRunnersRequired(this.access, by, value);
   }
 
   // Tool permissions

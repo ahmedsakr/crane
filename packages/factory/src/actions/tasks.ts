@@ -4,6 +4,7 @@ import {
   STATUS_LABEL,
   driverLabel,
   settingsLabel,
+  type CrewSchedule,
   type NewTask,
   type Task,
   type TaskGates,
@@ -18,10 +19,13 @@ import {
   checkAcceptanceChecks,
   checkLookouts,
   checkScheduledAt,
+  checkTaskAgent,
   checkTaskRunOptions,
   nextRun,
+  type TaskAgentInput,
   type TaskRun,
 } from "../action-inputs.js";
+import { checkInheritedRunner, requireExistingRunnerOwner, resolveTaskRunner } from "./runners.js";
 
 export function needTask(store: Store, id: string): Task {
   const m = store.getTask(id);
@@ -95,7 +99,7 @@ function checkGates(store: Store, input: TaskGates, repoId: string | null): Requ
  * Check a new task in the order API clients and tests see errors, and return
  * what to store: factory work with no repo goes to Crane's own, if connected.
  */
-function checkNewTask(store: Store, input: NewTask & { scheduleId?: string }): NewTaskRecord {
+function checkNewTask(store: Store, input: NewTask): NewTaskRecord {
   // From the API and CLI flags as given. Only an exact "observe" is read-only, so "Observe" would get a writing agent.
   if (!Object.hasOwn(AUTONOMY_LABEL, input.autonomy)) throw new Error(`Unknown autonomy “${input.autonomy}”. Use one of: ${Object.keys(AUTONOMY_LABEL).join(", ")}`);
   if (!Object.hasOwn(KIND_LABEL, input.kind)) throw new Error(`Unknown kind “${input.kind}”. Use one of: ${Object.keys(KIND_LABEL).join(", ")}`);
@@ -122,11 +126,19 @@ function checkNewTask(store: Store, input: NewTask & { scheduleId?: string }): N
   };
 }
 
-export function createTask(store: Store, input: NewTask & { scheduleId?: string }): Task {
-  const task = store.createTask(checkNewTask(store, input));
-  // Remembered so the next instruction that doesn't name a repo defaults to this one.
-  if (task.repoId) store.setSetting("last_repo", task.repoId);
-  return task;
+export function createTask(store: Store, input: NewTask, schedule?: CrewSchedule): Task {
+  return store.transaction(() => {
+    const checked = checkNewTask(store, input);
+    const runnerId = schedule ? schedule.runnerId : resolveTaskRunner(store, input.runnerId);
+    if (schedule && runnerId) {
+      const runner = store.runners.byId(runnerId);
+      if (!runner || runner.revokedAt) throw new Error("The schedule's container was removed. Choose another container");
+    }
+    const task = store.createTask({ ...checked, runnerId, scheduleId: schedule?.id });
+    // Remembered so the next instruction that doesn't name a repo defaults to this one.
+    if (task.repoId) store.setSetting("last_repo", task.repoId);
+    return task;
+  }, { immediate: true });
 }
 
 /** Reorder waiting work; scheduling, crew assignment and prerequisites still apply. */
@@ -150,18 +162,30 @@ export function schedule(store: Store, id: string, scheduledAt: unknown): Task {
  * when a crew member picks the task up. A task that already ran starts a new
  * session on the work so far if the agent changes.
  */
-export function changeAgent(store: Store, id: string, input: TaskRunOptions): Task {
-  const m = needTask(store, id);
-  if (!input || (input.driver === undefined && input.model === undefined && input.effort === undefined)) {
-    throw new Error("Give an agent, model or effort to change");
+export function changeAgent(store: Store, id: string, input: TaskAgentInput): Task {
+  return store.transaction(() => {
+    const task = needTask(store, id);
+    const { run, changeRun, runnerId } = checkTaskAgent(task, input);
+    if (changeRun && task.status !== "queued") throw new Error(`Task ${task.id} isn't queued, so its agent can't change`);
+    if (runnerId !== undefined) changeTaskRunner(store, task, runnerId);
+    if (changeRun && (run.driver !== task.driver || run.model !== task.model || run.effort !== task.effort)) {
+      store.setTaskAgent(task.id, run, `Changed agent to ${runLabel(run)}`);
+    }
+    return needTask(store, task.id);
+  }, { immediate: true });
+}
+
+/** The claim and the owner check share the caller's write lock. Sessions belong to the old route. */
+function changeTaskRunner(store: Store, task: Task, runnerId: string | null): void {
+  if (task.status === "running" || task.status === "merging") {
+    throw new Error("Wait for the task to stop running or merging before changing its container");
   }
-  const run = nextRun(m, input);
-  if (m.status !== "queued") throw new Error(`Task ${m.id} isn't queued, so its agent can't change`);
-  if (run.driver === m.driver && run.model === m.model && run.effort === m.effort) return m;
-  if (!store.setTaskAgent(m.id, run, `Changed agent to ${runLabel(run)}`)) {
-    throw new Error(`Task ${m.id} isn't queued, so its agent can't change`);
-  }
-  return needTask(store, id);
+  requireExistingRunnerOwner(store, task.runnerId);
+  resolveTaskRunner(store, runnerId);
+  if (task.runnerId === runnerId) return;
+  store.updateTask(task.id, { runnerId, sessionId: null });
+  const name = runnerId ? store.runners.byId(runnerId)!.name : null;
+  store.addEvent(task.id, "operator", name ? `Changed container to ${name}` : "Cleared container", { runnerId });
 }
 
 /**
@@ -215,11 +239,12 @@ export function retryTask(store: Store, id: string, opts: TaskRunOptions = {}): 
 }
 
 function queueRetry(store: Store, m: Task, opts: TaskRunOptions): Task {
+  checkInheritedRunner(store, m.runnerId);
   const run = nextRun(m, opts);
   const tuned = opts.model !== undefined || opts.effort !== undefined;
   // A maintenance run goes back to the member it was started for.
   const next = store.createTask({ kind: m.kind, title: m.title, brief: m.brief, repoId: m.repoId, autonomy: m.autonomy,
-    ...run, assignee: m.assignee,
+    ...run, assignee: m.assignee, runnerId: m.runnerId,
     // Captured settings would fill in for a model or effort the operator just cleared.
     driverSettings: run.driver === m.driver && !tuned ? m.driverSettings : null, postmortemOf: m.postmortemOf,
     // The same gates, but not a waiver: that approved the scope of the earlier run only.
@@ -235,10 +260,15 @@ function queueRetry(store: Store, m: Task, opts: TaskRunOptions): Task {
  * criteria, and looking out for more along the way.
  */
 export function followUp(store: Store, id: string, findingIndex: number, opts: TaskRunOptions & TaskGates & Pick<NewTask, "lookouts"> = {}): Task {
+  return store.transaction(() => queueFollowUp(store, id, findingIndex, opts), { immediate: true });
+}
+
+function queueFollowUp(store: Store, id: string, findingIndex: number, opts: TaskRunOptions & TaskGates & Pick<NewTask, "lookouts">): Task {
   const m = needTask(store, id);
   if (!Number.isInteger(findingIndex) || findingIndex < 0) throw new Error("Choose a finding by its number");
   const f = m.report?.findings[findingIndex];
   if (!f) throw new Error(`Task ${m.id} has no finding #${findingIndex + 1}`);
+  checkInheritedRunner(store, m.runnerId);
   const settings = nextRun(m, opts);
   const gates = checkGates(store, opts, m.repoId);
   const lookouts = checkLookouts(opts.lookouts);
@@ -247,6 +277,7 @@ export function followUp(store: Store, id: string, findingIndex: number, opts: T
     title: f.title,
     brief: `${f.detail}\n\nFollow-up to task ${m.id}: “${m.title}”.`,
     repoId: m.repoId,
+    runnerId: m.runnerId,
     autonomy: "propose",
     ...settings,
     ...gates,

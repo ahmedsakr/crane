@@ -68,6 +68,7 @@
         "{workspaceRoot}/test/retention.test.ts",
         "{workspaceRoot}/test/review-checkpoint.test.ts",
         "{workspaceRoot}/test/roles.test.ts",
+        "{workspaceRoot}/test/runner-actions.test.ts",
         "{workspaceRoot}/test/scheduling.test.ts",
         "{workspaceRoot}/test/storage-diagnostics.test.ts",
         "{workspaceRoot}/test/task-context.test.ts",

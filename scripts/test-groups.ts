@@ -52,7 +52,7 @@ export const TEST_GROUPS: readonly TestGroup[] = [
   },
   {
     id: "factory-actions", kind: "package", projects: ["@crane/factory"],
-    suites: suites("access", "completion", "crew-schedules", "decision-races", "goals", "queue", "retention", "roles", "scheduling", "task-draft"),
+    suites: suites("access", "completion", "crew-schedules", "decision-races", "goals", "queue", "retention", "roles", "runner-actions", "scheduling", "task-draft"),
   },
   {
     id: "factory-agents", kind: "package", projects: ["@crane/factory"],

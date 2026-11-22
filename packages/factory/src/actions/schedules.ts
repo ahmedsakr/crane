@@ -9,6 +9,7 @@ import {
 import { shortId } from "@crane/backend-runtime";
 import type { Store } from "@crane/storage";
 import { createRoleRun } from "./crew.js";
+import { requireExistingRunnerOwner, resolveTaskRunner } from "./runners.js";
 
 export function listCrewSchedules(store: Store, agentId?: string): CrewSchedule[] {
   if (agentId && !store.listAgents().some((a) => a.id === agentId)) throw new Error(`No crew member ${agentId}`);
@@ -17,19 +18,31 @@ export function listCrewSchedules(store: Store, agentId?: string): CrewSchedule[
 
 export function saveCrewSchedule(store: Store, agentId: string, input: CrewScheduleInput, id?: string): CrewSchedule {
   validateCrewSchedule(input);
+  return store.transaction(() => saveSchedule(store, agentId, input, id), { immediate: true });
+}
+
+function saveSchedule(store: Store, agentId: string, input: CrewScheduleInput, id?: string): CrewSchedule {
   const member = store.listAgents().find((a) => a.id === agentId);
   if (!member) throw new Error(`No crew member ${agentId}`);
   if (!member.role && input.enabled) throw new Error(`${member.name} has no maintenance role. Give them one first`);
   const repo = store.getRepo(input.repoId);
   if (!repo) throw new Error(`No repo ${input.repoId}`);
-  if (id && !listCrewSchedules(store, agentId).some((s) => s.id === id)) throw new Error("No such crew schedule");
+  const previous = id ? listCrewSchedules(store, agentId).find((s) => s.id === id) : undefined;
+  if (id && !previous) throw new Error("No such crew schedule");
   if (input.enabled && input.preApprove && member.role && MAINTENANCE_ROLE[member.role].autonomy === "observe") throw new Error("Investigate-only runs cannot be pre-approved");
-  return store.saveCrewSchedule(id ?? shortId("cs"), agentId, { ...input, repoId: repo.id }, nextCrewFire(input, Date.now()));
+  requireExistingRunnerOwner(store, previous?.runnerId ?? null);
+  let runnerId = previous?.runnerId ?? null;
+  if (!previous || (input.runnerId !== undefined && input.runnerId !== runnerId)) runnerId = resolveTaskRunner(store, input.runnerId);
+  return store.saveCrewSchedule(id ?? shortId("cs"), agentId, { ...input, repoId: repo.id, runnerId }, nextCrewFire(input, Date.now()));
 }
 
 export function removeCrewSchedule(store: Store, agentId: string, id: string): void {
-  if (!listCrewSchedules(store, agentId).some((s) => s.id === id)) throw new Error("No such crew schedule");
-  store.removeCrewSchedule(id);
+  store.transaction(() => {
+    const schedule = listCrewSchedules(store, agentId).find((s) => s.id === id);
+    if (!schedule) throw new Error("No such crew schedule");
+    requireExistingRunnerOwner(store, schedule.runnerId);
+    store.removeCrewSchedule(id);
+  }, { immediate: true });
 }
 
 /** Catch up once. Claim, creation and outcome commit together, including across processes. */
@@ -47,7 +60,7 @@ export function fireCrewSchedules(store: Store, at = Date.now()): void {
         const task = store.transaction(() => {
           const repo = store.getRepo(s.repoId);
           if (!repo) throw new Error("Repo is no longer connected");
-          return createRoleRun(store, s.agentId, repo, { preApprove: s.preApprove, scheduleId: s.id });
+          return createRoleRun(store, s.agentId, repo, { preApprove: s.preApprove }, s);
         });
         store.crewScheduleOutcome(s.id, `Queued ${task.id}`);
       } catch (err) {
