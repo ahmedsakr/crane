@@ -5,6 +5,7 @@ import { analytics } from "./store/analytics.js";
 import { overview } from "./store/overview.js";
 import { BlockedToolsReader } from "./store/blocked-tools.js";
 import { AccessStore } from "./store/access.js";
+import { RunnerStore } from "./store/runners.js";
 import { approveGoal, cancelGoal, createGoal, getGoal, goalDetail, goalForTask, listGoals, listGoalSummaries,
   retryGoalTask, reviseGoal, saveGoalPlan, syncGoals, type NewGoal } from "./store/goals.js";
 import { goalListItems } from "./store/goal-progress.js";
@@ -15,9 +16,9 @@ import { listQueuedTasks, listQueuedTaskSummaries, moveQueuedTask, queuedForAnyo
 import { followUps, followUpSource, prerequisiteCommits, prerequisiteStates, unmetPrerequisites, waivePrerequisites,
   type LandedCommit } from "./store/prerequisites.js";
 import { completeMerge, finishWork, postmortemPrompt, setPreApproval, waivePreApprovedVisualReview } from "./store/review.js";
-import { claimNextMerge, claimNextTask, pendingWork, type ClaimOptions } from "./store/claims.js";
+import { claimNextMerge, claimNextRunnerTask, claimNextTask, pendingWork, type ClaimOptions, type PendingWork } from "./store/claims.js";
 import { addEvent, closeUnresolvedCommands, commandEvidence, eventsSince, latestEventId, listEvents, priorRefusals } from "./store/events.js";
-import { closeStaleRuns, finishRun, hasRunningRun, lastWorkDriver, listRuns, startRun } from "./store/runs.js";
+import { closeStaleRuns, finishRun, hasRunningRun, lastWorkDriver, lastWorkRunner, listRuns, startRun, type NewRun } from "./store/runs.js";
 import { getSetting, isPaused, postmortemCrew, postmortemSettings, pruneTaskHistory, publicUrl, retentionSettings, setPaused,
   setPostmortemSettings, setPublicUrl, setSetting, vacuumHistory } from "./store/settings.js";
 import { addRepo, getRepo, listRepos, removeRepo, repoChecks, repoTools, setRepoChecks, setRepoTools,
@@ -51,7 +52,6 @@ import type {
   Repo,
   RepoTools,
   RetentionSettings,
-  RunKind,
   RunOutcome,
   RunUsage,
   Task,
@@ -69,11 +69,13 @@ export { crewSettingKey } from "./store/crew.js";
  * opens the same SQLite file in WAL mode, so the CLI works whether or not
  * the factory is running, and live views just tail the events table.
  * Each domain lives in store/; these methods only delegate to it. Operators,
- * sessions and invites are reached through `access` instead of delegates.
+ * sessions and invites are reached through `access`, containers and their jobs
+ * through `runners`, instead of delegates.
  */
 export class Store {
   readonly db: Database.Database;
   readonly access: AccessStore;
+  readonly runners: RunnerStore;
   private readonly blockedToolsReader = new BlockedToolsReader();
 
   constructor(file = dbPath()) {
@@ -86,6 +88,7 @@ export class Store {
     this.db.pragma("journal_mode = WAL");
     migrate(this.db);
     this.access = new AccessStore(this.db);
+    this.runners = new RunnerStore(this.db);
   }
 
   /** Execute atomically; nested calls use SQLite savepoints. */
@@ -366,13 +369,16 @@ export class Store {
   }
 
   // Atomic claims live in store/claims.ts.
-  pendingWork(): { queued: boolean; merging: boolean } {
+  pendingWork(): PendingWork {
     return pendingWork(this);
   }
 
   claimNextTask(agentId: string, opts: ClaimOptions = {}): Task | null {
     return claimNextTask(this, agentId, opts);
   }
+
+  /** The container lane's claim: only tasks routed to `runnerId`. */
+  claimNextRunnerTask(runnerId: string, agentId: string): Task | null { return claimNextRunnerTask(this, runnerId, agentId); }
 
   claimNextMerge(agentId: string, busyRepoIds: string[] = []): Task | null {
     return claimNextMerge(this, agentId, busyRepoIds);
@@ -408,7 +414,7 @@ export class Store {
   }
 
   // Runs and what they cost live in store/runs.ts.
-  startRun(input: { taskId: string; kind: RunKind; agentId: string | null; driver: string }): number {
+  startRun(input: NewRun): number {
     return startRun(this, input);
   }
 
@@ -427,6 +433,8 @@ export class Store {
   lastWorkDriver(taskId: string): string | null {
     return lastWorkDriver(this, taskId);
   }
+
+  lastWorkRunner(taskId: string): string | null { return lastWorkRunner(this, taskId); }
 
   hasRunningRun(taskId: string): boolean {
     return hasRunningRun(this, taskId);

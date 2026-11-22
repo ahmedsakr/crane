@@ -48,6 +48,7 @@
         "{workspaceRoot}/test/store-claims.test.ts",
         "{workspaceRoot}/test/store-concurrency.test.ts",
         "{workspaceRoot}/test/store-core.test.ts",
+        "{workspaceRoot}/test/store-runners.test.ts",
         "{workspaceRoot}/test/task-summaries.test.ts",
         "{workspaceRoot}/src/application.ts",
         "{workspaceRoot}/test/support/fixtures.ts"

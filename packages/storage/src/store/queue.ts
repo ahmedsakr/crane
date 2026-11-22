@@ -68,12 +68,13 @@ export function setTaskAgent(store: Store, id: string, run: TaskAgent, message: 
 }
 
 /**
- * Unassigned queued work that is no longer waiting for its start time. Post-mortems
+ * Unassigned queued crew work that is no longer waiting for its start time.
+ * Work routed to a container doesn't count: more crew wouldn't run it. Post-mortems
  * count only while any active member can run them: activating someone else
  * wouldn't help one that's waiting for the crew the operator named.
  */
 export function queuedForAnyone(store: Store): number {
   const named = store.postmortemCrew().length ? "AND postmortem_of IS NULL" : "";
-  return (store.db.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE status = 'queued' AND assignee IS NULL ${named} AND ${TASK_DUE}`)
+  return (store.db.prepare(`SELECT COUNT(*) AS n FROM tasks WHERE status = 'queued' AND assignee IS NULL AND runner_id IS NULL ${named} AND ${TASK_DUE}`)
     .get(now()) as { n: number }).n;
 }

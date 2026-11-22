@@ -48,7 +48,7 @@ export const TEST_GROUPS: readonly TestGroup[] = [
   },
   {
     id: "storage", kind: "package", projects: ["@crane/storage"],
-    suites: suites("fixtures", "merge-queue", "overview", "store-analytics", "store-claims", "store-concurrency", "store-core", "task-summaries"),
+    suites: suites("fixtures", "merge-queue", "overview", "store-analytics", "store-claims", "store-concurrency", "store-core", "store-runners", "task-summaries"),
   },
   {
     id: "factory-actions", kind: "package", projects: ["@crane/factory"],
@@ -134,7 +134,7 @@ export const AUDITED_FILESYSTEM = new Set([
     "deps", "deps-copy", "drivers", "fixtures", "follow-up", "goals", "limits", "live-diff", "lookouts",
     "merge", "merge-fetch-retry", "merge-fixes", "overview", "postmortem", "prerequisites", "process-trees",
     "queue", "refusal-context", "restart", "retention", "review-checkpoint", "scheduling", "screenshots", "serve",
-    "store-claims", "store-concurrency", "store-core", "task-context", "tls", "tls-socket", "visual-review",
+    "store-claims", "store-concurrency", "store-core", "store-runners", "task-context", "tls", "tls-socket", "visual-review",
     "worktree-base", "worktrees",
   ),
   "test/support/auth-e2e.ts",
