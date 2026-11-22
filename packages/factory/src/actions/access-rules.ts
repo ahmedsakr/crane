@@ -77,10 +77,10 @@ export function checkClient(raw: unknown): string | null {
 }
 
 /** The host counts as an admin. An operator must still exist and be one. */
-export function requireAdmin(store: Store, by: EventActor): void {
+export function requireAdmin(store: Store, by: EventActor, message = "Only admins can manage operators"): void {
   if (by.kind === "host") return;
   if (by.kind !== "operator" || store.access.operatorById(by.id)?.role !== "admin") {
-    throw new AccessError(403, "Only admins can manage operators");
+    throw new AccessError(403, message);
   }
 }
 

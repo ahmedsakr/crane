@@ -83,6 +83,7 @@ export function completeMerge(store: Store, id: string, message: string, data: R
       repoId: task.repoId,
       autonomy: "observe",
       driver: defaults.driver ?? task.driver,
+      runnerId: task.runnerId,
       driverSettings: defaults.driver ? { model: defaults.model, effort: defaults.effort } : null,
       postmortemOf: id,
     });

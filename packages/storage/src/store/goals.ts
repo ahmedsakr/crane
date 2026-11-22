@@ -133,14 +133,15 @@ function assertAcceptanceChecksConfigured(plan: GoalPlan, checks: string[]) {
 }
 
 /** Creates tasks in wave order, so each task's prerequisites already have ids. */
-function createPlanTasks(store: Store, goal: Goal, plan: GoalPlan, repo: Repo, autoMerge: boolean): Map<string, string> {
+function createPlanTasks(store: Store, goal: Goal, plan: GoalPlan, options: { repo: Repo; autoMerge: boolean; runnerId: string | null }): Map<string, string> {
+  const { repo, autoMerge, runnerId } = options;
   const ids = new Map<string, string>();
   for (const wave of goalWaves(plan)) {
     for (const item of wave) {
       const task = store.createTask({ title: item.title,
         brief: goalTaskBrief(goal.outcome, plan, item),
         kind: repo.isFactory ? "factory_feature" : "repo_feature", repoId: repo.id, autonomy: "propose",
-        driver: item.driver, model: item.model, effort: item.effort,
+        driver: item.driver, model: item.model, effort: item.effort, runnerId,
         prerequisites: item.dependsOn.map((key) => ids.get(key)!), acceptance: item.acceptance, acceptanceChecks: item.acceptanceChecks,
         lookouts: ["improvements", "refactoring"], preApprove: autoMerge });
       ids.set(item.key, task.id);
@@ -151,7 +152,7 @@ function createPlanTasks(store: Store, goal: Goal, plan: GoalPlan, repo: Repo, a
 }
 
 /** Queue the entire approved DAG in one write transaction; claims cannot see a partial graph. */
-export function approveGoal(store: Store, id: string, revision: unknown, autoMerge: boolean): Goal {
+export function approveGoal(store: Store, id: string, revision: unknown, autoMerge: boolean, runnerId: string | null): Goal {
   return store.db.transaction(() => {
     const goal = editableGoal(store, id, revision);
     if (goal.status !== "needs_review" || !goal.plan) throw new Error("A valid researched plan is required before approval");
@@ -159,7 +160,7 @@ export function approveGoal(store: Store, id: string, revision: unknown, autoMer
     const repo = store.getRepo(goal.repoId);
     if (!repo) throw new Error("The goal's repo is no longer connected");
     assertAcceptanceChecksConfigured(plan, store.repoChecks(repo.id));
-    const ids = createPlanTasks(store, goal, plan, repo, autoMerge);
+    const ids = createPlanTasks(store, goal, plan, { repo, autoMerge, runnerId });
     goal.tasks = plan.tasks.map((t) => ({ key: t.key, taskId: ids.get(t.key)! }));
     goal.revision++;
     goal.status = "active";

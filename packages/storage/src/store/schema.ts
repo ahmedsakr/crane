@@ -142,6 +142,15 @@ CREATE TABLE IF NOT EXISTS runners (
   revoked_at TEXT
 );
 CREATE INDEX IF NOT EXISTS runners_operator ON runners(operator_id);
+-- Management events have no task and retain the actor snapshot after removal.
+CREATE TABLE IF NOT EXISTS runner_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  runner_id TEXT,
+  ts TEXT NOT NULL,
+  type TEXT NOT NULL,
+  message TEXT NOT NULL,
+  actor TEXT NOT NULL
+);
 -- Agent runs posted to a container. Kept after the container goes, as the task's history.
 CREATE TABLE IF NOT EXISTS runner_jobs (
   id TEXT PRIMARY KEY,

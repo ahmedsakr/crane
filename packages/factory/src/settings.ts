@@ -7,6 +7,10 @@
 /** The setting that holds the operator's default agent. */
 export const DEFAULT_DRIVER_KEY = "factory_driver";
 
+export const RUNNERS_REQUIRED_KEY = "runners.required";
+export type RunnersRequired = "off" | "on";
+export const defaultRunnerKey = (operatorId: string) => `runners.default.${operatorId}`;
+
 /** The setting a running factory stamps with the time on every tick. "0" once it stops. */
 export const HEARTBEAT_KEY = "factory_heartbeat";
 

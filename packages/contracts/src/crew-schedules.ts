@@ -1,6 +1,8 @@
 /** Sunday is bit 0, Saturday bit 6. Times are local to the IANA timezone. */
 export interface CrewScheduleInput {
   repoId: string;
+  /** Container for each run. An omitted value on edit keeps the saved route. */
+  runnerId?: string | null;
   daysMask: number;
   localTime: string;
   timezone: string;
@@ -11,6 +13,7 @@ export interface CrewScheduleInput {
 export interface CrewSchedule extends CrewScheduleInput {
   id: string;
   agentId: string;
+  runnerId: string | null;
   nextFireAt: string;
   lastFiredAt: string | null;
   lastOutcome: string | null;

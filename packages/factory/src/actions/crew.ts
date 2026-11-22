@@ -3,6 +3,7 @@ import {
   crewScheduleLabel,
   driverLabel,
   type Agent,
+  type CrewSchedule,
   type MaintenanceRole,
   type Repo,
   type RoleRunOptions,
@@ -13,6 +14,7 @@ import { checkDriver, checkRole } from "../action-inputs.js";
 import { isAvailable, sharedDrivers } from "../drivers.js";
 import { ensureFactoryRepo, needRepo } from "./repos.js";
 import { preApprove } from "./review.js";
+import { resolveTaskRunner } from "./runners.js";
 import { createTask } from "./tasks.js";
 
 type RoleRunRequest = RoleRunOptions & { preApprove?: boolean; scheduleId?: string };
@@ -57,24 +59,27 @@ export async function runRole(store: Store, id: string, opts: RoleRunRequest = {
   }
   const repo = opts.repoId === undefined ? await ensureFactoryRepo(store) : needRepo(store, opts.repoId);
   if (!repo) throw new Error("Crane's own repo isn't connected, so there's nothing to maintain");
-  return store.transaction(() => createRoleRun(store, id, repo, opts), { immediate: true });
+  return store.transaction(() => {
+    const schedule = opts.scheduleId ? store.listCrewSchedules(id).find((s) => s.id === opts.scheduleId) : undefined;
+    if (opts.scheduleId && !schedule) throw new Error("No such crew schedule");
+    if (schedule) resolveTaskRunner(store, schedule.runnerId);
+    return createRoleRun(store, id, repo, opts, schedule);
+  }, { immediate: true });
 }
 
 /** Create the run inside the caller's transaction, reading the member's policy again under its lock. */
-export function createRoleRun(store: Store, id: string, repo: Repo, opts: RoleRunRequest): Task {
+export function createRoleRun(store: Store, id: string, repo: Repo, opts: RoleRunRequest, schedule?: CrewSchedule): Task {
   const member = runnableMember(store, id);
-  if (opts.scheduleId && (store.isPaused() || member.state === "paused")) throw new Error(`${member.name} is paused`);
+  if (schedule && (store.isPaused() || member.state === "paused")) throw new Error(`${member.name} is paused`);
   // Recurring slots skip any open run; manual runs may target another repo.
   const open = store.listTasks({
-    status: opts.scheduleId ? ["queued", "running", "needs_review", "merging"] : ["queued", "running"],
-    repoId: opts.scheduleId ? undefined : repo.id,
+    status: schedule ? ["queued", "running", "needs_review", "merging"] : ["queued", "running"],
+    repoId: schedule ? undefined : repo.id,
     assignee: member.id,
     limit: 1,
   })[0];
   if (open) throw new Error(`${member.name} already has a run under way: ${open.id} · ${open.title}`);
 
-  const schedule = opts.scheduleId ? store.listCrewSchedules(id).find((s) => s.id === opts.scheduleId) : undefined;
-  if (opts.scheduleId && !schedule) throw new Error("No such crew schedule");
   const role = MAINTENANCE_ROLE[member.role];
   const task = createTask(store, {
     kind: "maintenance",
@@ -84,8 +89,7 @@ export function createRoleRun(store: Store, id: string, repo: Repo, opts: RoleRu
     autonomy: role.autonomy,
     assignee: member.id,
     scheduledAt: opts.scheduledAt,
-    scheduleId: schedule?.id,
-  });
+  }, schedule);
   store.addEvent(task.id, "operator", `Started ${member.name}'s ${role.label.toLowerCase()} run`, {
     agentId: member.id,
     role: member.role,

@@ -56,7 +56,10 @@ export function claimNextTask(store: Store, agentId: string, opts: ClaimOptions 
  * Assignees and the post-mortem crew don't apply: the container is the routing.
  */
 export function claimNextRunnerTask(store: Store, runnerId: string, agentId: string): Task | null {
-  return claimFirst(store, agentId, { sql: "runner_id = ?", params: [runnerId] });
+  return claimFirst(store, agentId, {
+    sql: "runner_id = ? AND EXISTS (SELECT 1 FROM runners WHERE id = tasks.runner_id AND revoked_at IS NULL)",
+    params: [runnerId],
+  });
 }
 
 /**

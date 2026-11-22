@@ -140,8 +140,8 @@ export class Store {
     return saveGoalPlan(this, id, revision, plan);
   }
 
-  approveGoal(id: string, revision: unknown, autoMerge: boolean): Goal {
-    return approveGoal(this, id, revision, autoMerge);
+  approveGoal(id: string, revision: unknown, autoMerge: boolean, runnerId: string | null = null): Goal {
+    return approveGoal(this, id, revision, autoMerge, runnerId);
   }
 
   cancelGoal(id: string, revision: unknown): Goal {

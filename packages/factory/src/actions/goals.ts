@@ -3,6 +3,7 @@ import type { Store } from "@crane/storage";
 import { checkTaskRunOptions, nextRun } from "../action-inputs.js";
 import { goalResearchTask } from "../goals.js";
 import { preApprove } from "./review.js";
+import { resolveTaskRunner } from "./runners.js";
 import { retryTask } from "./tasks.js";
 
 export function createGoal(store: Store, input: NewGoal): Goal {
@@ -11,8 +12,8 @@ export function createGoal(store: Store, input: NewGoal): Goal {
   if (!repo) throw new Error("Choose a connected repo for this goal");
   const outcome = input.outcome.trim();
   const research = checkTaskRunOptions(input);
-  return store.createGoal({ outcome, title: outcome.split("\n")[0]!.slice(0, 120), repoId: repo.id, research },
-    goalResearchTask(store, repo, { outcome, research }));
+  return store.transaction(() => store.createGoal({ outcome, title: outcome.split("\n")[0]!.slice(0, 120), repoId: repo.id, research },
+    { ...goalResearchTask(store, repo, { outcome, research }), runnerId: resolveTaskRunner(store) }), { immediate: true });
 }
 
 export function reviseGoal(store: Store, id: string, revision: unknown, feedback: unknown): Goal {
@@ -22,8 +23,10 @@ export function reviseGoal(store: Store, id: string, revision: unknown, feedback
   const repo = store.getRepo(goal.repoId);
   if (!repo) throw new Error("The goal's repo is no longer connected");
   const text = feedback.trim();
-  return store.reviseGoal(id, revision, text,
-    goalResearchTask(store, repo, { outcome: goal.outcome, research: goal.research, previous: goal, feedback: text }));
+  return store.transaction(() => store.reviseGoal(id, revision, text, {
+    ...goalResearchTask(store, repo, { outcome: goal.outcome, research: goal.research, previous: goal, feedback: text }),
+    runnerId: resolveTaskRunner(store),
+  }), { immediate: true });
 }
 
 export function editGoalPlan(store: Store, id: string, revision: unknown, input: unknown): Goal {
@@ -32,7 +35,7 @@ export function editGoalPlan(store: Store, id: string, revision: unknown, input:
 
 export function approveGoal(store: Store, id: string, revision: unknown, autoMerge: unknown = false): Goal {
   if (typeof autoMerge !== "boolean") throw new Error("Automatic merging must be a boolean");
-  return store.approveGoal(id, revision, autoMerge);
+  return store.transaction(() => store.approveGoal(id, revision, autoMerge, resolveTaskRunner(store)), { immediate: true });
 }
 
 export function retryGoalTask(store: Store, id: string, revision: unknown, taskId: string, opts: TaskRunOptions = {}): Goal {

@@ -1,7 +1,7 @@
 import type Database from "better-sqlite3";
 import {
   isDriverName, isRunnerOnline, RUNNER_LIMITS,
-  type DriverName, type RunnerHeartbeat, type RunnerJobKind, type RunnerJobState, type RunnerResult, type RunnerSummary,
+  type DriverName, type EventActor, type RunnerHeartbeat, type RunnerJobKind, type RunnerJobState, type RunnerResult, type RunnerSummary,
 } from "@crane/contracts";
 import { shortId } from "@crane/backend-runtime";
 import type { Row } from "./rows.js";
@@ -139,6 +139,21 @@ export class RunnerStore {
   /** Every live container, by owner then age. */
   listAll(at = Date.now()): RunnerSummary[] {
     return this.summaries("", [], at);
+  }
+
+  summary(id: string, at: number): RunnerSummary | null {
+    return this.summaries("AND r.id = ?", [id], at)[0] ?? null;
+  }
+
+  recordOperatorEvent(id: string | null, by: EventActor, message: string, at: string): void {
+    const actor = by.kind === "operator" ? { kind: by.kind, id: by.id, name: by.name } : { kind: by.kind, name: by.name };
+    this.db.prepare("INSERT INTO runner_events(runner_id, ts, type, message, actor) VALUES (?, ?, 'operator', ?, ?)")
+      .run(id, at, message, JSON.stringify(actor));
+  }
+
+  runningTaskIds(id: string): string[] {
+    const rows = this.db.prepare("SELECT id FROM tasks WHERE runner_id = ? AND status = 'running'").all(id) as { id: string }[];
+    return rows.map((row) => row.id);
   }
 
   private summaries(where: string, params: string[], at: number): RunnerSummary[] {
