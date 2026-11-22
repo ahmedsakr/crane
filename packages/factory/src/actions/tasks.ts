@@ -213,7 +213,9 @@ export function cancel(store: Store, id: string): Task {
   const m = needTask(store, id);
   const from: TaskStatus[] = ["queued", "running"];
   requireStatus(m, from, "in progress");
-  claimDecision(store, m.id, { event: "Cancelled by operator", from, to: "cancelled", message: "Cancelled", waiting: "in progress" });
+  // Its container job is cancelled with it, so the next heartbeat tells the container to stop even if no factory is running it.
+  claimDecision(store, m.id, { event: "Cancelled by operator", from, to: "cancelled", message: "Cancelled", waiting: "in progress" },
+    () => store.runners.cancelJobsFor(m.id));
   return needTask(store, id);
 }
 

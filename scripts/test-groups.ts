@@ -62,8 +62,8 @@ export const TEST_GROUPS: readonly TestGroup[] = [
     id: "factory-execution", kind: "package", projects: ["@crane/factory"],
     suites: suites(
       "acceptance-checks", "factory-elapsed", "idle-factory", "live-diff", "merge-fetch-retry",
-      "merge-fixes", "merge", "postmortem", "process-trees", "review-checkpoint",
-      "storage-diagnostics", "work-run", "worktree-base", "worktrees",
+      "merge-fixes", "merge", "postmortem", "process-trees", "remote-dispatch", "review-checkpoint",
+      "runner-jobs", "storage-diagnostics", "work-run", "worktree-base", "worktrees",
     ),
   },
   {
@@ -133,13 +133,14 @@ export const AUDITED_FILESYSTEM = new Set([
     "command-access", "command-evidence", "command-guard-driver", "costs", "crew-schedules", "decision-races",
     "deps", "deps-copy", "drivers", "fixtures", "follow-up", "goals", "limits", "live-diff", "lookouts",
     "merge", "merge-fetch-retry", "merge-fixes", "overview", "postmortem", "prerequisites", "process-trees",
-    "queue", "refusal-context", "restart", "retention", "review-checkpoint", "scheduling", "screenshots", "serve",
+    "queue", "refusal-context", "remote-dispatch", "restart", "retention", "review-checkpoint", "runner-jobs", "scheduling", "screenshots", "serve",
     "store-claims", "store-concurrency", "store-core", "store-runners", "task-context", "tls", "tls-socket", "visual-review",
     "worktree-base", "worktrees",
   ),
   "test/support/auth-e2e.ts",
   "test/support/fake-agents.ts",
   "test/support/fixtures.ts",
+  "test/support/remote-fixture.ts",
   "test/support/retention-fixture.ts",
   // The root README and manifest are global inputs.
   ...suites("auth-docs", "setup"),
