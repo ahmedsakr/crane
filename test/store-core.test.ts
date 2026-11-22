@@ -54,6 +54,9 @@ test("store: new tasks get a t- id and can be found without the prefix", () => {
   const t = store.createTask({ kind: "maintenance", title: "x", brief: "", repoId: r.id, autonomy: "observe" });
   assert.match(t.id, /^t-/);
   assert.equal(store.getTask(t.id.slice(2))?.id, t.id);
+  // Until storage maps tasks.runner_id, every task runs on the factory's own crew.
+  assert.equal(t.runnerId, null);
+  assert.equal(store.getTask(t.id)?.runnerId, null);
   store.close();
 });
 

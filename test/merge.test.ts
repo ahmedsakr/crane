@@ -50,6 +50,7 @@ function setup(ctx: TestContext, opts: { remote?: boolean } = {}) {
     worktree: join(root, "wt"),
     sessionId: null,
     driver: null,
+    runnerId: null,
     model: null,
     effort: null,
     driverSettings: null,

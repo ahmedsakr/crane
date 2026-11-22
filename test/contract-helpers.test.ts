@@ -1,8 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  actorLabel, describeClient, errorMessage, normalizeUsername, runCostLabel, runTokens,
-  visualReviewPending, visualReviewWaivedByPreApproval, type EventActor, type RunUsage, type VisualReview,
+  actorLabel, describeClient, errorMessage, isRunnerOnline, normalizeUsername, runCostLabel, runTokens, runnerLabel,
+  RUNNER_EVENT_TYPES, RUNNER_JOB_KINDS, RUNNER_JOB_STATES, RUNNER_LIMITS,
+  visualReviewPending, visualReviewWaivedByPreApproval, type EventActor, type EventType, type RunKind, type RunUsage, type VisualReview,
 } from "@crane/contracts";
 
 const HOST: EventActor = { kind: "host", name: "ahmed" };
@@ -64,4 +65,33 @@ test("pre-approval waives missing or pending visual decisions without hiding rec
       assert.equal(visualReviewPending({ ...task, branch: null }), false);
     }
   }
+});
+
+test("runners: a container is online only within the offline window of its last heartbeat", () => {
+  const now = Date.parse("2026-11-21T12:00:00Z");
+  const ago = (seconds: number) => new Date(now - seconds * 1000).toISOString();
+  const window = RUNNER_LIMITS.offlineAfterSeconds;
+  assert.equal(isRunnerOnline(null, now), false);
+  assert.equal(isRunnerOnline("not a time", now), false);
+  assert.equal(isRunnerOnline(ago(0), now), true);
+  assert.equal(isRunnerOnline(ago(window), now), true);
+  assert.equal(isRunnerOnline(ago(window + 1), now), false);
+  assert.equal(isRunnerOnline(ago(-5), now), true, "slight clock skew still reads as online");
+  assert.equal(isRunnerOnline(ago(1), new Date(now)), true, "accepts a Date");
+  assert.ok(window > RUNNER_LIMITS.heartbeatSeconds * 2, "a single missed heartbeat doesn't read as offline");
+  assert.ok(RUNNER_LIMITS.leaseSeconds > window, "a lease outlives the offline window");
+});
+
+test("runners: labels name the owner and container", () => {
+  assert.equal(runnerLabel({ ownerName: "Robin", name: "laptop" }), "Robin's container 'laptop'");
+});
+
+test("runners: job kinds, states and event types match the fixed protocol", () => {
+  assert.deepEqual(RUNNER_JOB_KINDS, ["work", "observe", "resolve_conflicts", "fix_checks"]);
+  assert.deepEqual(RUNNER_JOB_STATES, ["queued", "claimed", "returned", "cancelled", "failed", "expired"]);
+  assert.deepEqual(RUNNER_EVENT_TYPES, ["note", "tool", "finding", "error", "blocked"]);
+  // Every remote event is an ordinary task event, and every non-observe job is a run kind.
+  const events: readonly EventType[] = RUNNER_EVENT_TYPES;
+  const runs: readonly RunKind[] = RUNNER_JOB_KINDS.filter((k) => k !== "observe");
+  assert.equal(events.length + runs.length, 8);
 });

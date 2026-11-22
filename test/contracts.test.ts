@@ -19,7 +19,9 @@ InviteCheck InviteSummary Lookout LookoutInfo MaintenanceRole MaintenanceRoleInf
 OperatorProfile OperatorRole OperatorSession OperatorSummary Overview ParsedDiff PostmortemSettings
 PrerequisiteState Repo RepoTools Report RetentionSettings ReviewCheckpoint RoleRunOptions RunKind
 RunOutcome RunUsage Screenshot SpendSlice SplitRow Task TaskDetail TaskDiff TaskDraft TaskEvent TaskGates
-TaskKind TaskRunOptions TaskStatus TaskSummary ValidationRun VisualReview`.split(/\s+/).sort();
+TaskKind TaskRunOptions TaskStatus TaskSummary ValidationRun VisualReview
+RunnerAgentJob RunnerEventBatch RunnerEventType RunnerFailedCheck RunnerHeartbeat RunnerHeartbeatReply RunnerJob
+RunnerJobKind RunnerJobState RunnerResult RunnerSiblingTask RunnerSummary`.split(/\s+/).sort();
   const values = `ACTIVE_STATUSES ALL_STATUSES AUTONOMY_LABEL COMMAND_ACCESS COMMAND_ACCESS_DETAIL COMMAND_ACCESS_LABEL DRIVER_LABEL DRIVER_NAMES EFFORT_LEVELS FINISHED_STATUSES
 GOAL_TASK_PHASES KIND_LABEL LOOKOUT LOOKOUTS MAINTENANCE_ROLE MAINTENANCE_ROLES MAX_NAME_LENGTH MIN_PASSWORD_LENGTH
 MODEL_SUGGESTIONS RUN_KIND_LABEL SHIPPED_STATUSES STATUS_LABEL UNSHIPPED_STATUSES USERNAME_PATTERN acceptanceCheckRun
@@ -27,7 +29,8 @@ acceptanceFor actorLabel choosableDrivers completionReviewReason crewScheduleLab
 errorMessage eventActor followUpFor goalProgress goalTaskPhase goalWaves inviteLinkPath isCommandAccess isDriverName isEventActor isLookout
 isReasonedRefusal isMaintenanceRole isScheduled isTunable lastMergeOutcome lookoutsLabel nextCrewFire normalizeUsername parseDiff
 prerequisiteMet ruleLabel runCostLabel runTokens settingsLabel splitRows unmetAcceptance
-validateCrewSchedule validateGoalPlan visualReviewPending visualReviewWaivedByPreApproval`.split(/\s+/).sort();
+validateCrewSchedule validateGoalPlan visualReviewPending visualReviewWaivedByPreApproval
+RUNNER_EVENT_TYPES RUNNER_JOB_KINDS RUNNER_JOB_STATES RUNNER_LIMITS isRunnerOnline runnerLabel`.split(/\s+/).sort();
   const file = join(root, "packages/contracts/src/index.ts");
   const exports = parseSource(readFileSync(file, "utf8"), file).program.body;
   const named = exports.filter((node) => node.type === "ExportNamedDeclaration");

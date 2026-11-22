@@ -85,6 +85,8 @@ export interface Task {
    * factory's default agent at the time it's picked up.
    */
   driver: string | null;
+  /** The container this task runs on; null means the factory's own crew. */
+  runnerId: string | null;
   /** Task overrides; null follows the chosen agent's saved settings. */
   model: string | null;
   effort: string | null;
