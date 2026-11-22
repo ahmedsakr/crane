@@ -71,6 +71,8 @@ export interface RunnerHeartbeat {
   capacity: number;
   /** The container's Crane version. */
   version: string;
+  /** Ids of the jobs it is running, so their leases are renewed. Any no longer leased to it come back in `cancel`. */
+  jobs?: string[];
 }
 
 /** The server's answer to a heartbeat. */
@@ -114,11 +116,23 @@ export interface RunnerJob {
   title: string;
   autonomy: Autonomy;
   repo: { id: string; name: string; defaultBranch: string };
-  /** The exact commit the container starts from. Crane accepts only fast-forwards of it. */
+  /**
+   * The task as the agent is briefed on it, with Crane's own worktree path
+   * removed. The container's driver builds its prompt from this.
+   */
+  task: Task;
+  /**
+   * The commit the branch left the default branch at (a work or observe job),
+   * the default commit being merged into (resolve_conflicts) or the merge
+   * commit that failed its checks (fix_checks).
+   */
   base: string;
   /** The task branch to work on, or null for an investigate-only run. */
   branch: string | null;
-  /** The branch's current commit when it already has work, or null. */
+  /**
+   * The branch's current commit when it already has work, or null. A work job
+   * starts from `tip ?? base`, and Crane accepts only fast-forwards of it.
+   */
   tip: string | null;
   driver: DriverName;
   model?: string;

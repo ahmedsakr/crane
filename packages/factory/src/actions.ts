@@ -17,6 +17,8 @@ import type {
   RepoTools,
   RetentionSettings,
   RoleRunOptions,
+  RunnerHeartbeatReply,
+  RunnerJob,
   RunnerSummary,
   Task,
   TaskGates,
@@ -39,6 +41,8 @@ import * as permissions from "./actions/permissions.js";
 import * as repos from "./actions/repos.js";
 import * as review from "./actions/review.js";
 import * as runners from "./actions/runners.js";
+import * as runnerJobs from "./actions/runner-jobs.js";
+import type { OutgoingBundle } from "./remote/bundle.js";
 import * as schedules from "./actions/schedules.js";
 import * as settings from "./actions/settings.js";
 import * as tasks from "./actions/tasks.js";
@@ -51,6 +55,7 @@ export type { Authenticated, SignedIn } from "./actions/access-sessions.js";
 export type { AcceptInput, IssuedInvite } from "./actions/access-invites.js";
 export type { TaskAgentInput } from "./action-inputs.js";
 export type { IssuedRunner, NewRunnerInput } from "./actions/runners.js";
+export type { OutgoingBundle } from "./remote/bundle.js";
 
 /**
  * Everything an operator can do, shared by the web UI and the CLI so both
@@ -299,6 +304,37 @@ export class OperatorActions {
 
   setRunnersRequired(by: EventActor, value: unknown): RunnersRequired {
     return runners.setRunnersRequired(this.access, by, value);
+  }
+
+  // A container's own jobs. `runner` is the container the API signed in with its token.
+
+  claimRunnerJob(runner: RunnerRecord): RunnerJob | null {
+    return runnerJobs.claimRunnerJob(this.access, runner);
+  }
+
+  runnerHeartbeat(runner: RunnerRecord, heartbeat: unknown): RunnerHeartbeatReply {
+    return runnerJobs.runnerHeartbeat(this.access, runner, heartbeat);
+  }
+
+  appendJobEvents(runner: RunnerRecord, jobId: unknown, batch: unknown): { accepted: number } {
+    return runnerJobs.appendJobEvents(this.access, runner, jobId, batch);
+  }
+
+  recordJobSession(runner: RunnerRecord, jobId: unknown, sessionId: unknown): void {
+    runnerJobs.recordJobSession(this.access, runner, jobId, sessionId);
+  }
+
+  storeJobScreenshot(runner: RunnerRecord, jobId: unknown, name: unknown, bytes: Uint8Array): { path: string } {
+    return runnerJobs.storeJobScreenshot(this.access, runner, jobId, name, bytes);
+  }
+
+  returnJob(runner: RunnerRecord, jobId: unknown, result: unknown, bundle?: Uint8Array | null): void {
+    runnerJobs.returnJob(this.access, runner, jobId, result, bundle);
+  }
+
+  /** The caller streams the bundle's file, then calls its `remove`. */
+  jobBundle(runner: RunnerRecord, jobId: unknown, have?: unknown): Promise<OutgoingBundle | null> {
+    return runnerJobs.jobBundle(this.access, runner, jobId, have);
   }
 
   // Tool permissions

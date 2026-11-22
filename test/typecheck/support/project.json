@@ -6,6 +6,7 @@
     "kind:checks"
   ],
   "implicitDependencies": [
+    "@crane/agent-protocol",
     "@crane/backend-runtime",
     "@crane/contracts",
     "@crane/factory",
