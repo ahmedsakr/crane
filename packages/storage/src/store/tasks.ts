@@ -15,6 +15,8 @@ export type NewTaskRecord = NewTask & {
   followUp?: { of: string; finding: number };
   /** The merged task this post-mortem reviews. */
   postmortemOf?: string | null;
+  /** The container that runs it; only that container's lane claims it. Null or absent is the factory's own crew. */
+  runnerId?: string | null;
 };
 
 export const TASK_SUMMARY_COLUMNS = `id, kind, title, repo_id AS repoId, status, branch, assignee,
@@ -39,6 +41,7 @@ const TASK_UPDATE_COLUMNS = {
   startedAt: "started_at",
   finishedAt: "finished_at",
   title: "title",
+  runnerId: "runner_id",
 } satisfies Partial<Record<keyof Task, string>>;
 
 export type TaskPatch = Partial<Pick<Task, keyof typeof TASK_UPDATE_COLUMNS>>;
@@ -50,15 +53,16 @@ function insertTask(store: Store, input: NewTaskRecord, id: string, scheduledAt:
   store.db
     .prepare(
       `INSERT INTO tasks(id, kind, title, brief, repo_id, autonomy, driver, model, effort, assignee, driver_settings,
-         prerequisites, acceptance, acceptance_checks, lookouts, status, created_at, created_by, scheduled_at, pre_approved_at, follow_up_of, follow_up_finding, schedule_id, postmortem_of, queue_position)
-       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?,
+         prerequisites, acceptance, acceptance_checks, lookouts, status, created_at, created_by, scheduled_at, pre_approved_at, follow_up_of, follow_up_finding, schedule_id, postmortem_of, runner_id, queue_position)
+       VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?, ?, ?, ?,
          (SELECT COALESCE(MAX(queue_position), 0) + 1 FROM tasks WHERE status = 'queued'))`,
     )
     .run(id, input.kind, input.title, input.brief, input.repoId, input.autonomy, input.driver ?? null,
       input.model ?? null, input.effort ?? null, input.assignee ?? null,
       input.driverSettings ? JSON.stringify(input.driverSettings) : null,
       list(input.prerequisites), list(input.acceptance), list(input.acceptanceChecks), list(input.lookouts), ts, starter(input), scheduledAt,
-      input.preApprove ? ts : null, input.followUp?.of ?? null, input.followUp?.finding ?? null, input.scheduleId ?? null, input.postmortemOf ?? null);
+      input.preApprove ? ts : null, input.followUp?.of ?? null, input.followUp?.finding ?? null, input.scheduleId ?? null, input.postmortemOf ?? null,
+      input.runnerId ?? null);
 }
 
 /** A crew schedule starts its runs, whoever's context it fires in. */

@@ -29,8 +29,7 @@ export function toTask(r: Row): Task {
     worktree: (r.worktree as string) ?? null,
     sessionId: (r.session_id as string) ?? null,
     driver: (r.driver as string) ?? null,
-    // No column yet: storage maps tasks.runner_id once it exists, so every task runs on the crew.
-    runnerId: null,
+    runnerId: (r.runner_id as string) ?? null,
     model: (r.model as string) ?? null,
     effort: (r.effort as string) ?? null,
     driverSettings: r.driver_settings ? JSON.parse(r.driver_settings as string) as DriverSettings : null,

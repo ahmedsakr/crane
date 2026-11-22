@@ -128,6 +128,37 @@ CREATE TABLE IF NOT EXISTS invites (
   used_at TEXT
 );
 CREATE INDEX IF NOT EXISTS invites_operator ON invites(operator_id);
+-- Containers operators register to run their tasks' agents on their own sign-ins. Only token digests are kept.
+CREATE TABLE IF NOT EXISTS runners (
+  id TEXT PRIMARY KEY,
+  operator_id TEXT NOT NULL REFERENCES operators(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  token_hash TEXT NOT NULL UNIQUE,
+  capacity INTEGER NOT NULL DEFAULT 1,
+  drivers TEXT,
+  version TEXT,
+  created_at TEXT NOT NULL,
+  last_seen_at TEXT,
+  revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS runners_operator ON runners(operator_id);
+-- Agent runs posted to a container. Kept after the container goes, as the task's history.
+CREATE TABLE IF NOT EXISTS runner_jobs (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id),
+  runner_id TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  payload TEXT NOT NULL,
+  state TEXT NOT NULL,
+  lease_expires_at TEXT,
+  session_id TEXT,
+  result TEXT,
+  created_at TEXT NOT NULL,
+  claimed_at TEXT,
+  finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS runner_jobs_runner_state ON runner_jobs(runner_id, state);
+CREATE INDEX IF NOT EXISTS runner_jobs_task ON runner_jobs(task_id);
 `;
 
 /** Created by migrateCostsToRuns, so the first open can backfill it from older tasks. */

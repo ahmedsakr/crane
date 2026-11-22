@@ -124,13 +124,13 @@ test("pending work: read-only hints exclude future work and claimed merges", (t)
   try {
     const task = store.createTask({ kind: "maintenance", title: "Future", brief: "", repoId: null,
       autonomy: "observe", scheduledAt: new Date(NOW + 1000).toISOString() });
-    assert.deepEqual(store.pendingWork(), { queued: false, merging: false });
+    assert.deepEqual(store.pendingWork(), { queued: false, merging: false, runners: [] });
     t.mock.timers.setTime(NOW + 1000);
-    assert.deepEqual(store.pendingWork(), { queued: true, merging: false });
+    assert.deepEqual(store.pendingWork(), { queued: true, merging: false, runners: [] });
     store.updateTask(task.id, { status: "merging" });
-    assert.deepEqual(store.pendingWork(), { queued: false, merging: true });
+    assert.deepEqual(store.pendingWork(), { queued: false, merging: true, runners: [] });
     store.claimNextMerge("a-one");
-    assert.deepEqual(store.pendingWork(), { queued: false, merging: false });
+    assert.deepEqual(store.pendingWork(), { queued: false, merging: false, runners: [] });
   } finally { store.close(); }
 });
 

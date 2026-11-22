@@ -171,7 +171,7 @@ export const STORE_READS = new Set([
   "repoTools", "repoChecks", "blockedTools", "getTask", "listTasks", "listTaskSummaries", "tasksWithWorktrees",
   "listQueuedTasks", "listQueuedTaskSummaries", "queuedForAnyone", "prerequisiteStates", "prerequisiteCommits",
   "unmetPrerequisites", "followUps", "followUpSource", "listEvents", "commandEvidence", "eventsSince", "latestEventId",
-  "listRuns", "lastWorkDriver", "hasRunningRun", "analytics", "listAgents", "crewActive", "crewDefaultDriver", "crewRole",
+  "listRuns", "lastWorkDriver", "lastWorkRunner", "hasRunningRun", "analytics", "listAgents", "crewActive", "crewDefaultDriver", "crewRole",
   "overview",
 ]);
 

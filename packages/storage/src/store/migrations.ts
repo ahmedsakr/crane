@@ -20,6 +20,7 @@ export function migrate(db: Database.Database) {
   migratePostmortemBriefs(db);
   migrateCostsToRuns(db);
   migrateCostStatus(db);
+  migrateRunnerColumns(db);
 }
 
 /**
@@ -99,18 +100,30 @@ const ADDED_TASK_COLUMNS: [name: string, type: string][] = [
   ["created_by", "TEXT"],
   // Older tasks share 0 and keep their original FIFO order until moved.
   ["queue_position", "INTEGER NOT NULL DEFAULT 0"],
+  // The container the task runs on; null is the factory's own crew.
+  ["runner_id", "TEXT"],
 ];
 
 /** Add any missing columns to an older database. Safe if two processes open it at once. */
-export function addMissingColumns(db: Database.Database) {
+export function addMissingColumns(db: Database.Database, table = "tasks", columns = ADDED_TASK_COLUMNS) {
   const missing = () => {
-    const have = new Set((db.prepare("PRAGMA table_info(tasks)").all() as Row[]).map((c) => c.name));
-    return ADDED_TASK_COLUMNS.filter(([name]) => !have.has(name));
+    const have = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Row[]).map((c) => c.name));
+    return columns.filter(([name]) => !have.has(name));
   };
   if (!missing().length) return;
   db.transaction(() => {
-    for (const [name, type] of missing()) db.exec(`ALTER TABLE tasks ADD COLUMN ${name} ${type}`);
+    for (const [name, type] of missing()) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
   }).immediate();
+}
+
+/**
+ * Which container ran each run and fires each crew schedule. `runs` exists only
+ * after migrateCostsToRuns, so this runs after it. Null is the factory's own crew.
+ */
+export function migrateRunnerColumns(db: Database.Database) {
+  addMissingColumns(db, "runs", [["runner_id", "TEXT"]]);
+  addMissingColumns(db, "crew_schedules", [["runner_id", "TEXT"]]);
+  db.exec("CREATE INDEX IF NOT EXISTS tasks_runner ON tasks(runner_id, status) WHERE runner_id IS NOT NULL");
 }
 
 /**

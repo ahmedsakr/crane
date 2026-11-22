@@ -3,11 +3,14 @@ import type { Store } from "../store.js";
 import { toRun, type Row } from "./rows.js";
 import { now } from "./shared.js";
 
+/** A run about to start. `runnerId` names the container it runs on; absent or null is the factory's own crew. */
+export type NewRun = { taskId: string; kind: RunKind; agentId: string | null; driver: string; runnerId?: string | null };
+
 // What each agent run cost.
-export function startRun(store: Store, input: { taskId: string; kind: RunKind; agentId: string | null; driver: string }): number {
+export function startRun(store: Store, input: NewRun): number {
   const info = store.db
-    .prepare("INSERT INTO runs(task_id, kind, agent_id, driver, started_at) VALUES(?, ?, ?, ?, ?)")
-    .run(input.taskId, input.kind, input.agentId, input.driver, now());
+    .prepare("INSERT INTO runs(task_id, kind, agent_id, driver, runner_id, started_at) VALUES(?, ?, ?, ?, ?, ?)")
+    .run(input.taskId, input.kind, input.agentId, input.driver, input.runnerId ?? null, now());
   return Number(info.lastInsertRowid);
 }
 
@@ -55,4 +58,15 @@ export function lastWorkDriver(store: Store, taskId: string): string | null {
     .prepare("SELECT driver FROM runs WHERE task_id = ? AND kind = 'work' ORDER BY id DESC LIMIT 1")
     .get(taskId) as Row | undefined;
   return (r?.driver as string) ?? null;
+}
+
+/**
+ * The container of the task's latest work run, which holds its session. Null
+ * before its first run or when that run was on the factory's own crew.
+ */
+export function lastWorkRunner(store: Store, taskId: string): string | null {
+  const r = store.db
+    .prepare("SELECT runner_id FROM runs WHERE task_id = ? AND kind = 'work' ORDER BY id DESC LIMIT 1")
+    .get(taskId) as Row | undefined;
+  return (r?.runner_id as string) ?? null;
 }

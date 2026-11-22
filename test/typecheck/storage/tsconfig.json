@@ -12,6 +12,7 @@
     "../../store-claims.test.ts",
     "../../store-concurrency.test.ts",
     "../../store-core.test.ts",
+    "../../store-runners.test.ts",
     "../../task-summaries.test.ts"
   ]
 }
