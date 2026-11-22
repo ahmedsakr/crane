@@ -53,7 +53,7 @@ function showTaskJson({ store }: CliContext, id: string): void {
   }, null, 2));
 }
 
-function showTask({ store }: CliContext, id: string, opts: { events?: boolean }): void {
+function showTask({ store, actions }: CliContext, id: string, opts: { events?: boolean }): void {
   const task = store.getTask(id) ?? ui.fail(`No task ${id}`);
   const all = opts.events ?? false;
   const runs = store.listRuns(task.id);
@@ -63,8 +63,10 @@ function showTask({ store }: CliContext, id: string, opts: { events?: boolean })
   const merge = lastMergeOutcome(events);
   const main = (task.repoId ? store.getRepo(task.repoId) : null)?.defaultBranch ?? "main";
   const next = nextSteps(task, { main, waiting: waiting.map((t) => t.id), checkoutBehind: merge?.checkoutBehind, blocked: blocked[0] });
+  const runner = task.runnerId ? actions.runnerLabel(task.runnerId) ?? `container ${task.runnerId}` : null;
   console.log([
     ...headerLines(store, task, runs),
+    ...(runner ? [ui.dim(`  Runs on ${runner}`)] : []),
     ...visualReviewLines(task),
     ...detailLines(store, task),
     ...prerequisiteLines(task, store.prerequisiteStates(task), waiting.length > 0),
