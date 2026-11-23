@@ -6,7 +6,7 @@ import { defaultDriver } from "./driver-selection.js";
 import { DashboardBuilder } from "./dashboard.js";
 import { handleMergeFailure, runMerge, type MergeRun, type MergeRunDeps } from "./merge-run.js";
 import { envNumber, FactoryStopping, timeLimit } from "./run-limits.js";
-import { isLaneMember, laneMembers, liveLease } from "./runner-lane.js";
+import { isLaneMember, keptJob, laneMembers, waitingReturn } from "./runner-lane.js";
 import { DEFAULT_DRIVER_KEY, DEFAULT_MAX_TURNS, DEFAULT_TIME_LIMIT_MIN, HEARTBEAT_KEY } from "./settings.js";
 import { StorageMaintenance } from "@crane/storage";
 import { OperatorActions } from "./actions.js";
@@ -153,11 +153,15 @@ export class Factory {
     // A previous factory stopped without getting to put its work back (it crashed,
     // or was killed before it could). Requeue it; the agent picks up where it left off.
     // A container still leased on a task's job is still working it, so that task stays
-    // running and its lane waits on the same job.
+    // running and its lane waits on the same job. One that returned its commits while
+    // the factory was down stays running too, for its lane to apply them.
     this.kept.clear();
     for (const m of this.store.listTasks({ status: ["running"] })) {
       if (!this.requeue(m.id, "The factory stopped unexpectedly. Back in the queue to pick up where it left off")) {
-        this.store.addEvent(m.id, "note", "The factory restarted while its container kept working on it");
+        const returned = waitingReturn(this.store, m.id);
+        this.store.addEvent(m.id, "note", returned
+          ? "The factory restarted after its container returned its work"
+          : "The factory restarted while its container kept working on it");
       }
     }
     // Runs it was in the middle of never reported their usage. Close them so they don't read as live.
@@ -200,13 +204,14 @@ export class Factory {
 
   /**
    * Put a running task back in the queue, keeping its worktree and session for
-   * the next agent. A container task whose job is still leased stays running
-   * instead, for its lane to wait on again; that returns false.
+   * the next agent. A container task whose job is still leased, or returned
+   * with commits not yet applied, stays running instead, for its lane to pick
+   * up again; that returns false.
    */
   private requeue(taskId: string, message: string): boolean {
     const task = this.store.getTask(taskId);
     if (task?.status !== "running") return true;
-    if (task.runnerId && liveLease(this.store, taskId)) {
+    if (task.runnerId && keptJob(this.store, taskId)) {
       this.kept.add(taskId);
       return false;
     }
@@ -328,7 +333,11 @@ export class Factory {
     }
   }
 
-  /** Wait again on the jobs containers kept working while the factory restarted, once each is back online with room. */
+  /**
+   * Wait again on the jobs containers kept working while the factory restarted,
+   * once each is back online with room. A job already returned needs nothing
+   * more from its container, so it is applied whether or not it is online.
+   */
   private resumeKept(now: number) {
     for (const taskId of this.kept) {
       const task = this.store.getTask(taskId);
@@ -342,7 +351,8 @@ export class Factory {
         continue;
       }
       const runner = this.store.runners.summary(task.runnerId, now);
-      const member = runner?.online ? this.freeSlots(runner)[0] : undefined;
+      const ready = runner?.online || waitingReturn(this.store, taskId);
+      const member = runner && ready ? this.freeSlots(runner)[0] : undefined;
       if (!member) continue;
       this.kept.delete(taskId);
       this.store.updateTask(taskId, { agentId: member.id });

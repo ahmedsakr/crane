@@ -1,5 +1,7 @@
+import { existsSync } from "node:fs";
 import { runnerLabel, type RunnerSummary } from "@crane/contracts";
 import type { RunnerJobRecord, Store } from "@crane/storage";
+import { incomingBundlePath } from "./remote/paths.js";
 import type { CrewMember } from "./work-run.js";
 
 /**
@@ -32,4 +34,22 @@ export function liveLease(store: Store, taskId: string, now = Date.now()): Runne
   const job = store.runners.openJobFor(taskId);
   if (!job || job.state !== "claimed" || !ownRun(job) || !job.leaseExpiresAt) return null;
   return Date.parse(job.leaseExpiresAt) > now ? job : null;
+}
+
+/**
+ * The task's newest job when it is a work job its container returned with
+ * commits that no factory has applied yet: the container finished while
+ * nobody waited on it, so the next run applies the bundle instead of sending
+ * the work again. Applying (or refusing) a bundle removes it, so one still
+ * there was never taken.
+ */
+export function waitingReturn(store: Store, taskId: string): RunnerJobRecord | null {
+  const job = store.runners.latestJobFor(taskId);
+  if (!job || job.state !== "returned" || job.kind !== "work") return null;
+  return existsSync(incomingBundlePath(job.id)) ? job : null;
+}
+
+/** The task's own job a container is working, or has returned for this factory to apply. */
+export function keptJob(store: Store, taskId: string, now = Date.now()): RunnerJobRecord | null {
+  return liveLease(store, taskId, now) ?? waitingReturn(store, taskId);
 }
