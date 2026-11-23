@@ -15,19 +15,20 @@ import { registerGoalRoutes } from "./routes/goals.js";
 import { registerRepoRoutes } from "./routes/repos.js";
 import { registerCrewRoutes } from "./routes/crew.js";
 import { registerFactoryRoutes } from "./routes/factory.js";
+import { registerRunnerRoutes } from "./routes/runner.js";
+import { registerRunnersRoutes } from "./routes/runners.js";
+import { requireRunner } from "./runner-auth.js";
 
 /** In registration order. Hono tries routes in this order, so `/tasks/queue` stays ahead of `/tasks/:id`. */
 const ROUTES: RegisterRoutes[] = [
   registerAuthRoutes, registerOperatorsRoutes, registerTaskRoutes, registerGoalRoutes, registerTaskDecisionRoutes,
-  registerRepoRoutes, registerCrewRoutes, registerFactoryRoutes,
+  registerRepoRoutes, registerCrewRoutes, registerFactoryRoutes, registerRunnerRoutes, registerRunnersRoutes,
 ];
 
 export type AppOptions = AccessOptions;
 
 /**
- * The dashboard's HTTP server: security headers and the refusal check before anything else, then the API under
- * `/api` behind the sign-in gate, then the built web app, which stays public. Refusals about who is asking answer with their own
- * status; any other error an action throws answers 400 with its message.
+ * The dashboard's HTTP server checks the request before either API gate. The built web app stays public.
  *
  * The application (`src/application.ts`) must bind its identity before requests arrive: the dashboard, the overview's
  * build status and dashboard builds all read it, and this package never imports the application itself.
@@ -44,8 +45,9 @@ export function createApp(store: Store, opts: AppOptions = {}) {
   app.use("*", refuseUntrusted(access));
 
   const api = new Hono();
-  // Ahead of the shared overview and every route, so nothing cached or routed answers a request without a session.
+  // Both gates run before the shared overview cache and API routes.
   api.use("*", requireSignIn(access));
+  api.use("/runner/*", requireRunner(access));
   const cache = overviewCache();
   api.use("*", cache.invalidate);
   registerOverviewRoutes(api, deps, cache);

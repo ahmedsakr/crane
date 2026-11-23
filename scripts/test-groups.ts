@@ -76,7 +76,7 @@ export const TEST_GROUPS: readonly TestGroup[] = [
   },
   {
     id: "http", kind: "package", projects: ["@crane/http-server"],
-    suites: suites("api-auth", "api-exposure", "api-operators", "api-routes", "api", "sign-in-limit"),
+    suites: suites("api-auth", "api-exposure", "api-operators", "api-routes", "api-runners", "api", "sign-in-limit"),
   },
   {
     id: "http-factory", kind: "integration", projects: ["@crane/http-server"],
@@ -129,7 +129,7 @@ export const TEST_GROUPS: readonly TestGroup[] = [
 export const AUDITED_FILESYSTEM = new Set([
   // Disposable repo, home, database, install, process or server fixtures.
   ...suites(
-    "acceptance-checks", "agent-logs", "api-exposure", "attribution", "auto-mode", "cli", "codex-costs",
+    "acceptance-checks", "agent-logs", "api-exposure", "api-runners", "attribution", "auto-mode", "cli", "codex-costs",
     "command-access", "command-evidence", "command-guard-driver", "costs", "crew-schedules", "decision-races",
     "deps", "deps-copy", "drivers", "fixtures", "follow-up", "goals", "limits", "live-diff", "lookouts",
     "merge", "merge-fetch-retry", "merge-fixes", "overview", "postmortem", "prerequisites", "process-trees",

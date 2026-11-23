@@ -1,6 +1,7 @@
 import type { Context, Hono } from "hono";
 import { streamSSE } from "hono/streaming";
-import { lastMergeOutcome, type NewTask, type Task, type TaskDetail, type TaskDiff, type TaskDraft, type TaskRunOptions, type TaskStatus } from "@crane/contracts";
+import { lastMergeOutcome, type NewTask, type Task, type TaskDetail, type TaskDiff, type TaskDraft, type TaskStatus } from "@crane/contracts";
+import type { TaskAgentInput } from "@crane/factory/actions";
 import type { Store } from "@crane/storage";
 import { readScreenshot } from "@crane/storage";
 import { draftTask } from "@crane/factory/instruct";
@@ -8,6 +9,7 @@ import { diffForTask } from "@crane/factory/diff";
 import { admit } from "../auth.js";
 import { optionalJsonObject } from "../body.js";
 import type { RouteDeps } from "./deps.js";
+import { taskPayloads } from "./task-payloads.js";
 
 function taskHistory(store: Store, taskId: string, after?: number): Pick<TaskDetail, "events" | "eventsAfter"> {
   const events = store.listEvents(taskId, after);
@@ -78,12 +80,12 @@ export function registerTaskRoutes(api: Hono, deps: RouteDeps): void {
   api.get("/tasks", (c) => {
     const status = c.req.query("status")?.split(",").filter(Boolean) as TaskStatus[] | undefined;
     const repoId = c.req.query("repo") || undefined;
-    return c.json(store.listTaskSummaries({ status, repoId }));
+    return c.json(store.listTaskSummaries({ status, repoId }).map(taskPayloads(actions)));
   });
-  api.get("/tasks/queue", (c) => c.json(store.listQueuedTaskSummaries()));
+  api.get("/tasks/queue", (c) => c.json(store.listQueuedTaskSummaries().map(taskPayloads(actions))));
   api.post("/tasks/:id/agent", async (c) => {
-    const { driver, model, effort } = await optionalJsonObject<TaskRunOptions>(c.req.raw);
-    return c.json(actions.changeAgent(c.req.param("id"), { driver, model, effort }));
+    const { driver, model, effort, runnerId } = await optionalJsonObject<TaskAgentInput>(c.req.raw);
+    return c.json(taskPayloads(actions)(actions.changeAgent(c.req.param("id"), { driver, model, effort, runnerId })));
   });
   api.get("/tasks/:id", (c) => {
     const m = store.getTask(c.req.param("id"));
@@ -93,7 +95,7 @@ export function registerTaskRoutes(api: Hono, deps: RouteDeps): void {
     if (raw !== undefined && (!/^\d+$/.test(raw) || !Number.isSafeInteger(after))) {
       return c.json({ error: "Invalid event cursor" }, 400);
     }
-    return c.json(taskDetail(store, m, after));
+    return c.json(taskDetail(store, taskPayloads(actions)(m), after));
   });
   api.get("/tasks/:id/screenshots/:name", (c) => screenshot(store, c, c.req.param("id"), c.req.param("name")));
   api.get("/tasks/:id/diff", async (c) => {
@@ -111,6 +113,6 @@ export function registerTaskRoutes(api: Hono, deps: RouteDeps): void {
   });
   api.post("/tasks", async (c) => {
     const body = await c.req.json<NewTask>();
-    return c.json(actions.createTask(body), 201);
+    return c.json(taskPayloads(actions)(actions.createTask(body)), 201);
   });
 }

@@ -16,6 +16,7 @@ export type NewRunnerInput = {
 
 /** The raw token is available only in the response to registration or rotation. */
 export type IssuedRunner = { runner: RunnerSummary; token: string };
+export type RunnerUpdate = { name?: unknown; capacity?: unknown };
 
 const ADD_CONTAINER = "Add a container from Account → Containers, then try again";
 
@@ -70,20 +71,27 @@ function manageRunner<T>(deps: AccessDeps, by: EventActor, id: string, change: (
 }
 
 export function renameRunner(deps: AccessDeps, by: EventActor, id: string, input: unknown): RunnerSummary {
-  return manageRunner(deps, by, id, (runner, at) => {
-    const name = checkRunnerName(input);
-    deps.store.runners.rename(id, name);
-    deps.store.runners.recordOperatorEvent(id, by, `Renamed container from ${runner.name} to ${name}`, iso(at));
-    return deps.store.runners.summary(id, at)!;
-  });
+  return updateRunner(deps, by, id, { name: input });
 }
 
 export function setRunnerCapacity(deps: AccessDeps, by: EventActor, id: string, input: unknown): RunnerSummary {
-  return manageRunner(deps, by, id, (_runner, at) => {
-    const capacity = checkRunnerCapacity(input);
-    deps.store.runners.setCapacity(id, capacity);
-    deps.store.runners.recordOperatorEvent(id, by, `Set container capacity to ${capacity}`, iso(at));
-    return deps.store.runners.summary(id, at)!;
+  return updateRunner(deps, by, id, { capacity: input });
+}
+
+export function updateRunner({ store, now }: AccessDeps, by: EventActor, id: string, patch: RunnerUpdate): RunnerSummary {
+  return manageRunner({ store, now }, by, id, (runner, at) => {
+    if (!Object.hasOwn(patch, "name") && !Object.hasOwn(patch, "capacity")) throw new Error("Give a name or capacity to change");
+    if (Object.hasOwn(patch, "name")) {
+      const name = checkRunnerName(patch.name);
+      store.runners.rename(id, name);
+      store.runners.recordOperatorEvent(id, by, `Renamed container from ${runner.name} to ${name}`, iso(at));
+    }
+    if (Object.hasOwn(patch, "capacity")) {
+      const capacity = checkRunnerCapacity(patch.capacity);
+      store.runners.setCapacity(id, capacity);
+      store.runners.recordOperatorEvent(id, by, `Set container capacity to ${capacity}`, iso(at));
+    }
+    return store.runners.summary(id, at)!;
   });
 }
 
@@ -130,7 +138,8 @@ export function requireRunnerOwner(runner: RunnerRecord, by: EventActor | null):
   }
 }
 
-export function runnersRequired(store: Store): RunnersRequired {
+export function runnersRequired(store: Store, by?: EventActor): RunnersRequired {
+  if (by) requireAdmin(store, by, "Only admins can read whether containers are required");
   return store.getSetting(RUNNERS_REQUIRED_KEY) === "on" ? "on" : "off";
 }
 

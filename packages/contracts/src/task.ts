@@ -87,6 +87,9 @@ export interface Task {
   driver: string | null;
   /** The container this task runs on; null means the factory's own crew. */
   runnerId: string | null;
+  /** Display information supplied by the HTTP API for container tasks. */
+  runnerLabel?: string;
+  runnerOnline?: boolean;
   /** Task overrides; null follows the chosen agent's saved settings. */
   model: string | null;
   effort: string | null;
@@ -160,7 +163,7 @@ export interface Task {
 /** Lightweight task-list and overview payload; full briefs and reports stay on task detail. */
 export interface TaskSummary extends Pick<Task,
   "id" | "kind" | "title" | "repoId" | "status" | "branch" | "assignee" | "postmortemOf" |
-  "createdAt" | "scheduledAt" | "startedAt" | "finishedAt"
+  "createdAt" | "scheduledAt" | "startedAt" | "finishedAt" | "runnerId" | "runnerLabel" | "runnerOnline"
 > {
   reportSummary: string | null;
   findingCount: number;

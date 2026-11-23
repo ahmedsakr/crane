@@ -8,6 +8,7 @@ import { actorSnapshot } from "@crane/backend-runtime";
 import { AccessError, OperatorActions } from "@crane/factory/actions";
 import { createApp } from "@crane/http-server";
 import { NOT_SET_UP, PUBLIC_ROUTES, errorResponse } from "../packages/http-server/src/auth.js";
+import { isRunnerPath } from "../packages/http-server/src/runner-auth.js";
 import { STREAM_RECHECK_MS } from "../packages/http-server/src/routes/tasks.js";
 import { AttemptLimiter, FIRST_WAIT_MS, LIMIT_WINDOW_MS, MAX_WAIT_MS, TooManyAttempts } from "../packages/http-server/src/sign-in-limit.js";
 import { NOTE, call, cookieFrom, openStream, within, type App, type Call } from "./support/api-client.js";
@@ -57,7 +58,7 @@ const ids = (taskId: string): Record<string, string> => ({ id: taskId, taskId, n
 /** Every route that needs a session, from the app's own route table, so a new route is covered once registered. */
 function protectedRoutes(app: App, params: Record<string, string>): [string, string][] {
   return app.routes
-    .filter((r) => r.method !== "ALL" && r.path !== "/*" && !PUBLIC_ROUTES.includes(`${r.method} ${r.path}`))
+    .filter((r) => r.method !== "ALL" && r.path !== "/*" && !isRunnerPath(r.path) && !PUBLIC_ROUTES.includes(`${r.method} ${r.path}`))
     .map((r) => [r.method, r.path.replace(/:(\w+)/g, (_, p: string) => params[p] ?? p)]);
 }
 
@@ -79,7 +80,8 @@ test("auth: with an operator, every route but the public ones answers 401 withou
     const table = app.routes.filter((r) => r.method !== "ALL").map((r) => `${r.method} ${r.path}`);
     const publicInTable = PUBLIC_ROUTES.filter((route) => table.includes(route));
     for (const route of ["GET /api/auth/session", "POST /api/auth/sign-in"]) assert.ok(publicInTable.includes(route), route);
-    assert.equal(routes.length, table.length - publicInTable.length - 1);
+    const containerRoutes = app.routes.filter((r) => r.method !== "ALL" && isRunnerPath(r.path));
+    assert.equal(routes.length, table.length - publicInTable.length - containerRoutes.length - 1);
     for (const route of ["GET /api/overview", `GET /api/tasks/${task.id}/stream`, `GET /api/tasks/${task.id}/screenshots/shot.png`,
       "POST /api/auth/sign-out", "GET /api/auth/me/sessions", `POST /api/tasks/${task.id}/approve`]) {
       assert.ok(routes.some(([method, path]) => `${method} ${path}` === route), route);

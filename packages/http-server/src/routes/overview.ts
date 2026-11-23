@@ -1,6 +1,7 @@
 import type { Hono, MiddlewareHandler } from "hono";
 import { isSafeMethod } from "../security.js";
 import type { RouteDeps } from "./deps.js";
+import { taskPayloads } from "./task-payloads.js";
 
 /** How long open tabs share one overview, each polling it every 2 s on the thread that runs the factory. */
 const OVERVIEW_SHARED_MS = 1000;
@@ -30,9 +31,18 @@ export function overviewCache() {
 export type OverviewCache = ReturnType<typeof overviewCache>;
 
 /** The factory-wide reads the home and analytics pages poll. */
-export function registerOverviewRoutes(api: Hono, { store, factoryState }: RouteDeps, cache: OverviewCache): void {
+export function registerOverviewRoutes(api: Hono, { store, factoryState, actions, access }: RouteDeps, cache: OverviewCache): void {
   api.get("/overview", (c) => {
-    const json = cache.read(() => store.overview(factoryState()));
+    const json = cache.read(() => {
+      const overview = store.overview(factoryState(), access.now());
+      const payload = taskPayloads(actions, overview.runners);
+      return {
+        ...overview,
+        needsReview: overview.needsReview.map(payload),
+        inFlight: overview.inFlight.map(payload),
+        recent: overview.recent.map(payload),
+      };
+    });
     return c.body(json, 200, { "content-type": "application/json" });
   });
   api.get("/analytics", (c) => c.json(store.analytics(Number(c.req.query("days") ?? 30))));

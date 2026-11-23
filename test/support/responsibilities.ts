@@ -217,7 +217,9 @@ const ALLOWED_PACKAGES: Record<string, string[]> = {
   "hono/streaming": ["*"],
   picocolors: ["*"],
   "node:path": ["*"],
-  "node:fs": ["readFileSync", "existsSync"],
+  // A container's bundle response reads the temporary file returned by OperatorActions.
+  "node:fs": ["readFileSync", "existsSync", "createReadStream"],
+  "node:stream": ["Readable"],
 };
 
 /**

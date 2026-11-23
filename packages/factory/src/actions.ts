@@ -25,7 +25,7 @@ import type {
   TaskRunOptions,
 } from "@crane/contracts";
 import { withActor } from "@crane/backend-runtime";
-import { runnerLabel } from "@crane/contracts";
+import { isRunnerOnline, runnerLabel } from "@crane/contracts";
 import type { RunnerRecord, Store } from "@crane/storage";
 import type { SessionListing } from "@crane/storage";
 import type { TaskAgentInput } from "./action-inputs.js";
@@ -264,10 +264,21 @@ export class OperatorActions {
 
   /** Display a task's route, including a revoked container that is still assigned. */
   runnerLabel(id: string): string | null {
+    return this.runnerStatus(id)?.runnerLabel ?? null;
+  }
+
+  runnerStatus(id: string): { runnerLabel: string; runnerOnline: boolean } | null {
     const runner = this.store.runners.byId(id);
     if (!runner) return null;
     const owner = this.store.access.operatorById(runner.operatorId);
-    return runnerLabel({ name: runner.name, ownerName: owner?.name ?? "Removed operator" });
+    return {
+      runnerLabel: runnerLabel({ name: runner.name, ownerName: owner?.name ?? "Removed operator" }),
+      runnerOnline: !runner.revokedAt && isRunnerOnline(runner.lastSeenAt, this.access.now()),
+    };
+  }
+
+  updateRunner(by: EventActor, id: string, patch: runners.RunnerUpdate): RunnerSummary {
+    return runners.updateRunner(this.access, by, id, patch);
   }
 
   renameRunner(by: EventActor, id: string, name: unknown): RunnerSummary {
@@ -298,8 +309,8 @@ export class OperatorActions {
     return runners.setDefaultRunner(this.access, by, runnerId);
   }
 
-  runnersRequired(): RunnersRequired {
-    return runners.runnersRequired(this.store);
+  runnersRequired(by?: EventActor): RunnersRequired {
+    return runners.runnersRequired(this.store, by);
   }
 
   setRunnersRequired(by: EventActor, value: unknown): RunnersRequired {
@@ -307,6 +318,10 @@ export class OperatorActions {
   }
 
   // A container's own jobs. `runner` is the container the API signed in with its token.
+
+  requireRunnerJob(runner: RunnerRecord, id: string): void {
+    runnerJobs.requireRunnerJob(this.access, runner, id);
+  }
 
   claimRunnerJob(runner: RunnerRecord): RunnerJob | null {
     return runnerJobs.claimRunnerJob(this.access, runner);
