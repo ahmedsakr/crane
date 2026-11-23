@@ -161,6 +161,22 @@ test("runner lane: a restart requeues a container task whose lease ran out", asy
   await until(() => s.status(id) === "needs_review", "the task to finish");
 });
 
+test("runner lane: removing the container mid-run leaves its task queued, not failed", async (t) => {
+  const s = await laneSetup(t);
+  const id = s.routed("Interrupted");
+  s.factory().start();
+  const job = await s.claimNext();
+  const owner = { kind: "operator" as const, id: s.owner.id, name: s.owner.name };
+  s.actions.removeRunner(owner, s.runnerId);
+  assert.equal(s.store.runners.job(job.id)!.state, "cancelled");
+  await until(() => s.store.listRuns(id).every((run) => run.finishedAt !== null), "the factory's run to end");
+  await delay(50);
+  assert.equal(s.status(id), "queued");
+  const statuses = s.store.listEvents(id).filter((e) => e.type === "status").map((e) => e.message);
+  assert.equal(statuses.at(-1), "Back in the queue");
+  assert.ok(!s.store.listEvents(id).some((e) => e.type === "error"), "no failure is recorded over the requeue");
+});
+
 /** Record a finished work run of the task with a session, on `runnerId` (null for the crew). */
 function earlierRun(store: Store, taskId: string, driver: DriverName, runnerId: string | null, session: string) {
   store.updateTask(taskId, { sessionId: session });

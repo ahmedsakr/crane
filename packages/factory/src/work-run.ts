@@ -240,7 +240,7 @@ function fileOutcome({ store, log }: WorkRunDeps, { agent, task }: WorkRun, repo
   log(`${agent.name} finished ${task.id}${next === "merging" ? ", pre-approved, so it's queued to merge" : ""}`);
 }
 
-export type WorkFailure = "cancelled" | "time_limit" | "factory_stopping" | "aborted" | "preparation_hold" | "turn_limit" | "other";
+export type WorkFailure = "cancelled" | "moved_on" | "time_limit" | "factory_stopping" | "aborted" | "preparation_hold" | "turn_limit" | "other";
 
 /** The state of the run's controller and factory when it failed. */
 export interface WorkRunSignals {
@@ -252,10 +252,13 @@ export interface WorkRunSignals {
 /**
  * Why a run ended without finishing. The order matters: the time limit and a
  * stopping factory both abort the run too, so each must be ruled out before
- * reading an abort as the operator's cancellation.
+ * reading an abort as the operator's cancellation. A task that has left
+ * `running` some other way, such as back to the queue when its container was
+ * removed, was moved on by whoever changed it, so this run leaves it there.
  */
 export function classifyWorkFailure(status: TaskStatus | undefined, error: unknown, signals: WorkRunSignals): WorkFailure {
   if (status === "cancelled") return "cancelled";
+  if (status !== undefined && status !== "running") return "moved_on";
   if (signals.timeLimitHit) return "time_limit";
   if (signals.stopping) return "factory_stopping";
   if (signals.aborted) return "aborted";
@@ -271,6 +274,10 @@ export function handleWorkFailure(deps: WorkRunDeps, { agent, task, emit }: Work
   switch (classifyWorkFailure(store.getTask(task.id)?.status, error, signals)) {
     case "cancelled":
       // The operator cancelled it; that's already recorded.
+      return;
+    case "moved_on":
+      // Something else already filed it, such as a removed container requeueing it.
+      log(`${agent.name} stopped ${task.id}, which had already moved on: ${message}`);
       return;
     case "time_limit":
       emit("error", `Stopped after ${minutes(deps.timeLimitMin)}, the most a task may run. Raise it with crane serve --time-limit or CRANE_TIME_LIMIT_MIN`, { limit: "time" });
