@@ -69,10 +69,13 @@ async function runWithRetry(deps: AgentRunnerDeps, driver: AgentDriver, ctx: Run
   }
 }
 
-/** A container must be online with the agent signed in; a local agent must be installed here. */
-async function requireAvailable(driver: AgentDriver): Promise<void> {
+/**
+ * A container must be online with the agent signed in, unless it already
+ * returned this task's own run; a local agent must be installed here.
+ */
+async function requireAvailable(driver: AgentDriver, ctx: AgentRunRequest): Promise<void> {
   if (driver instanceof RemoteDriver) {
-    const reason = driver.unavailableReason();
+    const reason = driver.unavailableReason(ctx.job ? undefined : ctx.task.id);
     if (reason) throw new Error(reason);
     return;
   }
@@ -95,7 +98,7 @@ export async function runAgent(
   ctx: AgentRunRequest,
 ): Promise<RunResult> {
   const { store } = deps;
-  await requireAvailable(driver);
+  await requireAvailable(driver, ctx);
   // Lane slots aren't crew, so they have no agents row to update.
   if (!isLaneMember(agentId)) store.setAgentDriver(agentId, driver.name);
   const runId = store.startRun({

@@ -12,9 +12,10 @@ import { runAgent } from "../packages/factory/src/agent-runner.js";
 import { driverFor } from "../packages/factory/src/driver-selection.js";
 import { createWorktree } from "../packages/factory/src/git.js";
 import { RemoteDriver } from "../packages/factory/src/remote/driver.js";
+import { waitingReturn } from "../packages/factory/src/runner-lane.js";
 import { onFixtureCleanup, temporaryRoot, testHome } from "./support/fixtures.js";
 import { sh } from "./support/git.js";
-import { commitIn, finalText } from "./support/remote-fixture.js";
+import { bundleOf, commitIn, finalText } from "./support/remote-fixture.js";
 
 const until = async (ok: () => boolean, what: string, ms = 10_000) => {
   const end = Date.now() + ms;
@@ -143,6 +144,42 @@ test("runner lane: a restart leaves a task with a live lease running, and waits 
   s.finish(job, "Carried on through the restart");
   await until(() => s.status(id) === "needs_review", "the task to finish");
   assert.equal(s.store.getTask(id)!.report!.summary, "Carried on through the restart");
+});
+
+test("runner lane: work a container returned while the factory was down is applied, not sent again", async (t) => {
+  const s = await laneSetup(t);
+  const id = s.routed("Return while down");
+  const first = s.factory();
+  first.start();
+  const job = await s.claimNext();
+  await first.stop();
+
+  // The container finishes while no factory is running, then goes offline.
+  const dir = temporaryRoot(t, "crane-lane-container-");
+  sh(dir, "init", "-q", "-b", "work");
+  const sent = (await s.actions.jobBundle(s.store.runners.byId(s.runnerId)!, job.id))!;
+  sh(dir, "fetch", "-q", sent.path, "refs/crane/outgoing/*:refs/sent/*");
+  sent.remove();
+  const start = job.tip ?? job.base;
+  sh(dir, "checkout", "-q", "--detach", start);
+  const returned = commitIn(dir, "remote.txt", "from the container\n");
+  sh(dir, "update-ref", "refs/heads/result", "HEAD");
+  s.actions.returnJob(s.store.runners.byId(s.runnerId)!, job.id, {
+    outcome: "succeeded", finalText: finalText({ summary: "Returned while down", findings: [], changedFiles: ["remote.txt"] }),
+  }, bundleOf(dir, "refs/heads/result", `^${start}`));
+  s.store.runners.touch(s.runnerId, new Date(Date.now() - 3_600_000).toISOString());
+  assert.equal(waitingReturn(s.store, id)?.id, job.id, "its bundle waits to be applied");
+
+  s.factory().start();
+  assert.equal(s.status(id), "running", "not requeued to be sent again");
+  assert.ok(s.messages(id).includes("The factory restarted after its container returned its work"));
+  await until(() => s.status(id) === "needs_review", "the returned work to be applied");
+  assert.ok(s.messages(id).some((m) => /^Applying what Robin's container 'laptop' returned while the factory was down/.test(m)));
+  assert.equal(s.store.runners.latestJobFor(id)!.id, job.id, "no second job was sent");
+  const task = s.store.getTask(id)!;
+  assert.equal(sh(task.worktree!, "rev-parse", "HEAD"), returned);
+  assert.equal(task.report!.summary, "Returned while down");
+  assert.equal(waitingReturn(s.store, id), null, "the bundle is used up");
 });
 
 test("runner lane: a restart requeues a container task whose lease ran out", async (t) => {

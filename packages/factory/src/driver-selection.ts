@@ -2,6 +2,7 @@ import { driverLabel, isDriverName, runnerLabel, type DriverName, type Task } fr
 import type { AgentDriver } from "@crane/agent-protocol";
 import type { RunnerRecord, Store } from "@crane/storage";
 import { REMOVED, RemoteDriver, type RemoteDriverOptions } from "./remote/driver.js";
+import { waitingReturn } from "./runner-lane.js";
 import { DEFAULT_DRIVER_KEY } from "./settings.js";
 
 /** Every agent a factory can run, by name. The first is the default until the operator picks one. */
@@ -48,6 +49,10 @@ function innerDriver(store: Store, task: Task, runner: RunnerRecord): DriverName
     if (!isDriverName(task.driver)) throw new Error(`This task asks for ${task.driver}, which containers can't run`);
     return task.driver;
   }
+  // Work the container returned while the factory was down is applied by the agent it was sent for.
+  const returned = waitingReturn(store, task.id);
+  const sent = (returned?.payload as { driver?: unknown } | null)?.driver;
+  if (returned?.runnerId === runner.id && isDriverName(sent)) return sent;
   const previous = store.lastWorkDriver(task.id);
   if (isDriverName(previous) && store.lastWorkRunner(task.id) === runner.id && runner.drivers.includes(previous)) return previous;
   const first = runner.drivers[0];

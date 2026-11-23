@@ -258,6 +258,13 @@ export class RunnerStore {
     return r ? toJob(r) : null;
   }
 
+  /** The task's newest job, in any state. */
+  latestJobFor(taskId: string): RunnerJobRecord | null {
+    const r = this.db.prepare("SELECT * FROM runner_jobs WHERE task_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1")
+      .get(taskId) as Row | undefined;
+    return r ? toJob(r) : null;
+  }
+
   /** Cancel the task's open jobs; returns how many. */
   cancelJobsFor(taskId: string, at = new Date().toISOString()): number {
     return this.cancelOpenJobs("task_id = ?", taskId, at);

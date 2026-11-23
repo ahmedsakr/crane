@@ -2,6 +2,7 @@ import { driverLabel, isRunnerOnline, runnerLabel, RUNNER_LIMITS, type DriverNam
 import { AgentRunError, parseReport, type AgentDriver, type RunContext, type RunResult } from "@crane/agent-protocol";
 import type { RunnerJobRecord, RunnerRecord, Store } from "@crane/storage";
 import { FactoryStopping, sleep } from "../run-limits.js";
+import { waitingReturn } from "../runner-lane.js";
 import { BundleRefused, discardIncoming, materialize } from "./materialize.js";
 import { jobKind, jobPayload, type JobPayload } from "./payload.js";
 import { uploadedScreenshots } from "./screenshots.js";
@@ -41,10 +42,15 @@ export class RemoteDriver implements AgentDriver {
     return this.unavailableReason() === null;
   }
 
-  /** Why a run can't be sent to the container now, for the operator; null when it can. */
-  unavailableReason(): string | null {
+  /**
+   * Why a run can't be sent to the container now, for the operator; null when
+   * it can. A task whose job this container already returned needs nothing
+   * more from it, so `taskId` names the task when asking for its own run.
+   */
+  unavailableReason(taskId?: string): string | null {
     const runner = this.store.runners.byId(this.runnerId);
     if (!runner || runner.revokedAt) return REMOVED;
+    if (taskId && this.returnedHere(taskId)) return null;
     const label = this.labelFor(runner);
     if (!isRunnerOnline(runner.lastSeenAt, this.now())) return `${label} is offline. Start it with crane runner start, then retry`;
     if (!runner.drivers.includes(this.name)) return `${driverLabel(this.name)} isn't signed in on ${label}. Sign in there, or choose another agent`;
@@ -54,11 +60,16 @@ export class RemoteDriver implements AgentDriver {
   async run(ctx: RunContext): Promise<RunResult> {
     const runner = this.liveRunner();
     const label = this.labelFor(runner);
+    if (ctx.signal.aborted) throw new AgentRunError("Stopped before the job was sent");
+    const kept = this.keptJob(ctx, runner);
+    if (kept?.state === "returned") {
+      // Finished while no factory waited on it: apply what it returned, without asking the container again.
+      ctx.emit("note", `Applying what ${label} returned while the factory was down`, { runnerJob: kept.id });
+      return this.finish(kept, ctx, kept.payload as JobPayload, label);
+    }
     if (isRunnerOnline(runner.lastSeenAt, this.now()) && runner.drivers.length && !runner.drivers.includes(this.name)) {
       throw new AgentRunError(`${driverLabel(this.name)} isn't signed in on ${label}. Sign in there, or choose another agent`);
     }
-    if (ctx.signal.aborted) throw new AgentRunError("Stopped before the job was sent");
-    const kept = this.keptJob(ctx, runner);
     if (kept) {
       ctx.emit("note", `Back with ${label}, which kept working while the factory restarted`, { runnerJob: kept.id });
       return this.finish(await this.waitFor(kept.id, ctx, label), ctx, kept.payload as JobPayload, label);
@@ -72,19 +83,33 @@ export class RemoteDriver implements AgentDriver {
 
   /**
    * The task's job an earlier factory left with this container, which is still
-   * working it: a restart waits on it rather than sending the work twice. Any
-   * other open job for the task is stale, and is cancelled so the container
-   * never works both.
+   * working it or has returned it with commits not yet applied: a restart
+   * picks it up rather than sending the work twice. Any other open job for the
+   * task is stale, and is cancelled so the container never works both; a
+   * returned bundle for another run is thrown away.
    */
   private keptJob(ctx: RunContext, runner: RunnerRecord): RunnerJobRecord | null {
     const open = this.store.runners.openJobFor(ctx.task.id);
-    if (!open) return null;
-    const payload = open.payload as Partial<JobPayload> | null;
-    const same = open.runnerId === runner.id && open.state === "claimed" && !ctx.job
-      && open.kind === jobKind(ctx) && payload?.driver === this.name;
-    if (same) return open;
+    const returned = open || ctx.job ? null : waitingReturn(this.store, ctx.task.id);
+    const job = open ?? returned;
+    if (!job) return null;
+    if (job.state === "claimed" || job.state === "returned") {
+      if (!ctx.job && job.kind === jobKind(ctx) && this.isOurs(job, runner.id)) return job;
+    }
     this.store.runners.cancelJobsFor(ctx.task.id, iso(this.now()));
+    if (returned) discardIncoming(returned.id);
     return null;
+  }
+
+  /** Whether the job was sent to `runnerId` for this driver's agent. */
+  private isOurs(job: RunnerJobRecord, runnerId: string): boolean {
+    return job.runnerId === runnerId && (job.payload as Partial<JobPayload> | null)?.driver === this.name;
+  }
+
+  /** Whether this container returned the task's own work, still waiting to be applied, for this agent. */
+  private returnedHere(taskId: string): boolean {
+    const job = waitingReturn(this.store, taskId);
+    return !!job && this.isOurs(job, this.runnerId);
   }
 
   private liveRunner(): RunnerRecord {
@@ -99,12 +124,13 @@ export class RemoteDriver implements AgentDriver {
 
   /**
    * Whether an abort leaves the job with the container: a stopping factory
-   * keeps a task's own claimed job running, for the next factory to wait on.
+   * keeps a task's own claimed job running, for the next factory to wait on,
+   * and leaves one that just returned its commits for the next factory to apply.
    * Merge jobs always stop, because a merge starts again from the top.
    */
   private keepsWorking(jobId: string, ctx: RunContext): boolean {
     if (!(ctx.signal.reason instanceof FactoryStopping) || ctx.job) return false;
-    return this.store.runners.job(jobId)?.state === "claimed";
+    return this.store.runners.job(jobId)?.state === "claimed" || waitingReturn(this.store, ctx.task.id)?.id === jobId;
   }
 
   /** Wait until the job ends. An abort (cancelled task, time limit) cancels it, so the container hears to stop. */
