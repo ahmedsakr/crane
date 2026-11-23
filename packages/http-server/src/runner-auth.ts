@@ -18,12 +18,15 @@ export function requireRunner({ actions, now, clientKey }: ApiAccess): Middlewar
   return async (c, next) => {
     c.header("cache-control", "no-store");
     const token = /^Bearer +([A-Za-z0-9_-]+)$/i.exec(c.req.header("authorization") ?? "")?.[1];
+    const refuse = () => {
+      c.header("www-authenticate", "Bearer");
+      return new AccessError(401, "Unauthorized");
+    };
+    // A request without a bearer token guesses nothing, so it is refused without counting against the limit.
+    if (!token) throw refuse();
     const runner = await limiter.attempt([limiter.limit("client", clientKey(c))], async () => {
       const authenticated = actions.authenticateRunner(token);
-      if (!authenticated) {
-        c.header("www-authenticate", "Bearer");
-        throw new AccessError(401, "Unauthorized");
-      }
+      if (!authenticated) throw refuse();
       return authenticated;
     }, (err) => err instanceof AccessError && err.status === 401);
     c.set("runner", runner);

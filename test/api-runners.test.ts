@@ -67,10 +67,14 @@ test("runner API: bearer credentials and operator sessions have separate gates a
   }
   // Encoded unreserved characters route to the same bearer-only path.
   assert.deepEqual(JSON.parse(await checked(await call(app, "POST", "/api/%72unner/heartbeat", { cookie: robin.cookie }), 401)), rejected);
-  await checked(await call(app, "POST", heartbeatPath, { headers: bearer(wrong), body: heartbeat }), 401);
+  // Requests without a bearer token aren't guesses: only the wrong tokens count toward the client's limit.
+  for (let failure = 2; failure <= 5; failure++) {
+    await checked(await call(app, "POST", heartbeatPath, { headers: bearer(wrong), body: heartbeat }), 401);
+  }
   const limited = await call(app, "POST", heartbeatPath, { headers: bearer(token), body: heartbeat });
   assert.equal(limited.headers.get("retry-after"), "30");
   await checked(limited, 429, [token]);
+  assert.deepEqual(JSON.parse(await checked(await call(app, "POST", heartbeatPath, { body: heartbeat }), 401)), rejected);
   const ok = await call(app, "POST", heartbeatPath, { client: "fresh", headers: bearer(token), body: heartbeat });
   assert.deepEqual(JSON.parse(await checked(ok, 200, [token])), { cancel: [] });
   await checked(await call(app, "GET", "/api/runners", { headers: bearer(token) }), 401, [token]);
