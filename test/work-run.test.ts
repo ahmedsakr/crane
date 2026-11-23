@@ -46,6 +46,7 @@ test("classifyWorkFailure: each branch outranks every branch after it", () => {
   // A single error can't be both a hold and a turn limit, so the first four run against each of them.
   for (const error of [hold(), outOfTurns()]) {
     assert.equal(classifyWorkFailure("cancelled", error, ALL), "cancelled");
+    assert.equal(classifyWorkFailure("queued", error, ALL), "moved_on");
     assert.equal(classifyWorkFailure("running", error, ALL), "time_limit");
     assert.equal(classifyWorkFailure("running", error, { ...ALL, timeLimitHit: false }), "factory_stopping");
     assert.equal(classifyWorkFailure("running", error, { ...QUIET, aborted: true }), "aborted");
@@ -58,6 +59,12 @@ test("classifyWorkFailure: each branch outranks every branch after it", () => {
 test("classifyWorkFailure: a run that's only aborted is a cancellation, whatever the error", () => {
   assert.equal(classifyWorkFailure("running", new Error("Cancelled"), { ...QUIET, aborted: true }), "aborted");
   assert.equal(classifyWorkFailure(undefined, "not an error", { ...QUIET, aborted: true }), "aborted");
+});
+
+test("classifyWorkFailure: a task that has left running some other way has moved on", () => {
+  for (const status of ["queued", "failed", "needs_review", "done"] as const) {
+    assert.equal(classifyWorkFailure(status, new Error("The job was cancelled"), QUIET), "moved_on", status);
+  }
 });
 
 test("classifyWorkFailure: only a turn limit counts as one", () => {
@@ -78,6 +85,15 @@ const FAILURES: {
   requeued?: boolean;
 }[] = [
   { name: "cancelled by the operator", from: "cancelled", error: new Error("Killed"), signals: ALL, status: "cancelled", events: [] },
+  {
+    name: "requeued when its container was removed",
+    from: "queued",
+    error: new Error("The job was cancelled"),
+    signals: QUIET,
+    status: "queued",
+    events: [],
+    log: "Jib stopped $id, which had already moved on: The job was cancelled",
+  },
   {
     name: "time limit",
     error: new Error("Killed"),
