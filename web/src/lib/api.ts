@@ -40,6 +40,7 @@ import type {
   OperatorRole,
   InviteSummary,
   InviteCheck,
+  RunnerSummary,
 } from "@crane/contracts";
 import type { InviteLink } from "./operators";
 import { SignedOutError, isSignInRefusal, notifySignInRequired } from "./auth";
@@ -156,6 +157,13 @@ export const api = {
   resetOperatorPassword: (id: string) => post<InviteLink>(`/operators/${encodeURIComponent(id)}/reset`),
   signOutOperator: (id: string) => post<OperatorSummary[]>(`/operators/${encodeURIComponent(id)}/sign-out`),
   removeOperator: (id: string) => req<OperatorSummary[]>(`/operators/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  addRunner: (input: { name: string; capacity: number }) => post<{ runner: RunnerSummary; token: string }>("/runners", input),
+  renameRunner: (id: string, name: string) => req<RunnerSummary>(`/runners/${encodeURIComponent(id)}`, { method: "PATCH", json: { name } }),
+  rotateRunner: (id: string) => post<{ runner: RunnerSummary; token: string }>(`/runners/${encodeURIComponent(id)}/rotate`),
+  removeRunner: (id: string) => req<void>(`/runners/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  runnerPreference: () => req<{ runnerId: string | null; required: boolean }>("/runners/default"),
+  setDefaultRunner: (runnerId: string | null) => req<{ runnerId: string | null }>("/runners/default", { method: "PUT", json: { runnerId } }),
+  setRunnersRequired: (value: "on" | "off") => req<{ value: "on" | "off" }>("/settings/runners-required", { method: "PUT", json: { value } }),
   checkInvite: (token: string) => post<InviteCheck>("/auth/invites/check", { token }),
   acceptInvite: (token: string, input: { username?: string; name?: string; password: string }) =>
     post<AuthStatus>("/auth/invites/accept", { token, ...input }),
@@ -168,7 +176,7 @@ export const api = {
   cancelGoal: (id: string, revision: number) => post<Goal>(`/goals/${id}/cancel`, { revision }),
   retryGoalTask: (id: string, revision: number, taskId: string, run: TaskRunOptions = {}) => post<Goal>(`/goals/${id}/tasks/${taskId}/retry`, { revision, ...run }),
   changeGoalPlanAgent: (id: string, revision: number, key: string, run: TaskRunOptions) => post<Goal>(`/goals/${id}/plan/tasks/${key}/agent`, { revision, ...run }),
-  changeAgent: (id: string, run: TaskRunOptions) => post<Task>(`/tasks/${id}/agent`, run),
+  changeAgent: (id: string, run: TaskRunOptions & { runnerId?: string | null }) => post<Task>(`/tasks/${id}/agent`, run),
   overview: () => req<Overview>("/overview"),
   analytics: (days: number) => req<Analytics>(`/analytics?days=${days}`),
   tasks: (status?: string) => req<TaskSummary[]>(`/tasks${status ? `?status=${status}` : ""}`),

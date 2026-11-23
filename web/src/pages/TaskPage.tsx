@@ -82,7 +82,7 @@ function TaskRail({ detail, view, drivers, actions, onChangeAgent }: Omit<PagePa
 function ChangeAgent({ task, onSaved, onClose }: { task: Task; onSaved: () => void; onClose: () => void }) {
   const toast = useToast();
   return (
-    <ChangeAgentSheet title={task.title} run={task} note="This applies when a crew member picks the task up."
+    <ChangeAgentSheet title={task.title} run={task} route={task} note="These choices apply when the task starts."
       onSave={async (next) => { await api.changeAgent(task.id, next); toast({ text: "Agent changed" }); onSaved(); }}
       onClose={onClose} />
   );

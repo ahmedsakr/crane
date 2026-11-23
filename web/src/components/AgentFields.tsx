@@ -29,7 +29,7 @@ export function agentRunOptions(choice: AgentChoice, drivers: DriverInfo[]): Req
 }
 
 /** Agent, model and effort. Changing the agent clears the other two, which belong to it. */
-export function AgentFields({ value, onChange, drivers, disabled, allowDefault = true, autoFocus }: {
+export function AgentFields({ value, onChange, drivers, disabled, allowDefault = true, autoFocus, defaultLabel = "Factory default" }: {
   value: AgentChoice;
   onChange: (choice: AgentChoice) => void;
   drivers: DriverInfo[];
@@ -37,6 +37,7 @@ export function AgentFields({ value, onChange, drivers, disabled, allowDefault =
   /** Off where the work must name an agent, like a task in a plan. */
   allowDefault?: boolean;
   autoFocus?: boolean;
+  defaultLabel?: string;
 }) {
   const listId = useId();
   const defaultAgent = drivers.find((d) => d.isDefault);
@@ -46,7 +47,7 @@ export function AgentFields({ value, onChange, drivers, disabled, allowDefault =
       <span>Agent</span>
       <select className="input" autoFocus={autoFocus} value={value.driver} disabled={disabled}
         onChange={(e) => onChange({ driver: e.target.value, model: "", effort: "" })}>
-        {allowDefault && <option value="">Factory default{defaultAgent ? ` · ${defaultAgent.label}` : ""}</option>}
+        {allowDefault && <option value="">{defaultLabel}{defaultAgent ? ` · ${defaultAgent.label}` : ""}</option>}
         {value.driver && !drivers.some((d) => d.name === value.driver) && <option value={value.driver}>{driverLabel(value.driver)} · unavailable</option>}
         {drivers.map((d) => <option key={d.name} value={d.name} disabled={!d.available}>
           {d.label}{d.available ? "" : " · not installed"}

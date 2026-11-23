@@ -5,11 +5,14 @@ import { api, type Repo, type TaskDraft } from "../lib/api";
 import { useDrivers } from "../lib/hooks";
 import { canPreApprove, instructExamples } from "../lib/instruct-draft";
 import { parseStartTime } from "../lib/schedule";
+import { CONTAINER_REQUIRED, runnerDrivers } from "../lib/runners";
 import { useToast } from "../lib/toast";
 import { useInstructDraft } from "../lib/use-instruct-draft";
+import { useRunnerRouting } from "../lib/use-runner-routing";
 import { parseGates } from "./GateFields";
 import { InstructChoices } from "./InstructChoices";
 import { InstructOptions, NO_SETTINGS, type InstructSettings } from "./InstructOptions";
+import { RunnerField } from "./RunnerField";
 
 /** Creates the task, then leaves for its page. A failure stays on the sheet, next to what caused it. */
 function useStartTask(final: TaskDraft | null, settings: InstructSettings, onClose: () => void) {
@@ -31,6 +34,7 @@ function useStartTask(final: TaskDraft | null, settings: InstructSettings, onClo
         repoId: final.repoId,
         autonomy: final.autonomy,
         driver: settings.driver,
+        runnerId: settings.runnerId,
         ...parseGates(settings.gates),
         lookouts: settings.lookouts,
         scheduledAt: parseStartTime(settings.startTime),
@@ -119,7 +123,14 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
   const [settings, setSettings] = useState(NO_SETTINGS);
   const change = (next: Partial<InstructSettings>) => setSettings((s) => ({ ...s, ...next }));
   const { drivers } = useDrivers();
+  const routing = useRunnerRouting();
+  const runnerId = settings.runnerId === undefined ? routing.preference?.runnerId ?? null : settings.runnerId;
+  const runner = routing.runners.find((r) => r.id === runnerId);
+  const required = routing.preference?.required ?? false;
+  const routeError = required && !runnerId ? CONTAINER_REQUIRED : routing.error;
+  const routePending = routing.signedIn && !routing.preference;
   const { submit, busy, error } = useStartTask(final, settings, onClose);
+  const start = () => { if (!busy && !routePending && !routeError) void submit(); };
   const areaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -139,25 +150,29 @@ export function InstructSheet({ repos, onClose, initial = "" }: { repos: Repo[];
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            submit();
+            start();
           }}
         >
-          <InstructPrompt areaRef={areaRef} text={text} setText={setText} repos={repos} submit={submit} />
+          <InstructPrompt areaRef={areaRef} text={text} setText={setText} repos={repos} submit={start} />
           {final && (
             <div className="understood">
               <p className="understood-title">Here's what I understood. Tap anything to change it.</p>
+              {routing.signedIn && <RunnerField runners={routing.runners} value={runnerId} required={required}
+                disabled={busy || routePending} onChange={(id) => change({ runnerId: id, driver: null })} />}
               <InstructChoices
                 final={final}
                 repos={repos}
                 override={override}
-                drivers={drivers ?? []}
+                drivers={runnerId ? runnerDrivers(runner) : drivers ?? []}
+                remote={!!runnerId}
                 driver={settings.driver}
                 onDriver={(driver) => change({ driver })}
               />
               <InstructOptions settings={settings} change={change} preApprovable={canPreApprove(final.autonomy)} busy={busy} />
             </div>
           )}
-          <InstructFoot error={error} final={final} busy={busy} scheduled={settings.startTime !== null} onClose={onClose} />
+          <InstructFoot error={routeError ?? error} final={final} busy={busy || routePending || !!routeError}
+            scheduled={settings.startTime !== null} onClose={onClose} />
         </form>
       </div>
     </div>

@@ -33,6 +33,7 @@ const ROUTES = [
   "GET /api/repos/:id/checks",
   "GET /api/runner/jobs/:id/bundle",
   "GET /api/runners",
+  "GET /api/runners/default",
   "GET /api/settings/runners-required",
   "GET /api/tasks",
   "GET /api/tasks/:id",
@@ -97,6 +98,7 @@ const ROUTES = [
   "PUT /api/repos/:id/checks",
   "PUT /api/repos/:id/tools/commands",
   "PUT /api/runner/jobs/:id/screenshots/:name",
+  "PUT /api/runners/default",
   "PUT /api/settings/runners-required",
   "PUT /api/tasks/:id/runner",
 ];

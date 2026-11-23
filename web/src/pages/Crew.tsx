@@ -9,6 +9,7 @@ import { Empty } from "../components/Empty";
 import { Section } from "../components/Section";
 import { MemberSheet } from "../components/MemberSheet";
 import { StorageRetention } from "../components/StorageRetention";
+import { ContainerLanes } from "./crew/ContainerLanes";
 import { MemberRow } from "./crew/MemberRow";
 import { PostmortemDefaults } from "./crew/PostmortemDefaults";
 import { RunsOn } from "./crew/RunsOn";
@@ -19,7 +20,7 @@ function CrewSummary({ roster, driver }: { roster: CrewRoster; driver: string })
       <span><strong className="tabular">{roster.working}</strong> working</span>
       <span><strong className="tabular">{roster.free}</strong> free</span>
       <span><strong className="tabular">{roster.onCall.length}</strong> on-call</span>
-      <span>New tasks run on <strong>{driver}</strong></span>
+      <span>Crew tasks use <strong>{driver}</strong> by default</span>
     </p>
   );
 }
@@ -110,6 +111,7 @@ export function Crew() {
         </div>
       ) : <MemberSections active={roster.active} onCall={roster.onCall} row={row} />}
 
+      <ContainerLanes runners={o.runners ?? []} />
       {drivers && drivers.length > 0 && <RunsOn drivers={drivers} onChange={set} />}
       {drivers && drivers.length > 0 && <PostmortemDefaults drivers={drivers} />}
       <StorageRetention />

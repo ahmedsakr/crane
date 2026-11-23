@@ -9,6 +9,15 @@ import { taskPayloads } from "./task-payloads.js";
 /** Operators can manage containers and route tasks. The actions check ownership and admin permissions. */
 export function registerRunnersRoutes(api: Hono, { actions }: RouteDeps): void {
   api.get("/runners", (c) => c.json(actions.listRunners(signedInActor(c))));
+  api.get("/runners/default", (c) => c.json({
+    runnerId: actions.defaultRunner(signedInActor(c)),
+    required: actions.runnersRequired() === "on",
+  }));
+  api.put("/runners/default", async (c) => {
+    const by = signedInActor(c);
+    const { runnerId } = await boundedJsonObject<{ runnerId?: unknown }>(c.req.raw, RUNNER_LIMITS.controlBytes);
+    return c.json({ runnerId: actions.setDefaultRunner(by, runnerId) });
+  });
   api.post("/runners", async (c) => {
     const by = signedInActor(c);
     const input = await boundedJsonObject<NewRunnerInput>(c.req.raw, RUNNER_LIMITS.controlBytes);

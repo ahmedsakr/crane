@@ -262,6 +262,32 @@ test("operator API: containers are managed by their owners or an admin, with one
   assert.equal(actions.authenticateRunner(rotated.token), null);
 });
 
+test("operator API: default containers are private to the owner and used on task intake", async (t) => {
+  const { actions, app, store, robin, kai, admin } = setup(t);
+  const { runner, token } = actions.addRunner(robin.actor, { name: "Laptop" });
+  const path = "/api/runners/default";
+  const send = (method: string, cookie?: string, body?: unknown) => call(app, method, path, { cookie, body });
+  const body = async (response: Response, status = 200) => JSON.parse(await checked(response, status, [token]));
+  await body(await send("GET"), 401);
+  await body(await send("PUT", kai.cookie, { runnerId: runner.id }), 403);
+  await body(await send("PUT", robin.cookie, {}), 400);
+  assert.deepEqual(await body(await send("PUT", robin.cookie, { runnerId: runner.id })), { runnerId: runner.id });
+  assert.deepEqual(await body(await send("GET", robin.cookie)), { runnerId: runner.id, required: false });
+  assert.deepEqual(await body(await send("GET", admin.cookie)), { runnerId: null, required: false });
+  const repoId = store.addRepo({ path: "/repo" }).id;
+  const create = (routing = {}) => call(app, "POST", "/api/tasks", {
+    cookie: robin.cookie, body: { kind: "maintenance", title: "Routing", brief: "Check routing", repoId, autonomy: "observe", ...routing },
+  });
+  assert.equal((await body(await create(), 201)).runnerId, runner.id);
+  assert.equal((await body(await create({ runnerId: runner.id }), 201)).runnerId, runner.id);
+  assert.equal((await body(await create({ runnerId: null }), 201)).runnerId, null);
+  actions.setRunnersRequired(admin.actor, "on");
+  assert.deepEqual(await body(await send("GET", robin.cookie)), { runnerId: runner.id, required: true });
+  await body(await create({ runnerId: null }), 403);
+  await checked(await call(app, "DELETE", `/api/runners/${runner.id}`, { cookie: admin.cookie }), 204, [token]);
+  assert.deepEqual(await body(await send("GET", robin.cookie)), { runnerId: null, required: true });
+});
+
 test("operator API: overview, queue, list and task detail report container presence", async (t) => {
   const { actions, app, task, robin, advance } = setup(t);
   const { runner, token } = actions.addRunner(robin.actor, { name: "Laptop" });

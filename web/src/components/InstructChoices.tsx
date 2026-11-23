@@ -20,34 +20,47 @@ function repoLabel(repoId: string | null, repos: Repo[]): string {
 }
 
 /** Null is "the default agent". Only asked about when more than one agent is installed. */
-function AgentChoice({ drivers, driver, onChange }: {
+function AgentChoice({ drivers, driver, remote, onChange }: {
   drivers: DriverInfo[];
   driver: string | null;
+  remote: boolean;
   onChange: (driver: string | null) => void;
 }) {
-  const agents = choosableDrivers(drivers);
+  const agents = remote ? drivers : choosableDrivers(drivers);
   const defaultAgent = drivers.find((d) => d.isDefault);
-  if (agents.length <= 1) return null;
+  if (remote ? agents.length === 0 : agents.length <= 1) return null;
+  const defaultLabel = remote ? "Container default" : defaultAgent?.label ?? "Default";
+  const options: { value: string | null; label: string; hint?: string }[] = agents.map((a) => ({
+    value: a.name,
+    label: a.label,
+    hint: a.hint,
+  }));
+  if (remote) options.unshift({ value: null, label: defaultLabel, hint: defaultAgent?.label });
+  const isDefault = (v: string | null) => !remote && v === defaultAgent?.name;
   return (
     <Choice
       k="Agent"
-      value={driver ?? defaultAgent?.name ?? null}
-      label={agents.find((a) => a.name === driver)?.label ?? defaultAgent?.label ?? "Default"}
-      why={driver ? "You chose this" : "Your default agent"}
-      options={agents.map((a) => ({ value: a.name, label: a.label, hint: a.isDefault ? `Your default. ${a.hint}` : a.hint }))}
-      // Choosing the default is the same as not choosing: the task follows the default.
-      onChange={(v) => onChange(v === defaultAgent?.name ? null : v)}
+      value={remote ? driver : driver ?? defaultAgent?.name ?? null}
+      label={agents.find((a) => a.name === driver)?.label ?? defaultLabel}
+      why={driver ? "You chose this" : remoteDefaultHint(remote)}
+      options={options}
+      onChange={(v) => onChange(isDefault(v) ? null : v)}
     />
   );
 }
 
+function remoteDefaultHint(remote: boolean): string {
+  return remote ? "The container's default agent" : "Your default agent";
+}
+
 /** The factory's reading of the instruction, one button per thing the operator can change. */
-export function InstructChoices({ final, repos, override, drivers, driver, onDriver }: {
+export function InstructChoices({ final, repos, override, drivers, driver, remote = false, onDriver }: {
   final: TaskDraft;
   repos: Repo[];
   override: (change: DraftOverrides) => void;
   drivers: DriverInfo[];
   driver: string | null;
+  remote?: boolean;
   onDriver: (driver: string | null) => void;
 }) {
   return (
@@ -81,7 +94,7 @@ export function InstructChoices({ final, repos, override, drivers, driver, onDri
         }))}
         onChange={(v) => override({ autonomy: v })}
       />
-      <AgentChoice drivers={drivers} driver={driver} onChange={onDriver} />
+      <AgentChoice drivers={drivers} driver={driver} remote={remote} onChange={onDriver} />
     </div>
   );
 }

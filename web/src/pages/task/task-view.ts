@@ -99,11 +99,17 @@ interface PendingContext {
   postmortemCrew: string[];
 }
 
-function queuedSummary(task: Task, { agent, waitingOn: waiting, postmortemCrew }: PendingContext): string {
+export function waitingForOfflineRunner(task: Task): boolean {
+  return task.status === "queued" && !!task.runnerId && task.runnerOnline === false;
+}
+
+function queuedSummary(task: Task, { agent, waitingOn: waiting, postmortemCrew }: PendingContext): string | null {
   if (isScheduled(task)) {
     return `Scheduled for ${new Date(task.scheduledAt!).toLocaleString()}. It starts when an agent is free after this time and prerequisites are met.`;
   }
   if (waiting.length) return `Waiting for ${waiting.map((p) => p.id).join(", ")} to land.`;
+  if (waitingForOfflineRunner(task)) return null;
+  if (task.runnerId) return "Waiting for a free slot on this container.";
   if (task.assignee && agent) {
     return agent.active ? `Waiting for ${agent.name}, who picks it up when free.` : `Waiting for ${agent.name}, who is on-call. Activate them on the Crew page.`;
   }

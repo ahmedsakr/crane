@@ -2,8 +2,9 @@ import { Link } from "react-router-dom";
 import { actorLabel, type TaskDetail } from "@crane/contracts";
 import { AUTONOMY_LABEL, lookoutsLabel, settingsLabel, STATUS_LABEL } from "../../lib/api";
 import { ago, duration, usd } from "../../lib/format";
+import { CREW_ROUTE } from "../../lib/runners";
 import { Runs } from "./Runs";
-import { driverName, showsRuns, type TaskView } from "./task-view";
+import { driverName, showsRuns, waitingForOfflineRunner, type TaskView } from "./task-view";
 
 function FollowUpFacts({ source }: { source: TaskView["source"] }) {
   if (!source) return null;
@@ -52,6 +53,8 @@ function Facts({ detail, view }: { detail: TaskDetail; view: TaskView }) {
       <dd>{AUTONOMY_LABEL[task.autonomy]}</dd>
       <dt>Agent</dt>
       <dd>{[agent?.name, driverName(view.usedDriver)].filter(Boolean).join(" on ") || "—"}</dd>
+      <dt>Runs on</dt>
+      <dd>{task.runnerLabel ?? (task.runnerId ? "Assigned container" : CREW_ROUTE)}</dd>
       {settings && <>
         <dt>Model settings</dt>
         <dd>{settings}</dd>
@@ -81,6 +84,9 @@ function Facts({ detail, view }: { detail: TaskDetail; view: TaskView }) {
 /** The side rail's reference: the task's facts, what its runs cost, and the instruction it was given. */
 export function FactsRail({ detail, view }: { detail: TaskDetail; view: TaskView }) {
   return <>
+    {waitingForOfflineRunner(detail.task) && (
+      <p className="notice">Waiting for this container to come online.</p>
+    )}
     <div className="card card-pad">
       <Facts detail={detail} view={view} />
       {showsRuns(detail.runs) && <Runs runs={detail.runs} />}

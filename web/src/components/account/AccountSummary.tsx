@@ -6,12 +6,13 @@ import { SheetBody, SheetHead } from "../Sheet";
 import { NameEditor } from "./NameEditor";
 
 /** What the sheet opens on: who this is and how many devices are signed in. Devices and password are a tap away. */
-export function AccountSummary({ operator, sessions, onRenamed, onDevices, onPassword }: {
+export function AccountSummary({ operator, sessions, onRenamed, onDevices, onPassword, onContainers }: {
   operator: OperatorProfile;
   sessions: OperatorSession[] | null;
   onRenamed: (operator: OperatorProfile) => void;
   onDevices: () => void;
   onPassword: () => void;
+  onContainers: () => void;
 }) {
   const here = sessions?.find((s) => s.current);
   return (
@@ -34,6 +35,10 @@ export function AccountSummary({ operator, sessions, onRenamed, onDevices, onPas
           </button>
           <button type="button" className="sheet-link account-link" onClick={onPassword}>
             <span>Change password</span>
+            <Chevron />
+          </button>
+          <button type="button" className="sheet-link account-link" onClick={onContainers}>
+            <span>Containers</span>
             <Chevron />
           </button>
         </div>
