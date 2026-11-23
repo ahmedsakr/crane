@@ -6,6 +6,13 @@ import type { CrewMember } from "./work-run.js";
  * Container lanes. Each container works its own routed tasks, as many at once
  * as its capacity, in lane slots that are not crew: they have no `agents` row,
  * no crew settings and never take one of the factory's crew slots.
+ *
+ * Merges are the exception: a container task's merge is claimed by a crew
+ * slot, but its conflict-resolver and check-fixer jobs still run on the
+ * container and share its capacity with lane work. So the container can be
+ * sent more jobs than its capacity; the store's `claimJob` caps how many it
+ * holds at once, extras wait queued on the container, and a queued merge job
+ * on an offline container expires as a transient failure.
  */
 
 /** Lane member ids start with this; crew ids start with `a-`. */
