@@ -76,7 +76,7 @@ export const TEST_GROUPS: readonly TestGroup[] = [
   },
   {
     id: "http", kind: "package", projects: ["@crane/http-server"],
-    suites: suites("api-auth", "api-exposure", "api-operators", "api-routes", "api", "sign-in-limit"),
+    suites: suites("api-auth", "api-exposure", "api-operators", "api-routes", "api-runners", "api", "sign-in-limit"),
   },
   {
     id: "http-factory", kind: "integration", projects: ["@crane/http-server"],

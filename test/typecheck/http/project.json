@@ -47,6 +47,7 @@
         "{workspaceRoot}/test/api-goals.test.ts",
         "{workspaceRoot}/test/api-operators.test.ts",
         "{workspaceRoot}/test/api-routes.test.ts",
+        "{workspaceRoot}/test/api-runners.test.ts",
         "{workspaceRoot}/test/api-scheduling.test.ts",
         "{workspaceRoot}/test/api-storage.test.ts",
         "{workspaceRoot}/test/api.test.ts",

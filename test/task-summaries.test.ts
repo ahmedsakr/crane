@@ -22,7 +22,7 @@ test("task summaries preserve list filters, ordering, limits, and row metadata",
       { status: ["queued" as const] }, { repoId: other.id }]) {
       const expected = store.listTasks(opts).map(t => ({
         id: t.id, kind: t.kind, title: t.title, repoId: t.repoId, status: t.status, branch: t.branch,
-        assignee: t.assignee, postmortemOf: t.postmortemOf,
+        assignee: t.assignee, postmortemOf: t.postmortemOf, runnerId: t.runnerId,
         createdAt: t.createdAt, scheduledAt: t.scheduledAt, startedAt: t.startedAt, finishedAt: t.finishedAt,
         reportSummary: null, findingCount: 0, changedFileCount: 0,
       }));

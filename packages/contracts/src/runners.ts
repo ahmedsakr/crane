@@ -46,11 +46,17 @@ export type RunnerEventType = (typeof RUNNER_EVENT_TYPES)[number];
 
 /** Size and timing bounds for the container protocol. The server enforces them on everything it receives. */
 export const RUNNER_LIMITS = {
+  /** Largest heartbeat, claim or session request body. */
+  controlBytes: 16 * 1024,
+  /** Largest serialized event batch, including its JSON encoding and event data. */
+  eventBatchBytes: 8 * 1024 * 1024,
+  /** Largest standalone JSON result request. Multipart requests use the bundle envelope limit. */
+  resultBytes: 4 * 1024 * 1024,
   /** Longest event message accepted; longer ones are cut. */
   eventMessageChars: 4000,
   /** Most events in one batch. */
   eventsPerBatch: 200,
-  /** Largest commit bundle or tree a container may return. */
+  /** Largest commit bundle or tree a container may return, including the multipart envelope over HTTP. */
   bundleBytes: 256 * 1024 * 1024,
   /** Largest screenshot upload, matching what Crane retains with a task. */
   screenshotBytes: 10 * 1024 * 1024,

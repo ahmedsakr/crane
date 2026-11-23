@@ -15,13 +15,12 @@ import { iso, type AccessDeps } from "./access-rules.js";
  * sends is untrusted and goes through `remote/untrusted.ts` first.
  */
 
-const NOT_YOURS = "This job isn't leased to this container";
 const MB = 1024 * 1024;
 
 /** The job, if it belongs to `runner`. Others' jobs read the same as missing ones. */
 function ownJob({ store }: AccessDeps, runner: RunnerRecord, jobId: unknown): RunnerJobRecord {
   const job = typeof jobId === "string" ? store.runners.job(jobId) : null;
-  if (!job || job.runnerId !== runner.id) throw new AccessError(403, NOT_YOURS);
+  if (!job || job.runnerId !== runner.id) throw new AccessError(404, "Not found");
   return job;
 }
 
@@ -30,6 +29,11 @@ function leasedJob(deps: AccessDeps, runner: RunnerRecord, jobId: unknown): Runn
   const job = ownJob(deps, runner, jobId);
   if (job.state !== "claimed") throw new Error("This job is no longer running");
   return job;
+}
+
+/** Refuse unknown or unavailable jobs before reading a request body. */
+export function requireRunnerJob(deps: AccessDeps, runner: RunnerRecord, jobId: string): void {
+  leasedJob(deps, runner, jobId);
 }
 
 /** Lease the container's next job, as the brief it works from. */

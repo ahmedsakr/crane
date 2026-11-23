@@ -6,6 +6,8 @@ import { withActor } from "@crane/backend-runtime";
 import { AccessError, SESSION_LIFETIME_MS, SIGN_IN_FIRST, type Authenticated, type OperatorActions } from "@crane/factory/actions";
 import { parsePublicUrl, type Exposure } from "./security.js";
 import { AttemptLimiter, TooManyAttempts, clientKeyFor, spellWait, type ClientKey, type Limit, type OnLimited } from "./sign-in-limit.js";
+import { BodyTooLarge } from "./body.js";
+import { isRunnerPath } from "./runner-auth.js";
 
 declare module "hono" {
   interface ContextVariableMap {
@@ -16,7 +18,7 @@ declare module "hono" {
 
 export const SESSION_COOKIE = "crane_session";
 
-/** The only API routes that answer without a session: what the sign-in and join pages need before there is one. */
+/** Public sign-in and join routes. The separate /api/runner namespace requires a container bearer token. */
 export const PUBLIC_ROUTES: readonly string[] = [
   "GET /api/auth/session",
   "POST /api/auth/sign-in",
@@ -127,7 +129,7 @@ export function admit(access: ApiAccess, c: Context): Admission {
  */
 export function requireSignIn(access: ApiAccess): MiddlewareHandler {
   return async (c, next) => {
-    if (PUBLIC.has(`${c.req.method} ${c.req.path}`)) return next();
+    if (isRunnerPath(c.req.path) || PUBLIC.has(`${c.req.method} ${c.req.path}`)) return next();
     const admission = admit(access, c);
     if (!admission.ok) return c.json({ error: admission.error, signIn: true }, 401);
     if (!admission.auth) return next();
@@ -155,5 +157,6 @@ export function errorResponse(err: Error, c: Context): Response {
     return c.json({ error: err.message, retryAfterSeconds: err.retryAfterSeconds }, 429);
   }
   if (err instanceof AccessError) return c.json({ error: err.message }, err.status);
+  if (err instanceof BodyTooLarge) return c.json({ error: err.message }, 413);
   return c.json({ error: err.message }, 400);
 }

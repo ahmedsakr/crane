@@ -4,6 +4,7 @@ import type { BlockedTool, TaskEvent } from "./events.js";
 import type { GoalSummary } from "./goals.js";
 import type { Repo, RepoTools } from "./repo.js";
 import type { AgentRun } from "./runs.js";
+import type { RunnerSummary } from "./runners.js";
 import type { FollowUpSource, FollowUpState, PrerequisiteState, Task, TaskKind, TaskStatus, TaskSummary } from "./task.js";
 
 /** Null keeps all history. Choosing days authorizes irreversible routine-history cleanup. */
@@ -72,6 +73,8 @@ export interface Overview {
   inFlight: TaskSummary[];
   recent: TaskSummary[];
   agents: Agent[];
+  /** Registered container lanes, with their connection and job state. */
+  runners: (RunnerSummary & { label: string })[];
   repos: (Repo & { openTasks: number; tools: RepoTools })[];
   /** Commands agents keep getting refused, in more than one task, that the operator hasn't decided on yet. */
   blocked: BlockedTool[];

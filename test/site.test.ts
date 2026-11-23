@@ -20,7 +20,7 @@ import {
 } from "../web/src/lib/site.ts";
 
 const task = (id: string, status: TaskStatus): TaskSummary => ({
-  id, status, title: id, kind: "maintenance", repoId: null, branch: null, assignee: null, postmortemOf: null,
+  id, status, title: id, kind: "maintenance", repoId: null, branch: null, assignee: null, postmortemOf: null, runnerId: null,
   createdAt: "2026-01-01T00:00:00.000Z", scheduledAt: null, startedAt: null, finishedAt: null,
   reportSummary: null, findingCount: 0, changedFileCount: 0,
 });

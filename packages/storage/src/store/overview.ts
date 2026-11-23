@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { ALL_STATUSES, FINISHED_STATUSES, SHIPPED_STATUSES, type Overview, type TaskStatus } from "@crane/contracts";
+import { ALL_STATUSES, FINISHED_STATUSES, SHIPPED_STATUSES, runnerLabel, type Overview, type TaskStatus } from "@crane/contracts";
 import type { Store } from "../store.js";
 import type { Row } from "./rows.js";
 
@@ -60,11 +60,10 @@ function openByRepoCounts(db: Database.Database): Map<string, number> {
 }
 
 type OverviewSource = Pick<Store, "db" | "queuedForAnyone" | "listTaskSummaries" | "listGoalSummaries" |
-  "listAgents" | "listRepos" | "repoTools" | "blockedTools">;
+  "listAgents" | "listRepos" | "repoTools" | "blockedTools" | "runners">;
 
-export function overview(store: OverviewSource, factory: Overview["factory"]): Overview {
+export function overview(store: OverviewSource, factory: Overview["factory"], t0: number): Overview {
   const counts = statusCounts(store.db);
-  const t0 = Date.now();
   const spend = weeklySpend(store.db, t0);
   const activity = hourlyActivity(store.db, t0);
   const openByRepo = openByRepoCounts(store.db);
@@ -86,6 +85,7 @@ export function overview(store: OverviewSource, factory: Overview["factory"]): O
     ],
     recent: store.listTaskSummaries({ status: FINISHED_STATUSES, limit: 8 }),
     agents: store.listAgents(),
+    runners: store.runners.listAll(t0).map((runner) => ({ ...runner, label: runnerLabel(runner) })),
     repos: store.listRepos().map((r) => ({ ...r, openTasks: openByRepo.get(r.id) ?? 0, tools: store.repoTools(r.id) })),
     // One refusal could be a fluke; the same one in a second task is a pattern worth a decision.
     blocked: store.blockedTools({ minTasks: 2 }).slice(0, 5),

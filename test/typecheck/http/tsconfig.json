@@ -6,6 +6,7 @@
     "../../api-goals.test.ts",
     "../../api-operators.test.ts",
     "../../api-routes.test.ts",
+    "../../api-runners.test.ts",
     "../../api-scheduling.test.ts",
     "../../api-storage.test.ts",
     "../../api.test.ts",

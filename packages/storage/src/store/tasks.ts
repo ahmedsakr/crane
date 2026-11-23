@@ -18,7 +18,7 @@ export type NewTaskRecord = NewTask & {
 };
 
 export const TASK_SUMMARY_COLUMNS = `id, kind, title, repo_id AS repoId, status, branch, assignee,
-  postmortem_of AS postmortemOf,
+  postmortem_of AS postmortemOf, runner_id AS runnerId,
   created_at AS createdAt, scheduled_at AS scheduledAt,
   started_at AS startedAt, finished_at AS finishedAt,
   json_extract(report, '$.summary') AS reportSummary,

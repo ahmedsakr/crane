@@ -482,7 +482,7 @@ export class Store {
     pruneAgents(this, keepIds);
   }
 
-  overview(factory: Overview["factory"]): Overview {
-    return overview(this, factory);
+  overview(factory: Overview["factory"], at = Date.now()): Overview {
+    return overview(this, factory, at);
   }
 }

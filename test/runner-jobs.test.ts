@@ -46,7 +46,7 @@ test("runner jobs: another container can't touch a job, and a finished one takes
   const job = await claim(s);
   const owner = s.store.access.createOperator({ username: "sam", name: "Sam", role: "operator", passwordHash: "x", at: new Date().toISOString() });
   const other = s.store.runners.create({ operatorId: owner.id, name: "desk", tokenHash: "other", at: new Date().toISOString() });
-  const refused = { name: AccessError.name, status: 403 };
+  const refused = { name: AccessError.name, status: 404 };
   assert.throws(() => s.actions.appendJobEvents(other, job.id, { events: [{ type: "note", message: "hi" }] }), refused);
   assert.throws(() => s.actions.returnJob(other, job.id, { outcome: "succeeded" }), refused);
   assert.throws(() => s.actions.recordJobSession(other, job.id, "abc"), refused);

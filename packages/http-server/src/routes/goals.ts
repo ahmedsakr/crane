@@ -2,6 +2,7 @@ import type { Hono } from "hono";
 import type { NewGoal, TaskRunOptions } from "@crane/contracts";
 import { optionalJsonObject } from "../body.js";
 import type { RouteDeps } from "./deps.js";
+import { taskPayloads } from "./task-payloads.js";
 
 type RevisedRun = TaskRunOptions & { revision: unknown };
 
@@ -10,7 +11,9 @@ export function registerGoalRoutes(api: Hono, { store, actions }: RouteDeps): vo
   api.get("/goals/:id", (c) => {
     store.syncGoals();
     if (!store.getGoal(c.req.param("id"))) return c.json({ error: "Not found" }, 404);
-    return c.json(store.goalDetail(c.req.param("id")));
+    const { goal, research, tasks } = store.goalDetail(c.req.param("id"));
+    const payload = taskPayloads(actions);
+    return c.json({ goal, research: research && payload(research), tasks: tasks.map(payload) });
   });
   api.post("/goals", async (c) => c.json(actions.createGoal(await optionalJsonObject<NewGoal>(c.req.raw)), 201));
   api.post("/goals/:id/feedback", async (c) => {
