@@ -9,6 +9,7 @@ export interface ManagementActions {
   reset: () => void;
   signOut: () => void;
   remove: () => void;
+  containers: () => void;
 }
 
 export function OperatorActions({ operator, busy, actions }: { operator: OperatorSummary; busy: boolean; actions: ManagementActions }) {
@@ -26,6 +27,7 @@ export function OperatorActions({ operator, busy, actions }: { operator: Operato
           </button>
           <button type="button" className="sheet-link" disabled={busy} onClick={actions.reset}>Reset password</button>
           <button type="button" className="sheet-link" disabled={busy} onClick={actions.signOut}>Sign out everywhere</button>
+          <button type="button" className="sheet-link" disabled={busy} onClick={actions.containers}>Containers</button>
           <button type="button" className="sheet-link error-text" disabled={busy} onClick={actions.remove}>Remove</button>
         </div>
       </SheetBody>

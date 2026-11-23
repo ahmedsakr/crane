@@ -240,6 +240,14 @@ A crew member can be dedicated to one kind of upkeep on a connected repo: **Code
 
 Start a run with the button on their row (**Review security**, **Reduce duplication**, …), choose a repository and start time, then select **Start run** or **Schedule run**. Crane's own repo is the default. In the CLI, use `crane agents run hoist`, or `crane agents run hoist --repo my-app --at 2030-06-15T09:00:00-04:00` to schedule a run on another connected repo (name or id). It queues a maintenance task that only that member picks up, with a brief for their role. Packaging and security reviews investigate only, so turn the findings you want into follow-ups; the others make a change on a branch and wait for your review. A member has one queued or running run per repo at a time, including future runs, and must be active to start one. Runs in different repos wait for that member to be free.
 
+### Containers
+
+Use a container to run tasks with your own Claude Code or Codex sign-in. In the dashboard, open **Your account → Containers → Add a container**, choose a name and how many jobs it can run at once, then copy the start command. Crane shows the token once. Keep the command private.
+
+On the computer that will run the jobs, sign in to Claude Code or Codex and run the copied command with a Crane build that includes `crane runner start`. The URL in the command must be reachable from that computer. The container appears online on the Crew page after it connects.
+
+Choose it under **Runs on** when creating a task or changing the agent of a queued task. To use it for new tasks by default, open its row in your account and choose **Send my tasks here by default**.
+
 ## The CLI
 
 `crane` with no arguments shows the one screen you need: what needs you, what's in flight, and what to do next. Everything else is one command away.

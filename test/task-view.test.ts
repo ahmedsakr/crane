@@ -14,6 +14,7 @@ import {
   mergeTaskDetail,
   mergingSummary,
   pendingSummary,
+  waitingForOfflineRunner,
   preApprovalText,
   prerequisitesText,
   runOutcomeLabel,
@@ -87,6 +88,16 @@ test("pendingSummary: a queued task says what it waits for, the start time first
 
 test("pendingSummary: a start time that has passed no longer counts as scheduled", () => {
   assert.equal(pendingSummary(makeTask({ scheduledAt: "2000-01-01T00:00:00.000Z" }), noContext), "Waiting for a free agent.");
+});
+
+test("container routes: queued offline work shows the offline notice in place of crew queue copy", () => {
+  const task = makeTask({ runnerId: "r-laptop", runnerOnline: false });
+  assert.equal(waitingForOfflineRunner(task), true);
+  assert.equal(pendingSummary(task, noContext), null);
+  const online = { ...task, runnerOnline: true };
+  assert.equal(waitingForOfflineRunner(online), false);
+  assert.equal(pendingSummary(online, noContext), "Waiting for a free slot on this container.");
+  assert.equal(waitingForOfflineRunner({ ...task, status: "done" }), false);
 });
 
 test("mergingSummary names the agent, or says one is needed", () => {

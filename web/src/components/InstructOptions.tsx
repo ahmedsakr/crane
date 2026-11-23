@@ -7,6 +7,7 @@ import { ScheduleFields } from "./ScheduleFields";
 /** Everything about a new task the operator sets directly, rather than correcting the factory's reading. */
 export interface InstructSettings {
   driver: string | null;
+  runnerId?: string | null;
   gates: GateText;
   lookouts: Lookout[];
   startTime: string | null;

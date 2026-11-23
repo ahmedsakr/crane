@@ -6,10 +6,11 @@ import { useToast } from "../../lib/toast";
 import { useAuth } from "../../lib/use-auth";
 import { Sheet } from "../Sheet";
 import { AccountSummary } from "./AccountSummary";
+import { AccountContainers, containerBack, type ContainerView } from "./AccountContainers";
 import { DeviceList, type DeviceActions } from "./DeviceList";
 import { PasswordForm } from "./PasswordForm";
 
-type View = "summary" | "devices" | "password";
+type View = "summary" | "devices" | "password" | ContainerView;
 
 /** This operator's devices, loaded when the sheet opens and replaced by whatever each sign-out answers. */
 function useMySessions() {
@@ -31,7 +32,10 @@ export function AccountSheet({ onClose }: { onClose: () => void }) {
   const toast = useToast();
   const [view, setView] = useState<View>("summary");
   const { sessions, setSessions, error, reload } = useMySessions();
-  const back = view === "summary" ? undefined : () => setView("summary");
+  const back = view === "summary" ? undefined : () => {
+    if (typeof view === "string" || view.kind === "list") setView("summary");
+    else setView(containerBack(view));
+  };
   if (!operator) return null;
   const devices: DeviceActions = {
     async signOut(session) {
@@ -45,6 +49,8 @@ export function AccountSheet({ onClose }: { onClose: () => void }) {
     },
   };
   const content = () => {
+    if (typeof view !== "string") return <AccountContainers view={view} onBack={back!}
+      onChange={(next, expected) => setView((current) => !expected || current === expected ? next : current)} />;
     if (view === "devices") return <DeviceList sessions={sessions} error={error} actions={devices} onBack={back!} />;
     if (view === "password") {
       return <PasswordForm username={operator.username} onBack={back!} onChanged={() => {
@@ -54,7 +60,7 @@ export function AccountSheet({ onClose }: { onClose: () => void }) {
       }} />;
     }
     return <AccountSummary operator={operator} sessions={sessions} onRenamed={setOperator}
-      onDevices={() => setView("devices")} onPassword={() => setView("password")} />;
+      onDevices={() => setView("devices")} onPassword={() => setView("password")} onContainers={() => setView({ kind: "list" })} />;
   };
-  return <Sheet onClose={onClose} onDismiss={back ?? onClose} view={view}>{content()}</Sheet>;
+  return <Sheet onClose={onClose} onDismiss={back ?? onClose} view={typeof view === "string" ? view : view.kind}>{content()}</Sheet>;
 }

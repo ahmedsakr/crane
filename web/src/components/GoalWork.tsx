@@ -104,17 +104,18 @@ export function GoalTaskGroups({ goal, plan, taskFor, actions }: { goal: Goal; p
 /** The one sheet for changing an agent: what saving does depends on how far the task has got. */
 export function GoalAgentSheet({ goal, target, onClose, onSaved }: { goal: Goal; target: AgentTarget; onClose: () => void; onSaved: () => void }) {
   const { item } = target;
-  const save = (run: Required<TaskRunOptions>): Promise<unknown> => {
+  const save = (run: Required<TaskRunOptions> & { runnerId?: string | null }): Promise<unknown> => {
     if (target.kind === "plan") return api.changeGoalPlanAgent(goal.id, goal.revision, item.key, run);
     if (target.kind === "queued") return api.changeAgent(target.task.id, run);
     return api.retryGoalTask(goal.id, goal.revision, target.task.id, run);
   };
   const notes = {
     plan: "This changes the draft plan. Nothing runs until you approve it.",
-    queued: "This applies when a crew member picks the task up. Its place in the plan doesn't change.",
+    queued: "These choices apply when the task starts. It keeps its place in the plan.",
     retry: "This starts a new attempt on this agent and reconnects the tasks waiting for it.",
   };
   return <ChangeAgentSheet title={item.title} run={target.kind === "plan" ? item : target.task}
+    route={target.kind === "queued" ? target.task : undefined}
     allowDefault={target.kind !== "plan"} canKeep={target.kind === "retry"} saveLabel={target.kind === "retry" ? "Retry task" : "Change agent"}
     note={notes[target.kind]} onSave={async (run) => { await save(run); onSaved(); }} onClose={onClose} />;
 }
